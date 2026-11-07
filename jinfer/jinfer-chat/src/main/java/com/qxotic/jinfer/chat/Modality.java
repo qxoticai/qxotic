@@ -6,7 +6,7 @@ package com.qxotic.jinfer.chat;
  * in text alone is a fine answer. A model never produces what it lacks, and refuses a request when
  * it can produce none of the allowed outputs - audio alone from a model that cannot speak. Text
  * arrives as {@link ChatEngine.Delta}s and {@link Content.Text}; generated media as {@link
- * ChatEngine.ReplySink#onMedia} parts, speech also as {@link Content.Speech}.
+ * ChatEngine.ReplySink#onMedia} parts, speech also whole as the reply's {@link Content.Media}.
  */
 public enum Modality {
     /** Words: the transcript, when the reply also speaks. */

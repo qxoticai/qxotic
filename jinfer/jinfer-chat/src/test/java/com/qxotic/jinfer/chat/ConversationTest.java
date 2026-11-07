@@ -19,7 +19,7 @@ class ConversationTest {
 
     private static Message call(String id, String name) {
         return new Message(
-                Role.ASSISTANT, List.of(new Content.ToolCall(id, name, Map.of("q", "2+2"), null)));
+                Role.ASSISTANT, List.of(new Content.ToolCall(id, name, Map.of("q", "2+2"))));
     }
 
     private static Message result(String id, String text) {
@@ -58,9 +58,9 @@ class ConversationTest {
                                                 Role.ASSISTANT,
                                                 List.of(
                                                         new Content.ToolCall(
-                                                                "c1", "calc", Map.of(), null),
+                                                                "c1", "calc", Map.of()),
                                                         new Content.ToolCall(
-                                                                "c2", "clock", Map.of(), null))),
+                                                                "c2", "clock", Map.of()))),
                                         result("c2", "noon"),
                                         result("c1", "4"))));
     }

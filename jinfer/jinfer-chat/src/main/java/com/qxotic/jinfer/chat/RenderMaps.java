@@ -40,7 +40,7 @@ final class RenderMaps {
             }
             var map = new LinkedHashMap<String, Object>();
             map.put("role", role);
-            map.put("content", text(message.content()));
+            map.put("content", text(message.content(), Role.ASSISTANT.equals(message.role())));
             List<Map<String, Object>> calls = toolCalls(message.content());
             if (!calls.isEmpty()) map.put("tool_calls", calls);
             for (Content part : message.content()) {
@@ -63,16 +63,19 @@ final class RenderMaps {
      * legal in echoed history (the scrub exempts them), which is how templates that split on {@code
      * </think>} see their own past reasoning.
      */
-    private static String text(List<Content> parts) {
+    private static String text(List<Content> parts, boolean reply) {
         StringBuilder out = new StringBuilder();
+        boolean thought = false;
         for (Content part : parts) {
             if (part instanceof Content.Text text) {
                 out.append(text.text());
-            } else if (part instanceof Content.Reasoning reasoning) {
+            } else if (part instanceof Content.Reasoning && !thought) {
+                // one think span, all the reasoning runs joined, where the first one sits
+                thought = true;
                 out.append("<think>");
-                out.append(text(reasoning.content()));
+                for (Content p : parts) if (p instanceof Content.Reasoning r) out.append(r.text());
                 out.append("</think>");
-            } else if (part instanceof Content.Media) {
+            } else if (part instanceof Content.Media && !reply) { // a reply's speech: its words
                 throw new UnsupportedOperationException(
                         "media content cannot take the Jinja whole-render path");
             }

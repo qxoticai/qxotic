@@ -3,7 +3,6 @@ package com.qxotic.jinfer.server;
 import com.qxotic.jinfer.cache.PromptCache;
 import com.qxotic.jinfer.chat.Channel;
 import com.qxotic.jinfer.chat.ChatEngine;
-import com.qxotic.jinfer.chat.Content;
 import com.qxotic.jinfer.chat.MediaEncodingCache;
 import com.qxotic.jinfer.chat.Message;
 import com.qxotic.jinfer.chat.Modality;
@@ -15,6 +14,7 @@ import com.qxotic.toknroll.IntSequence;
 import java.util.Base64;
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
 
 /** OpenAI wire values lowered onto the framework-neutral {@link ChatEngine}. */
 final class Generation {
@@ -128,18 +128,16 @@ final class Generation {
             sink.finish();
             Reply reply = finish(completion, prepared.stops(), sink.inline);
             if (completion.cancelled()) return reply;
-            for (Content part : completion.reply().content()) {
-                if (!(part instanceof Content.Speech speech)) continue;
-                String id = audioId != null ? audioId : SpokenTurns.newId();
-                long expiresAt = turns.put(id, speech, reply.text());
-                boolean wav = "wav".equals(Validation.audioFormat(request));
-                String data = // a stream has sent it already
-                        audioId != null
-                                ? null
-                                : Base64.getEncoder().encodeToString(encode(speech.audio(), wav));
-                return reply.withAudio(new Reply.Audio(id, expiresAt, data, reply.text()));
-            }
-            return reply;
+            Optional<Media.Audio> speech = completion.reply().speech();
+            if (speech.isEmpty()) return reply;
+            String id = audioId != null ? audioId : SpokenTurns.newId();
+            long expiresAt = turns.put(id, completion.reply());
+            boolean wav = "wav".equals(Validation.audioFormat(request));
+            String data = // a stream has sent it already
+                    audioId != null
+                            ? null
+                            : Base64.getEncoder().encodeToString(encode(speech.get(), wav));
+            return reply.withAudio(new Reply.Audio(id, expiresAt, data, reply.text()));
         }
     }
 

@@ -104,7 +104,7 @@ final class Mappings {
         for (dev.langchain4j.data.message.Content c : u.contents()) {
             parts.add(
                     c instanceof TextContent t
-                            ? new Content.Text(t.text(), null)
+                            ? new Content.Text(t.text())
                             : media(c, videoSampler));
         }
         return parts;
@@ -193,23 +193,23 @@ final class Mappings {
 
     private static Message assistant(AiMessage ai) {
         // an UNMODIFIED echo of a reply this provider produced restores the parsed Message with
-        // its verbatim ids; an edited echo (or one from another provider) re-renders faithfully
+        // its record; an edited echo (or one from another provider) renders from its parts
         if (ai.attributes().get(REPLY_ATTRIBUTE) instanceof Message reply
                 && toAiMessage(reply).equals(ai)) {
             return reply;
         }
         List<Content> parts = new ArrayList<>();
         if (ai.thinking() != null && !ai.thinking().isEmpty()) {
-            parts.add(new Content.Reasoning(List.of(new Content.Text(ai.thinking(), null)), null));
+            parts.add(new Content.Reasoning(ai.thinking()));
         }
         if (ai.text() != null && !ai.text().isEmpty()) {
-            parts.add(new Content.Text(ai.text(), null));
+            parts.add(new Content.Text(ai.text()));
         }
         if (ai.hasToolExecutionRequests()) {
             for (ToolExecutionRequest r : ai.toolExecutionRequests()) {
                 parts.add(
                         new Content.ToolCall(
-                                r.id() == null ? "" : r.id(), r.name(), args(r.arguments()), null));
+                                r.id() == null ? "" : r.id(), r.name(), args(r.arguments())));
             }
         }
         return new Message(Role.ASSISTANT, parts);
@@ -524,10 +524,10 @@ final class Mappings {
     // ---- jinfer reply -> langchain4j ----
 
     /**
-     * The attribute carrying the parsed reply {@link Message} - verbatim token ids included -
-     * across the langchain4j wire. An unmodified echo restores it ({@link #assistant}), letting the
-     * native codec's verbatim splice re-encode the turn to the EXACT generated tokens (the
-     * round-trip law; what makes retained-session hits deterministic instead of tokenization luck).
+     * The attribute carrying the parsed reply {@link Message} - its {@code Verbatim} record
+     * included - across the langchain4j wire. An unmodified echo restores it ({@link #assistant}),
+     * letting the template replay the turn as the EXACT generated tokens (the round-trip law; what
+     * makes retained-session hits deterministic instead of tokenization luck).
      */
     static final String REPLY_ATTRIBUTE = "jinfer.reply";
 
@@ -535,12 +535,12 @@ final class Mappings {
         StringBuilder text = new StringBuilder();
         StringBuilder thinking = new StringBuilder();
         List<ToolExecutionRequest> calls = new ArrayList<>();
-        collect(reply.content(), text, thinking, calls, false);
+        collect(reply.content(), text, thinking, calls);
         AiMessage.Builder b = AiMessage.builder();
         if (!text.isEmpty()) b.text(text.toString());
         if (!thinking.isEmpty()) b.thinking(thinking.toString());
         if (!calls.isEmpty()) b.toolExecutionRequests(calls);
-        // the parsed reply rides along whole: an unmodified echo restores verbatim ids instead of
+        // the parsed reply rides along whole: an unmodified echo restores its record instead of
         // re-tokenizing (what makes retained-session extension hits byte-exact)
         b.attributes(Map.of(REPLY_ATTRIBUTE, reply));
         return b.build();
@@ -551,12 +551,11 @@ final class Mappings {
             List<Content> parts,
             StringBuilder text,
             StringBuilder thinking,
-            List<ToolExecutionRequest> calls,
-            boolean inReasoning) {
+            List<ToolExecutionRequest> calls) {
         for (Content part : parts) {
             switch (part) {
-                case Content.Text t -> (inReasoning ? thinking : text).append(t.text());
-                case Content.Reasoning r -> collect(r.content(), text, thinking, calls, true);
+                case Content.Text t -> text.append(t.text());
+                case Content.Reasoning r -> thinking.append(r.text());
                 case Content.ToolCall c ->
                         // pythonic syntaxes carry no call ids: mint stable positional ones (what
                         // Ollama's server does); ids never render back into the prompt (the

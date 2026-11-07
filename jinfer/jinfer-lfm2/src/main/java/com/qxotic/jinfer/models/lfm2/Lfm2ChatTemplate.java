@@ -168,8 +168,7 @@ final class Lfm2ChatTemplate implements ChatTemplate {
             MediaEncodingCache mediaCache,
             Consumer<Batch> sink) {
         Objects.requireNonNull(conversation, "conversation");
-        for (Message message : conversation.messages())
-            requireSupported(message, spliceable(message));
+        for (Message message : conversation.messages()) requireSupported(message);
 
         PromptWriter out = new PromptWriter(tokenizer, batchCapacity, mediaCache, sink);
         List<Message> messages = conversation.messages();
@@ -180,7 +179,7 @@ final class Lfm2ChatTemplate implements ChatTemplate {
             first = 1;
         }
 
-        out.verbatim(promptStart());
+        out.ids(promptStart());
         if (!system.isEmpty() || !conversation.tools().isEmpty()) {
             out.id(turnOpen).text("system\n").text(system);
             if (!system.isEmpty() && !conversation.tools().isEmpty()) out.text("\n");
@@ -195,8 +194,7 @@ final class Lfm2ChatTemplate implements ChatTemplate {
             Message message = messages.get(i);
             boolean keepThinking =
                     dialect.lastAssistantKeepsThinking() ? i == lastAssistant : i > lastUser;
-            if (spliceable(message)) splice(out, message);
-            else writeTurn(out, message, keepThinking, batchCapacity);
+            writeTurn(out, message, keepThinking, batchCapacity);
             out.flush();
         }
 
@@ -224,7 +222,6 @@ final class Lfm2ChatTemplate implements ChatTemplate {
                         Lfm2ToolCodec::parse,
                         THINK_OPEN,
                         THINK_CLOSE);
-        parser.seed(replyPrefix);
         if (conversation.tools().isEmpty()) parser.disableToolCalls();
         return new ReplyState(replyPrefix, parser);
     }
@@ -254,6 +251,11 @@ final class Lfm2ChatTemplate implements ChatTemplate {
             PromptWriter out, Message message, boolean keepThinking, int batchCapacity) {
         out.id(turnOpen).text(message.role().name()).text("\n");
         if (message.role().equals(Role.ASSISTANT)) {
+            // the turn as the model said it, reasoning and all: what the prompt cache holds
+            if (out.replay(message)) {
+                out.id(turnClose).text("\n");
+                return;
+            }
             boolean typedReasoning =
                     message.content().stream().anyMatch(Content.Reasoning.class::isInstance);
             if (keepThinking) writeReasoning(out, message);
@@ -273,7 +275,8 @@ final class Lfm2ChatTemplate implements ChatTemplate {
                 switch (part) {
                     case Content.Text value -> out.text(value.text());
                     case Content.ToolResult value -> out.text(value.text());
-                    case Content.Media value -> writeMedia(out, value, batchCapacity);
+                    case Content.Media value when value.media() instanceof Media.Image image ->
+                            writeMedia(out, image, value.key(), batchCapacity);
                     default -> throw new IllegalStateException("unsupported " + part);
                 }
             }
@@ -281,10 +284,9 @@ final class Lfm2ChatTemplate implements ChatTemplate {
         out.id(turnClose).text("\n");
     }
 
-    private void writeMedia(PromptWriter out, Content.Media content, int batchCapacity) {
-        if (!(content.value() instanceof Media.Image image) || vision == null)
-            throw new IllegalStateException("unsupported media after validation");
-        ContentKey contentKey = content.contentKey();
+    private void writeMedia(
+            PromptWriter out, Media.Image image, ContentKey contentKey, int batchCapacity) {
+        if (vision == null) throw new IllegalStateException("unsupported media after validation");
         out.cachedMedia(
                 image,
                 contentKey,
@@ -350,61 +352,11 @@ final class Lfm2ChatTemplate implements ChatTemplate {
     }
 
     private void writeReasoning(PromptWriter out, Message message) {
-        StringBuilder text = new StringBuilder();
-        for (Content part : message.content()) {
-            if (!(part instanceof Content.Reasoning reasoning) || reasoning.content().isEmpty())
-                continue;
-            text.append(reasoningText(reasoning));
-        }
-        if (!text.isEmpty())
-            out.id(requireThinkOpen()).text(text.toString()).id(requireThinkClose());
+        String text = message.reasoning();
+        if (!text.isEmpty()) out.id(requireThinkOpen()).text(text).id(requireThinkClose());
     }
 
-    private void splice(PromptWriter out, Message message) {
-        out.id(turnOpen).text("assistant\n");
-        splice(out, message.content());
-        out.id(turnClose).text("\n");
-    }
-
-    private void splice(PromptWriter out, List<Content> content) {
-        for (Content part : content) {
-            switch (part) {
-                case Content.Text text -> out.verbatim(text.verbatim());
-                case Content.ToolCall call ->
-                        out.id(callOpen).verbatim(call.verbatim()).id(callClose);
-                case Content.Reasoning reasoning -> {
-                    out.id(requireThinkOpen());
-                    splice(out, reasoning.content());
-                    out.id(requireThinkClose());
-                }
-                default -> throw new IllegalStateException("unspliceable " + part);
-            }
-        }
-    }
-
-    private boolean spliceable(Message message) {
-        return message.role().equals(Role.ASSISTANT)
-                && !message.content().isEmpty()
-                && verbatim(message.content());
-    }
-
-    private boolean verbatim(List<Content> content) {
-        for (Content part : content) {
-            boolean exact =
-                    switch (part) {
-                        case Content.Text text -> !text.verbatim().isEmpty();
-                        case Content.ToolCall call -> !call.verbatim().isEmpty();
-                        // An empty span still replays both structural markers.
-                        case Content.Reasoning reasoning ->
-                                thinkOpen >= 0 && thinkClose >= 0 && verbatim(reasoning.content());
-                        default -> false;
-                    };
-            if (!exact) return false;
-        }
-        return true;
-    }
-
-    private void requireSupported(Message message, boolean exactReplay) {
+    private void requireSupported(Message message) {
         for (Content part : message.content()) {
             boolean supported =
                     part instanceof Content.Text
@@ -414,8 +366,8 @@ final class Lfm2ChatTemplate implements ChatTemplate {
                             || (message.role().equals(Role.TOOL)
                                     && part instanceof Content.ToolResult)
                             || (message.role().equals(Role.USER)
-                                    && part instanceof Content.Media media
-                                    && media.value() instanceof Media.Image
+                                    && part instanceof Content.Media m
+                                    && m.media() instanceof Media.Image
                                     && vision != null);
             if (!supported)
                 throw new UnsupportedConversation(
@@ -424,8 +376,6 @@ final class Lfm2ChatTemplate implements ChatTemplate {
                                 : message.role().name()
                                         + " turn: "
                                         + part.getClass().getSimpleName());
-            if (!exactReplay && part instanceof Content.Reasoning reasoning)
-                reasoningText(reasoning);
         }
     }
 
@@ -434,17 +384,6 @@ final class Lfm2ChatTemplate implements ChatTemplate {
         for (Content part : message.content()) {
             if (part instanceof Content.Text text) out.append(text.text());
             else if (part instanceof Content.ToolResult result) out.append(result.text());
-        }
-        return out.toString();
-    }
-
-    private static String reasoningText(Content.Reasoning reasoning) {
-        StringBuilder out = new StringBuilder();
-        for (Content part : reasoning.content()) {
-            if (!(part instanceof Content.Text text))
-                throw new UnsupportedConversation(
-                        "reasoning contains " + part.getClass().getSimpleName());
-            out.append(text.text());
         }
         return out.toString();
     }

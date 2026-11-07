@@ -8,11 +8,9 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 import com.qxotic.jinfer.chat.Content;
 import com.qxotic.jinfer.chat.Message;
 import com.qxotic.jinfer.chat.Role;
-import com.qxotic.jinfer.chat.SpokenTurn;
 import com.qxotic.jinfer.chat.Tool;
 import com.qxotic.jinfer.codecs.AudioCodec;
 import com.qxotic.jinfer.codecs.VideoSampler;
-import com.qxotic.toknroll.IntSequence;
 import java.awt.image.BufferedImage;
 import java.io.ByteArrayOutputStream;
 import java.io.DataOutputStream;
@@ -141,10 +139,9 @@ class JinferMappingsTest {
                 new Message(
                         Role.ASSISTANT,
                         List.of(
-                                new Content.Reasoning(List.of(new Content.Text("hmm", null)), null),
-                                new Content.Text("the weather is nice", null),
-                                new Content.ToolCall(
-                                        "", "get_weather", Map.of("city", "Paris"), null)));
+                                new Content.Reasoning("hmm"),
+                                new Content.Text("the weather is nice"),
+                                new Content.ToolCall("", "get_weather", Map.of("city", "Paris"))));
         AssistantMessage ai = JinferMappings.toAssistantMessage(reply);
         assertEquals("the weather is nice", ai.getText());
         assertTrue(ai.hasToolCalls());
@@ -184,8 +181,7 @@ class JinferMappingsTest {
                                         .build())
                         .build();
         List<Message> out = JinferMappings.toMessages(List.of(u), VideoSampler.UNIFORM);
-        Content.Media blob = (Content.Media) out.get(0).content().get(1);
-        assertTrue(blob.value() instanceof com.qxotic.jinfer.media.Media.Image);
+        assertTrue(out.get(0).content().get(1) instanceof Content.Media);
     }
 
     @Test
@@ -200,8 +196,7 @@ class JinferMappingsTest {
                                         .build())
                         .build();
         List<Message> out = JinferMappings.toMessages(List.of(u), VideoSampler.UNIFORM);
-        Content.Media blob = (Content.Media) out.get(0).content().get(1);
-        assertTrue(blob.value() instanceof com.qxotic.jinfer.media.Media.Audio);
+        assertTrue(out.get(0).content().get(1) instanceof Content.Media);
     }
 
     @Test
@@ -413,8 +408,8 @@ class JinferMappingsTest {
                 new Message(
                         Role.ASSISTANT,
                         List.of(
-                                new Content.ToolCall("", "f", Map.of(), null),
-                                new Content.ToolCall("", "g", Map.of(), null)));
+                                new Content.ToolCall("", "f", Map.of()),
+                                new Content.ToolCall("", "g", Map.of())));
         AssistantMessage ai = JinferMappings.toAssistantMessage(reply);
         assertEquals("call_0", ai.getToolCalls().get(0).id());
         assertEquals("call_1", ai.getToolCalls().get(1).id());
@@ -462,9 +457,8 @@ class JinferMappingsTest {
                 new Message(
                         Role.ASSISTANT,
                         List.of(
-                                new Content.Reasoning(
-                                        List.of(new Content.Text("hmm, let me think", null)), null),
-                                new Content.Text("42", null)));
+                                new Content.Reasoning("hmm, let me think"),
+                                new Content.Text("42")));
         AssistantMessage ai = JinferMappings.toAssistantMessage(reply);
         assertEquals("42", ai.getText());
         assertEquals(
@@ -475,13 +469,13 @@ class JinferMappingsTest {
         // Ollama/OpenAI convention)
         List<Message> out = JinferMappings.toMessages(List.of(ai), VideoSampler.UNIFORM);
         Content.Reasoning reasoning = (Content.Reasoning) out.get(0).content().get(0);
-        assertEquals("hmm, let me think", ((Content.Text) reasoning.content().get(0)).text());
+        assertEquals("hmm, let me think", reasoning.text());
         assertEquals("42", ((Content.Text) out.get(0).content().get(1)).text());
     }
 
     @Test
     void speechIsAWavMediaPartAfterItsTranscript() throws IOException {
-        // a spoken reply: the transcript as text, the clip whole as a Content.Speech
+        // a spoken reply: its words as text, the clip whole as a Content.Media audio
         float[] pcm = new float[2400];
         for (int i = 0; i < pcm.length; i++) pcm[i] = (float) Math.sin(i * 0.1);
         com.qxotic.jinfer.media.Media.Audio clip =
@@ -489,10 +483,7 @@ class JinferMappingsTest {
         Message reply =
                 new Message(
                         Role.ASSISTANT,
-                        List.of(
-                                new Content.Text("Paris.", null),
-                                new Content.Speech(
-                                        clip, new SpokenTurn(IntSequence.empty(), 0, List.of()))));
+                        List.of(new Content.Text("Paris."), new Content.Media(clip)));
         AssistantMessage ai = JinferMappings.toAssistantMessage(reply);
         assertEquals("Paris.", ai.getText());
         assertEquals(2, ai.getParts().size());
@@ -515,12 +506,12 @@ class JinferMappingsTest {
                         .part(MediaPart.of(JinferMappings.audio(clip)))
                         .build();
         Message replayed = JinferMappings.toMessages(List.of(foreign), VideoSampler.UNIFORM).get(0);
-        assertEquals(List.of(new Content.Text("Paris.", null)), replayed.content());
+        assertEquals(List.of(new Content.Text("Paris.")), replayed.content());
     }
 
     @Test
     void noThinkingKeyWhenReplyHasNoReasoning() {
-        Message reply = new Message(Role.ASSISTANT, List.of(new Content.Text("just text", null)));
+        Message reply = new Message(Role.ASSISTANT, List.of(new Content.Text("just text")));
         AssistantMessage ai = JinferMappings.toAssistantMessage(reply);
         assertTrue(!ai.getMetadata().containsKey("thinking"));
     }

@@ -111,7 +111,6 @@ final class BailingMoe3ChatTemplate implements ChatTemplate {
         out.finish();
 
         ReplyParser parser = spans.parser();
-        parser.seed(replyPrefix);
         return new ReplyState(replyPrefix, parser);
     }
 
@@ -198,13 +197,13 @@ final class BailingMoe3ChatTemplate implements ChatTemplate {
     }
 
     private static AssistantText assistantText(Message message) {
-        StringBuilder rendered = new StringBuilder();
-        for (Content part : message.content()) {
-            if (part instanceof Content.Text text) rendered.append(text.text());
-            else if (part instanceof Content.Reasoning reasoning)
-                rendered.append(THINK_OPEN).append(reasoningText(reasoning)).append(THINK_CLOSE);
-        }
-        String content = rendered.toString();
+        // the reasoning runs joined in one span before the text, as the model wrote them; the
+        // split below is the template's own, for text that carries the markers inline
+        String thought = message.reasoning();
+        String content =
+                thought.isEmpty()
+                        ? message.text()
+                        : THINK_OPEN + thought + THINK_CLOSE + message.text();
         int firstClose = content.indexOf(THINK_CLOSE);
         if (firstClose < 0) return new AssistantText("", content);
         String before = stripTrailingNewlines(content.substring(0, firstClose));
@@ -234,17 +233,6 @@ final class BailingMoe3ChatTemplate implements ChatTemplate {
         StringBuilder text = new StringBuilder();
         for (Content part : message.content()) {
             if (part instanceof Content.Text value) text.append(value.text());
-        }
-        return text.toString();
-    }
-
-    private static String reasoningText(Content.Reasoning reasoning) {
-        StringBuilder text = new StringBuilder();
-        for (Content part : reasoning.content()) {
-            if (!(part instanceof Content.Text value))
-                throw new UnsupportedConversation(
-                        "reasoning contains " + part.getClass().getSimpleName());
-            text.append(value.text());
         }
         return text.toString();
     }

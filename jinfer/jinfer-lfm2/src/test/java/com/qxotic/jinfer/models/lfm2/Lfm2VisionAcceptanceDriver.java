@@ -389,7 +389,7 @@ final class Lfm2VisionAcceptanceDriver {
         for (Message message : messages)
             for (Content content : message.content())
                 if (content instanceof Content.Media value
-                        && value.value() instanceof Media.Image image)
+                        && value.media() instanceof Media.Image image)
                     dimensions.add(image.width() + "x" + image.height());
         return String.join("+", dimensions);
     }

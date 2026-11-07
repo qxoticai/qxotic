@@ -104,10 +104,9 @@ final class LagunaChatTemplate implements ChatTemplate {
                         ? IntSequence.of(thinkOpen)
                         : IntSequence.of(thinkOpen, thinkClose);
         PromptWriter out = new PromptWriter(tokenizer, batchCapacity, sink);
-        out.verbatim(promptStart).verbatim(SpecialTokens.encode(tokenizer, prompt.toString()));
+        out.ids(promptStart).ids(SpecialTokens.encode(tokenizer, prompt.toString()));
         out.finish();
         ReplyParser parser = spans.parser();
-        parser.seed(replyPrefix);
         return new ReplyState(replyPrefix, parser);
     }
 
@@ -133,7 +132,7 @@ final class LagunaChatTemplate implements ChatTemplate {
     private static void writeAssistant(StringBuilder out, Message message, boolean thinking) {
         out.append("<assistant>");
         if (thinking) {
-            out.append(THINK_OPEN).append(reasoning(message)).append(THINK_CLOSE);
+            out.append(THINK_OPEN).append(message.reasoning()).append(THINK_CLOSE);
         } else {
             out.append(THINK_CLOSE);
         }
@@ -170,20 +169,6 @@ final class LagunaChatTemplate implements ChatTemplate {
         StringBuilder text = new StringBuilder();
         for (Content part : message.content())
             if (part instanceof Content.Text value) text.append(value.text());
-        return text.toString();
-    }
-
-    private static String reasoning(Message message) {
-        StringBuilder text = new StringBuilder();
-        for (Content part : message.content())
-            if (part instanceof Content.Reasoning value) {
-                for (Content nested : value.content()) {
-                    if (!(nested instanceof Content.Text token))
-                        throw new UnsupportedConversation(
-                                "reasoning contains " + nested.getClass().getSimpleName());
-                    text.append(token.text());
-                }
-            }
         return text.toString();
     }
 

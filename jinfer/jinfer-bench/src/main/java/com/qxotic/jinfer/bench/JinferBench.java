@@ -521,7 +521,7 @@ public final class JinferBench {
                                 Role.USER,
                                 List.of(
                                         new Content.Media(image, contentKey),
-                                        new Content.Text(question, null)))),
+                                        new Content.Text(question)))),
                 List.of(),
                 false,
                 gen,

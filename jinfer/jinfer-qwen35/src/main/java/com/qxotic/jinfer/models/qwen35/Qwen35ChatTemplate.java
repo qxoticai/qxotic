@@ -1,6 +1,7 @@
 package com.qxotic.jinfer.models.qwen35;
 
 import com.qxotic.jinfer.Batch;
+import com.qxotic.jinfer.ContentKey;
 import com.qxotic.jinfer.chat.ChatTemplate;
 import com.qxotic.jinfer.chat.Content;
 import com.qxotic.jinfer.chat.Conversation;
@@ -153,7 +154,6 @@ final class Qwen35ChatTemplate implements ChatTemplate {
         out.finish();
 
         ReplyParser parser = spans().parser();
-        parser.seed(replyPrefix);
         return new ReplyState(replyPrefix, parser);
     }
 
@@ -169,7 +169,11 @@ final class Qwen35ChatTemplate implements ChatTemplate {
             for (Content part : m.content()) {
                 switch (part) {
                     case Content.Text text -> out.text(text.text());
-                    case Content.Media value -> writeMedia(out, value);
+                    case Content.Media value when value.media() instanceof Media.Image image ->
+                            writeMedia(out, image, value.key());
+                    case Content.Media ignored ->
+                            throw new UnsupportedConversation(
+                                    "Qwen3.5 vision supports images only");
                     default ->
                             throw new UnsupportedConversation(
                                     "unsupported content type in Qwen3.5 message");
@@ -183,19 +187,17 @@ final class Qwen35ChatTemplate implements ChatTemplate {
         out.id(imStart).text(m.role().name() + "\n" + content).id(imEnd).text("\n");
     }
 
-    private void writeMedia(PromptWriter out, Content.Media content) {
-        if (!(content.value() instanceof Media.Image image))
-            throw new UnsupportedConversation("Qwen3.5 vision supports images only");
+    private void writeMedia(PromptWriter out, Media.Image image, ContentKey contentKey) {
         MediaProjector<Media.Image> projector =
                 media == null ? null : media.projector(Media.Image.class).orElse(null);
         if (projector == null)
             throw new UnsupportedConversation("image input is not supported by this model");
         out.cachedMedia(
                 image,
-                content.contentKey(),
+                contentKey,
                 encoded ->
                         encoded.id(visionOpen)
-                                .media(image, content.contentKey(), projector, false)
+                                .media(image, contentKey, projector, false)
                                 .id(visionClose));
     }
 
@@ -284,8 +286,8 @@ final class Qwen35ChatTemplate implements ChatTemplate {
                 continue;
             }
             String content = m.text().strip();
-            String reasoningText = reasoningText(m);
-            if (reasoningText == null) {
+            String reasoningText = m.reasoning().strip();
+            if (reasoningText.isEmpty()) {
                 int at = content.lastIndexOf("</think>");
                 if (at >= 0) {
                     String head = content.substring(0, at);
@@ -332,13 +334,6 @@ final class Qwen35ChatTemplate implements ChatTemplate {
 
     private static Message leadingSystem(List<Message> msgs) {
         return !msgs.isEmpty() && msgs.get(0).role().equals(Role.SYSTEM) ? msgs.get(0) : null;
-    }
-
-    private static String reasoningText(Message m) {
-        for (Content part : m.content()) {
-            if (part instanceof Content.Reasoning reasoning) return reasoning.text().strip();
-        }
-        return null;
     }
 
     private static List<Content.ToolCall> callsOf(Message m) {

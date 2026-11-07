@@ -90,10 +90,6 @@ class JsonEnvelopeReplyLanguageTest {
         Content.ToolCall call = (Content.ToolCall) walk.finish().content().get(0);
         assertEquals("get_weather", call.name());
         assertEquals(Map.of("city", "Paris"), call.arguments());
-        // Mistral's wire has an INTERIOR mark ([ARGS]): not span-shaped, and with no free hole
-        // there is no exact splice unit - verbatim is EMPTY by the verbatim law (a missing
-        // splice merely re-tokenizes the echo; a wrong one would corrupt it)
-        assertTrue(call.verbatim().isEmpty());
     }
 
     @Test
@@ -120,7 +116,6 @@ class JsonEnvelopeReplyLanguageTest {
         Message text = ReplyParser.parse(unclaimed, tokenizer.encode(wire));
         assertEquals(wire, text.text());
         assertTrue(text.content().stream().noneMatch(Content.ToolCall.class::isInstance));
-        assertEquals(tokenizer.encode(wire), ((Content.Text) text.content().getFirst()).verbatim());
 
         ReplyParser seeded = template.parser(tokenizer);
         seeded.seed(tokenizer.encode(" \n"));
@@ -199,7 +194,6 @@ class JsonEnvelopeReplyLanguageTest {
         disabled.disableToolCalls();
         Message text = ReplyParser.parse(disabled, wire);
         assertEquals(first + "</param>" + second + "</param>", text.text());
-        assertEquals(wire, ((Content.Text) text.content().getFirst()).verbatim());
         assertTrue(text.content().stream().noneMatch(Content.ToolCall.class::isInstance));
     }
 
@@ -269,7 +263,6 @@ class JsonEnvelopeReplyLanguageTest {
         Content.ToolCall call = (Content.ToolCall) walk.finish().content().get(0);
         assertEquals("get_weather", call.name());
         assertEquals(Map.of("city", "Paris"), call.arguments());
-        assertTrue(!call.verbatim().isEmpty());
     }
 
     private static void feed(ReplyLanguage.Walk walk, int[] tokens) {

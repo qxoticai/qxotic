@@ -59,7 +59,11 @@ final class Estimators implements TokenCountEstimator {
         }
         int sum = 0;
         for (Message m : Mappings.toMessages(List.of(message), videoSampler)) {
-            sum += countParts(m.content());
+            // a turn with its record replays position for position
+            sum +=
+                    m.verbatim().isEmpty()
+                            ? countParts(m.content())
+                            : m.verbatim().positions().length();
         }
         return sum;
     }
@@ -78,14 +82,7 @@ final class Estimators implements TokenCountEstimator {
                     switch (part) {
                         case com.qxotic.jinfer.chat.Content.Text t ->
                                 estimateTokenCountInText(t.text());
-                        case com.qxotic.jinfer.chat.Content.Media b -> {
-                            if (mediaPositions == null) {
-                                throw new UnsupportedFeatureException(
-                                        "this model cannot ingest media, so media tokens cannot"
-                                                + " be counted");
-                            }
-                            yield mediaPositions.applyAsInt(b.value());
-                        }
+                        case com.qxotic.jinfer.chat.Content.Media m -> media(m.media());
                         case com.qxotic.jinfer.chat.Content.ToolCall c ->
                                 estimateTokenCountInText(c.name())
                                         + estimateTokenCountInText(Json.stringify(c.arguments()));
@@ -93,10 +90,16 @@ final class Estimators implements TokenCountEstimator {
                                 estimateTokenCountInText(r.text());
                         case com.qxotic.jinfer.chat.Content.Reasoning ignored ->
                                 0; // not re-prompted by default
-                        case com.qxotic.jinfer.chat.Content.Speech s ->
-                                s.turn().positions().length(); // replayed position for position
                     };
         }
         return sum;
+    }
+
+    private int media(com.qxotic.jinfer.media.Media value) {
+        if (mediaPositions == null) {
+            throw new UnsupportedFeatureException(
+                    "this model cannot ingest media, so media tokens cannot be counted");
+        }
+        return mediaPositions.applyAsInt(value);
     }
 }

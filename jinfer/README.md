@@ -285,7 +285,11 @@ ChatEngine.Completion reply = engine.complete(
 ```
 
 Each 80 ms part reaches `onMedia` as it is spoken, and `cancelled()` stops the reply.
-A reply that spoke carries the transcript as its text and the speech as a `Content.Speech`, whose record replays the turn exactly when the conversation continues.
+A reply that spoke carries its words as its text and the speech as a `Content.Media` audio whose caption is the transcript, the words it spoke.
+Every reply carries how it was said, a `Verbatim` record on the `Message`: the prompt's reply prefix and every generated id, a speech frame as `Verbatim.FRAME` with its codes aside, stamped with the model that said it.
+When the conversation continues, the template writes the record in place of the turn (`PromptWriter.replay`), so the model reads back exactly what it wrote and the prompt cache recognizes the stream it holds; a turn from another model, or one edited since, renders from its parts.
+A message's media is one part, `Content.Media`: an image, audio or video the caller gives the model, keyed to the prompt cache.
+A reply's parts are its stream folded, in the order the model wrote them: a run of reasoning is one `Content.Reasoning`, a call claimed while thinking sits between the runs it interrupted, and `Message.reasoning()` joins the runs as `text()` joins the text.
 Text to speech is the same call: the family's reading instruction (LFM3's is "Perform TTS in English using a female voice.") as the system turn, the text as the user's, and `Modality.AUDIO` alone.
 The speech draws from the request's `Sampling` seed, so a seeded reading is reproducible, sample for sample.
 

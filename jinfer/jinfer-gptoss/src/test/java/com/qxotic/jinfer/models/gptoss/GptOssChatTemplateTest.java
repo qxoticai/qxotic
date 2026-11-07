@@ -79,15 +79,12 @@ class GptOssChatTemplateTest {
                 assertInstanceOf(Content.Reasoning.class, message.content().getFirst());
         assertEquals("thinking...", reasoning.text());
         assertEquals("The answer is 4.", message.text());
-        assertEquals(
-                TOKENIZER.encode("The answer is 4.").toList(),
-                ((Content.Text) message.content().get(1)).verbatim().toList());
         String output = message.content().toString();
         assertTrue(!output.contains("assistant") && !output.contains("analysis"));
     }
 
     @Test
-    void commentaryCallKeepsArgumentsAndVerbatimPayload() {
+    void commentaryCallKeepsArguments() {
         String arguments = "{\"city\": \"Paris\"}";
         Message message =
                 parse(
@@ -102,7 +99,6 @@ class GptOssChatTemplateTest {
                 assertInstanceOf(Content.ToolCall.class, message.content().getFirst());
         assertEquals("get_weather", call.name());
         assertEquals(Map.of("city", "Paris"), call.arguments());
-        assertEquals(TOKENIZER.encode(arguments).toList(), call.verbatim().toList());
     }
 
     @Test

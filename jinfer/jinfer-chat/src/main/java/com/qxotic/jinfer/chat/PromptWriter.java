@@ -12,6 +12,7 @@ import java.util.Arrays;
 import java.util.Objects;
 import java.util.Set;
 import java.util.function.Consumer;
+import java.util.function.Function;
 
 /** Streaming prompt builder shared by native templates. */
 public final class PromptWriter {
@@ -83,12 +84,50 @@ public final class PromptWriter {
         return this;
     }
 
-    /** Splices exact generated payload ids; an empty sequence falls back to plain text upstream. */
-    public PromptWriter verbatim(IntSequence value) {
+    /** Emits trusted control tokens as they are: a prompt start, a reply prefix. */
+    public PromptWriter ids(IntSequence value) {
         checkOpen();
         flushText();
         tokens.addAll(Objects.requireNonNull(value, "value"));
         return this;
+    }
+
+    /**
+     * Writes a generated turn as the model said it, in place of rendering its parts: true when the
+     * message carries a {@link Verbatim} record, false when the template must render it. The
+     * template writes the turn's header and end around the call; the record holds everything
+     * between, the prompt's reply prefix included. A record with speech frames needs {@link
+     * #replay(Message, Function)}: the plain form refuses it.
+     */
+    public boolean replay(Message message) {
+        return replay(message, null);
+    }
+
+    /**
+     * As {@link #replay(Message)}, a speech frame emitted as the batch {@code frame} makes of its
+     * codes: the row the reply ingested, keyed as the prompt cache saw it.
+     */
+    public boolean replay(Message message, Function<int[], Batch> frame) {
+        Verbatim record = Objects.requireNonNull(message, "message").verbatim();
+        if (record.isEmpty()) return false;
+        if (frame == null && record.frames() > 0)
+            throw new UnsupportedConversation("a spoken turn replays through its voice");
+        checkOpen();
+        flushText();
+        IntSequence positions = record.positions(), codes = record.codes();
+        int codebooks = record.codebooks(), next = 0;
+        for (int i = 0; i < positions.length(); i++) {
+            int id = positions.intAt(i);
+            if (id != Verbatim.FRAME) {
+                tokens.add(id);
+                continue;
+            }
+            int[] frameCodes = new int[codebooks];
+            for (int c = 0; c < codebooks; c++) frameCodes[c] = codes.intAt(next * codebooks + c);
+            next++;
+            batch(frame.apply(frameCodes));
+        }
+        return true;
     }
 
     /** Emits a model-specific non-token batch at this exact prompt position. */

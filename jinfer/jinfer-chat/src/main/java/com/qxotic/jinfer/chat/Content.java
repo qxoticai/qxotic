@@ -1,53 +1,37 @@
 package com.qxotic.jinfer.chat;
 
 import com.qxotic.jinfer.ContentKey;
-import com.qxotic.toknroll.IntSequence;
-import java.util.List;
 import java.util.Map;
 import java.util.Objects;
+import java.util.Optional;
 
 /** One ordered piece of a chat message. */
 public sealed interface Content {
 
-    /** Plain, untrusted text. Non-empty verbatim ids preserve an exact generated payload. */
-    record Text(String text, IntSequence verbatim) implements Content {
+    /** Plain, untrusted text. */
+    record Text(String text) implements Content {
         public Text {
             Objects.requireNonNull(text, "text");
-            verbatim = verbatim == null ? IntSequence.empty() : verbatim;
-        }
-
-        public Text(String text) {
-            this(text, IntSequence.empty());
         }
     }
 
-    /** The model's reasoning channel, including any structured content emitted inside it. */
-    record Reasoning(List<Content> content, IntSequence verbatim) implements Content {
+    /**
+     * A run of the model's reasoning. A message holds its reply folded in emission order, so a call
+     * claimed while thinking is a {@link ToolCall} between two reasoning runs.
+     */
+    record Reasoning(String text) implements Content {
         public Reasoning {
-            content = List.copyOf(content);
-            verbatim = verbatim == null ? IntSequence.empty() : verbatim;
-        }
-
-        public String text() {
-            StringBuilder out = new StringBuilder();
-            for (Content part : content) if (part instanceof Text t) out.append(t.text());
-            return out.toString();
+            Objects.requireNonNull(text, "text");
         }
     }
 
     /** A model-produced tool invocation. */
-    record ToolCall(String id, String name, Map<String, Object> arguments, IntSequence verbatim)
-            implements Content {
+    record ToolCall(String id, String name, Map<String, Object> arguments) implements Content {
         public ToolCall {
             id = id == null ? "" : id;
             if (name == null || name.isEmpty())
                 throw new IllegalArgumentException("empty tool name");
             arguments = JsonValues.object(arguments == null ? Map.of() : arguments);
-            verbatim = verbatim == null ? IntSequence.empty() : verbatim;
-        }
-
-        public ToolCall(String id, String name, Map<String, Object> arguments) {
-            this(id, name, arguments, IntSequence.empty());
         }
     }
 
@@ -60,24 +44,26 @@ public sealed interface Content {
     }
 
     /**
-     * Speech the model produced: the waveform to play, and the turn's exact record, which a later
-     * turn replays. Its words, when transcribed, are the message's {@link Text}.
+     * Decoded media at its exact position in a message: an image, audio or video the caller gives
+     * the model, or, in a reply, the model's own speech, which a later prompt replays through the
+     * turn's {@link Verbatim} record. The key names a caller's media to the prompt cache (null:
+     * unkeyed, encoded every time). The caption is what the media says in words: a reply's speech
+     * carries its transcript, the words it spoke; empty when it spoke none, or for a caller's
+     * media.
      */
-    record Speech(com.qxotic.jinfer.media.Media.Audio audio, SpokenTurn turn) implements Content {
-        public Speech {
-            Objects.requireNonNull(audio, "audio");
-            Objects.requireNonNull(turn, "turn");
-        }
-    }
-
-    /** Decoded media at its exact position in a message. */
-    record Media(com.qxotic.jinfer.media.Media value, ContentKey contentKey) implements Content {
+    record Media(com.qxotic.jinfer.media.Media media, ContentKey key, Optional<String> caption)
+            implements Content {
         public Media {
-            Objects.requireNonNull(value, "value");
+            Objects.requireNonNull(media, "media");
+            Objects.requireNonNull(caption, "caption");
         }
 
-        public Media(com.qxotic.jinfer.media.Media value) {
-            this(value, null);
+        public Media(com.qxotic.jinfer.media.Media media, ContentKey key) {
+            this(media, key, Optional.empty());
+        }
+
+        public Media(com.qxotic.jinfer.media.Media media) {
+            this(media, null);
         }
     }
 }

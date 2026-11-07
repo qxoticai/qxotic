@@ -351,9 +351,9 @@ public final class RetrievalServer {
             parts.add(
                     switch (modality) {
                         case "text" -> MediaParts.text(part);
-                        case "image" -> MediaParts.image(part).value();
-                        case "audio" -> MediaParts.audio(part).value();
-                        default -> MediaParts.video(part, EMBEDDING_FRAMES).value();
+                        case "image" -> MediaParts.image(part).media();
+                        case "audio" -> MediaParts.audio(part).media();
+                        default -> MediaParts.video(part, EMBEDDING_FRAMES).media();
                     });
         }
         return parts;

@@ -382,14 +382,9 @@ public final class ReplyLanguageTest {
         assertEquals("ab", ((Content.Reasoning) m.content().get(0)).text());
         Content.Text text = (Content.Text) m.content().get(1);
         assertEquals("xy", text.text());
-        assertEquals(List.of(ch('x'), ch('y')), text.verbatim().toList());
         Content.ToolCall c = (Content.ToolCall) m.content().get(2);
         assertEquals("get_weather", c.name());
         assertEquals(Map.of("raw", "{\"a\":1}"), c.arguments());
-        assertEquals(
-                IntSequence.of(toks("{\"a\":1}")).toList(),
-                c.verbatim().toList(),
-                "payload verbatim excludes the marks");
     }
 
     @Test
@@ -666,10 +661,6 @@ public final class ReplyLanguageTest {
         run(w, END);
         Content.ToolCall c = (Content.ToolCall) w.finish().content().get(1);
         assertEquals(Map.of("raw", "{<odd>}"), c.arguments(), "the spelling reaches the parser");
-        assertEquals(
-                List.of(ch('{'), ODD, ch('}')),
-                c.verbatim().toList(),
-                "the interior special's id rides the verbatim");
     }
 
     @Test
@@ -693,6 +684,33 @@ public final class ReplyLanguageTest {
         Message m = w.finish();
         long calls = m.content().stream().filter(p -> p instanceof Content.ToolCall).count();
         assertEquals(2, calls, "both spans commit; the partial one is the parser's to judge");
+    }
+
+    @Test
+    void theMessageKeepsTheEmissionOrder() {
+        // text, a call, text again: the parts come out as the model wrote them, never calls last
+        Node spanFamily =
+                seq(
+                        rep(
+                                alt(
+                                        content(free()),
+                                        call(ONE, mark("<call>"), free(), mark("</call>"))),
+                                0,
+                                -1),
+                        mark("<end>"));
+        Walk w = Selection.of(spanFamily, TOK).walk();
+        run(w, toks("x"));
+        run(w, CALL);
+        for (int t : toks("{\"a\":1}")) w.feed(t);
+        run(w, END_CALL);
+        run(w, toks("y"));
+        run(w, END);
+        assertEquals(
+                List.of(
+                        new Content.Text("x"),
+                        new Content.ToolCall("", "get_weather", Map.of("raw", "{\"a\":1}")),
+                        new Content.Text("y")),
+                w.finish().content());
     }
 
     @Test
@@ -778,9 +796,6 @@ public final class ReplyLanguageTest {
         Message completed = complete.finish();
         assertEquals("xa", completed.text());
         assertTrue(completed.content().stream().noneMatch(Content.ToolCall.class::isInstance));
-        assertEquals(
-                IntSequence.of(ch('x'), CALL, ch('a'), END_CALL),
-                ((Content.Text) completed.content().getFirst()).verbatim());
 
         Walk partial = Selection.of(spanFamily, TOK).walk();
         partial.disableToolCalls();
@@ -788,9 +803,6 @@ public final class ReplyLanguageTest {
         run(partial, CALL, ch('a'));
         Message unfinished = partial.finish();
         assertEquals("xa", unfinished.text(), "an unfinished unclaimed call is not lost");
-        assertEquals(
-                IntSequence.of(ch('x'), CALL, ch('a')),
-                ((Content.Text) unfinished.content().getFirst()).verbatim());
 
         Walk repeated =
                 Selection.of(
@@ -805,11 +817,7 @@ public final class ReplyLanguageTest {
         repeated.disableToolCalls();
         run(repeated, CALL, ch('a'), END_CALL, CALL, ch('b'), END_CALL, END);
         Message calls = repeated.finish();
-        assertEquals("ab", calls.text());
-        assertEquals(
-                IntSequence.of(CALL, ch('a'), END_CALL, CALL, ch('b'), END_CALL),
-                ((Content.Text) calls.content().getFirst()).verbatim(),
-                "each demoted call resets its capture before the next one");
+        assertEquals("ab", calls.text(), "each demoted call resets its capture before the next");
     }
 
     @Test
@@ -858,11 +866,7 @@ public final class ReplyLanguageTest {
         assertEquals(List.of(new Step("a", false)), run(walk, ch('a'), END_CALL));
         run(walk, END);
         Message message = walk.finish();
-        assertEquals("a", message.text());
-        assertEquals(
-                IntSequence.of(ch('a'), END_CALL),
-                ((Content.Text) message.content().getFirst()).verbatim(),
-                "prompt-owned opener is not attributed to generated text");
+        assertEquals("a", message.text(), "prompt-owned opener is not generated text");
     }
 
     @Test

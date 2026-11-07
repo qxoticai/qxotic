@@ -278,7 +278,7 @@ final class ChatApiTest {
     }
 
     @Test
-    void seededEmptyThinkingSurvivesFurtherSeedingForReplay() {
+    void seededThinkingIsNotReplyContent() {
         for (boolean split : List.of(false, true)) {
             ReplyParser parser = ReplyParser.spans(TOKENIZER);
             if (split) {
@@ -291,14 +291,7 @@ final class ChatApiTest {
             assertEquals(Channel.CONTENT, parser.channel());
             Message reply = ReplyParser.parse(parser, TOKENIZER.encode("answer"));
             assertEquals("answer", reply.text());
-            assertEquals(2, reply.content().size());
-            Content.Reasoning framing =
-                    assertInstanceOf(Content.Reasoning.class, reply.content().getFirst());
-            assertTrue(framing.content().isEmpty());
-            assertTrue(framing.verbatim().isEmpty(), "prompt tokens are not generated tokens");
-            assertEquals(
-                    TOKENIZER.encode("answer"),
-                    assertInstanceOf(Content.Text.class, reply.content().getLast()).verbatim());
+            assertEquals(List.of(new Content.Text("answer")), reply.content());
         }
     }
 
@@ -330,7 +323,6 @@ final class ChatApiTest {
         Content.ToolCall call =
                 assertInstanceOf(Content.ToolCall.class, parser.finish().content().getFirst());
         assertEquals("weather", call.name());
-        assertArrayEquals(TOKENIZER.encode("weather").toArray(), call.verbatim().toArray());
     }
 
     @Test

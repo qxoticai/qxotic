@@ -6,11 +6,20 @@ import java.util.List;
 import java.util.Objects;
 import java.util.Optional;
 
-/** One role-tagged message with ordered, interleaved content. */
-public record Message(Role role, List<Content> content) {
+/**
+ * One role-tagged message with ordered, interleaved content. A reply the engine generated also
+ * carries how it was said, its {@link Verbatim} record; a message anyone else wrote carries {@link
+ * Verbatim#NONE}.
+ */
+public record Message(Role role, List<Content> content, Verbatim verbatim) {
     public Message {
         Objects.requireNonNull(role, "role");
         content = List.copyOf(content);
+        Objects.requireNonNull(verbatim, "verbatim");
+    }
+
+    public Message(Role role, List<Content> content) {
+        this(role, content, Verbatim.NONE);
     }
 
     public Message(Role role, String text) {
@@ -32,10 +41,11 @@ public record Message(Role role, List<Content> content) {
         return new Message(Role.ASSISTANT, text);
     }
 
-    /** The speech of a spoken reply, if this is one. */
+    /** The model's speech, if this reply spoke: the audio the message holds. */
     public Optional<Media.Audio> speech() {
         for (Content part : content)
-            if (part instanceof Content.Speech s) return Optional.of(s.audio());
+            if (part instanceof Content.Media m && m.media() instanceof Media.Audio audio)
+                return Optional.of(audio);
         return Optional.empty();
     }
 
@@ -43,6 +53,13 @@ public record Message(Role role, List<Content> content) {
     public String text() {
         StringBuilder out = new StringBuilder();
         for (Content part : content) if (part instanceof Content.Text t) out.append(t.text());
+        return out.toString();
+    }
+
+    /** The reasoning runs joined, in order; empty when the message holds none. */
+    public String reasoning() {
+        StringBuilder out = new StringBuilder();
+        for (Content part : content) if (part instanceof Content.Reasoning r) out.append(r.text());
         return out.toString();
     }
 }

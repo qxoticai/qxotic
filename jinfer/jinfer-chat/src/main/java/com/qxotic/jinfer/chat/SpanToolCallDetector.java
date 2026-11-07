@@ -60,17 +60,8 @@ final class SpanToolCallDetector {
 
     private void complete() {
         String text = bytes.toString(StandardCharsets.UTF_8);
-        List<Content.ToolCall> parsed =
+        List<Content.ToolCall> calls =
                 Objects.requireNonNull(parse.apply(text), "call parser returned null");
-        IntSequence verbatim = payloadIds.build();
-        List<Content.ToolCall> calls = new ArrayList<>(parsed.size());
-        for (Content.ToolCall call : parsed) {
-            calls.add(
-                    parsed.size() == 1
-                            ? new Content.ToolCall(
-                                    call.id(), call.name(), call.arguments(), verbatim)
-                            : call);
-        }
         spans.add(new Span(text, wireIds.build(), List.copyOf(calls)));
         bytes.reset();
         inSpan = false;

@@ -115,9 +115,7 @@ final class Lfm3ChatTemplateTest {
         Message reasoned =
                 new Message(
                         Role.ASSISTANT,
-                        List.of(
-                                new Content.Reasoning(List.of(new Content.Text("Add them.")), null),
-                                new Content.Text("Four")));
+                        List.of(new Content.Reasoning("Add them."), new Content.Text("Four")));
         List<Conversation> cases =
                 List.of(
                         conversation(Message.user("Hello")),
@@ -273,12 +271,12 @@ final class Lfm3ChatTemplateTest {
                     text.append(t.text());
                     parts.add(Map.of("type", "text", "text", t.text()));
                 }
-                case Content.Media value -> {
+                case Content.Media blob -> {
                     media = true;
                     parts.add(
                             Map.of(
                                     "type",
-                                    value.value() instanceof Media.Image ? "image" : "audio"));
+                                    blob.media() instanceof Media.Image ? "image" : "audio"));
                 }
                 case Content.Reasoning r -> out.put("reasoning_content", r.text());
                 case Content.ToolCall call ->

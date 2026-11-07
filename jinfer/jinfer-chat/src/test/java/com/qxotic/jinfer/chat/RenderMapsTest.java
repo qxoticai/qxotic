@@ -23,7 +23,7 @@ class RenderMapsTest {
                                         Role.ASSISTANT,
                                         List.of(
                                                 new Content.ToolCall(
-                                                        "c1", "calc", Map.of("q", "2+2"), null))),
+                                                        "c1", "calc", Map.of("q", "2+2")))),
                                 new Message(
                                         Role.TOOL, List.of(new Content.ToolResult("c1", "4")))));
         Map<String, Object> response =

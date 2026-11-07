@@ -190,7 +190,8 @@ final class Lfm3GenerationParityTest {
                     new Content.Media(
                             media.get(m).get(0).equals("image")
                                     ? ImageCodec.load(path)
-                                    : Lfm3AudioParityTest.wav(path)));
+                                    : Lfm3AudioParityTest.wav(path),
+                            null));
             m++;
         }
         messages.add(new Message(Role.USER, parts));

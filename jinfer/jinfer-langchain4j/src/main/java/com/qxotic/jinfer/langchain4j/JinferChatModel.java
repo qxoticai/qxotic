@@ -670,11 +670,10 @@ public final class JinferChatModel implements ChatModel, AutoCloseable {
 
         /**
          * Keeps the last {@code n} finished conversations' KV states LIVE for append-only reuse: a
-         * request whose prompt strictly extends a kept conversation (its echoed turns re-encoding
-         * to the exact generated tokens - the native codec's verbatim splice guarantees this for
-         * unmodified echoes) pays prefill only for the delta. Purely a runtime warmth knob: output
-         * is byte-identical to a cold run and nothing persists. Each kept conversation holds a full
-         * context of KV.
+         * request whose prompt strictly extends a kept conversation (its echoed turns replaying as
+         * the exact generated tokens - their records guarantee this for unmodified echoes) pays
+         * prefill only for the delta. Purely a runtime warmth knob: output is byte-identical to a
+         * cold run and nothing persists. Each kept conversation holds a full context of KV.
          *
          * <p>The default is 1. Zero retains no completed state: every request's state is closed
          * when the request ends and the next request allocates a fresh one. This does not disable

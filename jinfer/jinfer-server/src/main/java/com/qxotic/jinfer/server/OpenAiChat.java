@@ -203,21 +203,10 @@ public final class OpenAiChat {
         for (Content part : content) {
             switch (part) {
                 case Content.Text value -> text.append(value.text());
-                case Content.Reasoning value -> {
-                    reasoning.append(value.text());
-                    collectCalls(value.content(), calls);
-                }
+                case Content.Reasoning value -> reasoning.append(value.text());
                 case Content.ToolCall value -> calls.add(value);
                 default -> {}
             }
-        }
-    }
-
-    private static void collectCalls(List<Content> content, List<Content.ToolCall> calls) {
-        for (Content part : content) {
-            if (part instanceof Content.ToolCall call) calls.add(call);
-            else if (part instanceof Content.Reasoning nested)
-                collectCalls(nested.content(), calls);
         }
     }
 
@@ -249,7 +238,7 @@ public final class OpenAiChat {
                                 Values.asObject(message.get("audio"), "audio").get("id"), null);
                 if (audio == null || turns == null)
                     throw new IllegalArgumentException("assistant audio needs the id of a reply");
-                out.add(new Message(Role.ASSISTANT, turns.get(audio)));
+                out.add(turns.get(audio));
                 continue;
             }
             List<Content> content = content(message.get("content"));
@@ -257,8 +246,7 @@ public final class OpenAiChat {
                 String thought = Values.stringValue(message.get("reasoning_content"), null);
                 if (thought == null) thought = Values.stringValue(message.get("reasoning"), null);
                 if (thought != null && !thought.isEmpty()) {
-                    content.addFirst(
-                            new Content.Reasoning(List.of(new Content.Text(thought)), null));
+                    content.addFirst(new Content.Reasoning(thought));
                 }
                 content.addAll(toolCalls(message.get("tool_calls")));
             }

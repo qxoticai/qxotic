@@ -1,6 +1,7 @@
 package com.qxotic.jinfer.models.lfm3;
 
 import com.qxotic.jinfer.Batch;
+import com.qxotic.jinfer.ContentKey;
 import com.qxotic.jinfer.chat.ChatTemplate;
 import com.qxotic.jinfer.chat.Content;
 import com.qxotic.jinfer.chat.Conversation;
@@ -10,7 +11,6 @@ import com.qxotic.jinfer.chat.PromptWriter;
 import com.qxotic.jinfer.chat.ReplyLanguage;
 import com.qxotic.jinfer.chat.ReplyParser;
 import com.qxotic.jinfer.chat.Role;
-import com.qxotic.jinfer.chat.SpokenTurn;
 import com.qxotic.jinfer.chat.Tool;
 import com.qxotic.jinfer.chat.ToolCallSyntax;
 import com.qxotic.jinfer.chat.UnsupportedConversation;
@@ -23,7 +23,6 @@ import com.qxotic.toknroll.IntSequence;
 import com.qxotic.toknroll.Tokenizer;
 import java.lang.foreign.Arena;
 import java.util.HashSet;
-import java.util.Iterator;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -31,6 +30,7 @@ import java.util.Objects;
 import java.util.Optional;
 import java.util.Set;
 import java.util.function.Consumer;
+import java.util.function.Function;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
@@ -149,7 +149,6 @@ final class Lfm3ChatTemplate implements ChatTemplate {
         out.finish();
         ReplyParser parser = spans.parser();
         IntSequence replyPrefix = prefix.build();
-        parser.seed(replyPrefix);
         return new ReplyState(replyPrefix, parser);
     }
 
@@ -158,7 +157,7 @@ final class Lfm3ChatTemplate implements ChatTemplate {
         for (Content part : message.content()) {
             switch (part) {
                 case Content.Text text -> out.text(text.text());
-                case Content.Media value -> writeMedia(out, value);
+                case Content.Media m -> writeMedia(out, m.media(), m.key());
                 default ->
                         throw new UnsupportedConversation(
                                 message.role().name()
@@ -168,17 +167,13 @@ final class Lfm3ChatTemplate implements ChatTemplate {
         }
     }
 
-    private void writeMedia(PromptWriter out, Content.Media content) {
+    private <R extends Media> void writeMedia(PromptWriter out, R value, ContentKey contentKey) {
         out.cachedMedia(
-                content.value(),
-                content.contentKey(),
+                value,
+                contentKey,
                 encoded ->
                         encoded.id(visionOpen)
-                                .media(
-                                        content.value(),
-                                        content.contentKey(),
-                                        projector(content.value()),
-                                        false)
+                                .media(value, contentKey, projector(value), false)
                                 .id(visionClose));
     }
 
@@ -200,30 +195,29 @@ final class Lfm3ChatTemplate implements ChatTemplate {
     }
 
     /**
-     * Reasoning kept: {@code <think>reasoning</think>}, or an empty pair when the content carries
-     * none of its own; reasoning dropped: the text after the content's last {@code </think>},
-     * trimmed, behind an empty pair. Then the content and one XML function block per call.
+     * The turn as the model said it, reasoning and all, what the prompt cache holds - a spoken
+     * turn's sound replays as the rows it fed back. Otherwise rendered: reasoning kept, {@code
+     * <think>reasoning</think>}, or an empty pair when the content carries none of its own;
+     * reasoning dropped: the text after the content's last {@code </think>}, trimmed, behind an
+     * empty pair. Then the content and one XML function block per call.
      */
     private void writeAssistant(PromptWriter out, Message message, boolean keepThinking) {
-        for (Content part : message.content()) {
-            if (part instanceof Content.Speech spoken) {
-                writeSpoken(out, spoken.turn());
-                return; // its transcript is in the turn's own record
-            }
-        }
+        if (out.replay(message, frameRows())) return;
         String content = "";
-        String reasoning = null;
+        String reasoning = message.reasoning();
         for (Content part : message.content()) {
             switch (part) {
                 case Content.Text text -> content += text.text();
-                case Content.Reasoning r -> reasoning = r.text();
+                case Content.Reasoning ignored -> {}
                 case Content.ToolCall ignored -> {}
+                // a reply's speech without its record (another model's): its words are its text
+                case Content.Media m when m.media() instanceof Media.Audio -> {}
                 default ->
                         throw new UnsupportedConversation(
                                 "assistant turn: " + part.getClass().getSimpleName());
             }
         }
-        if (keepThinking && reasoning != null) {
+        if (keepThinking && !reasoning.isEmpty()) {
             out.id(think).text(reasoning).id(endThink);
         } else if (keepThinking && !content.contains("</think>")) {
             out.id(think).id(endThink);
@@ -248,26 +242,18 @@ final class Lfm3ChatTemplate implements ChatTemplate {
     }
 
     /**
-     * A spoken turn as the model produced it: the empty think span, then every position - text ids
-     * as they were, each frame as its feedback row, keyed by its codes like the live row - so the
-     * prompt cache recognizes the turn it holds.
+     * Replayed speech frames as their feedback rows, keyed by their codes like the rows the reply
+     * ingested, so the model reads its speech back as speech and the prompt cache recognizes them;
+     * null without the voice, so a spoken turn is refused.
      */
-    private void writeSpoken(PromptWriter out, SpokenTurn turn) {
-        if (speech == null)
-            throw new UnsupportedConversation("a spoken turn replays through LFM3-Omni's mmproj");
-        out.id(think).id(endThink);
-        Lfm3Speech.Feedback rows = speech.new Feedback(MemoryAllocators.ofArena(Arena.ofAuto()));
-        Iterator<int[]> frames = turn.frames().iterator();
-        IntSequence positions = turn.positions();
-        for (int i = 0; i < positions.length(); i++) {
-            int id = positions.intAt(i);
-            if (id != turn.placeholder()) {
-                out.id(id);
-                continue;
-            }
-            int[] codes = frames.next();
-            out.batch(rows.batch(codes));
-        }
+    private Function<int[], Batch> frameRows() {
+        if (speech == null) return null;
+        Lfm3Speech.Feedback[] rows = new Lfm3Speech.Feedback[1]; // one per replayed turn, lazily
+        return codes -> {
+            if (rows[0] == null)
+                rows[0] = speech.new Feedback(MemoryAllocators.ofArena(Arena.ofAuto()));
+            return rows[0].batch(codes);
+        };
     }
 
     /**

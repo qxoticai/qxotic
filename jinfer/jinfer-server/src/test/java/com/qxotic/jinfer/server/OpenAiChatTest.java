@@ -5,12 +5,13 @@ import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
+import com.qxotic.jinfer.ContentKey;
 import com.qxotic.jinfer.cache.PromptCache;
 import com.qxotic.jinfer.chat.ChatEngine;
 import com.qxotic.jinfer.chat.Content;
 import com.qxotic.jinfer.chat.Message;
 import com.qxotic.jinfer.chat.Role;
-import com.qxotic.jinfer.chat.SpokenTurn;
+import com.qxotic.jinfer.chat.Verbatim;
 import com.qxotic.jinfer.llm.Generator;
 import com.qxotic.jinfer.llm.Sampling;
 import com.qxotic.jinfer.media.Media;
@@ -19,6 +20,7 @@ import java.time.Duration;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
 import java.util.OptionalInt;
 import org.junit.jupiter.api.Test;
 
@@ -31,12 +33,23 @@ class OpenAiChatTest {
     @Test
     void assistantAudioReplaysTheKeptTurn() {
         SpokenTurns turns = new SpokenTurns();
-        SpokenTurn turn =
-                new SpokenTurn(IntSequence.of(5, 9, 6, 9), 9, List.of(new int[12], new int[12]));
-        Content.Speech spoken =
-                new Content.Speech(new Media.Audio(new float[480], 24_000, 1), turn);
+        Verbatim record =
+                new Verbatim(
+                        new ContentKey("test-model"),
+                        IntSequence.of(5, Verbatim.FRAME, 6, Verbatim.FRAME),
+                        IntSequence.of(new int[24]));
+        Message spoken =
+                new Message(
+                        Role.ASSISTANT,
+                        List.of(
+                                new Content.Text("Paris."),
+                                new Content.Media(
+                                        new Media.Audio(new float[480], 24_000, 1),
+                                        null,
+                                        Optional.of("Paris."))),
+                        record);
         String id = SpokenTurns.newId();
-        assertTrue(turns.put(id, spoken, "Paris.") > System.currentTimeMillis() / 1000);
+        assertTrue(turns.put(id, spoken) > System.currentTimeMillis() / 1000);
         List<Message> messages =
                 OpenAiChat.messages(
                         List.of(
@@ -46,7 +59,12 @@ class OpenAiChatTest {
         Message replayed = messages.get(1);
         assertEquals(Role.ASSISTANT, replayed.role());
         assertEquals("Paris.", replayed.text());
-        assertTrue(replayed.content().get(1) instanceof Content.Speech s && s.turn() == turn);
+        assertTrue(replayed.speech().isPresent(), "the speech, without its waveform");
+        assertEquals(
+                Optional.of("Paris."),
+                ((Content.Media) replayed.content().get(1)).caption(),
+                "captioned with its transcript");
+        assertTrue(replayed.verbatim() == record, "the record replays");
         assertThrows(
                 IllegalArgumentException.class,
                 () ->
@@ -104,7 +122,8 @@ class OpenAiChatTest {
                         Duration.ofMillis(5),
                         Duration.ofMillis(7));
         ChatEngine.Completion cancelled =
-                new ChatEngine.Completion(null, result, false, 10, 0, PromptCache.Tier.FRESH, null);
+                new ChatEngine.Completion(
+                        null, result, false, 10, 0, 0, PromptCache.Tier.FRESH, null);
         Reply kept =
                 OpenAiChat.reply(cancelled, Message.assistant("Once upon a"), List.of(), false);
         assertEquals("cancelled", kept.finishReason());
@@ -120,6 +139,7 @@ class OpenAiChatTest {
                         result,
                         true,
                         10,
+                        0,
                         0,
                         PromptCache.Tier.FRESH,
                         null);

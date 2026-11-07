@@ -77,14 +77,12 @@ final class Llama32ChatTemplate implements ChatTemplate {
             first = 1;
         }
 
-        out.verbatim(promptStart());
+        out.ids(promptStart());
         writeTurn(out, Role.SYSTEM, systemPreamble + system, null);
         out.flush();
         for (int i = first; i < messages.size(); i++) {
             Message message = messages.get(i);
-            String value = text(message).strip();
-            Content.Text exact = exactText(message, value);
-            writeTurn(out, message.role(), value, exact);
+            writeTurn(out, message.role(), text(message).strip(), message);
             out.flush();
         }
         out.id(startHeader).text(Role.ASSISTANT.name()).id(endHeader).text("\n\n");
@@ -92,7 +90,6 @@ final class Llama32ChatTemplate implements ChatTemplate {
 
         IntSequence replyPrefix = IntSequence.empty();
         ReplyParser parser = ReplyParser.spans(tokenizer);
-        parser.seed(replyPrefix);
         return new ReplyState(replyPrefix, parser);
     }
 
@@ -128,10 +125,10 @@ final class Llama32ChatTemplate implements ChatTemplate {
                         tokenizer));
     }
 
-    private void writeTurn(PromptWriter out, Role role, String text, Content.Text exact) {
+    /** A turn: its text, or the turn as the model said it when {@code message} carries that. */
+    private void writeTurn(PromptWriter out, Role role, String text, Message message) {
         out.id(startHeader).text(role.name()).id(endHeader).text("\n\n");
-        if (exact == null) out.text(text);
-        else out.verbatim(exact.verbatim());
+        if (message == null || !out.replay(message)) out.text(text);
         out.id(endTurn);
     }
 
@@ -144,12 +141,6 @@ final class Llama32ChatTemplate implements ChatTemplate {
             out.append(text.text());
         }
         return out.toString();
-    }
-
-    private static Content.Text exactText(Message message, String stripped) {
-        if (message.content().size() != 1) return null;
-        Content.Text text = (Content.Text) message.content().getFirst();
-        return !text.verbatim().isEmpty() && text.text().equals(stripped) ? text : null;
     }
 
     /**

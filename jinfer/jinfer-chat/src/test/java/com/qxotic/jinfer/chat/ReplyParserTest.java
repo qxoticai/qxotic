@@ -110,8 +110,6 @@ public final class ReplyParserTest {
         Assertions.assertEquals(List.of(new Step("Hello", true), new Step("Hi", false)), steps);
         Message m = p.finish();
         Assertions.assertEquals("Hi", ((Content.Text) m.content().get(1)).text());
-        Assertions.assertEquals(
-                2, ((Content.Text) m.content().get(1)).verbatim().length(), "ids verbatim");
     }
 
     @Test
@@ -124,13 +122,7 @@ public final class ReplyParserTest {
                 "content fragments stream; scaffold is inert: " + steps);
         Message m = p.finish();
         check(m.text().equals("Hello world"), "message coalesces text: " + m.text());
-        check(
-                m.content().size() == 1
-                        && ((Content.Text) m.content().get(0))
-                                .verbatim()
-                                .toList()
-                                .equals(List.of(5, 6)),
-                "coalesced text carries verbatim payload ids");
+        check(m.content().size() == 1, "coalesced text is one part");
 
         // 2. think span: markers hidden, channel flips, unterminated span closes at finish
         p = ReplyParser.spans(TOK);
@@ -141,10 +133,8 @@ public final class ReplyParserTest {
                 "think routing + channel flags: " + steps);
         m = p.finish();
         check(
-                m.content().get(0) instanceof Content.Reasoning r
-                        && r.content().size() == 1
-                        && "Hello".equals(((Content.Text) r.content().get(0)).text()),
-                "reasoning tree in message");
+                m.content().get(0) instanceof Content.Reasoning r && "Hello".equals(r.text()),
+                "reasoning part in message");
         p = ReplyParser.spans(TOK);
         run(p, 0, 5); // unterminated think
         m = p.finish();
@@ -167,13 +157,8 @@ public final class ReplyParserTest {
                         && calls.get(0).arguments().get("x") instanceof Number n
                         && n.intValue() == 1,
                 "call parsed structurally in finish(): " + calls);
-        check(
-                calls.get(0).verbatim() != null
-                        && calls.get(0).verbatim().toList().equals(List.of(7)),
-                "call carries its payload verbatim ids");
 
-        // 3b. the same span stays visible when calls are not claimed, while its hidden markers
-        // remain in verbatim so extending the conversation can replay the exact generated wire
+        // 3b. the same span stays visible when calls are not claimed
         p =
                 ReplyParser.spans(
                         TOK,
@@ -190,9 +175,6 @@ public final class ReplyParserTest {
         m = p.finish();
         Content.Text unclaimed = (Content.Text) m.content().getFirst();
         check(unclaimed.text().equals("[f(x=1)]"), "unclaimed span becomes text");
-        check(
-                unclaimed.verbatim().toList().equals(List.of(2, 7, 3)),
-                "unclaimed text retains the complete call wire");
 
         // 3c. a claimed but malformed span remains visible rather than disappearing
         p = ReplyParser.spans(TOK, "<|call|>", "<|/call|>", ReplyParserTest::parseCalls);
@@ -201,8 +183,7 @@ public final class ReplyParserTest {
                 steps.equals(List.of(new Step("Hello", false))),
                 "malformed call payload is visible: " + steps);
         m = p.finish();
-        Content.Text malformed = (Content.Text) m.content().getFirst();
-        check(malformed.verbatim().toList().equals(List.of(2, 5, 3)), "malformed wire replays");
+        check(m.content().getFirst() instanceof Content.Text, "malformed span becomes text");
 
         // 3d. a new opener discards an unterminated candidate instead of claiming it
         p = ReplyParser.spans(TOK, "<|call|>", "<|/call|>", ReplyParserTest::parseCalls);
@@ -258,9 +239,6 @@ public final class ReplyParserTest {
         check(
                 calls.get(0).arguments().get("x") instanceof Number n && n.intValue() == 1,
                 "trailing commas salvaged to {x: 1}: " + calls.get(0).arguments());
-        check(
-                calls.get(0).verbatim().toList().equals(List.of(15, 16, 17)),
-                "the salvaged call keeps its sloppy payload verbatim for exact replay");
     }
 
     @Test
@@ -289,10 +267,7 @@ public final class ReplyParserTest {
         check(
                 m.content().size() == 1 && m.content().get(0) instanceof Content.ToolCall,
                 "exactly one call claimed: " + m.content());
-        Content.ToolCall call = (Content.ToolCall) m.content().get(0);
-        check(
-                call.verbatim() != null && call.verbatim().toList().equals(List.of(11, 12, 13, 14)),
-                "the call carries every fragment's verbatim ids");
+        check("f".equals(((Content.ToolCall) m.content().get(0)).name()), "the call parsed");
     }
 
     private static final class FakeTokenizer implements Tokenizer {
@@ -397,10 +372,7 @@ public final class ReplyParserTest {
                         "</think>");
         p.disableToolCalls();
         run(p, 5, 2, 11);
-        Message m = p.finish();
-        Content.Text text = (Content.Text) m.content().get(m.content().size() - 1);
-        Assertions.assertEquals("[f(", text.text());
-        Assertions.assertEquals(IntSequence.of(2, 11), text.verbatim(), "ids verbatim");
+        Assertions.assertEquals("Hello[f(", p.finish().text(), "one coalesced text part");
     }
 
     @Test
@@ -422,6 +394,25 @@ public final class ReplyParserTest {
     }
 
     @Test
+    void aCallClaimedWhileThinkingSitsBetweenTheReasoningRunsItInterrupted() {
+        // the message is the stream folded: reasoning, the call where it completed, the
+        // reasoning after it, then the answer; the deltas themselves are unchanged
+        ReplyParser p =
+                ReplyParser.spans(TOK, "<|call|>", "<|/call|>", ReplyParserTest::parseCalls);
+        List<Step> steps = run(p, 0, 5, 2, 7, 3, 19, 1, 19);
+        Assertions.assertEquals(
+                List.of(new Step("Hello", true), new Step("Hi", true), new Step("Hi", false)),
+                steps);
+        Assertions.assertEquals(
+                List.of(
+                        new Content.Reasoning("Hello"),
+                        new Content.ToolCall("", "f", Map.of("x", 1)),
+                        new Content.Reasoning("Hi"),
+                        new Content.Text("Hi")),
+                p.finish().content());
+    }
+
+    @Test
     void anUnclaimedCallInsideReasoningStaysReasoning() {
         ReplyParser p =
                 ReplyParser.spans(TOK, "<|call|>", "<|/call|>", ReplyParserTest::parseCalls);
@@ -434,9 +425,6 @@ public final class ReplyParserTest {
                 Assertions.assertInstanceOf(
                         Content.Reasoning.class, p.finish().content().getFirst());
         Assertions.assertEquals("[f(x=1)]", reasoning.text());
-        Assertions.assertEquals(
-                IntSequence.of(2, 7, 3),
-                ((Content.Text) reasoning.content().getFirst()).verbatim());
     }
 
     @Test

@@ -25,6 +25,7 @@ import com.qxotic.jota.memory.MemoryAllocators;
 import com.qxotic.jota.memory.MemoryArena;
 import com.qxotic.jota.memory.MemoryView;
 import com.qxotic.toknroll.IntSequence;
+import com.qxotic.toknroll.Tokenizer;
 import java.io.IOException;
 import java.io.UncheckedIOException;
 import java.lang.foreign.Arena;
@@ -413,7 +414,18 @@ public final class ChatEngine implements AutoCloseable {
      * state can never disagree with the tail. {@code replyPrefix} is informational: it already
      * rides the prompt's last batch and the parser already consumed it.
      */
-    public record Encoded(List<Batch> prompt, ReplyParser parser, IntSequence replyPrefix) {}
+    public record Encoded(List<Batch> prompt, ReplyParser parser, IntSequence replyPrefix) {
+
+        /** This prompt extended by prompt-owned reply tokens, which the reply's record carries. */
+        Encoded seeded(int... ids) {
+            List<Batch> extended = new ArrayList<>(prompt);
+            extended.add(Batch.prefill(ids));
+            return new Encoded(
+                    List.copyOf(extended),
+                    parser,
+                    IntSequence.concatAll(replyPrefix, IntSequence.of(ids)));
+        }
+    }
 
     /** Whether a request forces the reply to be a tool call, and to which offered tool. */
     public sealed interface ForcedTool {
@@ -871,7 +883,23 @@ public final class ChatEngine implements AutoCloseable {
         boolean think =
                 request.forcedTool() == ForcedTool.NONE
                         && thinks(request.thinking(), request.maxOutputTokens());
-        return new Conversation(request.messages(), request.tools(), think);
+        return new Conversation(ownRecords(request.messages()), request.tools(), think);
+    }
+
+    /**
+     * The messages with every record this load did not write dropped: a turn said by another model
+     * renders from its parts, and templates never see a record they cannot replay.
+     */
+    private List<Message> ownRecords(List<Message> messages) {
+        List<Message> own = new ArrayList<>(messages.size());
+        for (Message message : messages) {
+            Verbatim record = message.verbatim();
+            own.add(
+                    record.isEmpty() || record.model().equals(loaded.seed())
+                            ? message
+                            : new Message(message.role(), message.content()));
+        }
+        return List.copyOf(own);
     }
 
     /**
@@ -896,9 +924,7 @@ public final class ChatEngine implements AutoCloseable {
         if (!output.contains(Modality.TEXT)) {
             // speech alone: its opener ends the prompt, as trained; with text allowed too the
             // model chooses, and an opener it samples starts the speech
-            List<Batch> prompt = new ArrayList<>(encoded.prompt());
-            prompt.add(Batch.prefill(new int[] {voice().opener(false)}));
-            encoded = new Encoded(List.copyOf(prompt), encoded.parser(), encoded.replyPrefix());
+            encoded = encoded.seeded(voice().opener(false));
         }
         if (request.tools().isEmpty()) encoded.parser().disableToolCalls();
         Sampler sampler =
@@ -946,12 +972,10 @@ public final class ChatEngine implements AutoCloseable {
             int[] seed = selection.forcedPrefix();
             ReplyLanguage.Walk walk = selection.walk();
             walk.seed(IntSequence.of(seed));
-            List<Batch> prompt = new ArrayList<>(encoded.prompt());
-            prompt.add(Batch.prefill(seed));
             // the parser must start in the span state the prompt leaves the model in, or the
             // seeded scaffold parses as visible text
             encoded.parser().seed(IntSequence.of(seed));
-            encoded = new Encoded(List.copyOf(prompt), encoded.parser(), encoded.replyPrefix());
+            encoded = encoded.seeded(seed);
             sampler = walk.sampler(sampler, endTurn());
         }
         return new Prepared(
@@ -1253,7 +1277,7 @@ public final class ChatEngine implements AutoCloseable {
     private static boolean hasMedia(Conversation conversation) {
         return conversation.messages().stream()
                 .flatMap(m -> m.content().stream())
-                .anyMatch(p -> p instanceof Content.Media);
+                .anyMatch(part -> part instanceof Content.Media);
     }
 
     /**
@@ -1275,10 +1299,9 @@ public final class ChatEngine implements AutoCloseable {
     }
 
     /**
-     * One streamed fragment: the channel it belongs to, UTF-8-safe text, and the verbatim tokens
-     * that produced it. Concatenating {@code tokens} over a pass re-encodes the finished reply's
-     * verbatim ids exactly (a stop-sequence cut excluded - the holdback swallows the tail it never
-     * emits).
+     * One streamed fragment: the channel it belongs to, UTF-8-safe text, and the exact tokens that
+     * produced it. Concatenating {@code tokens} over a pass gives the finished reply's generated
+     * ids (a stop-sequence cut excluded - the holdback swallows the tail it never emits).
      */
     public record Delta(Channel channel, String text, IntSequence tokens) {
         public Delta {
@@ -1318,11 +1341,14 @@ public final class ChatEngine implements AutoCloseable {
      * {@code reply} - there is no second boolean to disagree with; its {@code result} is null when
      * the cancel landed during prefill and the generator's own (aborted) result otherwise. {@code
      * stopped} means a stop sequence cut the content lane: the reply still carries the full text
-     * (with its verbatim token ids intact), and the caller truncates its own message with {@link
-     * TextStops#apply}. {@code promptTokens} counts prepared model-input positions, including
-     * projected media rows and any template scaffolding, special tokens, or implicit system text;
-     * {@code restoredTokens} is the prefix of those positions restored from cache rather than
-     * recomputed.
+     * and its record, and the caller truncates its own message with {@link TextStops#apply}. {@code
+     * promptTokens} counts prepared model-input positions, including projected media rows and any
+     * template scaffolding, special tokens, or implicit system text; {@code restoredTokens} is the
+     * prefix of those positions restored from cache rather than recomputed. {@code reasoningTokens}
+     * is what the reply spent in its reasoning span - part of the completion count, decoded at the
+     * same rate as the visible answer and invisible in it; on a reasoning checkpoint a one-line
+     * question can cost ten times its answer here, and this is the number that says so. Zero when
+     * the pass was cancelled or the model did not reason.
      */
     public record Completion(
             Message reply,
@@ -1330,29 +1356,13 @@ public final class ChatEngine implements AutoCloseable {
             boolean stopped,
             int promptTokens,
             int restoredTokens,
+            int reasoningTokens,
             PromptCache.Tier tier,
             SpeculativeDecoding.SpeculationResult speculation) {
 
         /** A cancelled pass has no reply; that is the whole of it. */
         public boolean cancelled() {
             return reply == null;
-        }
-
-        /**
-         * Tokens the reply spent in its reasoning span - part of the completion count, decoded at
-         * the same rate as the visible answer and invisible in it. On a reasoning checkpoint a
-         * one-line question can cost ten times its answer here; this is the number that says so.
-         * Zero when the pass was cancelled or the model did not reason.
-         */
-        public int reasoningTokens() {
-            if (reply == null) return 0;
-            int total = 0;
-            for (Content part : reply.content()) {
-                if (part instanceof Content.Reasoning reasoning) {
-                    total += reasoning.verbatim().length();
-                }
-            }
-            return total;
         }
 
         /** Present when the pass ran self-speculation - carries the acceptance counters. */
@@ -1428,6 +1438,7 @@ public final class ChatEngine implements AutoCloseable {
         // "no stops" special case to carry. heldIds tracks the buffered fragments' tokens so a
         // flushed delta still re-encodes its text exactly.
         IntSequence.Builder[] heldIds = {IntSequence.newBuilder()};
+        int[] reasoningTokens = {0};
         TextStops.Holdback watch =
                 new TextStops.Holdback(
                         prepared.stops(),
@@ -1467,6 +1478,7 @@ public final class ChatEngine implements AutoCloseable {
                                     fragment.tokens().forEachInt(heldIds[0]::add);
                                     watch.accept(fragment.text());
                                 } else {
+                                    reasoningTokens[0] += fragment.tokens().length();
                                     out.on(
                                             new Delta(
                                                     Channel.REASONING,
@@ -1501,6 +1513,7 @@ public final class ChatEngine implements AutoCloseable {
                     false,
                     prepared.promptTokens(),
                     outcome.restoredTokens(),
+                    0,
                     outcome.tier(),
                     outcome.speculation());
         }
@@ -1520,19 +1533,38 @@ public final class ChatEngine implements AutoCloseable {
                             result.decodeTime());
         }
         Message reply = finishReply(parser, pending, rawText);
-        if (spoken != null && spoken.spoke()) {
-            List<Content> content = new ArrayList<>(reply.content());
-            content.add(spoken.content());
-            reply = new Message(reply.role(), content);
-        }
+        List<Content> content = new ArrayList<>(reply.content());
+        if (spoken != null && spoken.spoke()) content.add(spoken.content(loaded.tokenizer()));
+        reply = new Message(reply.role(), content, verbatim(prepared, result, spoken));
         return new Completion(
                 reply,
                 result,
                 watch.stopped(),
                 prepared.promptTokens(),
                 outcome.restoredTokens(),
+                reasoningTokens[0],
                 outcome.tier(),
                 outcome.speculation());
+    }
+
+    /**
+     * The reply's record: the reply prefix the prompt owned, then every generated id, a speech
+     * frame as {@link Verbatim#FRAME} with its codes aside, stamped with this load's seed.
+     */
+    private Verbatim verbatim(Prepared prepared, Generator.GenerationResult result, Spoken spoken) {
+        IntSequence.Builder positions = IntSequence.newBuilder();
+        positions.addAll(prepared.encoded().replyPrefix());
+        IntSequence.Builder codes = IntSequence.newBuilder();
+        int frame = 0;
+        for (int id : result.tokens()) {
+            if (spoken != null && id == spoken.placeholder) {
+                positions.add(Verbatim.FRAME);
+                for (int code : spoken.frames.get(frame++)) codes.add(code);
+            } else {
+                positions.add(id);
+            }
+        }
+        return new Verbatim(loaded.seed(), positions.build(), codes.build());
     }
 
     /** The finished reply, from the same parse that streamed - or the raw lane's plain text. */
@@ -1735,9 +1767,11 @@ public final class ChatEngine implements AutoCloseable {
         private final int rate, placeholder, audioOpener, mixedOpener;
         private final RandomGenerator random;
         private final ReplySink out;
-        private final IntSequence.Builder positions = IntSequence.newBuilder();
         private final List<int[]> frames = new ArrayList<>();
         private final List<Media.Audio> audio = new ArrayList<>();
+        // the transcript lane: the words spoken, between a mixed opener and its <|text_end|>
+        private final IntSequence.Builder transcript = IntSequence.newBuilder();
+        private boolean transcribing;
 
         Spoken(SpeechOutput<?> voice, Prepared prepared, ReplySink out) {
             this.alone = !prepared.output().contains(Modality.TEXT);
@@ -1747,7 +1781,12 @@ public final class ChatEngine implements AutoCloseable {
             this.mixedOpener = voice.opener(true);
             this.random = new SplittableRandom(prepared.seed());
             this.out = out;
-            if (alone) positions.add(audioOpener); // the prompt's last token
+        }
+
+        /** A text token the reply took, in the lane the speaker gave it. */
+        void text(int token, SpeechOutput.Lane lane) {
+            if (lane == SpeechOutput.Lane.CONTROL) transcribing = token == mixedOpener;
+            else if (transcribing) transcript.add(token);
         }
 
         /** Whether {@code token}, sampled as text, opens speech. */
@@ -1760,10 +1799,9 @@ public final class ChatEngine implements AutoCloseable {
             return !frames.isEmpty();
         }
 
-        /** A frame the reply took: its audio out at once, its place in the record. */
+        /** A frame the reply took: its audio out at once, its codes kept for the record. */
         void frame(SpeechOutput.Frame frame) {
             speak(frame.pcm());
-            positions.add(placeholder);
             frames.add(frame.codes());
         }
 
@@ -1774,12 +1812,15 @@ public final class ChatEngine implements AutoCloseable {
             out.onMedia(chunk);
         }
 
-        Content.Speech content() {
-            Media.Audio all =
+        /** What was said: the whole clip, captioned with the transcript lane's words. */
+        Content.Media content(Tokenizer tokenizer) {
+            IntSequence words = transcript.build();
+            return new Content.Media(
                     audio.isEmpty()
                             ? new Media.Audio(new float[0], rate, 1)
-                            : Media.Audio.concat(audio);
-            return new Content.Speech(all, new SpokenTurn(positions.build(), placeholder, frames));
+                            : Media.Audio.concat(audio),
+                    null,
+                    words.isEmpty() ? Optional.empty() : Optional.of(tokenizer.decode(words)));
         }
     }
 
@@ -1872,7 +1913,7 @@ public final class ChatEngine implements AutoCloseable {
                     if (n + 1 >= max || state.position() >= capacity) break; // LENGTH: not fed
                     model.ingest(state, Batch.step(token));
                     serving.tail(token);
-                    spoken.positions.add(token);
+                    spoken.text(token, lane);
                     // the first opener starts the speaker; later ones are its own lane markers
                     if (speaker == null && lane == SpeechOutput.Lane.CONTROL)
                         speaker = voice.speaker(state, token == spoken.mixedOpener, spoken.random);

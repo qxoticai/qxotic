@@ -49,7 +49,7 @@ In the family trees below, `name` and `args(S)` are notation for the function's 
 
 Three faces derive from the tree, and none is authored separately:
 
-- **render**: structure to tokens, for history echoes (marks emit as trusted ids, bytes plain-encode, arguments serialize via their `Syntax`; recorded verbatim ids splice preferentially, unchanged law).
+- **render**: structure to tokens, for history echoes (marks emit as trusted ids, bytes plain-encode, arguments serialize via their `Syntax`); a turn with its `Verbatim` record replays whole instead, through `PromptWriter.replay`.
 - **parse**: tokens to structure events, one walk (see section 5).
 - **constrain**: a policy selects within the tree and the same walk masks logits.
 
@@ -140,7 +140,7 @@ Parse-versus-generation disagreement is unrepresentable (same walk), and mid-wal
 ## 7. The three laws, and the language as its own fuzzer
 
 1. **Totality.** Every selection yields a live automaton or a typed rejection before the first generated token.
-2. **Duality.** `parse(render(s)) = s` for every structure `s`, and `render(parse(w))` is byte-identical for canonical wires (verbatim splice included).
+2. **Duality.** `parse(render(s)) = s` for every structure `s`, and `render(parse(w))` is byte-identical for canonical wires.
    Containment (every render is admitted by the language, today's wire law) is implied: the round trip cannot hold for a render the language rejects.
 3. **Preservation.** Masks only exclude: a generation that is compliant today is unchanged (greedy decode bit-identical; sampled decode identical up to renormalizing mass that sat on illegal tokens).
    Behavior changes only in runs that are failures today.
@@ -190,7 +190,7 @@ think := %<think> free %</think>          # generation prompt pre-opens <think>:
 
 Notes: ONE bracket span is ONE CALL region carrying the whole parallel-call list; its `calls` parser (the region's payload parser, `Function<String, List<Part.ToolCall>>` - exactly today's span-parser shape) yields every call in the span.
 Per-tool schema binding still lives in the body's alternation; the separators and brackets are ordinary body bytes.
-A sole parsed call carries the span's verbatim ids; several parse without per-call verbatim (attribution needs offsets nobody records).
+Parsed calls carry no token ids: the turn's `Verbatim` record on the `Message` replays the whole wire.
 `args(PY)` is keyword-argument form `k=v, ...` with Python literals.
 The original delimiter lesson (the `(` merge) is gone: the grammar continues through `(` into the schema, so `(city`-style merges stay admissible.
 Proves: prompt-opened regions (the walk-seeding contract), a non-JSON syntax, and a shared-span region carrying several calls.

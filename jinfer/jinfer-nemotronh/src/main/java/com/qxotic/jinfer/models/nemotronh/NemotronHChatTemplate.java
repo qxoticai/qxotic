@@ -154,7 +154,6 @@ final class NemotronHChatTemplate implements ChatTemplate {
         out.finish();
 
         ReplyParser parser = spans().parser();
-        parser.seed(replyPrefix);
         return new ReplyState(replyPrefix, parser);
     }
 
@@ -298,14 +297,14 @@ final class NemotronHChatTemplate implements ChatTemplate {
             }
             List<Content.ToolCall> calls = callsOf(m);
             out.id(imStart).text("assistant\n");
-            Content.Reasoning reasoning = reasoningOf(m);
+            String reasoning = m.reasoning();
             boolean truncate = i < lastUser; // truncate_history_thinking, template default true
             // typed reasoning is framed into the content first (the template's own move), then
             // the content goes through the same keep-or-truncate rule as inline markers
             String nl = dialect.reasoningNewlines() ? "\n" : "";
             String content =
-                    reasoning != null
-                            ? "<think>\n" + reasoning.text() + nl + "</think>" + nl + m.text()
+                    !reasoning.isEmpty()
+                            ? "<think>\n" + reasoning + nl + "</think>" + nl + m.text()
                             : withPair(m.text());
             writeMarked(out, assistantBody(content, truncate, !calls.isEmpty()));
             if (!calls.isEmpty()) {
@@ -317,13 +316,6 @@ final class NemotronHChatTemplate implements ChatTemplate {
             }
             out.id(imEnd).text("\n");
         }
-    }
-
-    private static Content.Reasoning reasoningOf(Message m) {
-        for (Content part : m.content()) {
-            if (part instanceof Content.Reasoning reasoning) return reasoning;
-        }
-        return null;
     }
 
     private static List<Content.ToolCall> callsOf(Message m) {

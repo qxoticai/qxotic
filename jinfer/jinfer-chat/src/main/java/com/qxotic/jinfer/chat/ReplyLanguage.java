@@ -635,21 +635,18 @@ public final class ReplyLanguage {
             Function<String, List<Content.ToolCall>> calls,
             List<Seg> segs,
             Set<Integer> markIds,
-            int opener,
-            boolean spanShaped) {
+            int opener) {
 
         static CRegion of(
                 Kind kind,
                 Function<String, List<Content.ToolCall>> calls,
                 List<Seg> segs,
-                Set<Integer> markIds,
-                boolean spanShaped) {
+                Set<Integer> markIds) {
             // opener -1 covers TWO opening shapes sharing the plain-dispatch slot: a FREE hole
             // (pass-through) and a mark-less SPEC, which dispatches on its payload's entry tokens
             int opener =
                     segs.get(0) instanceof Seg.Spec s && s.leadMark() != -1 ? s.leadMark() : -1;
-            return new CRegion(
-                    kind, calls, List.copyOf(segs), Set.copyOf(markIds), opener, spanShaped);
+            return new CRegion(kind, calls, List.copyOf(segs), Set.copyOf(markIds), opener);
         }
     }
 
@@ -754,35 +751,7 @@ public final class ReplyLanguage {
                 segs.set(i, new Seg.Free(closer));
             }
             markIds.addAll(regionMarks);
-            return CRegion.of(
-                    r.kind(), r.calls(), segs, new LinkedHashSet<>(regionMarks), spanShaped(r));
-        }
-
-        /**
-         * Marks only as a leading and trailing run = a classic marker-pair span (SmolLM3), whose
-         * whole payload is what the echo splices; interior marks (Harmony, Mistral) mean the span
-         * ids are NOT the echo's splice unit.
-         */
-        private static boolean spanShaped(Node.Region r) {
-            List<Node> body = r.body();
-            int lead = 0;
-            while (lead < body.size() && body.get(lead) instanceof Node.Mark) lead++;
-            int tail = body.size();
-            while (tail > lead && body.get(tail - 1) instanceof Node.Mark) tail--;
-            for (int i = lead; i < tail; i++) {
-                if (hasMark(body.get(i))) return false;
-            }
-            return true;
-        }
-
-        private static boolean hasMark(Node n) {
-            return switch (n) {
-                case Node.Mark m -> true;
-                case Node.Seq(List<Node> parts) -> parts.stream().anyMatch(Compiler::hasMark);
-                case Node.Alt(List<Node> options) -> options.stream().anyMatch(Compiler::hasMark);
-                case Node.Repeat(Node child, int min, int max) -> hasMark(child);
-                default -> false;
-            };
+            return CRegion.of(r.kind(), r.calls(), segs, new LinkedHashSet<>(regionMarks));
         }
 
         private Seg.Spec spec(List<Grammar.Term> run, boolean streams) {
@@ -900,14 +869,9 @@ public final class ReplyLanguage {
         private final PendingUtf8 pending = new PendingUtf8();
         private final ByteArrayOutputStream payload = new ByteArrayOutputStream();
         private IntSequence.Builder payloadIds = IntSequence.newBuilder();
-        private IntSequence.Builder freeIds = IntSequence.newBuilder(); // CALL free holes only
         private IntSequence.Builder callWireIds;
         private ByteArrayOutputStream visibleCall;
-        private final StringBuilder thinkText = new StringBuilder();
-        private IntSequence.Builder thinkIds = IntSequence.newBuilder();
-        private final StringBuilder contentText = new StringBuilder();
-        private IntSequence.Builder contentIds = IntSequence.newBuilder();
-        private final List<Content> calls = new ArrayList<>();
+        private final ContentBuilder content = new ContentBuilder();
         private boolean lastReasoning;
         private boolean trimLead; // the whitespace the model puts after </think> is framing
         private Fragment carry; // flushed by a region exit, owed to the next feed's return
@@ -1180,7 +1144,6 @@ public final class ReplyLanguage {
             cursor = null;
             payload.reset();
             payloadIds = IntSequence.newBuilder();
-            freeIds = IntSequence.newBuilder();
             callWireIds =
                     !toolCallsEnabled && r.kind() == Kind.CALL ? IntSequence.newBuilder() : null;
             visibleCall = callWireIds == null ? null : new ByteArrayOutputStream();
@@ -1293,7 +1256,6 @@ public final class ReplyLanguage {
                     }
                     payload.writeBytes(bs);
                     payloadIds.add(token);
-                    freeIds.add(token);
                     return Fragment.EMPTY;
                 }
                 return stream(bs, token);
@@ -1326,7 +1288,6 @@ public final class ReplyLanguage {
                 if (visibleCall != null) visibleCall.writeBytes(bs);
                 payload.writeBytes(bs);
                 payloadIds.add(token);
-                freeIds.add(token);
                 return Fragment.EMPTY;
             }
             if (f.closer() == -1) { // region-final free: exit, the structure decides
@@ -1380,19 +1341,13 @@ public final class ReplyLanguage {
                 text = text.stripLeading();
                 trimLead = text.isEmpty();
             }
-            route(text, frag.ids());
+            route(text);
             lastReasoning = region.kind() == Kind.THINK;
             return new Fragment(text, frag.ids());
         }
 
-        private void route(String text, IntSequence ids) {
-            if (region != null && region.kind() == Kind.THINK) {
-                thinkText.append(text);
-                ids.forEachInt(thinkIds::add);
-            } else {
-                contentText.append(text);
-                ids.forEachInt(contentIds::add);
-            }
+        private void route(String text) {
+            content.text(text, region != null && region.kind() == Kind.THINK);
         }
 
         @Override
@@ -1413,10 +1368,7 @@ public final class ReplyLanguage {
                                 + " is not a prefix of the reply language");
             // Prompt text is not reply text. Parse state and an open call capture survive.
             pending.flush();
-            thinkText.setLength(0);
-            thinkIds = IntSequence.newBuilder();
-            contentText.setLength(0);
-            contentIds = IntSequence.newBuilder();
+            content.discardSeedContent();
         }
 
         private static MemoryView<MemorySegment> writable(MemoryView<?> logits) {
@@ -1444,21 +1396,12 @@ public final class ReplyLanguage {
                 carry = new Fragment(frag.text(), frag.ids());
                 carryReasoning = owner == Kind.THINK;
             }
-            if (owner == Kind.THINK) {
-                thinkText.append(frag.text());
-                frag.ids().forEachInt(thinkIds::add);
-            } else {
-                contentText.append(frag.text());
-                frag.ids().forEachInt(contentIds::add);
-            }
+            content.text(frag.text(), owner == Kind.THINK);
         }
 
         private void exitRegion() {
             flushPending(region.kind());
             if (region.kind() == Kind.THINK) trimLead = true;
-            // think and content ACCUMULATE across regions: the reply's structure is one
-            // coalesced reasoning part, one coalesced text part, then the calls (the ReplyParser
-            // contract, and what every echo consumer expects)
             if (region.kind() == Kind.CALL) {
                 if (toolCallsEnabled) commitCall();
                 else demoteCall();
@@ -1473,38 +1416,22 @@ public final class ReplyLanguage {
                             visibleCall == null ? payload.toByteArray() : visibleCall.toByteArray(),
                             StandardCharsets.UTF_8);
             IntSequence ids = callWireIds == null ? payloadIds.build() : callWireIds.build();
-            contentText.append(text);
-            ids.forEachInt(contentIds::add);
+            content.text(text, false);
             if (!text.isEmpty()) {
                 carry = new Fragment(text, ids);
                 carryReasoning = false;
             }
             payload.reset();
             payloadIds = IntSequence.newBuilder();
-            freeIds = IntSequence.newBuilder();
             callWireIds = null;
             visibleCall = null;
         }
 
         private void commitCall() {
             String text = new String(payload.toByteArray(), StandardCharsets.UTF_8);
-            List<Content.ToolCall> parsed = region.calls().apply(text);
-            // verbatim must cover EXACTLY what the echo splices back: the whole span for classic
-            // marker-pair regions (SmolLM3's envelope), the free hole for header-shaped regions
-            // (Harmony's args body), nothing when neither is exact - a wrong splice corrupts the
-            // re-rendered wire, a missing one merely re-tokenizes
-            IntSequence free = freeIds.build();
-            IntSequence verbatim =
-                    region.spanShaped() ? payloadIds.build() : free.length() > 0 ? free : null;
-            if (parsed.size() == 1 && verbatim != null) {
-                Content.ToolCall c = parsed.get(0);
-                calls.add(new Content.ToolCall(c.id(), c.name(), c.arguments(), verbatim));
-            } else {
-                calls.addAll(parsed);
-            }
+            for (Content.ToolCall call : region.calls().apply(text)) content.add(call);
             payload.reset();
             payloadIds = IntSequence.newBuilder();
-            freeIds = IntSequence.newBuilder();
         }
 
         // -- the ReplyParser faces -------------------------------------------
@@ -1572,25 +1499,8 @@ public final class ReplyLanguage {
                     region = null;
                 }
             }
-            List<Content> parts = new ArrayList<>();
-            flushThink(parts);
-            flushContent(parts);
-            parts.addAll(calls);
-            finished = new Message(Role.ASSISTANT, List.copyOf(parts));
+            finished = new Message(Role.ASSISTANT, content.parts());
             return finished;
-        }
-
-        private void flushThink(List<Content> parts) {
-            if (thinkText.isEmpty()) return;
-            IntSequence ids = thinkIds.build();
-            parts.add(
-                    new Content.Reasoning(
-                            List.of(new Content.Text(thinkText.toString(), ids)), ids));
-        }
-
-        private void flushContent(List<Content> parts) {
-            if (contentText.isEmpty()) return;
-            parts.add(new Content.Text(contentText.toString(), contentIds.build()));
         }
     }
 }

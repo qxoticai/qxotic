@@ -111,7 +111,7 @@ final class Gemma4ChatTemplate implements ChatTemplate {
         Objects.requireNonNull(conversation, "conversation");
         requireSupported(conversation);
         PromptWriter out = new PromptWriter(tokenizer, batchCapacity, mediaCache, sink);
-        out.verbatim(promptStart());
+        out.ids(promptStart());
         List<Message> msgs = conversation.messages();
         boolean systemFirst = !msgs.isEmpty() && msgs.get(0).role().equals(Role.SYSTEM);
         int start = 0;
@@ -147,11 +147,8 @@ final class Gemma4ChatTemplate implements ChatTemplate {
                             .filter(Content.ToolCall.class::isInstance)
                             .map(Content.ToolCall.class::cast)
                             .toList();
-            Content.Reasoning reasoning = reasoningOf(assistant ? m : null);
-            String thought =
-                    reasoning != null && i > lastUserIdx && !reasoning.text().isEmpty()
-                            ? reasoning.text()
-                            : null;
+            String reasoning = assistant ? m.reasoning() : "";
+            String thought = !reasoning.isEmpty() && i > lastUserIdx ? reasoning : null;
             // turn-tag balance (upstream fix): an assistant turn does not close when the next
             // non-tool message is also assistant - the turns merge into one model turn
             Role nextRole = null;
@@ -162,7 +159,7 @@ final class Gemma4ChatTemplate implements ChatTemplate {
                 }
             }
             boolean continuesIntoNext = assistant && Role.ASSISTANT.equals(nextRole);
-            if (calls.isEmpty() && !continuation && reasoning == null && !continuesIntoNext) {
+            if (calls.isEmpty() && !continuation && reasoning.isEmpty() && !continuesIntoNext) {
                 writeTurn(out, m);
                 out.flush();
                 continue;
@@ -242,7 +239,7 @@ final class Gemma4ChatTemplate implements ChatTemplate {
             // prefix IS this tail. Thinking off (or no channel scaffolding): the model answers
             // directly in the open turn - the reference emits nothing.
             if (conversation.thinking() && scaffoldsNonThinking) {
-                out.verbatim(thoughtTail);
+                out.ids(thoughtTail);
                 replyPrefix = thoughtTail;
             }
         } else if (!"call".equals(prev)) {
@@ -250,14 +247,13 @@ final class Gemma4ChatTemplate implements ChatTemplate {
             // <|turn>model regardless of what prev reads ("call" stays open at the await marker)
             out.id(turnOpen).text("model\n");
             if (!conversation.thinking() && scaffoldsNonThinking) {
-                out.verbatim(noThinkingPrefix);
+                out.ids(noThinkingPrefix);
                 replyPrefix = noThinkingPrefix;
             }
         }
         out.finish();
 
         ReplyParser parser = spans().parser();
-        parser.seed(replyPrefix);
         return new ReplyState(replyPrefix, parser);
     }
 
@@ -296,14 +292,6 @@ final class Gemma4ChatTemplate implements ChatTemplate {
                 });
     }
 
-    private static Content.Reasoning reasoningOf(Message message) {
-        if (message == null) return null;
-        for (Content part : message.content()) {
-            if (part instanceof Content.Reasoning reasoning) return reasoning;
-        }
-        return null;
-    }
-
     private static String resolveName(List<Content.ToolCall> calls, String callId) {
         for (Content.ToolCall call : calls) {
             if (call.id().equals(callId)) return call.name();
@@ -324,14 +312,16 @@ final class Gemma4ChatTemplate implements ChatTemplate {
                 boolean ok =
                         switch (part) {
                             case Content.Text t -> true;
-                            case Content.Media b -> !toolTurn;
+                            // a reply's speech is another family's: the whole-render keeps its
+                            // words
+                            case Content.Media media ->
+                                    !toolTurn
+                                            && !(assistant && media.media() instanceof Media.Audio);
                             case Content.ToolCall c -> assistant;
                             case Content.ToolResult r -> toolTurn;
                             // upstream fix 35b4173: reasoning renders in turns after the last
                             // user message (thought channel), stripped before it
                             case Content.Reasoning r -> assistant;
-                            // another family's speech: the whole-render keeps its transcript
-                            case Content.Speech s -> false;
                         };
                 if (!ok)
                     throw new UnsupportedConversation(
@@ -352,7 +342,13 @@ final class Gemma4ChatTemplate implements ChatTemplate {
             for (Content part : message.content()) {
                 switch (part) {
                     case Content.Text text -> out.text(text.text());
-                    case Content.Media value -> writeMedia(out, value);
+                    case Content.Media m -> {
+                        switch (m.media()) {
+                            case Media.Image image -> writeMedia(out, image, m.key());
+                            case Media.Audio audio -> writeMedia(out, audio, m.key());
+                            case Media.Video video -> writeVideo(out, video, m.key());
+                        }
+                    }
                     default -> requireText(message, part);
                 }
             }
@@ -360,29 +356,12 @@ final class Gemma4ChatTemplate implements ChatTemplate {
         out.id(turnClose).text("\n");
     }
 
-    private void writeMedia(PromptWriter out, Content.Media content) {
-        ContentKey key = content.contentKey();
-        switch (content.value()) {
-            case Media.Image image ->
-                    writeMedia(
-                            out,
-                            image,
-                            key,
-                            refuse(images(), "image"),
-                            imageOpen,
-                            imageClose,
-                            true);
-            case Media.Audio audio ->
-                    writeMedia(
-                            out,
-                            audio,
-                            key,
-                            refuse(audio(), "audio"),
-                            audioOpen,
-                            audioClose,
-                            false);
-            case Media.Video video -> writeVideo(out, video, key);
-        }
+    private void writeMedia(PromptWriter out, Media.Image image, ContentKey key) {
+        writeMedia(out, image, key, refuse(images(), "image"), imageOpen, imageClose, true);
+    }
+
+    private void writeMedia(PromptWriter out, Media.Audio audio, ContentKey key) {
+        writeMedia(out, audio, key, refuse(audio(), "audio"), audioOpen, audioClose, false);
     }
 
     /**

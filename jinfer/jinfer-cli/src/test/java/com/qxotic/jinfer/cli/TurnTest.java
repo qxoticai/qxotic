@@ -215,7 +215,7 @@ class TurnTest {
             turn.on(new ChatEngine.Delta(Channel.CONTENT, "x", IntSequence.of('x')));
             turn.finish(
                     new ChatEngine.Completion(
-                            null, null, true, 0, 0, PromptCache.Tier.SESSION, null),
+                            null, null, true, 0, 0, 0, PromptCache.Tier.SESSION, null),
                     4096,
                     -1);
         }
@@ -246,7 +246,7 @@ class TurnTest {
             turn.on(new ChatEngine.Delta(Channel.CONTENT, "x", IntSequence.of('x')));
             turn.finish(
                     new ChatEngine.Completion(
-                            null, null, true, 0, 0, PromptCache.Tier.SESSION, null),
+                            null, null, true, 0, 0, 0, PromptCache.Tier.SESSION, null),
                     4096,
                     -1);
         }
@@ -314,7 +314,8 @@ class TurnTest {
         return finished(
                 options,
                 deltas,
-                new ChatEngine.Completion(null, null, true, 0, 0, PromptCache.Tier.SESSION, null),
+                new ChatEngine.Completion(
+                        null, null, true, 0, 0, 0, PromptCache.Tier.SESSION, null),
                 4096,
                 -1);
     }
@@ -346,11 +347,7 @@ class TurnTest {
         Message reply =
                 new Message(
                         Role.ASSISTANT,
-                        List.of(
-                                new Content.Reasoning(
-                                        List.of(new Content.Text("thought")),
-                                        IntSequence.of(new int[reasoning])),
-                                new Content.Text("answer")));
+                        List.of(new Content.Reasoning("thought"), new Content.Text("answer")));
         return new ChatEngine.Completion(
                 reply,
                 new Generator.GenerationResult(
@@ -358,6 +355,7 @@ class TurnTest {
                 false,
                 10,
                 0,
+                reasoning,
                 PromptCache.Tier.FRESH,
                 null);
     }

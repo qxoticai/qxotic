@@ -104,8 +104,8 @@ final class Chat {
             }
             used = Turn.used(completion);
             if (completion.reply() != null) {
-                // the parser's structured message (verbatim ids): the codec's verbatim splice
-                // keeps generated turns inside the cache's common prefix
+                // the reply with its record: replayed as said, generated turns stay inside the
+                // cache's common prefix
                 history.add(completion.reply());
             }
         }

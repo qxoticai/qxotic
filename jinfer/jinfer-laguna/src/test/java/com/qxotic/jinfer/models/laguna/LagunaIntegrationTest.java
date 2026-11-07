@@ -116,9 +116,7 @@ final class LagunaIntegrationTest {
                         new Message(
                                 Role.ASSISTANT,
                                 List.of(
-                                        new Content.Reasoning(
-                                                List.of(new Content.Text("I should check.")),
-                                                com.qxotic.toknroll.IntSequence.empty()),
+                                        new Content.Reasoning("I should check."),
                                         new Content.Text("I will check."),
                                         new Content.ToolCall(
                                                 "call-1", "get_weather", Map.of("city", "Paris")))),
@@ -192,7 +190,6 @@ final class LagunaIntegrationTest {
         disabled.disableToolCalls();
         Message text = ReplyParser.parse(disabled, wire);
         assertEquals(payload, text.text());
-        assertEquals(wire, ((Content.Text) text.content().getFirst()).verbatim());
         assertTrue(text.content().stream().noneMatch(Content.ToolCall.class::isInstance));
     }
 

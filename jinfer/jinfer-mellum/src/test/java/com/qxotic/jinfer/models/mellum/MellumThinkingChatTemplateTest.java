@@ -73,9 +73,7 @@ final class MellumThinkingChatTemplateTest {
                 new Message(
                         Role.ASSISTANT,
                         List.of(
-                                new Content.Reasoning(
-                                        List.of(new Content.Text("\nTwo plus two.\n")),
-                                        IntSequence.empty()),
+                                new Content.Reasoning("\nTwo plus two.\n"),
                                 new Content.Text("\nFour")));
         List<List<Message>> cases =
                 List.of(
@@ -113,9 +111,7 @@ final class MellumThinkingChatTemplateTest {
                 new Message(
                         Role.ASSISTANT,
                         List.of(
-                                new Content.Reasoning(
-                                        List.of(new Content.Text("Need the weather.")),
-                                        IntSequence.empty()),
+                                new Content.Reasoning("Need the weather."),
                                 new Content.ToolCall("", "get_weather", Map.of("city", "Paris"))));
         Message result = new Message(Role.TOOL, List.of(new Content.ToolResult("", "18C")));
         List<Message> messages = List.of(Message.user("Weather in Paris?"), call, result);

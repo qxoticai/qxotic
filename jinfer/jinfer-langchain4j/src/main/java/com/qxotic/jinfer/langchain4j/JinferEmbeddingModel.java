@@ -295,7 +295,7 @@ public final class JinferEmbeddingModel implements EmbeddingModel, AutoCloseable
                 parts.add(
                         content instanceof TextContent t
                                 ? t.text()
-                                : Mappings.media(content, EMBEDDING_FRAMES).value());
+                                : Mappings.media(content, EMBEDDING_FRAMES).media());
             }
             decoded.add(parts);
         }

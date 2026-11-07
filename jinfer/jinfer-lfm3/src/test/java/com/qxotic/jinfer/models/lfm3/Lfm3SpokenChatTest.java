@@ -14,8 +14,8 @@ import com.qxotic.jinfer.chat.Message;
 import com.qxotic.jinfer.chat.Modality;
 import com.qxotic.jinfer.chat.Models;
 import com.qxotic.jinfer.chat.Role;
-import com.qxotic.jinfer.chat.SpokenTurn;
 import com.qxotic.jinfer.chat.Tool;
+import com.qxotic.jinfer.chat.Verbatim;
 import com.qxotic.jinfer.codecs.AudioCodec;
 import com.qxotic.jinfer.llm.Sampling;
 import com.qxotic.jinfer.llm.SpeechOutput;
@@ -27,6 +27,7 @@ import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
 import java.util.Random;
 import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.BeforeAll;
@@ -83,6 +84,7 @@ final class Lfm3SpokenChatTest {
         assertTrue(seconds(audio) > 1, "speech");
         assertArrayEquals(audio.pcm(), out.audio().pcm(), "the parts are the waveform");
         assertEquals("", done.reply().text(), "audio alone");
+        assertTrue(caption(done).isEmpty(), "speech alone has no transcript lane");
         String heard = hear(audio).replace(",", "").replace(".", "");
         System.out.println("heard: " + heard);
         assertTrue(heard.contains("hello world"), heard);
@@ -128,6 +130,8 @@ final class Lfm3SpokenChatTest {
         assertTrue(text.contains("Paris"), text);
         assertTrue(heard.contains("paris"), heard);
         assertEquals(text, out.text.toString(), "streamed = the reply's text");
+        // the transcript lane, the words the speech spoke, captions the speech
+        assertEquals(Optional.of(text), caption(reply), "the transcript is the words");
     }
 
     /**
@@ -166,7 +170,7 @@ final class Lfm3SpokenChatTest {
     void aSpokenTurnReplaysFromTheCache() {
         ChatEngine.Completion first =
                 engine.complete(chat(List.of(VOICE_CHAT, france())), ChatEngine.ReplySink.NONE);
-        SpokenTurn turn = speech(first).turn();
+        Verbatim turn = first.reply().verbatim();
         ChatEngine.Completion second =
                 engine.complete(
                         chat(
@@ -176,11 +180,11 @@ final class Lfm3SpokenChatTest {
                                         first.reply(),
                                         Message.user("And of Germany?"))),
                         ChatEngine.ReplySink.NONE);
-        int live = first.promptTokens() + turn.positions().length() - 1;
+        int live = first.promptTokens() + first.result().tokens().length;
         System.out.printf(
                 "turn 1: %d positions (%d frames); turn 2 restored %d of %d%n",
                 turn.positions().length(),
-                turn.frames().size(),
+                turn.frames(),
                 second.restoredTokens(),
                 second.promptTokens());
         assertTrue(second.restoredTokens() >= live, "the spoken turn came from the cache");
@@ -280,9 +284,10 @@ final class Lfm3SpokenChatTest {
         return Message.user("What is the capital of France?");
     }
 
-    private static Content.Speech speech(ChatEngine.Completion completion) {
+    private static Optional<String> caption(ChatEngine.Completion completion) {
         for (Content part : completion.reply().content())
-            if (part instanceof Content.Speech speech) return speech;
+            if (part instanceof Content.Media m && m.media() instanceof Media.Audio)
+                return m.caption();
         throw new AssertionError("no speech in " + completion.reply());
     }
 

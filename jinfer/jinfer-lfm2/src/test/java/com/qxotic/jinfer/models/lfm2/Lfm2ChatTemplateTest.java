@@ -249,12 +249,8 @@ final class Lfm2ChatTemplateTest {
 
     @Test
     void reasoningIsKeptOnlyInTheActiveToolLoop() {
-        Content.Reasoning reasoning =
-                new Content.Reasoning(
-                        List.of(new Content.Text("need weather")), IntSequence.empty());
-        Content.Reasoning moreReasoning =
-                new Content.Reasoning(
-                        List.of(new Content.Text("; use the tool")), IntSequence.empty());
+        Content.Reasoning reasoning = new Content.Reasoning("need weather");
+        Content.Reasoning moreReasoning = new Content.Reasoning("; use the tool");
         Message assistant =
                 new Message(
                         Role.ASSISTANT,
@@ -371,9 +367,10 @@ final class Lfm2ChatTemplateTest {
                 new Conversation(List.of(Message.user("Weather?")), List.of(weather()), true);
 
         Message reply = ReplyParser.parse(state(template, conversation).parser(), generated);
-        Content.Reasoning reasoning =
-                assertInstanceOf(Content.Reasoning.class, reply.content().getFirst());
-        assertInstanceOf(Content.ToolCall.class, reasoning.content().getFirst());
+        // the think span held the call alone: no reasoning text, so no reasoning part
+        assertEquals(
+                List.of(Content.ToolCall.class),
+                reply.content().stream().map(Object::getClass).toList());
         assertRoundTrip(template, conversation, reply, generated);
     }
 

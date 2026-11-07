@@ -149,9 +149,11 @@ public interface ChatTemplate {
     }
 
     record ReplyState(IntSequence replyPrefix, ReplyParser parser) {
+        /** The parser starts in the state the prefix leaves the model in: seeded here, once. */
         public ReplyState {
             replyPrefix = Objects.requireNonNull(replyPrefix, "replyPrefix");
             parser = Objects.requireNonNull(parser, "parser");
+            parser.seed(replyPrefix);
         }
     }
 }

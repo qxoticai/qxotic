@@ -280,9 +280,9 @@ class JinjaChatTemplateTest {
                                 new Message(
                                         Role.ASSISTANT,
                                         List.of(
-                                                new Content.Text("calling", null),
+                                                new Content.Text("calling"),
                                                 new Content.ToolCall(
-                                                        "c1", "dial", Map.of("number", 42), null))),
+                                                        "c1", "dial", Map.of("number", 42)))),
                                 new Message(
                                         Role.TOOL, List.of(new Content.ToolResult("c1", "busy")))),
                         List.of(new Tool("dial", Map.of("name", "dial"))),

@@ -160,11 +160,7 @@ class BailingMoe3IntegrationTest {
                                         Role.ASSISTANT,
                                         List.of(
                                                 new Content.Reasoning(
-                                                        List.of(
-                                                                new Content.Text(
-                                                                        "I should check the"
-                                                                                + " weather.")),
-                                                        IntSequence.empty()),
+                                                        "I should check the" + " weather."),
                                                 new Content.Text("I will check."),
                                                 new Content.ToolCall(
                                                         "call-1",

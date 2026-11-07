@@ -156,10 +156,7 @@ class MappingsTest {
         Message reply =
                 new Message(
                         Role.ASSISTANT,
-                        List.of(
-                                new Content.Reasoning(
-                                        List.of(new Content.Text("pondering", null)), null),
-                                new Content.Text("answer", null)));
+                        List.of(new Content.Reasoning("pondering"), new Content.Text("answer")));
         AiMessage ai = Mappings.toAiMessage(reply);
         assertEquals("pondering", ai.thinking());
         assertEquals("answer", ai.text());
@@ -174,9 +171,8 @@ class MappingsTest {
                 new Message(
                         Role.ASSISTANT,
                         List.of(
-                                new Content.Reasoning(
-                                        List.of(new Content.Text("  r\n\n r2  ", null)), null),
-                                new Content.Text("line1\nline2\n\n  indented", null)));
+                                new Content.Reasoning("  r\n\n r2  "),
+                                new Content.Text("line1\nline2\n\n  indented")));
         AiMessage ai = Mappings.toAiMessage(reply);
         assertEquals("  r\n\n r2  ", ai.thinking(), "thinking keeps its exact whitespace");
         assertEquals(
@@ -187,18 +183,14 @@ class MappingsTest {
         // no reasoning: the text passes through byte-identical, padding included
         AiMessage plain =
                 Mappings.toAiMessage(
-                        new Message(Role.ASSISTANT, List.of(new Content.Text("  padded  ", null))));
+                        new Message(Role.ASSISTANT, List.of(new Content.Text("  padded  "))));
         assertEquals("  padded  ", plain.text());
         assertNull(plain.thinking(), "no reasoning lane, no thinking field");
 
         // reasoning only: text stays absent (never an empty string inventing content)
         AiMessage thoughtsOnly =
                 Mappings.toAiMessage(
-                        new Message(
-                                Role.ASSISTANT,
-                                List.of(
-                                        new Content.Reasoning(
-                                                List.of(new Content.Text("hmm", null)), null))));
+                        new Message(Role.ASSISTANT, List.of(new Content.Reasoning("hmm"))));
         assertNull(thoughtsOnly.text());
         assertEquals("hmm", thoughtsOnly.thinking());
     }
@@ -232,7 +224,7 @@ class MappingsTest {
                                 VideoSampler.UNIFORM)
                         .get(0);
         Content.Media blob = assertInstanceOf(Content.Media.class, m.content().get(0));
-        var decoded = assertInstanceOf(Media.Image.class, blob.value());
+        var decoded = assertInstanceOf(Media.Image.class, blob.media());
         assertEquals(4, decoded.width());
         assertEquals(3, decoded.height());
     }
@@ -324,8 +316,7 @@ class MappingsTest {
         args.put("flexible", null);
         Message reply =
                 new Message(
-                        Role.ASSISTANT,
-                        List.of(new Content.ToolCall("c1", "book_flight", args, null)));
+                        Role.ASSISTANT, List.of(new Content.ToolCall("c1", "book_flight", args)));
         AiMessage ai = Mappings.toAiMessage(reply);
         assertEquals(
                 "{\"origin\":\"Zurich\",\"flexible\":null}",
@@ -344,10 +335,7 @@ class MappingsTest {
                                 Role.ASSISTANT,
                                 List.of(
                                         new Content.ToolCall(
-                                                "c1",
-                                                "temperature",
-                                                Map.of("city", "Lisbon"),
-                                                null))),
+                                                "c1", "temperature", Map.of("city", "Lisbon")))),
                         new Message(Role.TOOL, List.of(new Content.ToolResult("c1", "21.5"))));
         assertTrue(JinferChatModel.afterAToolRound(roundTwo));
     }

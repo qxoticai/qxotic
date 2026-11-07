@@ -6,8 +6,8 @@ package com.qxotic.jinfer.chat;
  *
  * <p>Channels are flat by design - a claimed call drafted inside reasoning reports {@link
  * #TOOL_CALL} and the suspension underneath is parser state ({@link ReplyParser#pending()}), never
- * a field here. The full nesting survives in the finished message's {@code Content} tree; the
- * stream's deltas carry only the innermost label.
+ * a field here. The finished message keeps the emission order, the call between the reasoning runs
+ * it interrupted; the stream's deltas carry only the innermost label.
  */
 public record Channel(String name) {
 

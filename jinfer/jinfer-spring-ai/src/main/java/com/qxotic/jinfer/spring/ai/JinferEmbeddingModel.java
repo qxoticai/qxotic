@@ -271,7 +271,7 @@ public final class JinferEmbeddingModel implements EmbeddingModel, AutoCloseable
         int outputDimension = outputDimension(options);
         List<Object> parts = new ArrayList<>(2);
         if (!loaded.documentPrefix().isEmpty()) parts.add(loaded.documentPrefix());
-        parts.add(JinferMappings.media(document.getMedia(), EMBEDDING_FRAMES).value());
+        parts.add(JinferMappings.media(document.getMedia(), EMBEDDING_FRAMES).media());
         EmbeddingResponse response =
                 observed(
                         new EmbeddingRequest(List.of(), options),

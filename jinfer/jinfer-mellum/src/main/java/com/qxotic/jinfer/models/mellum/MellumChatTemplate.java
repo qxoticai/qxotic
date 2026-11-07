@@ -138,10 +138,9 @@ final class MellumChatTemplate implements ChatTemplate {
         }
         out.id(imStart).text("assistant\n");
         IntSequence replyPrefix = conversation.thinking() ? IntSequence.empty() : closedThink;
-        out.verbatim(replyPrefix);
+        out.ids(replyPrefix);
         out.finish();
         ReplyParser parser = spans.parser();
-        parser.seed(replyPrefix);
         return new ReplyState(replyPrefix, parser);
     }
 

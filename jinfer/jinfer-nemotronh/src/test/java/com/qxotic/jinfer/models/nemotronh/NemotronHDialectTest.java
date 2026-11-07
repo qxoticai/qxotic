@@ -144,10 +144,7 @@ final class NemotronHDialectTest {
                         Message.user("2+2?"),
                         new Message(
                                 Role.ASSISTANT,
-                                List.of(
-                                        new Content.Reasoning(
-                                                List.of(new Content.Text("plan")), null),
-                                        new Content.Text("42")))),
+                                List.of(new Content.Reasoning("plan"), new Content.Text("42")))),
                 List.of(new Tool("get_weather", WEATHER_TOOL)),
                 false);
     }

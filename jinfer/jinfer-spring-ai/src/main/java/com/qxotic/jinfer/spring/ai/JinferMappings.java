@@ -87,7 +87,7 @@ final class JinferMappings {
         for (MessagePart part : u.getParts()) {
             switch (part) {
                 case TextPart t when t.text() != null && !t.text().isEmpty() ->
-                        parts.add(new Content.Text(t.text(), null));
+                        parts.add(new Content.Text(t.text()));
                 case MediaPart m -> parts.add(media(m.media(), videoSampler));
                 default -> {} // empty, or another provider's block
             }
@@ -234,10 +234,10 @@ final class JinferMappings {
     }
 
     /**
-     * Metadata key carrying the parsed reply {@link Message} whole. The round-trip law: an
-     * UNMODIFIED assistant echo re-encodes to the exact tokens the model generated (verbatim ids),
-     * which is what makes retained-session extension hits deterministic; an edited echo fails the
-     * equality check and re-renders faithfully instead.
+     * Metadata key carrying the parsed reply {@link Message} whole, its {@code Verbatim} record
+     * with it. The round-trip law: an UNMODIFIED assistant echo replays as the exact tokens the
+     * model generated, which is what makes retained-session extension hits deterministic; an edited
+     * echo fails the equality check and renders from its parts instead.
      */
     static final String REPLY_KEY = "jinfer.reply";
 
@@ -246,8 +246,8 @@ final class JinferMappings {
 
     private static Message assistant(AssistantMessage ai) {
         // an UNMODIFIED echo of a reply this provider produced restores the parsed Message with
-        // its verbatim ids (byte-exact re-encode: what makes retained-session extension hits
-        // deterministic); an edited echo (or one from another provider) re-renders faithfully
+        // its record (replayed token for token: what makes retained-session extension hits
+        // deterministic); an edited echo (or one from another provider) renders from its parts
         if (ai.getMetadata().get(REPLY_KEY) instanceof Message reply && unchanged(ai, reply)) {
             return reply;
         }
@@ -257,19 +257,16 @@ final class JinferMappings {
         for (MessagePart part : ai.getParts()) {
             switch (part) {
                 case ReasoningPart r when r.text() != null && !r.text().isEmpty() ->
-                        parts.add(
-                                new Content.Reasoning(
-                                        List.of(new Content.Text(r.text(), null)), null));
+                        parts.add(new Content.Reasoning(r.text()));
                 case TextPart t when t.text() != null && !t.text().isEmpty() ->
-                        parts.add(new Content.Text(t.text(), null));
+                        parts.add(new Content.Text(t.text()));
                 case ToolCallPart c when !StreamingParts.isPartial(c) -> {
                     AssistantMessage.ToolCall call = c.toolCall();
                     parts.add(
                             new Content.ToolCall(
                                     call.id() == null ? "" : call.id(),
                                     call.name(),
-                                    args(call.arguments()),
-                                    null));
+                                    args(call.arguments())));
                 }
                 default -> {} // empty, a streamed argument delta, media, another provider's block
             }
@@ -350,7 +347,7 @@ final class JinferMappings {
 
     /**
      * The reply as a message of parts in the reply's own order: reasoning, text, tool calls. The
-     * parsed reply rides along whole, so an unmodified echo restores verbatim ids instead of
+     * parsed reply rides along whole, so an unmodified echo restores its record instead of
      * re-tokenizing.
      */
     static AssistantMessage toAssistantMessage(Message reply) {
@@ -377,21 +374,12 @@ final class JinferMappings {
         for (Content part : content) {
             switch (part) {
                 case Content.Text t when !t.text().isEmpty() -> parts.add(TextPart.of(t.text()));
-                case Content.Reasoning r -> {
-                    // Blank-only reasoning (a prompt-opened span's scaffold newlines, e.g. the
-                    // closed empty pair when thinking is off) is no reasoning at all
-                    String text =
-                            r.content().stream()
-                                    .filter(Content.Text.class::isInstance)
-                                    .map(c -> ((Content.Text) c).text())
-                                    .collect(Collectors.joining());
-                    if (!text.isBlank()) parts.add(ReasoningPart.of(text));
-                    // a call claimed inside the span is a call
-                    collect(
-                            r.content().stream().filter(c -> !(c instanceof Content.Text)).toList(),
-                            parts);
-                }
-                case Content.Speech s -> parts.add(MediaPart.of(audio(s.audio())));
+                // Blank-only reasoning (a prompt-opened span's scaffold newlines, e.g. the
+                // closed empty pair when thinking is off) is no reasoning at all
+                case Content.Reasoning r when !r.text().isBlank() ->
+                        parts.add(ReasoningPart.of(r.text()));
+                case Content.Media m when m.media() instanceof Media.Audio speech ->
+                        parts.add(MediaPart.of(audio(speech)));
                 case Content.ToolCall c -> {
                     // pythonic syntaxes carry no call ids: mint stable positional ones (what
                     // Ollama's server does); ids never render back into the prompt (the

@@ -3,7 +3,6 @@ package com.qxotic.jinfer.chat;
 import com.qxotic.jinfer.llm.SpecialTokens;
 import com.qxotic.toknroll.IntSequence;
 import com.qxotic.toknroll.Tokenizer;
-import java.util.ArrayList;
 import java.util.List;
 import java.util.Objects;
 import java.util.Set;
@@ -17,8 +16,6 @@ final class SpansReplyParser implements ReplyParser {
     private boolean toolCallsEnabled = true;
     private final PendingUtf8 pending = new PendingUtf8();
     private final ContentBuilder content = new ContentBuilder();
-    private ContentBuilder reasoningContent;
-    private IntSequence.Builder reasoningIds = IntSequence.newBuilder();
     private Message result;
     private boolean generated;
     private boolean inThink;
@@ -51,8 +48,6 @@ final class SpansReplyParser implements ReplyParser {
         seed.forEachInt(this::consume);
         pending.flush();
         content.discardSeedContent();
-        reasoningIds = IntSequence.newBuilder();
-        if (reasoningContent != null) reasoningContent.discardSeedContent();
         if (toolCalls != null) seenSpans = toolCalls.spans().size();
         lastReasoning = false;
     }
@@ -82,11 +77,7 @@ final class SpansReplyParser implements ReplyParser {
         }
         if (thinkOpen >= 0 && token == thinkOpen) {
             Fragment flushed = flushPending();
-            if (!inThink) {
-                inThink = true;
-                reasoningContent = new ContentBuilder();
-                reasoningIds = IntSequence.newBuilder();
-            }
+            inThink = true;
             return flushed;
         }
         if (thinkClose >= 0 && token == thinkClose) {
@@ -147,20 +138,14 @@ final class SpansReplyParser implements ReplyParser {
             trimLead = fragment.isEmpty();
         }
         lastReasoning = inThink;
-        if (inThink) {
-            reasoningContent.text(fragment, ids);
-            reasoningIds.addAll(ids);
-        } else {
-            content.text(fragment, ids);
-        }
+        content.text(fragment, inThink);
         return new Fragment(fragment, ids);
     }
 
     /** An unterminated span is the model's visible text, ids verbatim, never a call. */
     private Fragment abandonSpan() {
         SpanToolCallDetector.Span span = toolCalls.abandon();
-        ContentBuilder target = inThink ? reasoningContent : content;
-        target.add(new Content.Text(span.text(), span.wireIds()));
+        content.text(span.text(), inThink);
         lastReasoning = inThink;
         return span.text().isEmpty() ? Fragment.EMPTY : new Fragment(span.text(), span.wireIds());
     }
@@ -171,11 +156,10 @@ final class SpansReplyParser implements ReplyParser {
         List<SpanToolCallDetector.Span> spans = toolCalls.spans();
         for (; seenSpans < spans.size(); seenSpans++) {
             SpanToolCallDetector.Span span = spans.get(seenSpans);
-            ContentBuilder target = inThink ? reasoningContent : content;
             if (toolCallsEnabled && !span.calls().isEmpty()) {
-                for (Content.ToolCall call : span.calls()) target.add(call);
+                for (Content.ToolCall call : span.calls()) content.add(call);
             } else {
-                target.add(new Content.Text(span.text(), span.wireIds()));
+                content.text(span.text(), inThink);
                 visible.append(span.text());
                 visibleIds.addAll(span.wireIds());
                 lastReasoning = inThink;
@@ -190,49 +174,10 @@ final class SpansReplyParser implements ReplyParser {
         if (!inThink) return;
         inThink = false;
         trimLead = true;
-        content.add(new Content.Reasoning(reasoningContent.parts(), reasoningIds.build()));
-        reasoningContent = null;
-        reasoningIds = IntSequence.newBuilder();
     }
 
     private Fragment flushPending() {
         PendingUtf8.Fragment fragment = pending.flush();
         return fragment == null ? Fragment.EMPTY : emit(fragment.text(), fragment.ids());
-    }
-
-    private static final class ContentBuilder {
-        private final List<Content> parts = new ArrayList<>();
-        private final StringBuilder text = new StringBuilder();
-        private IntSequence.Builder ids = IntSequence.newBuilder();
-
-        void discardSeedContent() {
-            // Empty thinking spans are structural replay data, even when prompt-owned.
-            // Keep them across further seeds (e.g. a forced call), without counting prompt tokens.
-            parts.removeIf(part -> !(part instanceof Content.Reasoning r && r.content().isEmpty()));
-            text.setLength(0);
-            ids = IntSequence.newBuilder();
-        }
-
-        void text(String value, IntSequence verbatim) {
-            text.append(value);
-            ids.addAll(verbatim);
-        }
-
-        void add(Content part) {
-            closeText();
-            parts.add(part);
-        }
-
-        List<Content> parts() {
-            closeText();
-            return List.copyOf(parts);
-        }
-
-        private void closeText() {
-            if (text.isEmpty()) return;
-            parts.add(new Content.Text(text.toString(), ids.build()));
-            text.setLength(0);
-            ids = IntSequence.newBuilder();
-        }
     }
 }
