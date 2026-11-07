@@ -37,7 +37,9 @@ public class JinferEmbeddingAutoConfiguration {
                             + " Qwen3-Embedding or LFM2.5-Embedding) as a local path or a hub ref");
         }
         JinferEmbeddingModel.Builder builder =
-                JinferEmbeddingModel.builder().contextCapacity(properties.contextCapacity());
+                JinferEmbeddingModel.builder()
+                        .contextCapacity(properties.contextCapacity())
+                        .dimensions(properties.dimensions());
         if (properties.model().contains("://")) {
             throw new IllegalStateException(
                     "spring.ai.jinfer.embedding.model is a URL; download it first and configure"

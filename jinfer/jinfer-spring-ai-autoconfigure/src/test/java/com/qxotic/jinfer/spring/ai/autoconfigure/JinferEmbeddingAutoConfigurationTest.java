@@ -69,7 +69,8 @@ class JinferEmbeddingAutoConfigurationTest {
                 .withPropertyValues(
                         "spring.ai.jinfer.embedding.model=/emb.gguf",
                         "spring.ai.jinfer.embedding.companions.media=/mmproj.gguf",
-                        "spring.ai.jinfer.embedding.context-capacity=1024")
+                        "spring.ai.jinfer.embedding.context-capacity=1024",
+                        "spring.ai.jinfer.embedding.dimensions=256")
                 .run(
                         context -> {
                             JinferEmbeddingProperties p =
@@ -77,6 +78,44 @@ class JinferEmbeddingAutoConfigurationTest {
                             assertThat(p.model()).isEqualTo("/emb.gguf");
                             assertThat(p.companions()).containsEntry("media", "/mmproj.gguf");
                             assertThat(p.contextCapacity()).isEqualTo(1024);
+                            assertThat(p.dimensions()).isEqualTo(256);
+                        });
+    }
+
+    @Test
+    void theWidthDefaultsToTheModelsOwn() {
+        new ApplicationContextRunner()
+                .withUserConfiguration(PropsOnly.class)
+                .withPropertyValues("spring.ai.jinfer.embedding.model=/emb.gguf")
+                .run(
+                        context ->
+                                assertThat(
+                                                context.getBean(JinferEmbeddingProperties.class)
+                                                        .dimensions())
+                                        .isZero()); // 0: the model's own width
+    }
+
+    @Test
+    void thePublishedConstructorKeepsTheModelsOwnWidth() {
+        JinferEmbeddingProperties p = new JinferEmbeddingProperties("/emb.gguf", 1024);
+        assertThat(p.companions()).isNull();
+        assertThat(p.contextCapacity()).isEqualTo(1024);
+        assertThat(p.dimensions()).isZero();
+    }
+
+    @Test
+    void aNegativeWidthIsRefusedBeforeTheModelLoads() {
+        runner.withPropertyValues(
+                        "spring.ai.model.embedding=jinfer",
+                        "spring.ai.jinfer.embedding.model=/missing.gguf",
+                        "spring.ai.jinfer.embedding.dimensions=-1")
+                .run(
+                        context -> {
+                            assertThat(context).hasFailed();
+                            assertThat(context.getStartupFailure())
+                                    .hasStackTraceContaining(
+                                            "dimensions must be 0 (the model's own width) or"
+                                                    + " positive, not -1");
                         });
     }
 

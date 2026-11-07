@@ -124,6 +124,46 @@ class EmbeddingGemma2MediaIT {
         }
     }
 
+    /**
+     * A model-wide width reaches media as it reaches text: with {@code dimensions(256)} and no
+     * width on the request, an image or a clip embeds as the core embedder's bare 256 vector.
+     */
+    @Test
+    void aModelWideWidthReachesMedia() throws IOException {
+        Object catImage = ImageCodec.decode(Files.readAllBytes(Path.of(cat)));
+        Object speechAudio = AudioCodec.decode(Files.readAllBytes(Path.of(speech)));
+        try (Arena arena = Arena.ofShared()) {
+            LoadedEmbedder<?> core =
+                    Models.loadEmbedder(
+                            TestModels.require(MODEL),
+                            arena,
+                            Map.of("media", TestModels.require(MMPROJ)),
+                            null);
+            ContextState state = core.model().newState(2048, MemoryAllocators.ofArena(arena));
+            List<float[]> bare = new ArrayList<>();
+            core.embed(state, List.of(catImage), 256, bare::add);
+            core.embed(state, List.of(speechAudio), 256, bare::add);
+            try (JinferEmbeddingModel narrow =
+                    JinferEmbeddingModel.builder()
+                            .model(core)
+                            .contextCapacity(2048)
+                            .dimensions(256)
+                            .build()) {
+                assertEquals(256, narrow.dimension());
+                List<Content> media = List.of(ImageContent.from(cat), AudioContent.from(speech));
+                for (int i = 0; i < media.size(); i++) {
+                    float[] vector =
+                            narrow.embed(EmbeddingRequest.builder().input(media.get(i)).build())
+                                    .embeddings()
+                                    .getFirst()
+                                    .vector();
+                    assertEquals(256, vector.length);
+                    assertTrue(cosine(vector, bare.get(i)) > 0.99999, "medium " + i);
+                }
+            }
+        }
+    }
+
     @Test
     void aMixedBatchEqualsItsInputsOneByOne() {
         List<EmbeddingInput> inputs =

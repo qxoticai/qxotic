@@ -214,7 +214,7 @@ curl -sS http://127.0.0.1:8080/v1/embeddings \
 ```
 
 `/v1/embeddings` takes OpenAI's request, so the official clients work unchanged, `base64` encoding included.
-`dimensions` shortens a Matryoshka-trained model's vectors (Qwen3-Embedding: 32 to 1024) and is refused on a fixed-width one (LFM2.5-Embedding).
+`dimensions` shortens a Matryoshka-trained model's vectors (Qwen3-Embedding: 32 to 1024, EmbeddingGemma 2: 128 to 768) and is refused on a fixed-width one (LFM2.5-Embedding).
 Text is embedded as sent, so a retrieval prefix from the model card (LFM2.5-Embedding's `query: `) is the client's to add.
 An input longer than the context is refused with its index, and the rest are packed into as few forward passes as the context allows.
 

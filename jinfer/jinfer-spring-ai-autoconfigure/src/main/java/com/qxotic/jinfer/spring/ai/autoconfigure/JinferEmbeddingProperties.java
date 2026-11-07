@@ -18,16 +18,23 @@ import org.springframework.boot.context.properties.bind.DefaultValue;
  *     maxContextLength when smaller; -1 is that length; another value is exact, refused at boot
  *     past that length. Larger packs more sequences per forward pass and admits longer sequences,
  *     at the cost of a bigger resident state
+ * @param dimensions the embedding width for every call that names none, and the width the model
+ *     reports to vector stores: 0, the default, is the model's own; a Matryoshka model takes any
+ *     width in its range (EmbeddingGemma 2: 128 to 768, Qwen3-Embedding: 32 to its own), a
+ *     fixed-width model its own only, refused at boot otherwise
  */
 @ConfigurationProperties("spring.ai.jinfer.embedding")
 public record JinferEmbeddingProperties(
-        String model, Map<String, String> companions, @DefaultValue("0") int contextCapacity) {
+        String model,
+        Map<String, String> companions,
+        @DefaultValue("0") int contextCapacity,
+        @DefaultValue("0") int dimensions) {
 
     @ConstructorBinding
     public JinferEmbeddingProperties {}
 
-    /** The published two-property form: no companions. */
+    /** The published two-property form: no companions, the model's own width. */
     public JinferEmbeddingProperties(String model, int contextCapacity) {
-        this(model, null, contextCapacity);
+        this(model, null, contextCapacity, 0);
     }
 }

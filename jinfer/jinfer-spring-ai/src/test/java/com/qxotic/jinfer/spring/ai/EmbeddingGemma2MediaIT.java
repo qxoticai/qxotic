@@ -101,6 +101,45 @@ class EmbeddingGemma2MediaIT {
         assertTrue(cosine(batch.get(2), bare.get(1)) > 0.99999, "chirp in a batch");
     }
 
+    /**
+     * A model-wide width reaches media as it reaches text: with {@code dimensions(256)} and no
+     * width in the options, a media document embeds as the core embedder's bare 256 vector, alone
+     * and in the batched route vector stores take.
+     */
+    @Test
+    void aModelWideWidthReachesMedia() throws IOException {
+        Object audio = AudioCodec.decode(Files.readAllBytes(fixture("audio/speech-tts.wav")));
+        try (Arena arena = Arena.ofShared()) {
+            LoadedEmbedder<?> core =
+                    Models.loadEmbedder(
+                            TestModels.require(MODEL),
+                            arena,
+                            Map.of("media", TestModels.require(MMPROJ)),
+                            null);
+            ContextState state = core.model().newState(2048, MemoryAllocators.ofArena(arena));
+            float[][] bare = new float[1][];
+            core.embed(state, List.of(audio), 256, v -> bare[0] = v);
+            try (JinferEmbeddingModel narrow =
+                    JinferEmbeddingModel.builder()
+                            .model(core)
+                            .contextCapacity(2048)
+                            .dimensions(256)
+                            .build()) {
+                assertEquals(256, narrow.dimensions());
+                float[] alone = narrow.embed(speech);
+                assertEquals(256, alone.length);
+                assertTrue(cosine(alone, bare[0]) > 0.99999, "speech");
+                List<float[]> batch =
+                        narrow.embed(
+                                List.of(new Document("Someone counts from one to five."), speech),
+                                EmbeddingOptions.builder().build(),
+                                new TokenCountBatchingStrategy());
+                assertEquals(256, batch.get(0).length);
+                assertTrue(cosine(batch.get(1), bare[0]) > 0.99999, "speech in a batch");
+            }
+        }
+    }
+
     @Test
     void aMixedBatchKeepsOrderAndEqualsItsDocumentsOneByOne() {
         List<Document> documents =

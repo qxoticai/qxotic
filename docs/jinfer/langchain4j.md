@@ -227,7 +227,13 @@ EmbeddingModel embeddings = JinferEmbeddingModel.builder()
         .build();
 ```
 
-Qwen3 is Matryoshka-trained; `dimensions` selects any width from 32 through the native width, and the returned prefix is L2-normalized. Fixed-width models such as LFM2.5 reject `dimensions` instead of slicing vectors.
+Qwen3-Embedding and EmbeddingGemma 2 are Matryoshka-trained.
+`dimensions` selects any width from 32 (Qwen3) or 128 (EmbeddingGemma 2) through the native width, and the returned prefix is L2-normalized.
+Fixed-width models such as LFM2.5 reject `dimensions` instead of slicing vectors.
+
+`dimensions(256)` on the builder sets the width for every call that names none, and `dimension()` reports it.
+A store sized from the model, the ingestor and the retriever then all work at that width without naming it.
+A request's own `dimensions` still wins; `0`, the default, is the model's own width, and a width the model cannot produce is refused at build.
 
 Retrieval-tuned embedders use query/document framing (LFM2.5's `query: `/`document: ` pair, Qwen3's instructed query). Embedding bare text degrades retrieval. Set `EmbeddingInputType`:
 

@@ -338,8 +338,21 @@ EmbeddingModel embeddings = JinferEmbeddingModel.builder()
         .build();
 ```
 
-Qwen3 supports LangChain4j's `dimensions` parameter. Query/document framing uses the standard
-`EmbeddingInputType`:
+Matryoshka-trained models take LangChain4j's `dimensions` parameter: Qwen3-Embedding from 32 up to its own width, EmbeddingGemma 2 from 128 to 768.
+Fixed-width models such as LFM2.5 refuse it.
+To embed at one width everywhere, set it on the builder:
+
+```java
+EmbeddingModel embeddings = JinferEmbeddingModel.builder()
+        .model("unsloth/embeddinggemma-2-GGUF:Q8_0")
+        .dimensions(256)                // every call that names no width; 0 = the model's own
+        .build();
+```
+
+`dimension()` then reports 256, so a store sized from the model and the ingestor and retriever that fill and search it all agree.
+A request's own `dimensions` still wins.
+
+Query/document framing uses the standard `EmbeddingInputType`:
 
 ```java
 EmbeddingStoreIngestor.builder()

@@ -33,6 +33,7 @@ class ConfigurationMetadataTest {
                         "\"spring.ai.jinfer.chat.context-capacity\"",
                         "\"spring.ai.jinfer.embedding.model\"",
                         "\"spring.ai.jinfer.embedding.context-capacity\"",
+                        "\"spring.ai.jinfer.embedding.dimensions\"",
                         "\"spring.ai.jinfer.rerank.instruction\"",
                         "\"spring.ai.jinfer.speech.max-input-chars\"",
                         "\"spring.ai.jinfer.transcription\"",

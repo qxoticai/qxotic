@@ -370,6 +370,12 @@ try (var embeddings = JinferEmbeddingModel.builder()
 The example embeds a query and reranks two supplied documents.
 In a RAG application, pass the documents returned by your retriever to the reranker.
 
+Matryoshka-trained models honor `EmbeddingOptions.dimensions`: Qwen3-Embedding from 32 up to its own width, EmbeddingGemma 2 from 128 to 768.
+Vector stores call `add` and `similaritySearch` without options, and some size their table from `dimensions()`.
+To store shorter vectors, set the width on the model with `dimensions(256)` on the builder or `spring.ai.jinfer.embedding.dimensions=256` in the starter.
+Every call that names no width then embeds at 256, and `dimensions()` reports it.
+`0`, the default, is the model's own width; a width the model cannot produce is refused at startup.
+
 EmbeddingGemma 2 also embeds media documents (image, audio or video) once its projector is attached, with `companion("media", ...)` on the builder or `spring.ai.jinfer.embedding.companions.media` in the starter:
 
 ```java

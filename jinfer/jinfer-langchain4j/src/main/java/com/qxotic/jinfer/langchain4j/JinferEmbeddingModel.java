@@ -52,8 +52,10 @@ import org.slf4j.LoggerFactory;
  * ingestion of hundreds of chunks costs a handful of prefills, not hundreds.
  *
  * <p>The standard request {@code dimensions} parameter is advertised only for Matryoshka-trained
- * ports (Qwen3: 32 through native); truncated vectors are L2-normalized. Fixed-width ports reject
- * it instead of returning an arbitrary prefix.
+ * ports (Qwen3: 32 through native, EmbeddingGemma 2: 128 through 768); truncated vectors are
+ * L2-normalized. Fixed-width ports reject it instead of returning an arbitrary prefix. {@link
+ * Builder#dimensions(int)} sets the width for every call that names none, so an embedding store
+ * sized from {@link #dimension()} gets vectors of that width on every route.
  *
  * <p>A multimodal embedder (EmbeddingGemma 2) with its projector attached - {@code
  * companion("media", ...)} - also embeds image, audio and video {@code EmbeddingRequest} inputs,
@@ -66,6 +68,8 @@ import org.slf4j.LoggerFactory;
 public final class JinferEmbeddingModel implements EmbeddingModel, AutoCloseable {
 
     private final LoadedEmbedder<?> loaded;
+    private final int dimension; // the width a request without dimensions gets
+    private final EmbeddingRequestParameters defaults;
     private final ContextState state; // one reusable state; embed() resets it per group
     private final Arena arena;
     private final boolean ownsWeights; // false = the caller loaded the model and keeps the arena
@@ -97,6 +101,12 @@ public final class JinferEmbeddingModel implements EmbeddingModel, AutoCloseable
             } catch (IOException e) {
                 throw new UncheckedIOException("failed to load " + b.modelPath, e);
             }
+            this.dimension = defaultDimension(loaded, b.dimensions);
+            // the native width needs no parameter, and a fixed-width model refuses one
+            this.defaults =
+                    dimension == loaded.dimension()
+                            ? EmbeddingRequestParameters.EMPTY
+                            : EmbeddingRequestParameters.builder().dimensions(dimension).build();
             int maxContextLength = loaded.model().configuration().maxContextLength();
             int contextCapacity =
                     PromptCache.Options.contextCapacity(
@@ -110,6 +120,25 @@ public final class JinferEmbeddingModel implements EmbeddingModel, AutoCloseable
             Arenas.close(arena); // free before failing (best-effort: ofAuto self-manages)
             throw e;
         }
+    }
+
+    /** The builder's width: 0 is the model's own, anything else a width the model produces. */
+    private static int defaultDimension(LoadedEmbedder<?> loaded, int dimensions) {
+        if (dimensions == 0) return loaded.dimension();
+        if (dimensions >= loaded.minimumDimension() && dimensions <= loaded.dimension()) {
+            return dimensions;
+        }
+        throw new IllegalArgumentException(
+                loaded.name()
+                        + (loaded.supportsCustomDimensions()
+                                ? " embeds at "
+                                        + loaded.minimumDimension()
+                                        + ".."
+                                        + loaded.dimension()
+                                        + " dimensions"
+                                : " embeds at a fixed " + loaded.dimension() + " dimensions")
+                        + ", not "
+                        + dimensions);
     }
 
     /** Text, plus what the attached projector ingests; video rides the image projector. */
@@ -142,7 +171,12 @@ public final class JinferEmbeddingModel implements EmbeddingModel, AutoCloseable
                             + " Load once into YOUR arena instead: Models.loadEmbedder(path,"
                             + " arena), build with model(loaded), then fork freely");
         }
-        return builder().model(loaded).contextCapacity(state.contextCapacity()).build();
+        return builder()
+                .model(loaded)
+                .contextCapacity(state.contextCapacity())
+                .dimensions(dimension)
+                .listeners(listeners)
+                .build();
     }
 
     /**
@@ -192,10 +226,19 @@ public final class JinferEmbeddingModel implements EmbeddingModel, AutoCloseable
         return loaded.name();
     }
 
-    /** The embedding width - static from the port, never probed with a forward pass. */
+    /**
+     * The width a request without {@code dimensions} gets: {@link Builder#dimensions(int)}, else
+     * the model's own. Static, never probed with a forward pass.
+     */
     @Override
     public int dimension() {
-        return loaded.dimension();
+        return dimension;
+    }
+
+    /** The builder's width when it is not the model's own; no parameters otherwise. */
+    @Override
+    public EmbeddingRequestParameters defaultRequestParameters() {
+        return defaults;
     }
 
     /** Text; image, audio and video too when a multimodal embedder has its projector attached. */
@@ -237,8 +280,7 @@ public final class JinferEmbeddingModel implements EmbeddingModel, AutoCloseable
     @Override
     public EmbeddingResponse doEmbed(EmbeddingRequest request) {
         if (request.inputs() == null) throw new IllegalArgumentException("inputs cannot be null");
-        int outputDimension =
-                request.dimensions() == null ? loaded.dimension() : request.dimensions();
+        int outputDimension = request.dimensions() == null ? dimension : request.dimensions();
         List<EmbeddingInput> inputs = request.inputs();
         String prefix =
                 inputs.stream().noneMatch(JinferEmbeddingModel::textOnly)
@@ -348,6 +390,7 @@ public final class JinferEmbeddingModel implements EmbeddingModel, AutoCloseable
         private final Map<String, String> companionRefs = new LinkedHashMap<>();
         private final Map<String, Path> localCompanions = new LinkedHashMap<>();
         private int contextCapacity; // 0: the default
+        private int dimensions; // 0: the model's own
         private List<EmbeddingModelListener> listeners;
 
         /** langchain4j listeners; dispatched around every {@code embed(EmbeddingRequest)}. */
@@ -438,6 +481,26 @@ public final class JinferEmbeddingModel implements EmbeddingModel, AutoCloseable
             // a negative refused here, the rest at build, against the model's maximum
             PromptCache.Options.contextCapacity(contextCapacity, Integer.MAX_VALUE, 0);
             this.contextCapacity = contextCapacity;
+            return this;
+        }
+
+        /**
+         * The embedding width for every call that names none: {@link #embed(String)}, {@link
+         * #embedAll}, the ingestor, the retriever. {@code 0}, the default, is the model's own
+         * width; a Matryoshka model takes any width in its range (EmbeddingGemma 2: 128 to 768,
+         * Qwen3-Embedding: 32 to its own), and a fixed-width model its own width only, refused at
+         * build otherwise. {@link #dimension()} reports it, so a store sized from the model holds
+         * vectors of this width; a request's own {@code dimensions} still wins.
+         *
+         * @throws IllegalArgumentException if {@code dimensions < 0}
+         */
+        public Builder dimensions(int dimensions) {
+            if (dimensions < 0) {
+                throw new IllegalArgumentException(
+                        "dimensions must be 0 (the model's own width) or positive, not "
+                                + dimensions);
+            }
+            this.dimensions = dimensions;
             return this;
         }
 

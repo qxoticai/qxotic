@@ -145,7 +145,14 @@ The starter brings it in; without the starter, add it at the same Spring AI vers
 </dependency>
 ```
 
-Embedding requests are packed into ragged batches. `EmbeddingOptions.dimensions` requests a supported Matryoshka width; fixed-width models accept only their native width. Typed query/document entry points apply retrieval framing; `call(EmbeddingRequest)` stays raw.
+Embedding requests are packed into ragged batches.
+`EmbeddingOptions.dimensions` requests a supported Matryoshka width (Qwen3-Embedding: 32 up to its own, EmbeddingGemma 2: 128 to 768); fixed-width models accept only their native width.
+Typed query/document entry points apply retrieval framing; `call(EmbeddingRequest)` stays raw.
+
+Vector stores call `add` and `similaritySearch` without options, and some size their table from `dimensions()`.
+To store shorter vectors, set the width on the model: `dimensions(256)` on the builder, or `spring.ai.jinfer.embedding.dimensions=256` in the starter.
+Every call that names no width then embeds at 256, `dimensions()` reports it, and observations record it.
+`EmbeddingOptions.dimensions` on a call still wins; `0`, the default, is the model's own width, and a width the model cannot produce is refused at startup.
 
 EmbeddingGemma 2 also embeds media documents (image, audio or video) once its projector is attached, with `companion("media", ...)` on the builder or `spring.ai.jinfer.embedding.companions.media` in the starter:
 

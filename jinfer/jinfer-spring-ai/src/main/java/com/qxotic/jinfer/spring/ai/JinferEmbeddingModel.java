@@ -50,8 +50,10 @@ import org.springframework.ai.embedding.observation.EmbeddingModelObservationDoc
  * ingestion of hundreds of chunks costs a handful of prefills, not hundreds.
  *
  * <p>{@link EmbeddingOptions#getDimensions()} is honored only for Matryoshka-trained ports (Qwen3:
- * 32 through native); truncated vectors are L2-normalized. Fixed-width ports reject it instead of
- * returning an arbitrary prefix.
+ * 32 through native, EmbeddingGemma 2: 128 through 768); truncated vectors are L2-normalized.
+ * Fixed-width ports reject it instead of returning an arbitrary prefix. {@link
+ * Builder#dimensions(int)} sets the width for every call that names none, so a vector store sized
+ * from {@link #dimensions()} gets vectors of that width on every route.
  *
  * <p>A multimodal embedder (EmbeddingGemma 2) with its projector attached - {@code
  * companion("media", ...)} - also embeds media {@link Document}s (image, audio or video) as
@@ -69,6 +71,7 @@ public final class JinferEmbeddingModel implements EmbeddingModel, AutoCloseable
             new DefaultEmbeddingModelObservationConvention();
 
     private final LoadedEmbedder<?> loaded;
+    private final int dimensions; // the width a call without dimensions gets
     final String modelName;
     private final ContextState state; // one reusable state; embed() resets it per group
     private final Arena arena;
@@ -101,6 +104,7 @@ public final class JinferEmbeddingModel implements EmbeddingModel, AutoCloseable
                 throw new UncheckedIOException("failed to load " + b.modelPath, e);
             }
             this.modelName = loaded.name();
+            this.dimensions = defaultDimensions(loaded, b.dimensions);
             this.media = media(loaded.model());
             int maxContextLength = loaded.model().configuration().maxContextLength();
             int contextCapacity =
@@ -136,9 +140,29 @@ public final class JinferEmbeddingModel implements EmbeddingModel, AutoCloseable
         return builder()
                 .model(loaded)
                 .contextCapacity(state.contextCapacity())
+                .dimensions(dimensions)
                 .observationRegistry(observationRegistry)
                 .observationConvention(observationConvention)
                 .build();
+    }
+
+    /** The builder's width: 0 is the model's own, anything else a width the model produces. */
+    private static int defaultDimensions(LoadedEmbedder<?> loaded, int dimensions) {
+        if (dimensions == 0) return loaded.dimension();
+        if (dimensions >= loaded.minimumDimension() && dimensions <= loaded.dimension()) {
+            return dimensions;
+        }
+        throw new IllegalArgumentException(
+                loaded.name()
+                        + (loaded.supportsCustomDimensions()
+                                ? " embeds at "
+                                        + loaded.minimumDimension()
+                                        + ".."
+                                        + loaded.dimension()
+                                        + " dimensions"
+                                : " embeds at a fixed " + loaded.dimension() + " dimensions")
+                        + ", not "
+                        + dimensions);
     }
 
     /** What the attached projector ingests; video rides the image projector. */
@@ -185,10 +209,13 @@ public final class JinferEmbeddingModel implements EmbeddingModel, AutoCloseable
         }
     }
 
-    /** The embedding width - static from the port, never probed with a forward pass. */
+    /**
+     * The width a call without dimensions gets: {@link Builder#dimensions(int)}, else the model's
+     * own. Static, never probed with a forward pass.
+     */
     @Override
     public int dimensions() {
-        return loaded.dimension();
+        return dimensions;
     }
 
     // ---- the retrieval seam: Spring AI has no input-type parameter, but the INTERFACE types
@@ -274,7 +301,7 @@ public final class JinferEmbeddingModel implements EmbeddingModel, AutoCloseable
                 List.of(JinferMappings.media(document.getMedia(), EMBEDDING_FRAMES).media());
         EmbeddingResponse response =
                 observed(
-                        new EmbeddingRequest(List.of(), options),
+                        new EmbeddingRequest(List.of(), withDefaults(options)),
                         () -> {
                             float[][] vector = new float[1][];
                             int tokens;
@@ -301,7 +328,26 @@ public final class JinferEmbeddingModel implements EmbeddingModel, AutoCloseable
 
     @Override
     public EmbeddingResponse call(EmbeddingRequest request) {
-        return observed(request, () -> doCall(request));
+        EmbeddingOptions options = withDefaults(request.getOptions());
+        EmbeddingRequest effective =
+                options == request.getOptions()
+                        ? request
+                        : new EmbeddingRequest(request.getInstructions(), options);
+        return observed(effective, () -> doCall(effective));
+    }
+
+    /**
+     * The caller's options with the builder's width filled in when they name none, so the
+     * observation records the width embedded. The model's own width is left unstated, as before.
+     */
+    private EmbeddingOptions withDefaults(EmbeddingOptions options) {
+        if (dimensions == loaded.dimension()
+                || (options != null && options.getDimensions() != null)) {
+            return options;
+        }
+        EmbeddingOptions.Builder merged = EmbeddingOptions.builder().dimensions(dimensions);
+        if (options != null && options.getModel() != null) merged.model(options.getModel());
+        return merged.build();
     }
 
     private EmbeddingResponse observed(
@@ -344,7 +390,9 @@ public final class JinferEmbeddingModel implements EmbeddingModel, AutoCloseable
         return new EmbeddingResponse(out, metadata(total));
     }
 
-    /** The requested width, else the native one; a per-request model other than this is refused. */
+    /**
+     * The requested width, else the default one; a per-request model other than this is refused.
+     */
     private int outputDimension(EmbeddingOptions options) {
         if (options != null
                 && options.getModel() != null
@@ -355,7 +403,7 @@ public final class JinferEmbeddingModel implements EmbeddingModel, AutoCloseable
                             + "' (one loaded GGUF per instance)");
         }
         Integer requestedDimension = options == null ? null : options.getDimensions();
-        return requestedDimension == null ? loaded.dimension() : requestedDimension;
+        return requestedDimension == null ? dimensions : requestedDimension;
     }
 
     private EmbeddingResponseMetadata metadata(int totalTokens) {
@@ -374,6 +422,7 @@ public final class JinferEmbeddingModel implements EmbeddingModel, AutoCloseable
         private final Map<String, String> companionRefs = new LinkedHashMap<>();
         private final Map<String, Path> localCompanions = new LinkedHashMap<>();
         private int contextCapacity; // 0: the default
+        private int dimensions; // 0: the model's own
         private ObservationRegistry observationRegistry;
         private EmbeddingModelObservationConvention observationConvention;
 
@@ -458,6 +507,27 @@ public final class JinferEmbeddingModel implements EmbeddingModel, AutoCloseable
             // a negative refused here, the rest at build, against the model's maximum
             PromptCache.Options.contextCapacity(contextCapacity, Integer.MAX_VALUE, 0);
             this.contextCapacity = contextCapacity;
+            return this;
+        }
+
+        /**
+         * The embedding width for every call that names none: {@link #embed(String)}, {@link
+         * #embed(Document)}, the batched route vector stores take, {@link #call}. {@code 0}, the
+         * default, is the model's own width; a Matryoshka model takes any width in its range
+         * (EmbeddingGemma 2: 128 to 768, Qwen3-Embedding: 32 to its own), and a fixed-width model
+         * its own width only, refused at build otherwise. {@link #dimensions()} reports it, so a
+         * store that sizes its table from the model holds vectors of this width; {@link
+         * EmbeddingOptions#getDimensions()} on a call still wins.
+         *
+         * @throws IllegalArgumentException if {@code dimensions < 0}
+         */
+        public Builder dimensions(int dimensions) {
+            if (dimensions < 0) {
+                throw new IllegalArgumentException(
+                        "dimensions must be 0 (the model's own width) or positive, not "
+                                + dimensions);
+            }
+            this.dimensions = dimensions;
             return this;
         }
 

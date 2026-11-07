@@ -1,12 +1,18 @@
 package com.qxotic.jinfer.langchain4j;
 
+import com.qxotic.jinfer.Arenas;
+import com.qxotic.jinfer.chat.Models;
 import com.qxotic.jinfer.testkit.TestModels;
 import dev.langchain4j.model.embedding.EmbeddingModel;
 import dev.langchain4j.model.embedding.common.AbstractEmbeddingModelIT;
 import dev.langchain4j.model.embedding.listener.EmbeddingModelListener;
 import dev.langchain4j.model.embedding.request.EmbeddingParameter;
 import dev.langchain4j.model.embedding.request.EmbeddingRequest;
+import dev.langchain4j.model.embedding.request.EmbeddingRequestParameters;
 import dev.langchain4j.model.embedding.response.EmbeddingResponse;
+import java.io.IOException;
+import java.io.UncheckedIOException;
+import java.lang.foreign.Arena;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
@@ -18,7 +24,9 @@ import org.junit.jupiter.api.condition.EnabledIf;
 /**
  * The langchain4j embedding compliance kit against {@link JinferEmbeddingModel} on Qwen3-Embedding
  * 0.6B: batch order, dimension, usage, query-vs-document divergence, the loud dimensions rejection,
- * and listener dispatch. Model-gated via @EnabledIf.
+ * and listener dispatch. Every model test runs twice over one set of weights: at the model's own
+ * width and at a model-wide 256, where {@code dimension()} must still match every vector.
+ * Model-gated via @EnabledIf.
  */
 @Tag("integration")
 @EnabledIf("com.qxotic.jinfer.langchain4j.JinferEmbeddingModelTckIT#modelAvailable")
@@ -31,9 +39,11 @@ class JinferEmbeddingModelTckIT extends AbstractEmbeddingModelIT {
         return TestModels.find(REF).isPresent();
     }
 
-    // one shared model behind a non-AutoCloseable wrapper: JUnit closes AutoCloseable
+    // shared models behind non-AutoCloseable wrappers: JUnit closes AutoCloseable
     // parameterized-test arguments after EVERY invocation (see the chat TCK's models() note)
-    private static JinferEmbeddingModel shared;
+    private static Arena weights;
+    private static List<EmbeddingModel> shared;
+    private static final List<JinferEmbeddingModel> sharedModels = new ArrayList<>();
 
     // modelWith/failingModelWith products are built inside kit test bodies; nothing else closes
     private static final List<JinferEmbeddingModel> created =
@@ -41,7 +51,9 @@ class JinferEmbeddingModelTckIT extends AbstractEmbeddingModelIT {
 
     @AfterAll
     static void unload() {
-        if (shared != null) shared.close();
+        sharedModels.forEach(JinferEmbeddingModel::close);
+        sharedModels.clear();
+        if (weights != null) weights.close(); // after every model on them
         created.forEach(JinferEmbeddingModel::close);
         created.clear();
     }
@@ -56,35 +68,63 @@ class JinferEmbeddingModelTckIT extends AbstractEmbeddingModelIT {
 
     @Override
     protected List<EmbeddingModel> models() {
-        if (shared == null) shared = build(null);
-        JinferEmbeddingModel m = shared;
-        return List.of(
-                new EmbeddingModel() {
-                    @Override
-                    public EmbeddingResponse embed(EmbeddingRequest request) {
-                        return m.embed(request);
-                    }
+        if (shared == null) {
+            weights = Arenas.newCrossThread();
+            try {
+                var loaded = Models.loadEmbedder(TestModels.require(REF), weights);
+                for (int width : new int[] {0, 256}) {
+                    sharedModels.add(
+                            JinferEmbeddingModel.builder()
+                                    .model(loaded)
+                                    .contextCapacity(1024)
+                                    .dimensions(width)
+                                    .build());
+                }
+            } catch (IOException e) {
+                throw new UncheckedIOException(e);
+            }
+            shared = sharedModels.stream().map(JinferEmbeddingModelTckIT::wrap).toList();
+        }
+        return shared;
+    }
 
-                    @Override
-                    public EmbeddingResponse doEmbed(EmbeddingRequest request) {
-                        return m.embed(request);
-                    }
+    private static EmbeddingModel wrap(JinferEmbeddingModel m) {
+        return new EmbeddingModel() {
+            @Override
+            public EmbeddingResponse embed(EmbeddingRequest request) {
+                return m.embed(request);
+            }
 
-                    @Override
-                    public int dimension() {
-                        return m.dimension();
-                    }
+            @Override
+            public EmbeddingResponse doEmbed(EmbeddingRequest request) {
+                return m.embed(request);
+            }
 
-                    @Override
-                    public String modelName() {
-                        return m.modelName();
-                    }
+            @Override
+            public int dimension() {
+                return m.dimension();
+            }
 
-                    @Override
-                    public Set<EmbeddingParameter<?>> supportedParameters() {
-                        return m.supportedParameters();
-                    }
-                });
+            @Override
+            public String modelName() {
+                return m.modelName();
+            }
+
+            @Override
+            public EmbeddingRequestParameters defaultRequestParameters() {
+                return m.defaultRequestParameters();
+            }
+
+            @Override
+            public Set<EmbeddingParameter<?>> supportedParameters() {
+                return m.supportedParameters();
+            }
+
+            @Override
+            public String toString() {
+                return "jinfer " + m.dimension(); // names the case in the report
+            }
+        };
     }
 
     @Override

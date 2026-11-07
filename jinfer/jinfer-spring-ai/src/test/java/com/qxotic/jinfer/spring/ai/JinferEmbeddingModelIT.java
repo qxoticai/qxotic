@@ -25,6 +25,7 @@ import org.springframework.ai.embedding.Embedding;
 import org.springframework.ai.embedding.EmbeddingOptions;
 import org.springframework.ai.embedding.EmbeddingRequest;
 import org.springframework.ai.embedding.EmbeddingResponse;
+import org.springframework.ai.embedding.observation.EmbeddingModelObservationDocumentation;
 import org.springframework.ai.vectorstore.SearchRequest;
 import org.springframework.ai.vectorstore.SimpleVectorStore;
 import org.springframework.core.io.ByteArrayResource;
@@ -216,42 +217,201 @@ class JinferEmbeddingModelIT {
     }
 
     @Test
-    void fixedWidthModelAcceptsOnlyItsNativeDimension() {
-        try (JinferEmbeddingModel fixed =
-                JinferEmbeddingModel.builder()
-                        .modelPath(
-                                TestModels.require(
-                                        "hf.co/LiquidAI/LFM2.5-Embedding-350M-GGUF/LFM2.5-Embedding-350M-Q8_0.gguf"))
-                        .contextCapacity(256)
-                        .build()) {
-            assertEquals(
-                    1024,
-                    fixed.call(new EmbeddingRequest(List.of("native"), null))
-                            .getResults()
-                            .get(0)
-                            .getOutput()
-                            .length);
-            assertEquals(
-                    1024,
-                    fixed.call(
-                                    new EmbeddingRequest(
-                                            List.of("explicit native"),
-                                            EmbeddingOptions.builder().dimensions(1024).build()))
-                            .getResults()
-                            .get(0)
-                            .getOutput()
-                            .length);
-            IllegalArgumentException failure =
+    void fixedWidthModelAcceptsOnlyItsNativeDimension() throws Exception {
+        try (Arena arena = Arenas.newCrossThread()) {
+            var loaded =
+                    Models.loadEmbedder(
+                            TestModels.require(
+                                    "hf.co/LiquidAI/LFM2.5-Embedding-350M-GGUF/LFM2.5-Embedding-350M-Q8_0.gguf"),
+                            arena);
+            try (JinferEmbeddingModel fixed =
+                    JinferEmbeddingModel.builder().model(loaded).contextCapacity(256).build()) {
+                assertEquals(
+                        1024,
+                        fixed.call(new EmbeddingRequest(List.of("native"), null))
+                                .getResults()
+                                .get(0)
+                                .getOutput()
+                                .length);
+                assertEquals(
+                        1024,
+                        fixed.call(
+                                        new EmbeddingRequest(
+                                                List.of("explicit native"),
+                                                EmbeddingOptions.builder()
+                                                        .dimensions(1024)
+                                                        .build()))
+                                .getResults()
+                                .get(0)
+                                .getOutput()
+                                .length);
+                IllegalArgumentException failure =
+                        assertThrows(
+                                IllegalArgumentException.class,
+                                () ->
+                                        fixed.call(
+                                                new EmbeddingRequest(
+                                                        List.of("custom"),
+                                                        EmbeddingOptions.builder()
+                                                                .dimensions(512)
+                                                                .build())));
+                assertTrue(failure.getMessage().contains("fixed embedding dimension"));
+            }
+
+            // a model-wide width: its own builds, any other is refused at build
+            try (JinferEmbeddingModel own =
+                    JinferEmbeddingModel.builder()
+                            .model(loaded)
+                            .contextCapacity(256)
+                            .dimensions(1024)
+                            .build()) {
+                assertEquals(1024, own.dimensions());
+                assertEquals(1024, own.embed(new Document("native")).length);
+            }
+            IllegalArgumentException refused =
                     assertThrows(
                             IllegalArgumentException.class,
                             () ->
-                                    fixed.call(
-                                            new EmbeddingRequest(
-                                                    List.of("custom"),
-                                                    EmbeddingOptions.builder()
-                                                            .dimensions(512)
-                                                            .build())));
-            assertTrue(failure.getMessage().contains("fixed embedding dimension"));
+                                    JinferEmbeddingModel.builder()
+                                            .model(loaded)
+                                            .contextCapacity(256)
+                                            .dimensions(512)
+                                            .build());
+            assertTrue(
+                    refused.getMessage().endsWith("embeds at a fixed 1024 dimensions, not 512"),
+                    refused.getMessage());
+        }
+    }
+
+    // ---- a model-wide width: what a store sized from dimensions() needs on every route ----
+
+    @Test
+    void aModelWideWidthReachesEveryRoute() throws Exception {
+        String text = "A kitten was sitting by the window.";
+        EmbeddingOptions at256 = EmbeddingOptions.builder().dimensions(256).build();
+        float[] expected =
+                model.call(new EmbeddingRequest(List.of(text), at256)).getResult().getOutput();
+        float[] expectedQuery =
+                model.call(new EmbeddingRequest(List.of(QWEN3_QUERY_PREFIX + text), at256))
+                        .getResult()
+                        .getOutput();
+        TestObservationRegistry seen = TestObservationRegistry.create();
+        try (Arena arena = Arenas.newCrossThread()) {
+            var loaded = Models.loadEmbedder(TestModels.require(EMBED_REF), arena);
+            try (JinferEmbeddingModel narrow =
+                    JinferEmbeddingModel.builder()
+                            .model(loaded)
+                            .contextCapacity(1024)
+                            .dimensions(256)
+                            .observationRegistry(seen)
+                            .build()) {
+                assertEquals(256, narrow.dimensions());
+
+                List<float[]> documentSide =
+                        List.of(
+                                narrow.embed(new Document(text)),
+                                narrow.embed(
+                                                List.of(new Document(text)),
+                                                EmbeddingOptions.builder().build(),
+                                                List::of)
+                                        .get(0),
+                                narrow.embed(List.of(text)).get(0),
+                                narrow.embedForResponse(List.of(text)).getResult().getOutput(),
+                                narrow.call(new EmbeddingRequest(List.of(text), null))
+                                        .getResult()
+                                        .getOutput());
+                for (float[] vector : documentSide) {
+                    assertEquals(256, vector.length);
+                    assertEquals(1, norm(vector), 1e-5);
+                    assertTrue(cosine(vector, expected) > 0.99999, "same as a per-call 256");
+                }
+                float[] query = narrow.embed(text);
+                assertEquals(256, query.length);
+                assertTrue(cosine(query, expectedQuery) > 0.99999, "the framing still applies");
+
+                // a call's own width wins, and the observation records the width embedded
+                String dimensionsKey =
+                        EmbeddingModelObservationDocumentation.HighCardinalityKeyNames
+                                .REQUEST_EMBEDDING_DIMENSIONS
+                                .asString();
+                seen.clear();
+                narrow.call(new EmbeddingRequest(List.of(text), null));
+                seen.assertThat().hasAnObservationWithAKeyValue(dimensionsKey, "256");
+                seen.clear();
+                assertEquals(
+                        512,
+                        narrow.call(
+                                        new EmbeddingRequest(
+                                                List.of(text),
+                                                EmbeddingOptions.builder().dimensions(512).build()))
+                                .getResult()
+                                .getOutput()
+                                .length);
+                seen.assertThat().hasAnObservationWithAKeyValue(dimensionsKey, "512");
+
+                // the store sizes nothing itself: add and search agree on 256 or fail
+                var store = SimpleVectorStore.builder(narrow).build();
+                store.add(
+                        List.of(
+                                new Document(
+                                        "The reset portal for AcmeCloud is"
+                                                + " https://acme.example/reset."),
+                                new Document("Bananas are yellow fruit rich in potassium.")));
+                List<Document> hits =
+                        store.similaritySearch(
+                                SearchRequest.builder()
+                                        .query("Where do I reset my AcmeCloud password?")
+                                        .topK(1)
+                                        .build());
+                assertTrue(
+                        hits.get(0).getText().contains("acme.example/reset"),
+                        hits.get(0).getText());
+
+                try (JinferEmbeddingModel fork = narrow.fork()) {
+                    assertEquals(256, fork.dimensions());
+                    assertTrue(cosine(fork.embed(new Document(text)), expected) > 0.99999);
+                }
+            }
+        }
+    }
+
+    @Test
+    void aModelWideWidthIsCheckedAtBuild() throws Exception {
+        IllegalArgumentException negative =
+                assertThrows(
+                        IllegalArgumentException.class,
+                        () -> JinferEmbeddingModel.builder().dimensions(-1));
+        assertEquals(
+                "dimensions must be 0 (the model's own width) or positive, not -1",
+                negative.getMessage());
+        try (Arena arena = Arenas.newCrossThread()) {
+            var loaded = Models.loadEmbedder(TestModels.require(EMBED_REF), arena);
+            int own = loaded.dimension();
+            for (int width : new int[] {0, own}) {
+                try (JinferEmbeddingModel m =
+                        JinferEmbeddingModel.builder()
+                                .model(loaded)
+                                .contextCapacity(256)
+                                .dimensions(width)
+                                .build()) {
+                    assertEquals(own, m.dimensions());
+                }
+            }
+            for (int width : new int[] {31, own + 1}) {
+                IllegalArgumentException refused =
+                        assertThrows(
+                                IllegalArgumentException.class,
+                                () ->
+                                        JinferEmbeddingModel.builder()
+                                                .model(loaded)
+                                                .contextCapacity(256)
+                                                .dimensions(width)
+                                                .build());
+                assertTrue(
+                        refused.getMessage()
+                                .endsWith("embeds at 32.." + own + " dimensions, not " + width),
+                        refused.getMessage());
+            }
         }
     }
 

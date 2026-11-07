@@ -57,7 +57,7 @@ java --add-modules jdk.incubator.vector \
 Endpoints: `/v1/chat/completions`, `/v1/completions`, `/v1/responses`, `/v1/models`, `/v1/tokenize`, `/v1/detokenize`, `/health`, Prometheus `/metrics`. Chat supports streaming, tools, structured output, reasoning, stop strings, deterministic seeds, and multimodal content when the model has a projector.
 
 The model selects the API.
-An embedding model (Qwen3-Embedding, LFM2.5-Embedding, EmbeddingGemma 2) serves OpenAI's `POST /v1/embeddings`, with `encoding_format` `float` or `base64`, and `dimensions` where the model is Matryoshka-trained (Qwen3: 32 up to 1024).
+An embedding model (Qwen3-Embedding, LFM2.5-Embedding, EmbeddingGemma 2) serves OpenAI's `POST /v1/embeddings`, with `encoding_format` `float` or `base64`, and `dimensions` where the model is Matryoshka-trained (Qwen3: 32 up to 1024, EmbeddingGemma 2: 128 up to 768).
 With its projector attached (`--with media=<mmproj>`), EmbeddingGemma 2 also takes inputs that are arrays of content parts, `text`, `image_url`, `input_audio` and `video_url`, each array embedded as one vector.
 A reranker (Qwen3-Reranker, LFM2.5-ColBERT) serves `POST /v1/rerank` in the llama.cpp, Jina and Cohere shape: `query`, `documents`, `top_n`, `return_documents`.
 Qwen3-Reranker's `relevance_score` is a probability; LFM2.5-ColBERT's is an unbounded MaxSim sum (about 28 to 30 out of 32), so rank by it and never threshold it.
@@ -226,6 +226,7 @@ This table is the translation.
 |---|---|---|---|---|---|
 | context capacity: the usable context of this model or state, what you set | `contextCapacity` (`ChatEngine`, `PromptCache.Options`) | `--context-capacity`, `-c` | `n_ctx` in `/props` | `contextCapacity` | `contextCapacity`, `spring.ai.jinfer.chat.context-capacity` |
 | max context length: what the checkpoint was trained for, the ceiling of the above | `ContextConfiguration.maxContextLength()`; `PromptCache.Options.MAXIMUM_CONTEXT` (-1) selects it | `-c max` or `-c -1` selects it | `n_ctx_train` in `/props` | `contextCapacity(-1)` selects it | same |
+| embedding width, Matryoshka models | `outputDimension` on `LoadedEmbedder.embed` and `embedAll` | - | `dimensions` per request | `dimensions` per request; builder `dimensions` for every call | `EmbeddingOptions.dimensions` per call; builder `dimensions`, `spring.ai.jinfer.embedding.dimensions` for every call |
 | max output tokens | `Request.maxOutputTokens` | `--max-output-tokens` | `max_tokens`, `max_completion_tokens` | `maxOutputTokens` | `maxTokens` |
 | temperature, top-p, top-k, min-p, seed | `Sampling` | `--temp`, `--top-p`, `--top-k`, `--min-p`, `--seed` | `temperature`, `top_p`, `top_k`, `min_p`, `seed` | builder, per request `JinferChatRequestParameters` | `JinferChatOptions` |
 | thinking | `Request.thinking` | `--think` | `chat_template_kwargs.enable_thinking` | `thinking` | `thinking` |
