@@ -172,6 +172,25 @@ curl -sS http://127.0.0.1:8080/v1/chat/completions \
   -d '{"messages":[{"role":"user","content":"Name the planets."}]}'
 ```
 
+A model with a voice, LFM3-Omni with its projector attached through `--with media`, answers in speech when the request asks for it, in OpenAI's shape: `modalities` of `["text", "audio"]` and an `audio` object whose `format` is `wav` or `pcm16`.
+
+```sh
+jinfer server -m LiquidAI/LFM3-Omni-2B-GGUF:Q8_0 \
+  --with media=LiquidAI/LFM3-Omni-2B-GGUF/mmproj-LFM3-Omni-2B-F16.gguf --port 8080
+curl -sS http://127.0.0.1:8080/v1/chat/completions \
+  -H 'Content-Type: application/json' \
+  -d '{"messages":[{"role":"system","content":"Respond with interleaved text and audio."},
+                   {"role":"user","content":"What is the capital of France?"}],
+       "modalities":["text","audio"],"audio":{"format":"wav"}}'
+```
+
+The reply's `message.audio` carries the speech as base64 `data`, its `transcript`, an `id` and `expires_at`; `content` is null, as OpenAI's is.
+To continue the conversation, send the assistant turn back as `{"role":"assistant","audio":{"id":"..."}}` and the server replays it exactly as spoken.
+An id lives one hour on the server that minted it, among the last 4096; an unknown or expired one is refused.
+A streamed spoken reply carries the transcript and the speech in `delta.audio` chunks naming that id, the speech as `pcm16` only, 16-bit mono at the voice's rate, and the `expires_at` chunk last.
+`/v1/models` lists the `output_modalities` the served model has.
+A spoken reply cannot offer tools or follow a grammar, and does not reason; the server never speaks unless the request allows audio.
+
 To serve transcription instead, stop the language server and select the ASR model:
 
 ```sh
