@@ -2,9 +2,7 @@ package com.qxotic.jinfer.server;
 
 import com.qxotic.jinfer.chat.Content;
 import com.qxotic.jinfer.chat.Message;
-import com.qxotic.jinfer.media.Media;
 import java.time.Duration;
-import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -13,9 +11,10 @@ import java.util.UUID;
 /**
  * The spoken replies a later request may refer to by OpenAI's {@code audio.id}: a client sends back
  * {@code {"role": "assistant", "audio": {"id": ...}}}, and the turn replays exactly as the model
- * spoke it. The reply is kept with its record - positions and codes, a few KB - and without its
- * waveform, which replay never reads. Bounded and expiring, like OpenAI's own: ponytail, an
- * in-memory LRU; a persistent store if turns must outlive a restart.
+ * spoke it. What is kept is the reply's words and its record - positions and codes, a few KB - not
+ * the speech itself: replay reads the record, and a model that cannot replay it reads the words.
+ * Bounded and expiring, like OpenAI's own: ponytail, an in-memory LRU; a persistent store if turns
+ * must outlive a restart.
  */
 final class SpokenTurns {
 
@@ -42,7 +41,7 @@ final class SpokenTurns {
      */
     synchronized long put(String id, Message reply) {
         long expiresAt = System.currentTimeMillis() / 1000 + LIFETIME.toSeconds();
-        turns.put(id, new Kept(withoutWaveform(reply), expiresAt));
+        turns.put(id, new Kept(withoutSpeech(reply), expiresAt));
         return expiresAt;
     }
 
@@ -56,18 +55,9 @@ final class SpokenTurns {
         return kept.turn();
     }
 
-    private static Message withoutWaveform(Message reply) {
-        List<Content> content = new ArrayList<>(reply.content().size());
-        for (Content part : reply.content()) {
-            content.add(
-                    part instanceof Content.Media m && m.media() instanceof Media.Audio speech
-                            ? new Content.Media(
-                                    new Media.Audio(
-                                            new float[0], speech.sampleRate(), speech.channels()),
-                                    null,
-                                    m.caption())
-                            : part);
-        }
-        return new Message(reply.role(), content, reply.verbatim());
+    private static Message withoutSpeech(Message reply) {
+        List<Content> words =
+                reply.content().stream().filter(p -> !(p instanceof Content.Media)).toList();
+        return new Message(reply.role(), words, reply.verbatim());
     }
 }

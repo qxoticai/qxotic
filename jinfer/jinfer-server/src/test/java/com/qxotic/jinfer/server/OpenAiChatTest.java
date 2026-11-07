@@ -27,8 +27,8 @@ import org.junit.jupiter.api.Test;
 class OpenAiChatTest {
 
     /**
-     * A spoken reply comes back in history by its {@code audio.id}: the kept turn replays as its
-     * transcript and its exact record; an id the server does not hold is refused.
+     * A spoken reply comes back in history by its {@code audio.id}: the kept turn is its words and
+     * its exact record, the speech itself not kept; an id the server does not hold is refused.
      */
     @Test
     void assistantAudioReplaysTheKeptTurn() {
@@ -59,11 +59,7 @@ class OpenAiChatTest {
         Message replayed = messages.get(1);
         assertEquals(Role.ASSISTANT, replayed.role());
         assertEquals("Paris.", replayed.text());
-        assertTrue(replayed.speech().isPresent(), "the speech, without its waveform");
-        assertEquals(
-                Optional.of("Paris."),
-                ((Content.Media) replayed.content().get(1)).caption(),
-                "captioned with its transcript");
+        assertTrue(replayed.speech().isEmpty(), "the speech is not kept: the record replays it");
         assertTrue(replayed.verbatim() == record, "the record replays");
         assertThrows(
                 IllegalArgumentException.class,
