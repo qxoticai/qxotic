@@ -63,20 +63,23 @@ The one unchanged artifact is `json`, at 0.2.0.
   The starter configures 2.1's session memory (`SessionService`, `SessionAdvisors`) in place of the chat memory it deprecates for 3.0; it requires Spring Boot 4.2.
 - **Spoken replies in Spring AI.** `JinferChatOptions.outputModalities` says what a reply may be made of: unset is text alone, `TEXT` and `AUDIO` let LFM3-Omni choose speech when the prompt asks, `AUDIO` alone makes it speak.
   The speech is a `MediaPart` of `audio/wav` beside the transcript, whole from `call` and a part per stretch from `stream`; `spring.ai.jinfer.chat.output-modalities` sets the default in Spring Boot.
+- **Spoken replies in LangChain4j.** `JinferChatRequestParameters.outputModalities` says what a reply may be made of, the engine's own `Modality` enum: unset, text alone; text and audio, the model's choice; audio alone, a spoken reply.
+  The speech is the `AiMessage`'s `audios()`, one `audio/wav` clip beside the transcript, whole from `chat`; the streaming model hands each stretch to `onUnmappedRawEvent` as the engine's `Media.Audio`.
+  An unmodified reply echoed in history replays its speech exactly, and an `AudioContent` built from binary data is now decoded like one built from base64 or a file.
 
 ### Behaviour changes
 
 Coming from 0.3.0, these act differently:
 
 - **GPT-2 style tokenizers in `toknroll-hf`.** A `ByteLevel` pre-tokenizer applies the GPT-2 split unless it says `use_regex: false`, as Hugging Face tokenizers does, so GPT-2, DistilGPT-2, Phi-2 and RoBERTa encode differently: now identical to `r50k_base` where they share its vocabulary.
-- **Refusals instead of silent defaults.** A generative model loaded as an embedder throws `IncompatibleModelException`, and the positive-integer tuning properties (`jinfer.decodeBlockSize` and the like) refuse a value they cannot use instead of ignoring it; the undocumented `vis.squareResize` switch is gone.
-- **Spring AI.** Sampling options are validated when they are built, naming the property, a blank rerank model is refused at boot, and `getReasoningBudget()` / `getReasoningBudgetMessage()` are deprecated for `getMaxReasoningTokens()` / `getReasoningCutoffMessage()`.
-- **Stricter templates and grammars.** An unknown Jinja statement such as `{% endset %}` fails instead of rendering nothing, and malformed GBNF or unsatisfiable schema bounds (`minLength` over `maxLength`, `minItems` over `maxItems`) are refused instead of compiling to a different language.
 - **A reply remembers how it was said.** `Message` carries a `Verbatim` record: the turn's token ids from the prompt's reply prefix to its last token, a speech frame as `Verbatim.FRAME` with its codes aside, stamped with the model that generated it; `Verbatim.NONE` on a turn nobody generated.
   A native template writes the record in place of the turn (`PromptWriter.replay`), reasoning and all, so the model reads back exactly what it wrote and the prompt cache recognizes the stream it holds; a record from another model renders from its parts.
   The parts are plain data: `Content.Text`, `Content.Reasoning` and `Content.ToolCall` lose their `verbatim` ids, `Content.Media` holds an image, audio or video the caller gives the model and, in a reply, the model's own speech, captioned with the words it spoke; `Content.Speech` and `SpokenTurn` are gone.
   `ChatEngine.Completion.reasoningTokens` is a component, counted as the reply streams, and a thinking span the prompt seeded empty no longer appears as an empty `Content.Reasoning` part: prompt-owned tokens are the record's, not the reply's.
   A reply's parts are its stream folded, in emission order: `Content.Reasoning` is a run of reasoning text, and a call the model claimed while thinking is a `Content.ToolCall` between the runs it interrupted, no longer a part nested inside the reasoning; `Message.reasoning()` joins the runs as `text()` joins the text.
+- **Refusals instead of silent defaults.** A generative model loaded as an embedder throws `IncompatibleModelException`, and the positive-integer tuning properties (`jinfer.decodeBlockSize` and the like) refuse a value they cannot use instead of ignoring it; the undocumented `vis.squareResize` switch is gone.
+- **Spring AI.** Sampling options are validated when they are built, naming the property, a blank rerank model is refused at boot, and `getReasoningBudget()` / `getReasoningBudgetMessage()` are deprecated for `getMaxReasoningTokens()` / `getReasoningCutoffMessage()`.
+- **Stricter templates and grammars.** An unknown Jinja statement such as `{% endset %}` fails instead of rendering nothing, and malformed GBNF or unsatisfiable schema bounds (`minLength` over `maxLength`, `minItems` over `maxItems`) are refused instead of compiling to a different language.
 - **`enable_thinking` decides.** A request's `chat_template_kwargs.enable_thinking` overrides the `thinking` flag for the whole request, in the library as on the server.
 - **Offline precedence.** `-Djinfer.offline` decides when set, else `JINFER_OFFLINE`; both accept `1`/`true`/`on`/`yes` and `0`/`false`/`off`/`no`, so `-Djinfer.offline=false` overrides `JINFER_OFFLINE=1`.
 - **CLI output.** Under 32 tokens the stats line reads `N tokens in X s` instead of a rate, a reply cut short says why on stderr, and `chat` and `instruct` refuse `--with media`, which only the server uses.

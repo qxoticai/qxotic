@@ -15,6 +15,7 @@ import com.qxotic.jinfer.llm.Generator;
 import com.qxotic.jinfer.media.Media;
 import dev.langchain4j.agent.tool.ToolExecutionRequest;
 import dev.langchain4j.agent.tool.ToolSpecification;
+import dev.langchain4j.data.audio.Audio;
 import dev.langchain4j.data.message.AiMessage;
 import dev.langchain4j.data.message.AudioContent;
 import dev.langchain4j.data.message.ChatMessage;
@@ -48,6 +49,7 @@ import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
 import java.util.ArrayList;
 import java.util.Base64;
+import java.util.Collections;
 import java.util.HexFormat;
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -118,7 +120,11 @@ final class Mappings {
                 yield blob("image", ContentKey.sha256(src), () -> ImageCodec.decode(src));
             }
             case AudioContent a -> {
-                byte[] src = bytes(a.audio().base64Data(), a.audio().url());
+                // an Audio alone of the three carries bytes as well: a reply's own clip sent back
+                byte[] src =
+                        a.audio().binaryData() != null
+                                ? a.audio().binaryData()
+                                : bytes(a.audio().base64Data(), a.audio().url());
                 yield blob("audio", ContentKey.sha256(src), () -> AudioCodec.decode(src));
             }
             case VideoContent v -> {
@@ -542,7 +548,21 @@ final class Mappings {
         if (!calls.isEmpty()) b.toolExecutionRequests(calls);
         // the parsed reply rides along whole: an unmodified echo restores its record instead of
         // re-tokenizing (what makes retained-session extension hits byte-exact)
-        b.attributes(Map.of(REPLY_ATTRIBUTE, reply));
+        Map<String, Object> attributes = new LinkedHashMap<>();
+        attributes.put(REPLY_ATTRIBUTE, reply);
+        // the speech under langchain4j's own key, so AiMessage.audios() is the clip: WAV, so the
+        // bytes name their own sample rate and channels; the transcript is the text
+        reply.speech()
+                .ifPresent(
+                        clip ->
+                                attributes.put(
+                                        AiMessage.GENERATED_AUDIO_KEY,
+                                        List.of(
+                                                Audio.builder()
+                                                        .binaryData(AudioCodec.wav(clip))
+                                                        .mimeType("audio/wav")
+                                                        .build())));
+        b.attributes(Collections.unmodifiableMap(attributes));
         return b.build();
     }
 
@@ -568,7 +588,7 @@ final class Mappings {
                                         // sending "flexible": null) is JSON null, not a crash
                                         .arguments(JsonCodec.stringify(c.arguments()))
                                         .build());
-                default -> {} // ToolResult/Media never appear in a generated reply
+                default -> {} // a ToolResult never appears in a reply; speech is read whole
             }
         }
     }

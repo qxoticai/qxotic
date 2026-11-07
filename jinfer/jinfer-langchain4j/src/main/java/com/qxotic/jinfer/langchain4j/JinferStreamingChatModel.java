@@ -5,6 +5,7 @@ import com.qxotic.jinfer.chat.ChatEngine;
 import com.qxotic.jinfer.chat.ReplyParser;
 import com.qxotic.jinfer.chat.TextStops;
 import com.qxotic.jinfer.chat.Tool;
+import com.qxotic.jinfer.media.Media;
 import dev.langchain4j.data.message.AiMessage;
 import dev.langchain4j.model.chat.Capability;
 import dev.langchain4j.model.chat.StreamingChatModel;
@@ -28,7 +29,9 @@ import java.util.concurrent.atomic.AtomicBoolean;
  * GGUF loads once either way): the engine's single lazy driver thread runs the generation and
  * forwards the native {@link ReplyParser}'s two lanes to langchain4j's two streaming channels -
  * content fragments to {@code onPartialResponse} (with a cancellation handle), reasoning fragments
- * to {@code onPartialThinking}. Models without a native parser stream raw decoded text.
+ * to {@code onPartialThinking}; a spoken reply's speech comes a stretch at a time through {@code
+ * onUnmappedRawEvent} as the engine's {@code Media.Audio}, and whole on the complete response.
+ * Models without a native parser stream raw decoded text.
  *
  * <p>Lifecycle: the twin shares the blocking model's engine - {@code close()} on either closes
  * both, and with them every cached-prompt view (see {@link JinferChatModel}'s Lifecycle paragraph).
@@ -149,6 +152,15 @@ public final class JinferStreamingChatModel implements StreamingChatModel, AutoC
                                 }
                                 // other channels are structural: a claimed call span surfaces
                                 // nothing until the finished reply's parsed calls
+                            }
+
+                            @Override
+                            public void onMedia(Media part) {
+                                // a stretch of speech as it is decoded, the engine's own clip:
+                                // langchain4j has no partial-audio event, this is its door for
+                                // a provider's; the words are the content deltas above, the whole
+                                // clip is the complete response's audio
+                                safely(handler, () -> handler.onUnmappedRawEvent(part));
                             }
 
                             @Override

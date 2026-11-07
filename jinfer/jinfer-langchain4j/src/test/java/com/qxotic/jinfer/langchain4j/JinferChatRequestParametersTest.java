@@ -5,9 +5,11 @@ import static org.junit.jupiter.api.Assertions.assertNotEquals;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 
+import com.qxotic.jinfer.chat.Modality;
 import dev.langchain4j.model.chat.request.ChatRequestParameters;
 import dev.langchain4j.model.chat.request.DefaultChatRequestParameters;
 import java.time.Duration;
+import java.util.Set;
 import org.junit.jupiter.api.Test;
 
 /**
@@ -156,6 +158,35 @@ class JinferChatRequestParametersTest {
         assertEquals(a.hashCode(), same.hashCode());
         assertNotEquals(a, otherSeed);
         assertNotEquals(a, otherGrammar);
+    }
+
+    @Test
+    void outputModalitiesRideTheMergeLikeEveryJinferExtra() {
+        JinferChatRequestParameters defaults =
+                JinferChatRequestParameters.builder()
+                        .outputModalities(Modality.TEXT, Modality.AUDIO)
+                        .build();
+        assertEquals(Set.of(Modality.TEXT, Modality.AUDIO), defaults.outputModalities());
+        // a default-typed request leaves it standing; a jinfer-typed request overrides it; unset
+        // or empty on either side is "no opinion", never "nothing"
+        ChatRequestParameters plain =
+                DefaultChatRequestParameters.builder().temperature(0.5).build();
+        assertEquals(
+                Set.of(Modality.TEXT, Modality.AUDIO),
+                ((JinferChatRequestParameters) defaults.overrideWith(plain)).outputModalities());
+        JinferChatRequestParameters spoken =
+                JinferChatRequestParameters.builder().outputModalities(Modality.AUDIO).build();
+        assertEquals(
+                Set.of(Modality.AUDIO),
+                ((JinferChatRequestParameters) defaults.overrideWith(spoken)).outputModalities());
+        JinferChatRequestParameters silent =
+                JinferChatRequestParameters.builder().outputModalities().build();
+        assertNull(silent.outputModalities());
+        assertEquals(
+                Set.of(Modality.TEXT, Modality.AUDIO),
+                ((JinferChatRequestParameters) defaults.overrideWith(silent)).outputModalities());
+        assertNull(JinferChatRequestParameters.builder().build().outputModalities());
+        assertNotEquals(defaults, spoken);
     }
 
     @Test

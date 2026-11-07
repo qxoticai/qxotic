@@ -6,6 +6,7 @@ import com.qxotic.jinfer.chat.ChatTemplate;
 import com.qxotic.jinfer.chat.Content;
 import com.qxotic.jinfer.chat.LoadedModel;
 import com.qxotic.jinfer.chat.Message;
+import com.qxotic.jinfer.chat.Modality;
 import com.qxotic.jinfer.chat.Role;
 import com.qxotic.jinfer.chat.TextStops;
 import com.qxotic.jinfer.chat.Tool;
@@ -421,11 +422,15 @@ public final class JinferChatModel implements ChatModel, AutoCloseable {
         JinferChatRequestParameters j = p instanceof JinferChatRequestParameters jp ? jp : null;
         boolean think = j != null && j.thinking() != null ? j.thinking() : thinking;
         if (think != thinking) framed(() -> engine.requireThinkingRenderable(think));
+        // a spoken reply does not reason: allowing audio turns thinking off, as the server does,
+        // so one parameter opens the voice
+        Set<Modality> output = j == null ? null : j.outputModalities();
+        boolean speaks = output != null && output.contains(Modality.AUDIO);
         ChatEngine.Request lowered =
                 new ChatEngine.Request(
                         messages,
                         tools,
-                        think,
+                        think && !speaks,
                         p.maxOutputTokens() == null ? -1 : p.maxOutputTokens(),
                         j != null && j.maxReasoningTokens() != null
                                 ? j.maxReasoningTokens()
@@ -451,7 +456,8 @@ public final class JinferChatModel implements ChatModel, AutoCloseable {
                                 ? ChatEngine.ForcedTool.ANY
                                 : ChatEngine.ForcedTool.NONE,
                         p.stopSequences(),
-                        null); // langchain4j has no chat_template_kwargs equivalent
+                        null, // langchain4j has no chat_template_kwargs equivalent
+                        output);
         return framed(() -> engine.prepare(lowered));
     }
 

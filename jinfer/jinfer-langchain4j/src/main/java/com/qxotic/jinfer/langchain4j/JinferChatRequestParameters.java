@@ -1,9 +1,15 @@
 package com.qxotic.jinfer.langchain4j;
 
+import com.qxotic.jinfer.chat.Modality;
 import dev.langchain4j.model.chat.request.ChatRequestParameters;
 import dev.langchain4j.model.chat.request.DefaultChatRequestParameters;
 import java.time.Duration;
+import java.util.Collection;
+import java.util.Collections;
+import java.util.EnumSet;
+import java.util.List;
 import java.util.Objects;
+import java.util.Set;
 
 /**
  * jinfer's provider-specific request parameters - the standard langchain4j knobs plus:
@@ -16,6 +22,8 @@ import java.util.Objects;
  *       round is done.
  *   <li>{@code seed}: this request's sampler seed - byte-identical replay of a specific call, or
  *       deliberate variation across calls; null = the model builder's seed.
+ *   <li>{@code outputModalities}: what the reply may be made of; a model with a voice answers in
+ *       speech when audio is allowed, see {@link #outputModalities()}.
  * </ul>
  *
  * <p>Works at request level and as {@code defaultRequestParameters} (a standing grammar turns a
@@ -51,6 +59,7 @@ public class JinferChatRequestParameters extends DefaultChatRequestParameters {
     private final Boolean thinking;
     private final String reasoningCutoffMessage;
     private final Duration timeout;
+    private final Set<Modality> outputModalities;
 
     protected JinferChatRequestParameters(Builder builder) {
         super(builder);
@@ -61,6 +70,7 @@ public class JinferChatRequestParameters extends DefaultChatRequestParameters {
         this.thinking = builder.thinking;
         this.reasoningCutoffMessage = builder.reasoningCutoffMessage;
         this.timeout = builder.timeout;
+        this.outputModalities = builder.outputModalities;
     }
 
     /** Raw GBNF constraining the reply, or null. */
@@ -102,6 +112,19 @@ public class JinferChatRequestParameters extends DefaultChatRequestParameters {
         return timeout;
     }
 
+    /**
+     * What the reply may be made of; null = text alone, which never switches into speech. Allowed,
+     * not required: with text and audio allowed the model chooses, steered by the prompt, and audio
+     * alone makes it speak. Speech comes as the reply's {@code AiMessage.audios()}, one {@code
+     * audio/wav} clip beside the transcript, and a stretch at a time from the streaming model as
+     * {@code onUnmappedRawEvent} with the engine's {@code Media.Audio}. Only a model loaded with
+     * its voice can speak; a spoken reply cannot offer tools or follow a grammar, and does not
+     * reason: allowing audio turns {@code thinking} off. See {@link Modality}.
+     */
+    public Set<Modality> outputModalities() {
+        return outputModalities;
+    }
+
     @Override
     public JinferChatRequestParameters overrideWith(ChatRequestParameters that) {
         return builder().overrideWith(this).overrideWith(that).build();
@@ -117,7 +140,8 @@ public class JinferChatRequestParameters extends DefaultChatRequestParameters {
                 && Objects.equals(maxReasoningTokens, that.maxReasoningTokens)
                 && Objects.equals(thinking, that.thinking)
                 && Objects.equals(reasoningCutoffMessage, that.reasoningCutoffMessage)
-                && Objects.equals(timeout, that.timeout);
+                && Objects.equals(timeout, that.timeout)
+                && Objects.equals(outputModalities, that.outputModalities);
     }
 
     @Override
@@ -130,7 +154,8 @@ public class JinferChatRequestParameters extends DefaultChatRequestParameters {
                 maxReasoningTokens,
                 thinking,
                 reasoningCutoffMessage,
-                timeout);
+                timeout,
+                outputModalities);
     }
 
     @Override
@@ -149,6 +174,8 @@ public class JinferChatRequestParameters extends DefaultChatRequestParameters {
                 + (reasoningCutoffMessage == null ? "null" : "'" + reasoningCutoffMessage + "'")
                 + ", timeout="
                 + timeout
+                + ", outputModalities="
+                + outputModalities
                 + ", "
                 + super.toString()
                 + "}";
@@ -167,6 +194,7 @@ public class JinferChatRequestParameters extends DefaultChatRequestParameters {
         private Boolean thinking;
         private String reasoningCutoffMessage;
         private Duration timeout;
+        private Set<Modality> outputModalities;
 
         @Override
         public Builder overrideWith(ChatRequestParameters parameters) {
@@ -180,6 +208,7 @@ public class JinferChatRequestParameters extends DefaultChatRequestParameters {
                 if (j.reasoningCutoffMessage() != null)
                     reasoningCutoffMessage(j.reasoningCutoffMessage());
                 if (j.timeout() != null) timeout(j.timeout());
+                if (j.outputModalities() != null) outputModalities(j.outputModalities());
             }
             return this;
         }
@@ -226,6 +255,20 @@ public class JinferChatRequestParameters extends DefaultChatRequestParameters {
             if (timeout != null && timeout.isNegative())
                 throw new IllegalArgumentException("timeout must be >= 0: " + timeout);
             this.timeout = timeout;
+            return this;
+        }
+
+        /** What the reply may be made of; null or empty = unset, text alone. */
+        public Builder outputModalities(Modality... output) {
+            return outputModalities(output == null ? null : List.of(output));
+        }
+
+        /** As {@link #outputModalities(Modality...)}; null or empty = unset, text alone. */
+        public Builder outputModalities(Collection<Modality> output) {
+            this.outputModalities =
+                    output == null || output.isEmpty()
+                            ? null
+                            : Collections.unmodifiableSet(EnumSet.copyOf(output));
             return this;
         }
 

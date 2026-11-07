@@ -1,5 +1,6 @@
 package com.qxotic.jinfer.langchain4j;
 
+import static org.junit.jupiter.api.Assertions.assertArrayEquals;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertInstanceOf;
@@ -7,13 +8,17 @@ import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
+import com.qxotic.jinfer.ContentKey;
 import com.qxotic.jinfer.chat.Content;
 import com.qxotic.jinfer.chat.Message;
 import com.qxotic.jinfer.chat.Role;
 import com.qxotic.jinfer.chat.Tool;
+import com.qxotic.jinfer.chat.Verbatim;
+import com.qxotic.jinfer.codecs.AudioCodec;
 import com.qxotic.jinfer.codecs.VideoSampler;
 import com.qxotic.jinfer.llm.Generator;
 import com.qxotic.jinfer.media.Media;
+import com.qxotic.toknroll.IntSequence;
 import dev.langchain4j.agent.tool.ToolExecutionRequest;
 import dev.langchain4j.agent.tool.ToolSpecification;
 import dev.langchain4j.data.message.AiMessage;
@@ -39,6 +44,7 @@ import java.util.ArrayList;
 import java.util.Base64;
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
 import javax.imageio.ImageIO;
 import org.junit.jupiter.api.Test;
 
@@ -160,6 +166,38 @@ class MappingsTest {
         AiMessage ai = Mappings.toAiMessage(reply);
         assertEquals("pondering", ai.thinking());
         assertEquals("answer", ai.text());
+    }
+
+    /**
+     * A spoken reply's speech is the AiMessage's audio, one WAV clip beside the transcript, and an
+     * unmodified echo restores the reply whole: the speech and the record it replays from.
+     */
+    @Test
+    void aSpokenReplyIsTheAiMessagesAudioAndEchoesWhole() {
+        Media.Audio clip = new Media.Audio(new float[480], 24_000, 1);
+        Verbatim record =
+                new Verbatim(
+                        new ContentKey("test-model"),
+                        IntSequence.of(5, Verbatim.FRAME, 6, Verbatim.FRAME),
+                        IntSequence.of(new int[24]));
+        Message spoken =
+                new Message(
+                        Role.ASSISTANT,
+                        List.of(
+                                new Content.Text("Paris."),
+                                new Content.Media(clip, null, Optional.of("Paris."))),
+                        record);
+        AiMessage ai = Mappings.toAiMessage(spoken);
+        assertEquals("Paris.", ai.text(), "the transcript is the text");
+        assertEquals(1, ai.audios().size(), "one clip");
+        assertEquals("audio/wav", ai.audios().get(0).mimeType());
+        assertArrayEquals(AudioCodec.wav(clip), ai.audios().get(0).binaryData());
+        assertTrue(
+                Mappings.toMessages(List.of(ai), VideoSampler.UNIFORM).get(0) == spoken,
+                "an unmodified echo is the reply itself, record included");
+        assertTrue(
+                Mappings.toAiMessage(Message.assistant("Paris.")).audios().isEmpty(),
+                "a text reply has no audio");
     }
 
     @Test

@@ -268,6 +268,51 @@ then sends the description to a second model that writes a WAV file.
 [`GemmaVideo.java`](../examples/GemmaVideo.java) samples video frames and sends them as timestamped
 image content.
 
+## Spoken replies
+
+A model with a voice, LFM3-Omni with its projector attached, can answer in speech through the chat model.
+What a reply may be made of is the `outputModalities` request parameter: unset, a reply is text alone and the model never switches into speech; `TEXT` and `AUDIO` let the model choose, steered by the prompt; `AUDIO` alone makes it speak.
+The speech is the reply's `audios()`, one `audio/wav` clip beside the transcript:
+
+```java
+try (var omni = JinferChatModel.builder()
+        .model("LiquidAI/LFM3-Omni-2B-GGUF:Q8_0")
+        .companion("media", "LiquidAI/LFM3-Omni-2B-GGUF/mmproj-LFM3-Omni-2B-F16.gguf")
+        .defaultRequestParameters(JinferChatRequestParameters.builder()
+                .outputModalities(Modality.TEXT, Modality.AUDIO)
+                .build())
+        .build()) {
+
+    AiMessage reply = omni.chat(
+            SystemMessage.from("Respond with interleaved text and audio."),
+            UserMessage.from("What is the capital of France?")).aiMessage();
+
+    System.out.println(reply.text()); // the transcript
+    for (Audio speech : reply.audios()) {
+        Files.write(Path.of("reply.wav"), speech.binaryData());
+    }
+}
+```
+
+The same parameter on a request opens or closes the voice for that request alone.
+The streaming model delivers the speech a stretch at a time, as the engine's `Media.Audio` through `onUnmappedRawEvent`, the transcript through `onPartialResponse`, and the whole clip on the complete response:
+
+```java
+List<Media.Audio> stretches = new ArrayList<>();
+omni.streaming().chat(request, new StreamingChatResponseHandler() {
+    @Override public void onPartialResponse(String partial) { System.out.print(partial); }
+    @Override public void onUnmappedRawEvent(Object event) { stretches.add((Media.Audio) event); }
+    @Override public void onCompleteResponse(ChatResponse response) {
+        Files.write(Path.of("reply.wav"), AudioCodec.wav(Media.Audio.concat(stretches)));
+    }
+    @Override public void onError(Throwable error) { error.printStackTrace(); }
+});
+```
+
+An `AiService`'s `TokenStream` takes the same `onUnmappedRawEvent`.
+A reply sent back in history carries its speech and replays exactly; sent back as `AudioContent.from(speech)`, the clip is heard by the model like any other audio input.
+A spoken reply does not reason, so allowing audio turns `thinking` off, and it cannot offer tools or follow a grammar: such a request is refused in words.
+
 ## Multi-model agent
 
 Two models can share one JVM: a tool-capable model runs LangChain4j's agent loop while a multimodal
@@ -374,6 +419,7 @@ JinferSpeechModel.builder()
 ```
 
 A request that names a `voice` is refused rather than answered in this model's only voice.
+An LFM3-Omni speaks through the chat model instead, see [Spoken replies](#spoken-replies).
 
 ## Speech recognition
 
