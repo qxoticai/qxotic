@@ -15,13 +15,17 @@ import java.awt.image.BufferedImage;
 import java.io.ByteArrayOutputStream;
 import java.io.DataOutputStream;
 import java.io.IOException;
+import java.io.UncheckedIOException;
 import java.net.URI;
 import java.nio.ByteBuffer;
 import java.nio.ByteOrder;
+import java.nio.file.Files;
+import java.nio.file.Path;
 import java.util.List;
 import java.util.Map;
 import javax.imageio.ImageIO;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.io.TempDir;
 import org.springframework.ai.chat.messages.AssistantMessage;
 import org.springframework.ai.chat.messages.SystemMessage;
 import org.springframework.ai.chat.messages.ToolResponseMessage;
@@ -210,9 +214,43 @@ class JinferMappingsTest {
                                         .data(new byte[] {1, 2, 3})
                                         .build())
                         .build();
-        assertThrows(
-                UnsupportedOperationException.class,
-                () -> JinferMappings.toMessages(List.of(u), VideoSampler.UNIFORM));
+        UnsupportedOperationException e =
+                assertThrows(
+                        UnsupportedOperationException.class,
+                        () -> JinferMappings.toMessages(List.of(u), VideoSampler.UNIFORM));
+        assertEquals(
+                "media type application/pdf is not supported: jinfer takes image, audio and video",
+                e.getMessage());
+    }
+
+    /** A decode failure names the input, inline or a file, and keeps the codec's reason. */
+    @Test
+    void undecodableMediaNamesTheInputAndTheReason(@TempDir Path dir) throws Exception {
+        Media inlineImage =
+                Media.builder()
+                        .mimeType(MimeType.valueOf("image/png"))
+                        .data(new byte[] {1, 2})
+                        .build();
+        UncheckedIOException inline =
+                assertThrows(
+                        UncheckedIOException.class,
+                        () -> JinferMappings.media(inlineImage, VideoSampler.UNIFORM));
+        assertTrue(
+                inline.getMessage()
+                        .startsWith("image inline image/png, 2 bytes could not be decoded: "),
+                inline.getMessage());
+        assertTrue(inline.getMessage().endsWith(inline.getCause().getMessage()));
+
+        Path file = Files.write(dir.resolve("cat.wav"), new byte[] {'h', 'i'});
+        Media fileAudio = new Media(MimeType.valueOf("audio/wav"), file.toUri());
+        UncheckedIOException fromFile =
+                assertThrows(
+                        UncheckedIOException.class,
+                        () -> JinferMappings.media(fileAudio, VideoSampler.UNIFORM));
+        assertTrue(
+                fromFile.getMessage().startsWith("audio " + file + " could not be decoded: "),
+                fromFile.getMessage());
+        assertTrue(fromFile.getMessage().endsWith(fromFile.getCause().getMessage()));
     }
 
     @Test

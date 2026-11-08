@@ -116,16 +116,28 @@ final class Mappings {
     static Content.Media media(dev.langchain4j.data.message.Content c, VideoSampler videoSampler) {
         return switch (c) {
             case ImageContent i -> {
-                byte[] src = bytes(i.image().base64Data(), i.image().url());
-                yield blob("image", ContentKey.sha256(src), () -> ImageCodec.decode(src));
+                var image = i.image();
+                byte[] src = bytes(image.base64Data(), image.url());
+                yield blob(
+                        "image",
+                        source(image.base64Data(), image.url(), image.mimeType(), src),
+                        ContentKey.sha256(src),
+                        () -> ImageCodec.decode(src));
             }
             case AudioContent a -> {
                 // an Audio alone of the three carries bytes as well: a reply's own clip sent back
+                var audio = a.audio();
                 byte[] src =
-                        a.audio().binaryData() != null
-                                ? a.audio().binaryData()
-                                : bytes(a.audio().base64Data(), a.audio().url());
-                yield blob("audio", ContentKey.sha256(src), () -> AudioCodec.decode(src));
+                        audio.binaryData() != null
+                                ? audio.binaryData()
+                                : bytes(audio.base64Data(), audio.url());
+                yield blob(
+                        "audio",
+                        audio.binaryData() != null
+                                ? inline(audio.mimeType(), src)
+                                : source(audio.base64Data(), audio.url(), audio.mimeType(), src),
+                        ContentKey.sha256(src),
+                        () -> AudioCodec.decode(src));
             }
             case VideoContent v -> {
                 // no base64 door here, unlike image/audio: the frame sampler reads a FILE
@@ -137,7 +149,7 @@ final class Mappings {
                             "inline base64 video is not supported: write it to a file and"
                                     + " pass its file:// URI");
                 Path src = localPath(v.video().url());
-                yield blob("video", sha256(src), () -> videoSampler.sample(src));
+                yield blob("video", src.toString(), sha256(src), () -> videoSampler.sample(src));
             }
             default ->
                     throw new UnsupportedFeatureException(
@@ -149,12 +161,26 @@ final class Mappings {
         Media decode() throws IOException;
     }
 
-    private static Content.Media blob(String kind, ContentKey contentKey, MediaDecode decode) {
+    /** Decoded media; a failure names the input and keeps the codec's reason, as the server's. */
+    private static Content.Media blob(
+            String kind, String source, ContentKey contentKey, MediaDecode decode) {
         try {
             return new Content.Media(decode.decode(), contentKey);
         } catch (IOException e) {
-            throw new UncheckedIOException("failed to decode " + kind, e);
+            throw new UncheckedIOException(
+                    kind + " " + source + " could not be decoded: " + e.getMessage(), e);
         }
+    }
+
+    /** The input {@link #bytes} read: its file, or its type and size when it came inline. */
+    private static String source(String base64, URI url, String mimeType, byte[] bytes) {
+        return base64 != null && !base64.isBlank()
+                ? inline(mimeType, bytes)
+                : localPath(url).toString();
+    }
+
+    private static String inline(String mimeType, byte[] bytes) {
+        return "inline " + (mimeType != null ? mimeType + ", " : "") + bytes.length + " bytes";
     }
 
     /**

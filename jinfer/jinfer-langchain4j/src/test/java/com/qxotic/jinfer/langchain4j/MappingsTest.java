@@ -42,6 +42,8 @@ import java.awt.image.BufferedImage;
 import java.io.ByteArrayOutputStream;
 import java.io.UncheckedIOException;
 import java.net.URI;
+import java.nio.file.Files;
+import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.Base64;
 import java.util.List;
@@ -49,6 +51,7 @@ import java.util.Map;
 import java.util.Optional;
 import javax.imageio.ImageIO;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.io.TempDir;
 
 /** The mapping seam, model-free: typed messages, fallback maps, tools, replies, finish reasons. */
 class MappingsTest {
@@ -305,6 +308,35 @@ class MappingsTest {
                                                 ImageContent.from(
                                                         URI.create("https://example.com/a.png")))),
                                 VideoSampler.UNIFORM));
+    }
+
+    /** A decode failure names the input, inline or a file, and keeps the codec's reason. */
+    @Test
+    void undecodableMediaNamesTheInputAndTheReason(@TempDir Path dir) throws Exception {
+        UncheckedIOException inline =
+                assertThrows(
+                        UncheckedIOException.class,
+                        () ->
+                                Mappings.media(
+                                        ImageContent.from("aGk=", "image/png"),
+                                        VideoSampler.UNIFORM));
+        assertTrue(
+                inline.getMessage()
+                        .startsWith("image inline image/png, 2 bytes could not be decoded: "),
+                inline.getMessage());
+        assertTrue(inline.getMessage().endsWith(inline.getCause().getMessage()));
+
+        Path file = Files.write(dir.resolve("cat.wav"), new byte[] {'h', 'i'});
+        UncheckedIOException fromFile =
+                assertThrows(
+                        UncheckedIOException.class,
+                        () ->
+                                Mappings.media(
+                                        AudioContent.from(file.toUri()), VideoSampler.UNIFORM));
+        assertTrue(
+                fromFile.getMessage().startsWith("audio " + file + " could not be decoded: "),
+                fromFile.getMessage());
+        assertTrue(fromFile.getMessage().endsWith(fromFile.getCause().getMessage()));
     }
 
     // ---- the schema line: what the grammar cannot tell the model ----

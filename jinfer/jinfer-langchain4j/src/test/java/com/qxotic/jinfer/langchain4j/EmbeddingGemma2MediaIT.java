@@ -40,8 +40,9 @@ import org.junit.jupiter.api.Test;
 /**
  * EmbeddingGemma 2 with its projector attached as {@code companion("media", ...)}: image, audio and
  * interleaved inputs embed into the space text queries search, without the text prompt whatever the
- * input type, a mixed batch equals its inputs one by one, and a load without the projector stays
- * text-only at langchain4j's own content check.
+ * input type, a mixed batch equals its inputs one by one, an input over the context is refused
+ * naming the positions it needs, and a load without the projector stays text-only at langchain4j's
+ * own content check.
  */
 @Tag("integration")
 class EmbeddingGemma2MediaIT {
@@ -187,6 +188,36 @@ class EmbeddingGemma2MediaIT {
             assertTrue(cosine(batch.embeddings().get(i).vector(), alone) > 0.99999, "input " + i);
         }
         assertTrue(batch.metadata().tokenUsage().inputTokenCount() > 280, "media rows count");
+    }
+
+    /** An input over the context is refused up front, naming the positions it needs. */
+    @Test
+    void anInputOverTheContextIsRefusedWithThePositionsItNeeds() {
+        int needed =
+                model.embed(EmbeddingRequest.builder().input(ImageContent.from(cat)).build())
+                        .metadata()
+                        .tokenUsage()
+                        .inputTokenCount();
+        try (var small =
+                JinferEmbeddingModel.builder()
+                        .modelPath(TestModels.require(MODEL))
+                        .companionPath("media", TestModels.require(MMPROJ))
+                        .contextCapacity(64)
+                        .build()) {
+            IllegalArgumentException e =
+                    assertThrows(
+                            IllegalArgumentException.class,
+                            () ->
+                                    small.embed(
+                                            EmbeddingRequest.builder()
+                                                    .input(ImageContent.from(cat))
+                                                    .build()));
+            assertEquals(
+                    "input exceeds context capacity ("
+                            + needed
+                            + " positions, 64 available - raise contextCapacity)",
+                    e.getMessage());
+        }
     }
 
     @Test

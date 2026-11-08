@@ -197,7 +197,8 @@ public final class GemmaEmbedding2
      * its frames back to back, each an image block sized at {@link #VIDEO_FRAME_TOKENS}; which
      * frames is the caller's sampling (the reference takes one a second, at most 32, see {@code
      * VideoCodec#every}). The state is reset first; the embedding is a state-owned view, live until
-     * {@code consumer} returns. Returns the positions the input took.
+     * {@code consumer} returns. Returns the positions the input took; an input over the state's
+     * contextCapacity is refused with the positions it needs.
      */
     @Override
     public int embed(State state, List<?> parts, Consumer<MemoryView<?>> consumer) {
@@ -208,9 +209,18 @@ public final class GemmaEmbedding2
             state.exclusively(
                     () -> {
                         state.reset();
+                        // past the capacity a batch is only counted, so the refusal names the
+                        // positions the whole input needs, as chat's does
+                        int capacity = state.contextCapacity();
+                        int[] needed = {0};
                         PromptWriter out =
                                 new PromptWriter(
-                                        tokenizer, state.batchCapacity(), b -> stage(state, b));
+                                        tokenizer,
+                                        state.batchCapacity(),
+                                        b -> {
+                                            needed[0] = Math.addExact(needed[0], b.count());
+                                            if (needed[0] <= capacity) stage(state, b);
+                                        });
                         out.id(bos);
                         for (Object part : parts)
                             switch (part) {
@@ -237,6 +247,13 @@ public final class GemmaEmbedding2
                                                         + part);
                             }
                         out.id(eos).finish();
+                        if (needed[0] > capacity)
+                            throw new IllegalArgumentException(
+                                    "input exceeds context capacity ("
+                                            + needed[0]
+                                            + " positions, "
+                                            + capacity
+                                            + " available - raise contextCapacity)");
                         positions[0] = state.position();
                         consumer.accept(embedding(state));
                     });

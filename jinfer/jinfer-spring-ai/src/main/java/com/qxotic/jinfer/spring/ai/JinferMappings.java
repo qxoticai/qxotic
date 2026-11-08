@@ -117,25 +117,41 @@ final class JinferMappings {
         return text.toString();
     }
 
+    /** The media's kind, image, audio or video, by its MIME type; any other type is refused. */
+    static String kind(org.springframework.ai.content.Media media) {
+        String kind = media.getMimeType().getType();
+        if (!kind.equals("image") && !kind.equals("audio") && !kind.equals("video"))
+            throw new UnsupportedOperationException(
+                    "media type "
+                            + media.getMimeType()
+                            + " is not supported: jinfer takes image, audio and video");
+        return kind;
+    }
+
     /** One image, audio or video, decoded by its MIME type; any other type is refused. */
     static Content.Media media(org.springframework.ai.content.Media media, VideoSampler sampler) {
-        String kind = media.getMimeType().getType();
+        String kind = kind(media);
         return switch (kind) {
             case "image" -> {
                 byte[] src = bytes(media);
-                yield blob(kind, ContentKey.sha256(src), () -> ImageCodec.decode(src));
+                yield blob(
+                        kind,
+                        source(media, src),
+                        ContentKey.sha256(src),
+                        () -> ImageCodec.decode(src));
             }
             case "audio" -> {
                 byte[] src = bytes(media);
-                yield blob(kind, ContentKey.sha256(src), () -> AudioCodec.decode(src));
+                yield blob(
+                        kind,
+                        source(media, src),
+                        ContentKey.sha256(src),
+                        () -> AudioCodec.decode(src));
             }
-            case "video" -> {
+            default -> { // video, kind() refused the rest
                 Path src = localPath(media);
-                yield blob(kind, sha256(src), () -> sampler.sample(src));
+                yield blob(kind, src.toString(), sha256(src), () -> sampler.sample(src));
             }
-            default ->
-                    throw new UnsupportedOperationException(
-                            "media type " + media.getMimeType() + " is not supported");
         };
     }
 
@@ -143,12 +159,23 @@ final class JinferMappings {
         Media decode() throws IOException;
     }
 
-    private static Content.Media blob(String kind, ContentKey contentKey, MediaDecode decode) {
+    /** Decoded media; a failure names the input and keeps the codec's reason, as the server's. */
+    private static Content.Media blob(
+            String kind, String source, ContentKey contentKey, MediaDecode decode) {
         try {
             return new Content.Media(decode.decode(), contentKey);
         } catch (IOException e) {
-            throw new UncheckedIOException("failed to decode " + kind, e);
+            throw new UncheckedIOException(
+                    kind + " " + source + " could not be decoded: " + e.getMessage(), e);
         }
+    }
+
+    /** The input {@link #bytes} read: its file, or its type and size when it came inline. */
+    private static String source(org.springframework.ai.content.Media media, byte[] bytes) {
+        Path file = localFile(media.getData());
+        return file != null
+                ? file.toString()
+                : "inline " + media.getMimeType() + ", " + bytes.length + " bytes";
     }
 
     /**

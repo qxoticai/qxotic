@@ -31,7 +31,8 @@ import org.springframework.util.MimeType;
 /**
  * EmbeddingGemma 2 with its projector attached as {@code companion("media", ...)}: a media {@link
  * Document} embeds into the space text queries search, without the text prompt, a mixed batch keeps
- * document order and equals its documents one by one, and a load without the projector refuses
+ * document order and equals its documents one by one, a PDF is refused by its type, an input over
+ * the context is refused naming the positions it needs, and a load without the projector refuses
  * media naming the companion. Model-gated via {@link TestModels}. Run: {@code mvn test
  * -Dsurefire.excludedGroups= -Dgroups=integration -pl jinfer-spring-ai}
  */
@@ -156,6 +157,44 @@ class EmbeddingGemma2MediaIT {
         assertEquals(documents.size(), batch.size());
         for (int i = 0; i < documents.size(); i++)
             assertTrue(cosine(batch.get(i), model.embed(documents.get(i))) > 0.99999, "doc " + i);
+    }
+
+    /** A type that is not media is refused as such: the projector it already has is no fix. */
+    @Test
+    void aPdfIsRefusedByItsTypeNotByTheProjector() {
+        Document pdf =
+                Document.builder()
+                        .media(
+                                Media.builder()
+                                        .mimeType(MimeType.valueOf("application/pdf"))
+                                        .data(new byte[] {'%', 'P', 'D', 'F'})
+                                        .build())
+                        .build();
+        UnsupportedOperationException e =
+                assertThrows(UnsupportedOperationException.class, () -> model.embed(pdf));
+        assertEquals(
+                "media type application/pdf is not supported: jinfer takes image, audio and video",
+                e.getMessage());
+    }
+
+    /** An input over the context is refused up front, naming the positions it needs. */
+    @Test
+    void anInputOverTheContextIsRefusedWithThePositionsItNeeds() {
+        try (var small =
+                JinferEmbeddingModel.builder()
+                        .modelPath(TestModels.require(MODEL))
+                        .companionPath("media", TestModels.require(MMPROJ))
+                        .contextCapacity(64)
+                        .build()) {
+            IllegalArgumentException e =
+                    assertThrows(IllegalArgumentException.class, () -> small.embed(speech));
+            assertTrue(
+                    e.getMessage()
+                            .matches(
+                                    "input exceeds context capacity \\(\\d+ positions, 64"
+                                            + " available - raise contextCapacity\\)"),
+                    e.getMessage());
+        }
     }
 
     @Test

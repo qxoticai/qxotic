@@ -258,7 +258,7 @@ public final class JinferEmbeddingModel implements EmbeddingModel, AutoCloseable
 
     /** A media document's vector: its image, audio or video alone, with no framing. */
     private float[] embedMedia(Document document, EmbeddingOptions options) {
-        String kind = document.getMedia().getMimeType().getType();
+        String kind = JinferMappings.kind(document.getMedia()); // a PDF is refused as such
         if (!media.contains(kind)) {
             throw new IllegalArgumentException(
                     "document "
@@ -267,10 +267,11 @@ public final class JinferEmbeddingModel implements EmbeddingModel, AutoCloseable
                             + kind
                             + " media, but "
                             + modelName
-                            + (media.isEmpty() ? " embeds text only" : " embeds text and " + media)
-                            + ": a multimodal embedder takes media with its projector,"
-                            + " companion(\"media\", ...) or"
-                            + " spring.ai.jinfer.embedding.companions.media");
+                            + (media.isEmpty()
+                                    ? " embeds text only: a multimodal embedder takes media with"
+                                            + " its projector, companion(\"media\", ...) or"
+                                            + " spring.ai.jinfer.embedding.companions.media"
+                                    : " embeds text and " + media + " only"));
         }
         int outputDimension = outputDimension(options);
         List<Object> parts =
