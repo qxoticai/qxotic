@@ -21,7 +21,9 @@ import com.qxotic.jinfer.media.Media;
 import com.qxotic.toknroll.IntSequence;
 import dev.langchain4j.agent.tool.ToolExecutionRequest;
 import dev.langchain4j.agent.tool.ToolSpecification;
+import dev.langchain4j.data.audio.Audio;
 import dev.langchain4j.data.message.AiMessage;
+import dev.langchain4j.data.message.AudioContent;
 import dev.langchain4j.data.message.ChatMessage;
 import dev.langchain4j.data.message.CustomMessage;
 import dev.langchain4j.data.message.ImageContent;
@@ -265,6 +267,25 @@ class MappingsTest {
         var decoded = assertInstanceOf(Media.Image.class, blob.media());
         assertEquals(4, decoded.width());
         assertEquals(3, decoded.height());
+    }
+
+    /** An Audio carries bytes, base64 or a file; a reply's own clip sent back carries bytes. */
+    @Test
+    void audioContentDecodesFromBytesAsFromBase64() {
+        byte[] wav = AudioCodec.wav(new Media.Audio(new float[1600], 16_000, 1));
+        Content.Media fromBytes =
+                Mappings.media(
+                        AudioContent.from(
+                                Audio.builder().binaryData(wav).mimeType("audio/wav").build()),
+                        VideoSampler.UNIFORM);
+        Content.Media fromBase64 =
+                Mappings.media(
+                        AudioContent.from(Base64.getEncoder().encodeToString(wav), "audio/wav"),
+                        VideoSampler.UNIFORM);
+        Media.Audio decoded = assertInstanceOf(Media.Audio.class, fromBytes.media());
+        assertEquals(16_000, decoded.sampleRate());
+        assertEquals(1600, decoded.pcm().length);
+        assertEquals(fromBase64.key(), fromBytes.key(), "the same bytes, the same cache key");
     }
 
     @Test

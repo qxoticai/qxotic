@@ -19,7 +19,7 @@ import java.util.UUID;
 final class SpokenTurns {
 
     static final Duration LIFETIME = Duration.ofHours(1);
-    private static final int CAPACITY = 4096;
+    static final int CAPACITY = 4096;
 
     private record Kept(Message turn, long expiresAt) {}
 
