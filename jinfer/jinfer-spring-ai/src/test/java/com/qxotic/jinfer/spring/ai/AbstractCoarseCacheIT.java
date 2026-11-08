@@ -14,8 +14,9 @@ import org.springframework.ai.chat.model.ChatResponse;
 import org.springframework.ai.chat.prompt.Prompt;
 
 /**
- * Coarse block caching, shared across the hybrid models whose codec overrides {@code coarseBlocks}
- * (the recurrent-state residue is MBs per block, so cached prompts commit as ONE block per prompt).
+ * Coarse block caching, shared across the hybrid models whose recurrent-state residue is over the
+ * prompt cache's checkpoint-overhead limit (1 MB by default): cached prompts commit as ONE block
+ * per prompt. A small residue (LFM2, LFM3 conv taps) caches turn by turn and does not belong here.
  * Subclasses supply the model; each is model-gated and assume-skips when the file is absent.
  */
 abstract class AbstractCoarseCacheIT {

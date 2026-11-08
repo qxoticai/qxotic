@@ -31,6 +31,7 @@ class WeightsCanaryIT {
     static final List<String> CHAT_FAMILIES =
             List.of(
                     "hf.co/LiquidAI/LFM2.5-350M-GGUF/LFM2.5-350M-Q8_0.gguf", // lfm2
+                    "hf.co/LiquidAI/LFM3-1.7B-GGUF/LFM3-1.7B-Q8_0.gguf", // lfm3
                     "hf.co/unsloth/Qwen3.5-2B-GGUF/Qwen3.5-2B-Q8_0.gguf", // qwen35
                     "hf.co/unsloth/gemma-4-E2B-it-GGUF/gemma-4-E2B-it-Q8_0.gguf", // gemma4
                     "hf.co/unsloth/gpt-oss-20b-GGUF/gpt-oss-20b-Q8_0.gguf", // gptoss (harmony)
