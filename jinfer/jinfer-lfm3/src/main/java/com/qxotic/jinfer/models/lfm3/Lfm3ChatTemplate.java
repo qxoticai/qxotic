@@ -387,11 +387,7 @@ final class Lfm3ChatTemplate implements ChatTemplate {
         return Optional.of(spans.constrained(grammar, calls));
     }
 
-    /**
-     * A forced call writes its header as bytes. ponytail: {@code <function=} is then plain-encoded,
-     * not its vocabulary token (a mark would drop its spelling from the parsed payload); the model
-     * reads the same text, and every call it writes itself uses the token.
-     */
+    /** Forced calls: the header carries an OFFERED name, the arguments stay the model's own. */
     @Override
     public Optional<ReplyLanguage.Selection> forcedCall(List<Tool> callableTools) {
         if (callableTools.isEmpty()) return Optional.empty();

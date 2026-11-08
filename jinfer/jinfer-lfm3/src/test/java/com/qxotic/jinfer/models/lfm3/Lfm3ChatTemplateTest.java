@@ -11,6 +11,7 @@ import com.qxotic.jinfer.Views;
 import com.qxotic.jinfer.chat.Content;
 import com.qxotic.jinfer.chat.Conversation;
 import com.qxotic.jinfer.chat.Message;
+import com.qxotic.jinfer.chat.ReplyLanguage;
 import com.qxotic.jinfer.chat.ReplyParser;
 import com.qxotic.jinfer.chat.Role;
 import com.qxotic.jinfer.chat.Tool;
@@ -24,9 +25,11 @@ import com.qxotic.jinfer.media.Multimodal;
 import com.qxotic.jinfer.testkit.TestModels;
 import com.qxotic.jota.memory.MemoryAllocators;
 import com.qxotic.jota.memory.MemoryView;
+import com.qxotic.toknroll.IntSequence;
 import com.qxotic.toknroll.Tokenizer;
 import com.qxotic.toknroll.gguf.GGUFTokenizerLoader;
 import java.lang.foreign.Arena;
+import java.lang.foreign.MemorySegment;
 import java.nio.channels.FileChannel;
 import java.nio.file.Path;
 import java.util.ArrayList;
@@ -211,6 +214,39 @@ final class Lfm3ChatTemplateTest {
         Content.ToolCall call = assertInstanceOf(Content.ToolCall.class, reply.content().get(2));
         assertEquals("get_weather", call.name());
         assertEquals(Map.of("city", "Paris", "days", 3L), Map.copyOf(call.arguments()));
+    }
+
+    @ParameterizedTest
+    @ValueSource(strings = {TEXT})
+    void aForcedCallAdmitsTheModelsOwnWire(String ref) throws Exception {
+        Checkpoint c = checkpoint(ref);
+        ReplyLanguage.Selection forced =
+                new Lfm3ChatTemplate(c.tokenizer(), null)
+                        .forcedCall(List.of(WEATHER))
+                        .orElseThrow();
+        ReplyLanguage.Walk walk = forced.walk();
+        walk.seed(IntSequence.of(forced.forcedPrefix()));
+        // the call as the checkpoint writes it: <function=, <parameter= ... are its added tokens
+        IntSequence wire =
+                SpecialTokens.encode(
+                        c.tokenizer(),
+                        "\n<function=get_weather>\n<parameter=city>\nParis\n</parameter>\n"
+                                + "</function>\n</tool_call>");
+        int size = c.tokenizer().vocabulary().size();
+        for (int token : wire.toArray()) {
+            MemoryView<MemorySegment> logits =
+                    Views.fromFloatArray(MemoryAllocators.ofArena(Arena.ofAuto()), new float[size]);
+            walk.maskLogits(logits);
+            assertEquals(
+                    0f,
+                    Views.getFloat(logits, token, "logits"),
+                    () -> c.tokenizer().decode(new int[] {token}));
+            walk.feed(token);
+        }
+        Content.ToolCall call =
+                assertInstanceOf(Content.ToolCall.class, walk.finish().content().getFirst());
+        assertEquals("get_weather", call.name());
+        assertEquals(Map.of("city", "Paris"), call.arguments());
     }
 
     @ParameterizedTest

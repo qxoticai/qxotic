@@ -83,9 +83,9 @@ final class MistralChatTemplate implements ChatTemplate {
     }
 
     /**
-     * The forced-call language: the header is wholly forced ({@code [TOOL_CALLS]name[ARGS]} -
-     * nothing is sampled until the arguments), the arguments are schema-bound. There is no free
-     * region between the seed and the name for the model to derail in.
+     * The forced-call language: the header is held to {@code [TOOL_CALLS]name[ARGS]} with an
+     * offered name, the arguments are schema-bound. There is no free region between the seed and
+     * the name for the model to derail in.
      */
     @Override
     public Optional<ReplyLanguage.Selection> forcedCall(List<Tool> callableTools) {

@@ -187,6 +187,7 @@ class GptOssChatTemplateTest {
         ReplyLanguage.Selection selection = TEMPLATE.forcedCall(List.of(WEATHER)).orElseThrow();
         ReplyLanguage.Walk walk = selection.walk();
         feed(walk, selection.forcedPrefix());
+        writeHeader(walk, "get_weather");
         assertAdmitted(walk, "{\"city\": \"Paris\"}");
         assertTrue(walk.accepted());
         walk.feed(special("<|call|>"));
@@ -211,6 +212,7 @@ class GptOssChatTemplateTest {
         ReplyLanguage.Selection weather = TEMPLATE.forcedCall(List.of(WEATHER)).orElseThrow();
         ReplyLanguage.Walk arguments = weather.walk();
         feed(arguments, weather.forcedPrefix());
+        writeHeader(arguments, "get_weather");
         feed(arguments, TOKENIZER.encode("{\"").toArray());
         logits = zeros();
         assertTrue(arguments.maskLogits(logits));
@@ -223,6 +225,7 @@ class GptOssChatTemplateTest {
         ReplyLanguage.Selection selection = TEMPLATE.forcedCall(List.of(REFRESH)).orElseThrow();
         ReplyLanguage.Walk walk = selection.walk();
         feed(walk, selection.forcedPrefix());
+        writeHeader(walk, "refresh_cache");
         assertAdmitted(walk, "{}");
         assertTrue(walk.accepted());
     }
@@ -237,13 +240,23 @@ class GptOssChatTemplateTest {
         return ReplyParser.parse(TEMPLATE.parser(TOKENIZER), tokens.build());
     }
 
+    /** The header the model writes after the forced {@code <|channel|>}, through the mask. */
+    private static void writeHeader(ReplyLanguage.Walk walk, String name) {
+        assertAdmitted(walk, "commentary to=functions." + name + " ");
+        assertAdmitted(walk, special("<|constrain|>"));
+        assertAdmitted(walk, "json");
+        assertAdmitted(walk, special("<|message|>"));
+    }
+
     private static void assertAdmitted(ReplyLanguage.Walk walk, String text) {
-        for (int token : TOKENIZER.encode(text).toArray()) {
-            MemoryView<MemorySegment> logits = zeros();
-            assertTrue(walk.maskLogits(logits));
-            assertEquals(0f, Views.getFloat(logits, token, "logits"));
-            walk.feed(token);
-        }
+        for (int token : TOKENIZER.encode(text).toArray()) assertAdmitted(walk, token);
+    }
+
+    private static void assertAdmitted(ReplyLanguage.Walk walk, int token) {
+        MemoryView<MemorySegment> logits = zeros();
+        assertTrue(walk.maskLogits(logits));
+        assertEquals(0f, Views.getFloat(logits, token, "logits"));
+        walk.feed(token);
     }
 
     private static MemoryView<MemorySegment> zeros() {

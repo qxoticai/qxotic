@@ -429,19 +429,58 @@ public final class ReplyLanguageTest {
     }
 
     @Test
-    void forcedPrefixDerivesTheSeedAndStopsAtTheFirstChoice() {
+    void forcedPrefixIsTheLeadingMarksAndTheMaskHoldsTheText() {
         Node required = seq(rep(weatherCall(), 1, -1), mark("<end>"));
         Selection sel = Selection.of(required, TOK);
-        // <call> then the byte run up to the payload: extraction stops at the Gbnf boundary
-        // (the payload's own fixed opening stays the grammar's job, not the seed's)
-        int[] expected = {CALL, ch('{')};
-        assertEquals(
-                IntSequence.of(expected).toList(), IntSequence.of(sel.forcedPrefix()).toList());
+        // <call> alone: the "{" after it is text, the model's to write under the mask
+        assertEquals(List.of(CALL), IntSequence.of(sel.forcedPrefix()).toList());
         Walk w = sel.walk();
         for (int t : sel.forcedPrefix()) w.feed(t);
         assertFalse(w.ended());
         boolean[] ok = admitted(w);
+        for (int t = 0; t < ok.length; t++) assertEquals(t == ch('{'), ok[t], "token " + t);
+        w.feed(ch('{'));
+        ok = admitted(w);
         assertTrue(ok[ch('"')] && !ok[ch('a')] && !ok[ch('1')]);
+    }
+
+    /**
+     * A forced call's header is text the model writes in its own tokens, never a plain tokenization
+     * of it: LFM3 spells {@code <function=} as one added token and derails when shown the bytes.
+     * The merged token here is the double space; the alternatives are the offered names.
+     */
+    @Test
+    void aForcedHeaderIsWrittenInTheModelsOwnTokensAndOnlyOfferedNamesSpell() {
+        Node forced =
+                seq(
+                        call(
+                                ONE,
+                                mark("<call>"),
+                                bytes("  "),
+                                alt(bytes("ab"), bytes("xy")),
+                                free(),
+                                mark("</call>")),
+                        mark("<end>"));
+        Selection sel = Selection.of(forced, TOK);
+        assertEquals(List.of(CALL), IntSequence.of(sel.forcedPrefix()).toList());
+        Walk w = sel.walk();
+        w.feed(CALL);
+        boolean[] ok = admitted(w);
+        assertTrue(ok[DOUBLE_SPACE] && ok[ch(' ')], "either spelling of the header's text");
+        assertFalse(ok[ch('a')] || ok[ch('f')]);
+
+        w.feed(DOUBLE_SPACE);
+        ok = admitted(w);
+        for (int t = 0; t < ok.length; t++) {
+            assertEquals(t == ch('a') || t == ch('x'), ok[t], "only an offered name starts here");
+        }
+        run(w, toks("xy1"));
+        w.feed(END_CALL);
+        w.feed(END);
+        assertTrue(w.accepted());
+        assertEquals(
+                List.of(new Content.ToolCall("", "get_weather", Map.of("raw", "xy1"))),
+                w.finish().content());
     }
 
     @Test

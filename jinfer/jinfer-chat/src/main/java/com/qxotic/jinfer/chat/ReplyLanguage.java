@@ -25,9 +25,11 @@ import java.util.function.Function;
 /**
  * A family's reply structure as ONE definition - a tree of {@link Node}s over the model's full
  * token alphabet - from which the three faces derive: PARSE (the {@link Walk} implements {@link
- * ReplyParser}), CONSTRAIN (the same walk masks logits), and FORCE (regions with exactly one
- * admissible path emit rather than sample; the leading such run is the {@link
- * Selection#forcedPrefix} injected into the prompt). See {@code docs/reply-language.md}.
+ * ReplyParser}), CONSTRAIN (the same walk masks logits), and FORCE (the leading run of marks with
+ * exactly one admissible path is the {@link Selection#forcedPrefix} injected into the prompt). Text
+ * is never forced: the model writes it under the mask, in its own tokens - a plain tokenization of
+ * it is not what the model writes (LFM3 spells {@code <function=} as one added token, and derails
+ * when shown the bytes). See {@code docs/reply-language.md}.
  *
  * <p>THE CONTROL RULE: {@link Node.Free} admits plain tokens only; every control token - a
  * vocabulary special OR an id the language pinned as a mark (a GGUF-mistyped special) - either
@@ -233,7 +235,7 @@ public final class ReplyLanguage {
      * One span family's derived faces, held by its template - the marker spellings are written ONCE
      * and every {@link ChatTemplate} grammar word delegates here: {@code parser()} (the memoized
      * AUTO walk), {@code constrained} (one grammar-shaped content reply), and {@code forcedCall}
-     * (headers forced through offered names). Pruning still adapts the spellings per checkpoint.
+     * (headers held to offered names). Pruning still adapts the spellings per checkpoint.
      */
     public static final class Spans {
         private final String thinkOpen;
@@ -323,11 +325,10 @@ public final class ReplyLanguage {
 
         /**
          * The compiled forced-call selection: per offered tool, the family's call region with the
-         * header FORCED through the tool's name ({@code header} renders it, ending AT the name -
-         * never the delimiter after it, whose merge the model was trained on) and the arguments the
-         * model's own free span. Structure cannot derail: the walk holds the region to its closer
-         * and the terminator, where a released pin used to hand the model an off-policy free
-         * region.
+         * header held to the tool's name ({@code header} renders it, ending AT the name; the model
+         * writes it in its own tokens, so only an offered name can be spelled) and the arguments
+         * the model's own free span. Structure cannot derail: the walk holds the region to its
+         * closer and the terminator.
          */
         public Selection forcedCall(List<Tool> tools, Function<Tool, String> header) {
             List<Node> options = new ArrayList<>(tools.size());
@@ -469,10 +470,10 @@ public final class ReplyLanguage {
         }
 
         /**
-         * The longest leading run with exactly one admissible path, canonically tokenized - the
-         * derived forced seed / {@code replySeed}: inject into the prompt, then FEED to the walk so
-         * parsing starts in the state the prompt left the model in. Extraction stops at the first
-         * choice point; a payload's fixed opening stays the grammar's job.
+         * The longest leading run of marks with exactly one admissible path - the derived forced
+         * seed / {@code replySeed}: inject into the prompt, then FEED to the walk so parsing starts
+         * in the state the prompt left the model in. Extraction stops at the first choice point or
+         * the first text, which the model writes itself under the mask.
          */
         public int[] forcedPrefix() {
             return forcedPrefix.clone();
@@ -757,9 +758,7 @@ public final class ReplyLanguage {
         private Seg.Spec spec(List<Grammar.Term> run, boolean streams) {
             Grammar.Term term = run.size() == 1 ? run.get(0) : new Grammar.Term.Seq(run);
             IntSequence.Builder forced = IntSequence.newBuilder();
-            StringBuilder text = new StringBuilder();
-            boolean whole = forcedInto(term, forced, text);
-            flush(text, forced);
+            boolean whole = forcedInto(term, forced);
             return new Seg.Spec(
                     Grammar.of(term, tokenizer),
                     leadMark(term),
@@ -810,35 +809,21 @@ public final class ReplyLanguage {
             };
         }
 
-        /** Collects the term's single-path leading tokens; true = the whole term is forced. */
-        private boolean forcedInto(Grammar.Term t, IntSequence.Builder out, StringBuilder text) {
+        /** Collects the term's leading marks; true = the whole term is marks. */
+        private static boolean forcedInto(Grammar.Term t, IntSequence.Builder out) {
             return switch (t) {
-                case Grammar.Term.Text(String s) -> {
-                    text.append(s);
-                    yield true;
-                }
                 case Grammar.Term.Token(int id) -> {
-                    flush(text, out);
                     out.add(id);
                     yield true;
                 }
                 case Grammar.Term.Seq(List<Grammar.Term> parts) -> {
                     for (Grammar.Term p : parts) {
-                        if (!forcedInto(p, out, text)) yield false;
+                        if (!forcedInto(p, out)) yield false;
                     }
                     yield true;
                 }
-                default -> {
-                    flush(text, out); // keep the run BEFORE the first choice point
-                    yield false; // Alt, Rep, Gbnf: a choice exists
-                }
+                default -> false; // text, Alt, Rep, Gbnf: the model writes it under the mask
             };
-        }
-
-        private void flush(StringBuilder text, IntSequence.Builder out) {
-            if (text.isEmpty()) return;
-            tokenizer.encode(text.toString()).forEachInt(out::add);
-            text.setLength(0);
         }
     }
 

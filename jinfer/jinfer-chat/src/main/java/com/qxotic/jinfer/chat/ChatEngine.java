@@ -824,8 +824,8 @@ public final class ChatEngine implements AutoCloseable {
      *       keeps the span and is bounded by the reasoning cap instead
      *   <li>encoding: the native codec, falling back to the hardened Jinja whole-render
      *   <li>the sampling stack, with the request's grammar layered on under the same think gating
-     *   <li>a forced call's unsplittable recipe: marker seeded into the prompt, names
-     *       prefix-pinned, parser pre-fed
+     *   <li>a forced call's unsplittable recipe: marker seeded into the prompt, parser pre-fed, the
+     *       header and an offered name written by the model under the walk's mask
      * </ul>
      */
     public Prepared prepare(Request request) {
@@ -967,8 +967,8 @@ public final class ChatEngine implements AutoCloseable {
                                                             + " model: it seeds the reply with the"
                                                             + " family's call marker, which needs a"
                                                             + " native codec that declares one"));
-            // ONE walk constrains the whole call - header, an OFFERED name, the family's
-            // arguments - leaving no free region to derail in
+            // ONE walk holds the whole call: the seed is its marks, the model writes the header
+            // and an OFFERED name under the mask, then the family's arguments
             int[] seed = selection.forcedPrefix();
             ReplyLanguage.Walk walk = selection.walk();
             walk.seed(IntSequence.of(seed));

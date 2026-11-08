@@ -23,6 +23,7 @@ import com.qxotic.jinfer.chat.ReplyParser;
 import com.qxotic.jinfer.chat.Role;
 import com.qxotic.jinfer.chat.Tool;
 import com.qxotic.jinfer.chat.UnsupportedConversation;
+import com.qxotic.jinfer.chat.Verbatim;
 import com.qxotic.jinfer.jinja.JinjaRenderer;
 import com.qxotic.jinfer.kernels.ModelLoader;
 import com.qxotic.jinfer.llm.SpecialTokens;
@@ -297,16 +298,14 @@ final class Lfm2ChatTemplateTest {
                         .concat(IntSequence.of(special("<|tool_call_end|>")));
 
         Conversation plain = new Conversation(List.of(Message.user("Weather?")));
-        ChatTemplate.ReplyState plainState = state(template, plain);
-        Message visible = ReplyParser.parse(plainState.parser(), generated);
+        Message visible = reply(state(template, plain), IntSequence.empty(), generated);
         assertTrue(visible.text().contains("get_weather"));
         assertFalse(visible.content().stream().anyMatch(Content.ToolCall.class::isInstance));
         assertRoundTrip(template, plain, visible, generated);
 
         Conversation withTools =
                 new Conversation(List.of(Message.user("Weather?")), List.of(weather()), true);
-        ChatTemplate.ReplyState toolState = state(template, withTools);
-        Message structured = ReplyParser.parse(toolState.parser(), generated);
+        Message structured = reply(state(template, withTools), IntSequence.empty(), generated);
         Content.ToolCall call =
                 assertInstanceOf(Content.ToolCall.class, structured.content().getFirst());
         assertEquals("Paris", call.arguments().get("city"));
@@ -328,7 +327,6 @@ final class Lfm2ChatTemplateTest {
                 if (toolCall) {
                     // Forced calls seed a second prefix after the template's thinking prefix.
                     seeded = generated.concat(IntSequence.of(special("<|tool_call_start|>")));
-                    state.parser().seed(seeded);
                     generated =
                             tokenizer
                                     .encode("[get_weather(city='Paris')]")
@@ -336,8 +334,7 @@ final class Lfm2ChatTemplateTest {
                 } else {
                     generated = generated.concat(tokenizer.encode("Paris"));
                 }
-                Message reply = ReplyParser.parse(state.parser(), generated);
-                Conversation next = conversation.append(reply);
+                Conversation next = conversation.append(reply(state, seeded, generated));
                 next =
                         toolCall
                                 ? next.append(
@@ -366,7 +363,7 @@ final class Lfm2ChatTemplateTest {
         Conversation conversation =
                 new Conversation(List.of(Message.user("Weather?")), List.of(weather()), true);
 
-        Message reply = ReplyParser.parse(state(template, conversation).parser(), generated);
+        Message reply = reply(state(template, conversation), IntSequence.empty(), generated);
         // the think span held the call alone: no reasoning text, so no reasoning part
         assertEquals(
                 List.of(Content.ToolCall.class),
@@ -567,6 +564,21 @@ final class Lfm2ChatTemplateTest {
     private static ChatTemplate.ReplyState state(
             Lfm2ChatTemplate template, Conversation conversation) {
         return template.encode(conversation, 64, ignored -> {});
+    }
+
+    /**
+     * The reply as the engine returns it: the stream parsed, stamped with its record - the reply
+     * prefix, the forced seed and every generated id - which the next prompt replays in its place.
+     */
+    private static Message reply(
+            ChatTemplate.ReplyState state, IntSequence seed, IntSequence generated) {
+        state.parser().seed(seed);
+        Message parsed = ReplyParser.parse(state.parser(), generated);
+        IntSequence record = IntSequence.concatAll(state.replyPrefix(), seed, generated);
+        return new Message(
+                parsed.role(),
+                parsed.content(),
+                new Verbatim(new ContentKey("lfm2"), record, IntSequence.empty()));
     }
 
     private static void assertRoundTrip(

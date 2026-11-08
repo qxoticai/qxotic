@@ -1,5 +1,6 @@
 package com.qxotic.jinfer.models.llama;
 
+import static org.junit.jupiter.api.Assertions.assertArrayEquals;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
@@ -49,6 +50,9 @@ class JsonEnvelopeReplyLanguageTest {
                                     "required",
                                     List.of("city"))));
 
+    /** The JSON envelope's text before the arguments, written by the model under the mask. */
+    private static final String ENVELOPE = "\n{\"name\": \"get_weather\", \"arguments\": ";
+
     @Test
     void smolLm3AdmitsItsForcedWire() throws Exception {
         Tokenizer tokenizer = tokenizer("hf.co/ggml-org/SmolLM3-3B-GGUF/SmolLM3-Q4_K_M.gguf");
@@ -70,7 +74,10 @@ class JsonEnvelopeReplyLanguageTest {
                 new GraniteChatTemplate(tokenizer).forcedCall(List.of(WEATHER)).orElseThrow();
         ReplyLanguage.Walk walk = selection.walk();
         feed(walk, selection.forcedPrefix());
-        assertAdmitted(walk, tokenizer, ">\n<parameter=city>\nParis\n</parameter>\n</function>\n");
+        assertAdmitted(
+                walk,
+                tokenizer,
+                "\n<function=get_weather>\n<parameter=city>\nParis\n</parameter>\n</function>\n");
         walk.feed(SpecialTokens.require(tokenizer, "</tool_call>"));
         assertTrue(walk.accepted());
         assertCall(walk);
@@ -85,6 +92,8 @@ class JsonEnvelopeReplyLanguageTest {
         ReplyLanguage.Selection selection = template.forcedCall(List.of(WEATHER)).orElseThrow();
         ReplyLanguage.Walk walk = selection.walk();
         feed(walk, selection.forcedPrefix());
+        assertAdmitted(walk, tokenizer, "get_weather");
+        assertAdmitted(walk, tokenizer, SpecialTokens.require(tokenizer, "[ARGS]"));
         assertAdmitted(walk, tokenizer, "{\"city\": \"Paris\"}");
         assertTrue(walk.accepted());
         Content.ToolCall call = (Content.ToolCall) walk.finish().content().get(0);
@@ -222,7 +231,7 @@ class JsonEnvelopeReplyLanguageTest {
                 new SmolLm3ChatTemplate(tokenizer).forcedCall(List.of(WEATHER)).orElseThrow();
         ReplyLanguage.Walk walk = selection.walk();
         feed(walk, selection.forcedPrefix());
-        feed(walk, tokenizer.encode("{\"").toArray());
+        assertAdmitted(walk, tokenizer, ENVELOPE + "{\"");
 
         MemoryView<MemorySegment> logits = zeros(tokenizer);
         assertTrue(walk.maskLogits(logits));
@@ -235,10 +244,13 @@ class JsonEnvelopeReplyLanguageTest {
     private static void assertJsonEnvelope(
             Tokenizer tokenizer, ChatTemplate template, String close) {
         ReplyLanguage.Selection selection = template.forcedCall(List.of(WEATHER)).orElseThrow();
-        assertTrue(selection.forcedPrefix().length > 2);
+        // only the opener is seeded: the envelope is text the model writes under the mask
+        assertArrayEquals(
+                new int[] {SpecialTokens.require(tokenizer, "<tool_call>")},
+                selection.forcedPrefix());
         ReplyLanguage.Walk walk = selection.walk();
         feed(walk, selection.forcedPrefix());
-        assertAdmitted(walk, tokenizer, "{\"city\": \"Paris\"}");
+        assertAdmitted(walk, tokenizer, ENVELOPE + "{\"city\": \"Paris\"}");
         feed(walk, tokenizer.encode("}\n").toArray());
         walk.feed(SpecialTokens.require(tokenizer, close));
         assertTrue(walk.accepted());
@@ -246,12 +258,14 @@ class JsonEnvelopeReplyLanguageTest {
     }
 
     private static void assertAdmitted(ReplyLanguage.Walk walk, Tokenizer tokenizer, String text) {
-        for (int token : tokenizer.encode(text).toArray()) {
-            MemoryView<MemorySegment> logits = zeros(tokenizer);
-            assertTrue(walk.maskLogits(logits));
-            assertEquals(0f, Views.getFloat(logits, token, "logits"));
-            walk.feed(token);
-        }
+        for (int token : tokenizer.encode(text).toArray()) assertAdmitted(walk, tokenizer, token);
+    }
+
+    private static void assertAdmitted(ReplyLanguage.Walk walk, Tokenizer tokenizer, int token) {
+        MemoryView<MemorySegment> logits = zeros(tokenizer);
+        assertTrue(walk.maskLogits(logits));
+        assertEquals(0f, Views.getFloat(logits, token, "logits"));
+        walk.feed(token);
     }
 
     private static MemoryView<MemorySegment> zeros(Tokenizer tokenizer) {

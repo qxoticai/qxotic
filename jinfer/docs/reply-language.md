@@ -94,8 +94,11 @@ Selection performs, in order:
 1. **Prune and select.** Alternatives whose Marks do not resolve in this vocabulary are removed (an older NemotronH checkpoint without `<tool_call>` loses its CALL alternatives).
    A constrained-output request builds one required CONTENT region. `ChatEngine.Request` rejects it when tools are also offered; ordinary tool requests keep the family's existing parser.
 2. **Liveness check.** The selected automaton must have an accepting path; otherwise the request is rejected now, before any token (section 6).
-3. **Forced prefix extraction.** The longest prefix of the selection with exactly one admissible path is tokenized canonically and returned for prompt injection.
-   This derives `callSeed`, `replySeed`, and the epilogue as one concept: forced regions are wherever the automaton has one path, whether at the front or in the interior (interior forcing happens in the walk, front forcing in the prompt for prefill efficiency).
+3. **Forced prefix extraction.** The longest leading run of marks with exactly one admissible path is returned for prompt injection.
+   Text is never injected: the model writes it under the mask, in its own tokens.
+   A plain tokenization of a header is not what the model writes: LFM3 spells `<function=` as one added token, and shown the bytes it derailed a forced call.
+   The mask admits that token because the grammar reads a user-defined token as its text, as llama.cpp and Hugging Face do; control tokens stay empty mid-grammar.
+   This derives `callSeed`, `replySeed`, and the epilogue as one concept: forced regions are wherever the automaton has one path, at the front as injected marks, everywhere else as the mask.
 
 ### Prompt-opened regions
 
@@ -297,7 +300,7 @@ Writing all nine families changed the interfaces; this is why the exercise prece
 | `callSeed`, `replySeed` | forced-prefix extraction from the selection | `callSeed` DELETED; `replySeed` stays (parsing seam, not forcing) |
 | `callGrammar`, `callPrefix` | the CALL region and its body function | DELETED |
 | `callEpilogue` | interior forced regions (one admissible path) | DELETED |
-| "the pin ends AT the name" | survives as the FORCED-HEADER rule: `Spans.forcedCall` headers end at the name | done |
+| "the pin ends AT the name" | survives as the FORCED-HEADER rule: `Spans.forcedCall` headers end at the name, written by the model under the mask | done |
 | `SpansReplyParser`, `HarmonyReplyParser`, `SpanToolCallDetector`, `ToolCallDetector` | the walk's parse face | `SpansReplyParser` serves the Jinja fallback's PARSE; `HarmonyReplyParser` is the differential reference (both die with lazy AUTO arming - masking is already unified) |
 | `ChannelConstrainedSampler`, `withPrefixGrammar` | the walk's mask face | BOTH DELETED - constrained content rides one selection and cannot share a request with tools |
 | stop-token sets, `RequestPolicy.endTurn` | the accept boundary plus the control rule | partially: `ended()` stops generation; stop sets remain the fast path |

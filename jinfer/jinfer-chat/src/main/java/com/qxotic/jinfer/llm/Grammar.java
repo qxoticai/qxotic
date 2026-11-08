@@ -3,6 +3,7 @@ package com.qxotic.jinfer.llm;
 import com.qxotic.format.json.Json;
 import com.qxotic.jinfer.Views;
 import com.qxotic.jota.memory.MemoryView;
+import com.qxotic.toknroll.StandardTokenType;
 import com.qxotic.toknroll.Tokenizer;
 import java.io.ByteArrayOutputStream;
 import java.lang.foreign.MemorySegment;
@@ -86,7 +87,7 @@ import java.util.concurrent.ConcurrentHashMap;
  *       non-ASCII alternatives as literals ({@code "α" | "β"}).
  *   <li><b>A token is admissible iff its whole byte string is accepted</b> from the current state;
  *       special tokens report empty bytes (control, not content) and are never admissible
- *       mid-grammar.
+ *       mid-grammar; a user-defined token is text and reports its spelling.
  *   <li><b>Dead ends end cleanly:</b> when no vocabulary token is admissible the driving sampler
  *       forces a stop token; a COMPLETE grammar (nothing may follow) ends the reply - choice
  *       grammars deliberately terminate the turn.
@@ -181,9 +182,13 @@ public final class Grammar {
             // Specials are CONTROL, not content, whatever their literal rendering (LFM2's
             // <|im_end|> decodes to its 10-char string). Empty bytes makes every special
             // unsamplable mid-grammar and samplable exactly at accept states - the model can
-            // always END a completed constrained span with its natural stop token.
+            // always END a completed constrained span with its natural stop token. A
+            // user-defined token is text, as llama.cpp and HF read it: LFM3 writes <function=
+            // as one, and a grammar spelling that text must admit the model's own token.
             Tokenizer t = tokenizer();
-            if (SpecialTokens.isSpecial(t, id)) return NO_BYTES;
+            if (SpecialTokens.isSpecial(t, id)
+                    && !t.vocabulary().isTokenOfType(id, StandardTokenType.USER_DEFINED))
+                return NO_BYTES;
             return t.decodeBytes(new int[] {id});
         }
     }
