@@ -329,13 +329,14 @@ Read cache accounting from the response: `((JinferTokenUsage) response.tokenUsag
 
 ## Parallel pipelines
 
-One instance is one serial pipeline; concurrent calls queue. For parallel inference, load the weights once into a caller-owned arena and fork.
+One instance is one serial pipeline; concurrent calls queue.
+For parallel inference, load the weights once into a caller-owned arena and build each pipeline on them.
 
 ```java
 try (Arena arena = Arena.ofShared()) {
     var loaded = Models.load(ModelStore.standard().resolve("...:Q4_K_M"), arena);
     var a = JinferChatModel.builder().model(loaded).contextCapacity(8192).build();
-    var b = a.fork();               // second pipeline, same weights
+    var b = JinferChatModel.builder().model(loaded).contextCapacity(8192).build();
     // ... concurrent chat on a and b ...
     a.close(); b.close();
 }                                   // the owner frees the weights at a brace
@@ -343,7 +344,9 @@ try (Arena arena = Arena.ofShared()) {
 
 The arena must outlive every instance built on it. Freed weights throw `IllegalStateException` at the forward pass. Freeing the arena during a request is a data race and can crash the VM.
 
-`fork()` on a model that loaded its own weights refuses. The same seam and `fork()` exist on `JinferEmbeddingModel` (`Models.loadEmbedder`) and `JinferScoringModel` (`Models.loadReranker`).
+Pipelines share the weights and nothing else: listeners, defaults and cached prompts are set per build.
+To start a pipeline from prompts another one prefilled, `saveCachedPrompts(path)` on the first and `promptCache(path)` on the next.
+The same `model(loaded)` seam exists on `JinferEmbeddingModel` (`Models.loadEmbedder`) and `JinferScoringModel` (`Models.loadReranker`).
 
 ## Notes
 

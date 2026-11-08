@@ -41,8 +41,6 @@ public final class JinferScoringModel implements ScoringModel, AutoCloseable {
     private final Arena arena;
     private final ReentrantLock lock = new ReentrantLock(true); // single-stream, like ChatEngine
     private final String instruction;
-    private final int contextCapacity;
-    private final boolean ownsWeights; // false = the caller loaded the model and keeps the arena
 
     private JinferScoringModel(Builder b) {
         // ONE private arena. The state borrows it; close() closes the state first, then the arena.
@@ -50,14 +48,13 @@ public final class JinferScoringModel implements ScoringModel, AutoCloseable {
         // caller's arena.
         this.arena = Arenas.newCrossThread();
         try {
-            this.ownsWeights = b.loaded == null;
             try {
                 this.loaded = b.loaded != null ? b.loaded : Models.loadReranker(b.modelPath, arena);
             } catch (IOException e) {
                 throw new UncheckedIOException("failed to load " + b.modelPath, e);
             }
             int maxContextLength = loaded.model().configuration().maxContextLength();
-            this.contextCapacity =
+            int contextCapacity =
                     PromptCache.Options.contextCapacity(
                             b.contextCapacity,
                             maxContextLength,
@@ -74,24 +71,6 @@ public final class JinferScoringModel implements ScoringModel, AutoCloseable {
             Arenas.close(arena); // free before failing (best-effort: ofAuto self-manages)
             throw e;
         }
-    }
-
-    /**
-     * A parallel pipeline over the same weights: fresh state, own lock, own lifecycle. Only a model
-     * whose weights YOU loaded can fork - the weights' lifetime is your arena's, so a fork can
-     * never dangle. A model that loaded its own weights refuses: it frees them at {@link #close()},
-     * and a fork would outlive them.
-     */
-    public JinferScoringModel fork() {
-        if (ownsWeights) {
-            throw new IllegalStateException(
-                    "this model owns its weights and frees them at close - a fork would dangle."
-                            + " Load once into YOUR arena instead: Models.loadReranker(path,"
-                            + " arena), build with model(loaded), then fork freely");
-        }
-        Builder b = builder().model(loaded).contextCapacity(contextCapacity);
-        if (loaded.reranker().hasInstructionSlot()) b.instruction(instruction);
-        return b.build();
     }
 
     private static <S extends ContextState> S newState(
@@ -168,7 +147,7 @@ public final class JinferScoringModel implements ScoringModel, AutoCloseable {
 
         /**
          * A model you loaded yourself. Its weights arena stays yours; close the arena only after
-         * this model and every fork on it.
+         * every model built on it.
          */
         public Builder model(LoadedReranker<?> loaded) {
             this.source = loaded;

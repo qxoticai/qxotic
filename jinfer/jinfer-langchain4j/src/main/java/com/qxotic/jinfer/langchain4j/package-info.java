@@ -15,14 +15,14 @@
  * <p>Each chat, embedding, or scoring model instance is ONE serial inference pipeline: concurrent
  * calls queue fairly on it. Speech requests instead use independent synthesis states and may run
  * concurrently; closing the speech model waits for them to finish. For parallel pipelines of the
- * serial adapters, load the weights once into YOUR arena and fork - every builder has a {@code
- * model(loaded)} seam and every model a {@code fork()}:
+ * serial adapters, load the weights once into YOUR arena and build each pipeline on them - every
+ * builder has a {@code model(loaded)} seam:
  *
  * <pre>{@code
  * try (Arena arena = Arenas.newCrossThread()) {
  *     var loaded = Models.loadEmbedder(ModelStore.standard().resolve("owner/repo:Q8_0"), arena);
  *     var a = JinferEmbeddingModel.builder().model(loaded).build();
- *     var b = a.fork();               // second pipeline, same weights, a context's price
+ *     var b = JinferEmbeddingModel.builder().model(loaded).build(); // same weights, own state
  *     // ... parallel ingestion on a and b ...
  *     a.close(); b.close();
  * }                                   // the owner frees the weights, at a brace
@@ -31,8 +31,8 @@
  * <p>The block structure IS the ownership story: your arena outlives every instance built on it. A
  * sequential violation is caught fail-fast - a safety canary at the forward pass throws {@code
  * IllegalStateException} on freed weights - while freeing the arena DURING a request is a data race
- * and can still crash the VM. {@code fork()} on a model that loaded its OWN weights refuses with
- * the load-once recipe.
+ * and can still crash the VM. Pipelines share the weights and nothing else: listeners, defaults and
+ * cached prompts are set per build.
  *
  * <h2>Structured output</h2>
  *

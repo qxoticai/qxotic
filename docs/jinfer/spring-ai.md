@@ -187,7 +187,9 @@ Model resolution happens at startup; invalid configuration fails the boot.
 
 ## Lifetime and concurrency
 
-One adapter is one serial pipeline. `fork()` creates another state over shared weights when the caller supplied the loaded model and owns its arena. Close adapters before closing that arena.
+One adapter is one serial pipeline.
+For another, load the weights once into an arena you own (`Models.load`, `Models.loadEmbedder`, `Models.loadReranker`) and build each adapter with `model(loaded)`; adapters share the weights and nothing else.
+Close adapters before closing that arena.
 
 `JinferChatModel`, `JinferEmbeddingModel`, `JinferDocumentPostProcessor`, `JinferSpeechModel`, and `JinferTranscriptionModel` are `AutoCloseable`; Spring closes managed beans automatically.
 

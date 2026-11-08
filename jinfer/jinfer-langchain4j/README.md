@@ -32,7 +32,8 @@ to a third party.
 - **Retrieval.** Embeddings and ColBERT reranking in the same JVM as chat, with no vector service.
 - **Accurate reporting.** Real token counts and finish reasons. Unsupported parameters fail
   instead of being silently ignored.
-- **Shared weights.** `fork()` gives a second pipeline over one copy of the model.
+- **Shared weights.** Models built on one `Models.load` run as parallel pipelines over one copy
+  of the model.
 
 ## Run the demos
 
@@ -479,20 +480,22 @@ restored.
 
 ## Parallel pipelines
 
-One instance is one serial pipeline. Fork for parallel generation over shared weights:
+One instance is one serial pipeline.
+For parallel generation, build each pipeline on the same loaded weights:
 
 ```java
 try (Arena arena = Arena.ofShared()) {
     var path = ModelStore.standard().resolve("LiquidAI/LFM2.5-350M-GGUF:Q8_0");
     var loaded = Models.load(path, arena);
     try (var a = JinferChatModel.builder().model(loaded).contextCapacity(8192).build();
-            var b = a.fork()) {     // second pipeline, shared weights, separate context
+            var b = JinferChatModel.builder().model(loaded).contextCapacity(8192).build()) {
         // Run concurrent requests through a and b.
     }
 }                                   // Closing the arena frees the shared weights.
 ```
 
 The arena owns the weights and must outlive both pipelines.
+They share the weights and nothing else: listeners, defaults and cached prompts are set per build.
 
 ## Notes
 

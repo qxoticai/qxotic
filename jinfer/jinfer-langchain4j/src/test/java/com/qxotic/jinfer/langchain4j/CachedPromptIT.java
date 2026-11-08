@@ -27,6 +27,7 @@ import java.nio.file.Path;
 import java.util.List;
 import java.util.concurrent.Executors;
 import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.function.Supplier;
 import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.Assumptions;
 import org.junit.jupiter.api.BeforeAll;
@@ -177,22 +178,22 @@ class CachedPromptIT {
     }
 
     @Test
-    void forkIsAParallelPipelineSharingTheWeights() throws Exception {
-        // ONE load in the USER's arena; fork() mints a second pipeline for the price of a
-        // context. The arena's block structure IS the ownership story: weights die at the brace.
+    void twoModelsOverOneLoadRunInParallel() throws Exception {
+        // one instance is one serial pipeline, so a second pipeline is a second build over the
+        // SAME load: its own engine and state, nothing shared but the weights. Both generate
+        // concurrently and answer coherently. The arena's block IS the weights' lifetime.
         try (Arena arena = Arenas.newCrossThread()) {
             var loaded = Models.load(TestModels.require(REF), arena);
-            // contextCapacity is a load-time setting on the LoadedModel path - the builder
-            // refuses it here by design; a generous budget keeps the echo assertion off luck
-            JinferChatModel a =
-                    JinferChatModel.builder()
-                            .model(loaded)
-                            .maxOutputTokens(128)
-                            .maxReasoningTokens(32) // 8B-A1B always reasons: cap, do not switch off
-                            .seed(1L)
-                            .build();
-            JinferChatModel b = a.fork();
-            try {
+            Supplier<JinferChatModel> pipeline =
+                    () ->
+                            JinferChatModel.builder()
+                                    .model(loaded)
+                                    .maxOutputTokens(128)
+                                    .maxReasoningTokens(32) // 8B-A1B always reasons: cap it
+                                    .seed(1L)
+                                    .build();
+            try (JinferChatModel a = pipeline.get();
+                    JinferChatModel b = pipeline.get()) {
                 var pool = Executors.newFixedThreadPool(2);
                 try {
                     var fa =
@@ -212,22 +213,6 @@ class CachedPromptIT {
                 } finally {
                     pool.shutdown();
                 }
-                // a view's fork re-defines the prefix on its own tree and serves from it
-                JinferChatModel view = a.withCachedPrompt(SUPPORT, List.of());
-                JinferChatModel forkedView = view.fork();
-                try {
-                    String answer =
-                            forkedView
-                                    .chat(UserMessage.from("Where do I reset my password?"))
-                                    .aiMessage()
-                                    .text();
-                    assertTrue(answer != null && !answer.isBlank());
-                } finally {
-                    forkedView.close(); // closes the fork's engine; a and its views live on
-                }
-            } finally {
-                a.close();
-                b.close();
             }
         }
     }
@@ -258,45 +243,6 @@ class CachedPromptIT {
             assertTrue(e.getMessage().contains("freed"), e.getMessage());
         } finally {
             borrowed.close();
-        }
-    }
-
-    @Test
-    void forkOfAnOwningModelRefusesWithTheRecipe() {
-        IllegalStateException e = assertThrows(IllegalStateException.class, base::fork);
-        assertTrue(e.getMessage().contains("Models.load"), e.getMessage());
-        assertTrue(e.getMessage().contains("model(loaded)"), e.getMessage());
-    }
-
-    @Test
-    void twoModelsAreTwoParallelPipelines() throws Exception {
-        // the concurrency contract: one instance is one serial pipeline, so a second pipeline is
-        // a second model. Both generate CONCURRENTLY (forbidden on one instance - StateGuard
-        // would reject shared-state misuse; here each owns its state) and answer coherently.
-        JinferChatModel twin =
-                JinferChatModel.builder()
-                        .modelPath(TestModels.require(REF))
-                        .contextCapacity(2048)
-                        .build();
-        var pool = Executors.newFixedThreadPool(2);
-        try {
-            var a =
-                    pool.submit(
-                            () ->
-                                    base.chat(UserMessage.from("Say exactly: ALPHA"))
-                                            .aiMessage()
-                                            .text());
-            var b =
-                    pool.submit(
-                            () ->
-                                    twin.chat(UserMessage.from("Say exactly: BRAVO"))
-                                            .aiMessage()
-                                            .text());
-            assertTrue(a.get().contains("ALPHA"), a.get());
-            assertTrue(b.get().contains("BRAVO"), b.get());
-        } finally {
-            pool.shutdown();
-            twin.close();
         }
     }
 

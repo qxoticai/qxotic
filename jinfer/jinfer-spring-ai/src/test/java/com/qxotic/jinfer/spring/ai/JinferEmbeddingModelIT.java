@@ -366,11 +366,6 @@ class JinferEmbeddingModelIT {
                 assertTrue(
                         hits.get(0).getText().contains("acme.example/reset"),
                         hits.get(0).getText());
-
-                try (JinferEmbeddingModel fork = narrow.fork()) {
-                    assertEquals(256, fork.dimensions());
-                    assertTrue(cosine(fork.embed(new Document(text)), expected) > 0.99999);
-                }
             }
         }
     }
@@ -515,13 +510,14 @@ class JinferEmbeddingModelIT {
     }
 
     @Test
-    void sharedWeightsForkIsAParallelPipeline() throws Exception {
-        // ONE load in the USER's arena; fork() mints a second pipeline for a context's price
+    void twoModelsOverOneLoadRunInParallel() throws Exception {
+        // ONE load in the USER's arena; each build is a pipeline of its own for a context's price
         try (Arena arena = Arenas.newCrossThread()) {
             var loaded = Models.loadEmbedder(TestModels.require(EMBED_REF), arena);
             JinferEmbeddingModel a =
                     JinferEmbeddingModel.builder().model(loaded).contextCapacity(1024).build();
-            JinferEmbeddingModel b = a.fork();
+            JinferEmbeddingModel b =
+                    JinferEmbeddingModel.builder().model(loaded).contextCapacity(1024).build();
             try {
                 float[] shared = a.embed(new Document("hello world"));
                 assertTrue(cosine(shared, model.embed(new Document("hello world"))) > 0.999);
@@ -531,12 +527,6 @@ class JinferEmbeddingModelIT {
                 b.close();
             }
         }
-    }
-
-    @Test
-    void forkOfAnOwningModelRefusesWithTheRecipe() {
-        IllegalStateException e = assertThrows(IllegalStateException.class, model::fork);
-        assertTrue(e.getMessage().contains("Models.loadEmbedder"), e.getMessage());
     }
 
     @Test

@@ -6,11 +6,15 @@ import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
+import com.qxotic.jinfer.Arenas;
+import com.qxotic.jinfer.chat.Models;
 import com.qxotic.jinfer.testkit.TestModels;
+import java.lang.foreign.Arena;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.List;
 import java.util.concurrent.Executors;
+import java.util.function.IntFunction;
 import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Tag;
@@ -59,61 +63,42 @@ class CachedPromptIT {
     }
 
     @Test
-    void forkOfAnOwningModelRefusesWithTheRecipe() {
-        IllegalStateException e = assertThrows(IllegalStateException.class, base::fork);
-        assertTrue(e.getMessage().contains("Models.load"), e.getMessage());
-        assertTrue(e.getMessage().contains("model(loaded)"), e.getMessage());
+    void twoModelsOverOneLoadRunInParallel() throws Exception {
+        // one instance is one serial pipeline, so a second pipeline is a second build over the
+        // SAME load: its own engine and state, nothing shared but the weights. Pinned seeds and
+        // a generous budget keep the echo assertion off sampling luck (a 32-token budget failed
+        // on a near-miss "BRAZO" at one seed).
+        try (Arena arena = Arenas.newCrossThread()) {
+            var loaded = Models.load(MODEL, arena);
+            IntFunction<JinferChatModel> pipeline =
+                    seed ->
+                            JinferChatModel.builder()
+                                    .model(loaded)
+                                    .contextCapacity(2048)
+                                    .options(
+                                            JinferChatOptions.builder()
+                                                    .maxTokens(128)
+                                                    .maxReasoningTokens(32) // 8B-A1B always reasons
+                                                    .seed((long) seed)
+                                                    .build())
+                                    .build();
+            try (JinferChatModel first = pipeline.apply(1);
+                    JinferChatModel second = pipeline.apply(2)) {
+                var pool = Executors.newFixedThreadPool(2);
+                try {
+                    var a = pool.submit(() -> reply(first, "Say exactly: ALPHA"));
+                    var b = pool.submit(() -> reply(second, "Say exactly: BRAVO"));
+                    assertTrue(a.get().contains("ALPHA"), a.get());
+                    assertTrue(b.get().contains("BRAVO"), b.get());
+                } finally {
+                    pool.shutdown();
+                }
+            }
+        }
     }
 
-    @Test
-    void twoModelsAreTwoParallelPipelines() throws Exception {
-        // thinking off + pinned seeds + a generous budget: the echo assertion must not ride
-        // on sampling luck (a 32-token budget failed on a near-miss "BRAZO" at one seed)
-        JinferChatModel base =
-                JinferChatModel.builder()
-                        .modelPath(MODEL)
-                        .contextCapacity(2048)
-                        .options(
-                                JinferChatOptions.builder()
-                                        .maxTokens(128)
-                                        .maxReasoningTokens(32) // 8B-A1B always reasons: cap it
-                                        .seed(1L)
-                                        .build())
-                        .build();
-        JinferChatModel twin =
-                JinferChatModel.builder()
-                        .modelPath(MODEL)
-                        .contextCapacity(2048)
-                        .options(
-                                JinferChatOptions.builder()
-                                        .maxTokens(128)
-                                        .maxReasoningTokens(32)
-                                        .seed(2L)
-                                        .build())
-                        .build();
-        var pool = Executors.newFixedThreadPool(2);
-        try {
-            var a =
-                    pool.submit(
-                            () ->
-                                    base.call(new Prompt(new UserMessage("Say exactly: ALPHA")))
-                                            .getResult()
-                                            .getOutput()
-                                            .getText());
-            var b =
-                    pool.submit(
-                            () ->
-                                    twin.call(new Prompt(new UserMessage("Say exactly: BRAVO")))
-                                            .getResult()
-                                            .getOutput()
-                                            .getText());
-            assertTrue(a.get().contains("ALPHA"), a.get());
-            assertTrue(b.get().contains("BRAVO"), b.get());
-        } finally {
-            pool.shutdown();
-            twin.close();
-            base.close();
-        }
+    private static String reply(JinferChatModel model, String text) {
+        return model.call(new Prompt(new UserMessage(text))).getResult().getOutput().getText();
     }
 
     @Test

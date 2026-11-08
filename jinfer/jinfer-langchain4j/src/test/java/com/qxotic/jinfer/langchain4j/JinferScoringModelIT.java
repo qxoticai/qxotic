@@ -48,19 +48,13 @@ class JinferScoringModelIT {
     }
 
     @Test
-    void forkOfAnOwningModelRefusesWithTheRecipe() {
-        IllegalStateException e =
-                Assertions.assertThrows(IllegalStateException.class, scorer::fork);
-        Assertions.assertTrue(e.getMessage().contains("Models.loadReranker"), e.getMessage());
-    }
-
-    @Test
-    void sharedWeightsForkScoresTheSameRanking() throws Exception {
+    void twoModelsOverOneLoadScoreAlike() throws Exception {
         try (Arena arena = Arenas.newCrossThread()) {
             var loaded = Models.loadReranker(TestModels.require(REF), arena);
             JinferScoringModel a =
                     JinferScoringModel.builder().model(loaded).contextCapacity(2048).build();
-            JinferScoringModel b = a.fork();
+            JinferScoringModel b =
+                    JinferScoringModel.builder().model(loaded).contextCapacity(2048).build();
             try {
                 var docs =
                         List.of(

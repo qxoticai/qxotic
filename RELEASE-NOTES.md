@@ -14,7 +14,10 @@
 - **One embedding width for every call.** Both `JinferEmbeddingModel` builders take `dimensions(int)`, and the starter reads `spring.ai.jinfer.embedding.dimensions`: every call that names no width embeds at it, and `dimension()` (LangChain4j) or `dimensions()` (Spring AI) reports it.
   Vector stores size their tables from the model and embed without options, so this is how a store holds shorter Matryoshka vectors, such as EmbeddingGemma 2 at 256.
   `0`, the default, is the model's own width; a request's own width still wins, and a width the model cannot produce is refused at build.
-  LangChain4j's `fork()` now keeps the listeners as well.
+- **`fork()` is removed.** The `fork()` of the LangChain4j and Spring AI models carried some of the caller's objects into the new pipeline (listeners, observation registries, the video sampler) and not others, so what a fork shared with its origin was hard to predict.
+  For parallel pipelines over one copy of the weights, load once with `Models.load`, `Models.loadEmbedder` or `Models.loadReranker` and build each model with `model(loaded)`: builds share the weights and nothing else.
+  To start a pipeline from prompts another one prefilled, `saveCachedPrompts(path)` on the first and `promptCache(path)` on the next.
+  In the core, a state copies into a fresh one with the model's `CheckpointCodec`, as the jinfer guide shows.
 - **The chat server no longer reads text aloud.** `POST /v1/audio/speech` is gone from a chat model's server, and `ChatTemplate.speechInstruction` with it: a model with a voice speaks its chat replies, and reading text aloud is a speech model's job, `jinfer speak` and the `JinferSpeechModel` faces, at a fraction of a 2B chat model's cost.
 - **Gemma 4 media follows Google's reference, not llama.cpp.** Three places where llama.cpp departs from Google's JAX and Hugging Face implementations now follow the reference, for the Gemma 4 chat models as well as EmbeddingGemma 2.
   Images are resized to fill the token budget (280 by default) with their aspect kept, small images growing and nothing padded, where llama.cpp only shrinks them and pads with black.

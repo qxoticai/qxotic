@@ -199,8 +199,8 @@ final class BuilderContractTest {
     void aLoadedModelStillTakesTheContextKnob() throws IOException {
         // contextCapacity sizes the STATE, which the engine allocates - it is not a load-time
         // setting, and LoadedModel has no knob to carry it. Refusing it here used to pin every
-        // forked pipeline to the 4096 default with advice that could not be followed. Both
-        // directions are pinned: a larger window is accepted, and the value demonstrably
+        // pipeline built over one load to the 4096 default with advice that could not be followed.
+        // Both directions are pinned: a larger window is accepted, and the value demonstrably
         // reaches the state - a 64-token window refuses a prompt the default would take.
         try (Arena weights = Arenas.newCrossThread()) {
             LoadedModel<?> loaded =

@@ -26,8 +26,8 @@ import org.junit.jupiter.params.provider.MethodSource;
 /**
  * The langchain4j compliance kit (AbstractChatModelIT: "all the common tests that every ChatModel
  * must successfully pass") against JinferChatModel on LFM2.5-8B. Capability switches document
- * exactly what this provider rejects by design (stop strings, JSON formats, toolChoice REQUIRED,
- * per-request model switching, image URLs). Model-gated via @EnabledIf.
+ * exactly what this provider rejects by design (per-request model switching, image URLs); images as
+ * base64 run only with {@code -Djinfer.testMedia=<mmproj>}. Model-gated via @EnabledIf.
  */
 @Tag("integration")
 @EnabledIf("com.qxotic.jinfer.langchain4j.JinferChatModelTckIT#modelAvailable")

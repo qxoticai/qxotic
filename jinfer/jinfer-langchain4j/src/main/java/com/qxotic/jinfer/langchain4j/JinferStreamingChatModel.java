@@ -69,9 +69,7 @@ public final class JinferStreamingChatModel implements StreamingChatModel, AutoC
     /**
      * The blocking twin over the same engine - the way to {@code withCachedPrompt}, {@code
      * saveCachedPrompts} and {@code tokenCountEstimator()} from a model built with {@code
-     * buildStreaming()}, which otherwise hands out a streaming face and no way back. ({@code
-     * fork()} additionally needs weights YOU loaded - a {@code model(LoadedModel)} build - like on
-     * any blocking model.)
+     * buildStreaming()}, which otherwise hands out a streaming face and no way back.
      */
     public JinferChatModel blocking() {
         return model;

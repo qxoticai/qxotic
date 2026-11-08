@@ -512,12 +512,6 @@ class JinferEmbeddingModelIT {
                 assertTrue(
                         contents.get(0).textSegment().text().contains("acme.example/reset"),
                         contents.get(0).textSegment().text());
-
-                try (JinferEmbeddingModel fork = narrow.fork()) {
-                    assertEquals(256, fork.dimension());
-                    assertEquals(narrow.listeners(), fork.listeners());
-                    assertTrue(cosine(fork.embed(text).content(), expected) > 0.99999);
-                }
             }
         }
     }
@@ -619,12 +613,13 @@ class JinferEmbeddingModelIT {
     // ---- shared weights: one load, parallel pipelines, user-owned lifetime ----
 
     @Test
-    void sharedWeightsForkIsAParallelPipeline() throws Exception {
+    void twoModelsOverOneLoadRunInParallel() throws Exception {
         try (Arena arena = Arenas.newCrossThread()) {
             var loaded = Models.loadEmbedder(TestModels.require(REF), arena);
             JinferEmbeddingModel a =
                     JinferEmbeddingModel.builder().model(loaded).contextCapacity(1024).build();
-            JinferEmbeddingModel b = a.fork();
+            JinferEmbeddingModel b =
+                    JinferEmbeddingModel.builder().model(loaded).contextCapacity(1024).build();
             try {
                 // borrowed == owned: same vectors as the path-built class-level model
                 Embedding shared = a.embed("hello world").content();
@@ -647,13 +642,6 @@ class JinferEmbeddingModelIT {
                 b.close();
             }
         }
-    }
-
-    @Test
-    void forkOfAnOwningModelRefusesWithTheRecipe() {
-        IllegalStateException e = assertThrows(IllegalStateException.class, model::fork);
-        assertTrue(e.getMessage().contains("Models.loadEmbedder"), e.getMessage());
-        assertTrue(e.getMessage().contains("model(loaded)"), e.getMessage());
     }
 
     @Test

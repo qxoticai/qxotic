@@ -216,6 +216,40 @@ Every restore stops one position short and re-ingests the last token, so logits 
 
 Framework users need only `retainSessions(n)`, `promptCache(path)`, and `withCachedPrompt(...)`; see the [LangChain4j](/jinfer/langchain4j#cached-prompts) and [Spring AI](/jinfer/spring-ai#prompt-caching) guides. The CLI exposes `--cache file.jkv` (growing) and `--cache-ro file.jkv` (read-only).
 
+## Copying a context
+
+A state copies into a fresh one over the same weights through the model's `CheckpointCodec`, the one the prompt cache uses:
+
+```java
+static <S extends ContextState> S copy(ContextModel<?, ?, S> model, S source) {
+    CheckpointCodec<S> codec = model.checkpointCodec().orElseThrow();
+    int n = source.position();
+    S copy = model.newState(source.contextCapacity(), source.batchCapacity());
+    try (Arena checkpoint = Arena.ofShared()) {
+        MemorySegment blob = checkpoint.allocate(codec.byteSize(n));
+        codec.capture(source, 0, n, blob);
+        codec.restore(copy, 0, n, blob);
+    }
+    copy.resumeAt(n);
+    return copy;
+}
+```
+
+The copy takes the KV rows and any recurrent state, so it continues exactly where the source stands, with its own memory.
+Every chat model has a codec; embedders and rerankers need none, since their state keeps nothing between calls.
+
+A copy carries no logits: sample its next token from the source's, or feed it your own tokens.
+Best-of-n prefills once and branches at the first token:
+
+```java
+model.ingest(source, Batch.prefill(prompt));
+int[] firsts = sample(model.logits(source), n);    // your sampler: n draws from one distribution
+for (int first : firsts) {
+    var branch = copy(model, source);
+    model.ingest(branch, Batch.step(first));         // fresh logits from here on
+}
+```
+
 ## The same knob at each face
 
 One engine, five faces: the Java API, the CLI, the OpenAI-compatible server and the two framework providers.
@@ -239,7 +273,7 @@ This table is the translation.
 ## Performance and observability
 
 - Vector API kernels run on x86 and ARM. JAM is selected automatically when present.
-- Prompt ingestion is batched. Generation uses one serial state per pipeline; fork another pipeline for parallel inference.
+- Prompt ingestion is batched. Generation uses one serial state per pipeline; build another pipeline on the same loaded weights for parallel inference.
 - Threads: `-Djinfer.threads` (default: physical cores) sizes the one pool every kernel and jam backend runs on; there is no other thread knob.
 - Prompt cache: `-Djinfer.cache.sessions` (default: 4) is how many conversations stay warm, `-Djinfer.cache.budget` (default: 2g, as `-Xmx` spells sizes) bounds the KV blocks kept, 0 switching the block layer off; the CLI, the server and libjinfer read both, the LangChain4j and Spring AI builders take them as arguments.
 - JFR events cover load, queue/prefill/decode/TTFT, cache state, media projection, and MTP. The packaged `jinfer.jfc` enables aggregate events and leaves per-token decode off.

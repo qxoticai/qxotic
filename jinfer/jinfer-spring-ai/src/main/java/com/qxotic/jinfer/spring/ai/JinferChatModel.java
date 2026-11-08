@@ -65,11 +65,11 @@ import reactor.core.publisher.FluxSink;
  *
  * <p>Concurrency contract: an instance is ONE serial inference pipeline - concurrent requests queue
  * fairly on it. For a second pipeline, load the weights once into YOUR arena ({@code
- * Models.load(path, arena)}), build with {@code model(loaded)}, and {@code fork()} pipelines for
- * the price of a context each. Footprint: an instance holds its weights, up to the configured
- * number of retained full-context states, plus the block layer's KV (every served conversation,
- * best-effort within a 2 GiB LRU-evicted RAM-only budget; defined prompts are pinned intent within
- * it).
+ * Models.load(path, arena)}) and build each pipeline with {@code model(loaded)}: pipelines share
+ * the weights and nothing else, for the price of a context each. Footprint: an instance holds its
+ * weights, up to the configured number of retained full-context states, plus the block layer's KV
+ * (every served conversation, best-effort within a 2 GiB LRU-evicted RAM-only budget; defined
+ * prompts are pinned intent within it).
  *
  * <p>Three cache controls with distinct jobs: {@code withCachedPrompt} defines a shared prefix
  * (prefilled once, restored per request - the system-prompt/tools/few-shot case); {@code
@@ -97,8 +97,6 @@ public final class JinferChatModel implements ChatModel, AutoCloseable {
     // prefix, its KV restored from the engine's block tree instead of re-prefilled.
     final VideoSampler videoSampler;
     final CachedPrompt prefix;
-    private final PromptCache.Options cacheOptions; // the builder's cache knobs, carried for fork()
-    private final boolean ownsWeights; // false = the caller loaded the model and keeps the arena
     // per view (never copied): the first tools override warns once, then stays quiet
     private final AtomicBoolean warnedToolsOverride = new AtomicBoolean();
 
@@ -116,19 +114,17 @@ public final class JinferChatModel implements ChatModel, AutoCloseable {
     }
 
     private JinferChatModel(Builder b) {
-        PromptCache.Options requestedCacheOptions =
+        PromptCache.Options cacheOptions =
                 cacheOptions(b.promptCache, b.retainedSessions, b.contextCapacity);
-        this.ownsWeights = b.loaded == null;
         this.engine =
                 b.loaded == null
-                        ? new ChatEngine(b.modelPath, b.companionPaths, requestedCacheOptions)
+                        ? new ChatEngine(b.modelPath, b.companionPaths, cacheOptions)
                         : new ChatEngine(
                                 b.loaded,
                                 b.modelName == null
                                         ? b.loaded.model().getClass().getSimpleName()
                                         : b.modelName,
-                                requestedCacheOptions);
-        this.cacheOptions = requestedCacheOptions.withContextCapacity(engine.contextCapacity());
+                                cacheOptions);
         // the engine above is live (weights mapped) - anything that throws from here on must
         // free it, or a failed build() leaks a GB-scale ofShared arena with no backstop
         try {
@@ -188,48 +184,7 @@ public final class JinferChatModel implements ChatModel, AutoCloseable {
         this.observationRegistry = base.observationRegistry;
         this.observationConvention = base.observationConvention;
         this.videoSampler = base.videoSampler;
-        this.cacheOptions = base.cacheOptions;
-        this.ownsWeights = base.ownsWeights;
         this.prefix = prefix;
-    }
-
-    /** The fork constructor: a fresh engine over the same borrowed weights, every knob carried. */
-    private JinferChatModel(JinferChatModel base, ChatEngine engine) {
-        this.engine = engine;
-        this.options = base.options;
-        this.observationRegistry = base.observationRegistry;
-        this.observationConvention = base.observationConvention;
-        this.videoSampler = base.videoSampler;
-        this.cacheOptions = base.cacheOptions;
-        this.ownsWeights = false;
-        this.prefix = CachedPrompt.NONE;
-    }
-
-    /**
-     * A parallel pipeline over the same weights: fresh engine, state and stream driver, every
-     * builder knob carried (a mounted cached-prompts artifact is re-mounted read-only; a view's
-     * prefix is re-defined on the fork's own tree). Only a model whose weights YOU loaded can fork
-     * - the weights' lifetime is your arena's, so a fork can never dangle. A model that loaded its
-     * own weights refuses: it frees them at {@link #close()}, and a fork would outlive them.
-     */
-    public JinferChatModel fork() {
-        if (ownsWeights) {
-            throw new IllegalStateException(
-                    "this model owns its weights and frees them at close - a fork would dangle."
-                            + " Load once into YOUR arena instead: Models.load(path, arena), build"
-                            + " with model(loaded), then fork freely");
-        }
-        JinferChatModel forked =
-                new JinferChatModel(
-                        this, new ChatEngine(engine.loaded(), engine.modelName(), cacheOptions));
-        forked.engine.speculationDepth(engine.speculationDepth());
-        if (prefix.isEmpty()) return forked;
-        try {
-            return forked.withPrefix(prefix);
-        } catch (RuntimeException | Error e) {
-            close(forked::close, e); // a failed re-define must not leak the fork's engine
-            throw e;
-        }
     }
 
     /**
@@ -752,7 +707,7 @@ public final class JinferChatModel implements ChatModel, AutoCloseable {
 
         /**
          * A model you loaded yourself. Its weights arena stays yours; close the arena only after
-         * this model and every fork on it.
+         * every model built on it.
          */
         public Builder model(LoadedModel<?> loaded) {
             this.source = loaded;
@@ -895,7 +850,7 @@ public final class JinferChatModel implements ChatModel, AutoCloseable {
             }
             if (source instanceof LoadedModel<?> l) {
                 // contextCapacity stays legal here: state capacity is an ENGINE setting resolved
-                // from cacheOptions, not a load-time one - a forked 32k pipeline needs it
+                // from the cache options, not a load-time one - pipelines over one load may differ
                 if (!companionRefs.isEmpty() || !localCompanions.isEmpty())
                     throw new IllegalArgumentException(
                             "companions are load-time settings; apply them when you build the"
