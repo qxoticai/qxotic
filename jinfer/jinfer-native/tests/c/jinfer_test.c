@@ -105,7 +105,7 @@ static void configure(void) {
 
 static void start_the_runtime(void* p) {
     (void) p;
-    jinfer_model_property(NULL, JINFER_VOCAB_SIZE);   /* refused, on this thread alone */
+    jinfer_model_property(NULL, JINFER_PROPERTY_VOCAB_SIZE);   /* refused, on this thread alone */
 }
 
 /* a refusal before the runtime starts stays the failing thread's, once another thread starts it, until
@@ -114,7 +114,7 @@ static void last_error_before_start(void) {
     CHECK_ERROR(jinfer_configure(NULL, 1), JINFER_EINVAL, LE, "options is NULL");
     thread_join(thread_run(start_the_runtime, NULL));
     CHECK_ERROR(JINFER_EINVAL, JINFER_EINVAL, LE, "jinfer_configure: options is NULL");
-    CHECK_ERROR(jinfer_model_property(NULL, JINFER_VOCAB_SIZE), JINFER_EINVAL, LE, "model is NULL");
+    CHECK_ERROR(jinfer_model_property(NULL, JINFER_PROPERTY_VOCAB_SIZE), JINFER_EINVAL, LE, "model is NULL");
 }
 
 static void configure_through_toknroll(void) {
@@ -132,7 +132,7 @@ static void configure_rejected(void) {
     CHECK_HAS(err, "NoSuchOptionAnywhere");
     free(err);
     CHECK_NULL_ERROR(jinfer_model_load(LM, NULL), JINFER_ERROR, LE, "the runtime could not be started");
-    CHECK_ERROR(jinfer_model_property(NULL, JINFER_VOCAB_SIZE), JINFER_ERROR, LE, "could not be started");
+    CHECK_ERROR(jinfer_model_property(NULL, JINFER_PROPERTY_VOCAB_SIZE), JINFER_ERROR, LE, "could not be started");
     CHECK_STR(jinfer_model_info(NULL), "");
     CHECK_ERROR(jinfer_configure(NULL, 0), JINFER_EINVAL, LE, "jinfer_configure must come once");
 }
@@ -224,7 +224,7 @@ static void log_callback_calls_in_at_start(void) {   /* JINFER_LOG=loud */
     CHECK_EQ(jinfer_log_set(call_in, NULL), JINFER_OK);
     offline();
     CHECK_EQ(called_in, 1);
-    CHECK_EQ(jinfer_model_property(NULL, JINFER_VOCAB_SIZE), JINFER_EINVAL);   /* and serves on */
+    CHECK_EQ(jinfer_model_property(NULL, JINFER_PROPERTY_VOCAB_SIZE), JINFER_EINVAL);   /* and serves on */
 }
 
 static void log_debug_to_the_callback(void) {   /* JINFER_LOG=debug */
@@ -395,16 +395,16 @@ static void load_options(void) {
     o.context_capacity = 1024;
     m = jinfer_model_load(LM, &o);
     CHECK(m != NULL);
-    CHECK_EQ(jinfer_model_property(m, JINFER_CONTEXT_CAPACITY), 1024);
-    int32_t max = jinfer_model_property(m, JINFER_MAX_CONTEXT_LENGTH);
+    CHECK_EQ(jinfer_model_property(m, JINFER_PROPERTY_CONTEXT_CAPACITY), 1024);
+    int32_t max = jinfer_model_property(m, JINFER_PROPERTY_MAX_CONTEXT_LENGTH);
     jinfer_model_free(m);
     o.context_capacity = JINFER_CONTEXT_MAXIMUM;   /* a state's memory comes with its first use: cheap to load */
     m = jinfer_model_load(LM, &o);
-    CHECK_EQ(jinfer_model_property(m, JINFER_CONTEXT_CAPACITY), max);
+    CHECK_EQ(jinfer_model_property(m, JINFER_PROPERTY_CONTEXT_CAPACITY), max);
     jinfer_model_free(m);
     o.context_capacity = 0;
     m = jinfer_model_load(LM, &o);
-    CHECK_EQ(jinfer_model_property(m, JINFER_CONTEXT_CAPACITY), max < 4096 ? max : 4096);
+    CHECK_EQ(jinfer_model_property(m, JINFER_PROPERTY_CONTEXT_CAPACITY), max < 4096 ? max : 4096);
     jinfer_model_free(m);
     o.context_capacity = -2;
     CHECK_NULL_ERROR(jinfer_model_load(LM, &o), JINFER_EINVAL, LE, "context_capacity must be 0 (the default), -1 (the model's maximum) or positive, got -2");
@@ -419,21 +419,21 @@ static void language_model(void) {
     offline();
     jinfer_model* m = load(LM);
     CHECK_CLEAR(LE);
-    int32_t vocab = jinfer_model_property(m, JINFER_VOCAB_SIZE);
-    int32_t max = jinfer_model_property(m, JINFER_MAX_CONTEXT_LENGTH);
+    int32_t vocab = jinfer_model_property(m, JINFER_PROPERTY_VOCAB_SIZE);
+    int32_t max = jinfer_model_property(m, JINFER_PROPERTY_MAX_CONTEXT_LENGTH);
     CHECK(vocab > 0 && max >= 4096);
-    CHECK_EQ(jinfer_model_property(m, JINFER_CONTEXT_CAPACITY), 4096);   /* the default, the maximum being larger */
-    CHECK_EQ(jinfer_model_property(m, JINFER_EMBEDDING_DIMENSION), 0);   /* not applicable */
-    CHECK_EQ(jinfer_model_property(m, JINFER_SAMPLE_RATE), 0);
-    CHECK_EQ(jinfer_model_property(m, JINFER_HAS_CHAT), 1);
-    CHECK_EQ(jinfer_model_property(m, JINFER_HAS_MEDIA), 0);
-    CHECK_EQ(jinfer_model_property(m, JINFER_HAS_EMBEDDING), 0);
-    CHECK_EQ(jinfer_model_property(m, JINFER_HAS_RERANK), 0);
-    CHECK_EQ(jinfer_model_property(m, JINFER_HAS_SPEECH), 0);
-    CHECK_EQ(jinfer_model_property(m, JINFER_HAS_TRANSCRIPTION), 0);
+    CHECK_EQ(jinfer_model_property(m, JINFER_PROPERTY_CONTEXT_CAPACITY), 4096);   /* the default, the maximum being larger */
+    CHECK_EQ(jinfer_model_property(m, JINFER_PROPERTY_EMBEDDING_DIMENSION), 0);   /* not applicable */
+    CHECK_EQ(jinfer_model_property(m, JINFER_PROPERTY_SAMPLE_RATE), 0);
+    CHECK_EQ(jinfer_model_property(m, JINFER_PROPERTY_HAS_CHAT), 1);
+    CHECK_EQ(jinfer_model_property(m, JINFER_PROPERTY_HAS_MEDIA), 0);
+    CHECK_EQ(jinfer_model_property(m, JINFER_PROPERTY_HAS_EMBEDDING), 0);
+    CHECK_EQ(jinfer_model_property(m, JINFER_PROPERTY_HAS_RERANK), 0);
+    CHECK_EQ(jinfer_model_property(m, JINFER_PROPERTY_HAS_SPEECH), 0);
+    CHECK_EQ(jinfer_model_property(m, JINFER_PROPERTY_HAS_TRANSCRIPTION), 0);
     static const int32_t unknown[] = {0, 6, 99, 106, -1, INT32_MAX};
     for (int i = 0; i < COUNT(unknown); i++) CHECK_ERROR(jinfer_model_property(m, unknown[i]), JINFER_EINVAL, LE, "unknown jinfer_model_property key");
-    CHECK_ERROR(jinfer_model_property(NULL, JINFER_VOCAB_SIZE), JINFER_EINVAL, LE, "model is NULL");
+    CHECK_ERROR(jinfer_model_property(NULL, JINFER_PROPERTY_VOCAB_SIZE), JINFER_EINVAL, LE, "model is NULL");
     const char* info = jinfer_model_info(m);
     CHECK(info[0] == '{' && info[strlen(info) - 1] == '}');
     CHECK_HAS(info, "\"kind\":\"language\"");
@@ -466,7 +466,7 @@ static void language_model(void) {
 static void state(void) {
     offline();
     jinfer_model* m = load(LM);
-    int32_t vocab = jinfer_model_property(m, JINFER_VOCAB_SIZE);
+    int32_t vocab = jinfer_model_property(m, JINFER_PROPERTY_VOCAB_SIZE);
     int32_t ids[64];
     int32_t n = ids_of(m, "The capital of France is", ids, 64);
     CHECK(n > 0);
@@ -510,7 +510,7 @@ static void state(void) {
     CHECK_ERROR(jinfer_state_logits(s, logits, -1), JINFER_EINVAL, LE, "float_capacity must not be negative");
     CHECK_ERROR(jinfer_state_logits(s, NULL, 4), JINFER_EINVAL, LE, "out is NULL");
     CHECK_ERROR(jinfer_state_embedding(s, logits, vocab), JINFER_EUNSUPPORTED, LE, "is a language model, not an embedding model");
-    CHECK_EQ(jinfer_model_property(m, JINFER_EMBEDDING_DIMENSION), 0);   /* the two agree */
+    CHECK_EQ(jinfer_model_property(m, JINFER_PROPERTY_EMBEDDING_DIMENSION), 0);   /* the two agree */
     CHECK_ERROR(jinfer_state_ingest(NULL, ids, 1), JINFER_EINVAL, LE, "state is NULL");
     CHECK_ERROR(jinfer_state_position(NULL), JINFER_EINVAL, LE, "state is NULL");
     CHECK_ERROR(jinfer_state_reset(NULL), JINFER_EINVAL, LE, "state is NULL");
@@ -528,7 +528,7 @@ static void state(void) {
 static void state_capacity(void) {
     offline();
     jinfer_model* m = load(LM);
-    int32_t max = jinfer_model_property(m, JINFER_MAX_CONTEXT_LENGTH);
+    int32_t max = jinfer_model_property(m, JINFER_PROPERTY_MAX_CONTEXT_LENGTH);
     jinfer_state* s = jinfer_state_new(m, 16);
     int32_t ids[17];
     int32_t n = ids_of(m, "one two three four five six seven eight nine ten eleven twelve thirteen fourteen fifteen sixteen seventeen", ids, 17);
@@ -790,7 +790,7 @@ static void chat_worker(void* p) {
 typedef struct { jinfer_model* m; const int32_t* ids; int32_t n; float first; int wrong; } logits_box;
 static void logits_worker(void* p) {
     logits_box* b = (logits_box*) p;
-    int32_t vocab = jinfer_model_property(b->m, JINFER_VOCAB_SIZE);
+    int32_t vocab = jinfer_model_property(b->m, JINFER_PROPERTY_VOCAB_SIZE);
     float* out = (float*) malloc((size_t) vocab * sizeof *out);
     for (int i = 0; i < 3; i++) {
         jinfer_state* s = jinfer_state_new(b->m, 64);
@@ -826,12 +826,12 @@ static void threads(void) {
 static void embedding_model(void) {
     offline();
     jinfer_model* e = load(EMB);
-    int32_t dim = jinfer_model_property(e, JINFER_EMBEDDING_DIMENSION);
+    int32_t dim = jinfer_model_property(e, JINFER_PROPERTY_EMBEDDING_DIMENSION);
     CHECK(dim > 0);
-    CHECK_EQ(jinfer_model_property(e, JINFER_HAS_EMBEDDING), 1);
-    CHECK_EQ(jinfer_model_property(e, JINFER_HAS_CHAT), 0);
-    int32_t max = jinfer_model_property(e, JINFER_MAX_CONTEXT_LENGTH);
-    CHECK_EQ(jinfer_model_property(e, JINFER_CONTEXT_CAPACITY), max < 4096 ? max : 4096);   /* the default, an embedder's too */
+    CHECK_EQ(jinfer_model_property(e, JINFER_PROPERTY_HAS_EMBEDDING), 1);
+    CHECK_EQ(jinfer_model_property(e, JINFER_PROPERTY_HAS_CHAT), 0);
+    int32_t max = jinfer_model_property(e, JINFER_PROPERTY_MAX_CONTEXT_LENGTH);
+    CHECK_EQ(jinfer_model_property(e, JINFER_PROPERTY_CONTEXT_CAPACITY), max < 4096 ? max : 4096);   /* the default, an embedder's too */
     CHECK_HAS(jinfer_model_info(e), "\"kind\":\"embedding\"");
     const char* texts[] = {"a cat sat on the mat", "the stock market fell", "a cat sat on the mat"};
     CHECK_EQ(jinfer_embed(e, texts, 3, 0, NULL, 0), 3 * dim);   /* sizes */
@@ -887,10 +887,10 @@ static void embedding_model(void) {
 static void reranker(void) {
     offline();
     jinfer_model* r = cached_model(RERANKER, NULL);
-    CHECK_EQ(jinfer_model_property(r, JINFER_HAS_RERANK), 1);
-    int32_t max = jinfer_model_property(r, JINFER_MAX_CONTEXT_LENGTH);
-    CHECK_EQ(jinfer_model_property(r, JINFER_CONTEXT_CAPACITY), max < 4096 ? max : 4096);   /* the default, a reranker's too */
-    CHECK_EQ(jinfer_model_property(r, JINFER_HAS_CHAT), 0);
+    CHECK_EQ(jinfer_model_property(r, JINFER_PROPERTY_HAS_RERANK), 1);
+    int32_t max = jinfer_model_property(r, JINFER_PROPERTY_MAX_CONTEXT_LENGTH);
+    CHECK_EQ(jinfer_model_property(r, JINFER_PROPERTY_CONTEXT_CAPACITY), max < 4096 ? max : 4096);   /* the default, a reranker's too */
+    CHECK_EQ(jinfer_model_property(r, JINFER_PROPERTY_HAS_CHAT), 0);
     const char* docs[] = {"Paris is the capital of France.", "Bananas are yellow."};
     float scores[3] = {0, 0, -7};
     CHECK_EQ(jinfer_rerank(r, "capital of France", docs, 2, NULL, scores, 3), 2);
@@ -918,9 +918,9 @@ static void speech_and_transcription(void) {
     jinfer_model* tts = cached_model(SPEAKER, VOICE);
     jinfer_model* asr = cached_model(TRANSCRIBER, NULL);
     static float audio[24000 * 20];
-    int32_t samples = 0, rate = jinfer_model_property(tts, JINFER_SAMPLE_RATE);
+    int32_t samples = 0, rate = jinfer_model_property(tts, JINFER_PROPERTY_SAMPLE_RATE);
     CHECK_EQ(rate, 24000);
-    CHECK_EQ(jinfer_model_property(tts, JINFER_HAS_SPEECH), 1);
+    CHECK_EQ(jinfer_model_property(tts, JINFER_PROPERTY_HAS_SPEECH), 1);
     jinfer_stream* s = jinfer_speak(tts, "{\"input\":\"Turns out, matrix multiplications can talk.\",\"speed\":1.2}");
     CHECK(s != NULL);
     int32_t rc, chunks = 0;
@@ -948,8 +948,8 @@ static void speech_and_transcription(void) {
     jinfer_stream_cancel(s);
     CHECK_EQ(jinfer_stream_step(s), JINFER_ECANCELLED);
     jinfer_stream_free(s);
-    CHECK_EQ(jinfer_model_property(asr, JINFER_SAMPLE_RATE), 16000);
-    CHECK_EQ(jinfer_model_property(asr, JINFER_HAS_TRANSCRIPTION), 1);
+    CHECK_EQ(jinfer_model_property(asr, JINFER_PROPERTY_SAMPLE_RATE), 16000);
+    CHECK_EQ(jinfer_model_property(asr, JINFER_PROPERTY_HAS_TRANSCRIPTION), 1);
     float silence[1600] = {0};
     CHECK_NULL_ERROR(jinfer_transcribe(asr, silence, 1600, 0), JINFER_EINVAL, LE, "sample_rate must be positive");
     CHECK_NULL_ERROR(jinfer_transcribe(asr, silence, 1600, -16000), JINFER_EINVAL, LE, "sample_rate must be positive");
@@ -978,7 +978,7 @@ static void fork_refused(void) {
     pid_t pid = fork();
     if (pid == 0) {
         int bad = 0;
-        bad += jinfer_model_property(m, JINFER_VOCAB_SIZE) != JINFER_ERROR;
+        bad += jinfer_model_property(m, JINFER_PROPERTY_VOCAB_SIZE) != JINFER_ERROR;
         bad += !strstr(LE(NULL), "fork");
         bad += jinfer_chat(m, HI) != NULL;
         bad += jinfer_model_load(LM, NULL) != NULL;
@@ -992,7 +992,7 @@ static void fork_refused(void) {
     int status = 0;
     waitpid(pid, &status, 0);
     CHECK(WIFEXITED(status) && WEXITSTATUS(status) == 0);
-    CHECK_EQ(jinfer_model_property(m, JINFER_HAS_CHAT), 1);   /* the parent serves on */
+    CHECK_EQ(jinfer_model_property(m, JINFER_PROPERTY_HAS_CHAT), 1);   /* the parent serves on */
     toknroll_tokenizer_free(t);
     jinfer_model_free(m);
 }

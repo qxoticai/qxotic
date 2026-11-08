@@ -119,9 +119,9 @@ JINFER_API int32_t     jinfer_configure(const char* const* options, int32_t coun
  * jinfer_rerank run in, each holding up to context_capacity tokens of context. */
 typedef struct jinfer_model jinfer_model;
 
-/* context_capacity's value for the model's whole trained context, JINFER_MAX_CONTEXT_LENGTH; 0 asks for
- * the default. The same -1 and 0 on every jinfer face: Java's PromptCache.Options.MAXIMUM_CONTEXT,
- * Python's jinfer.MAXIMUM_CONTEXT, the CLI's -c max */
+/* The value of a context_capacity that asks for the model's whole trained context; 0 asks for the default.
+ * The same -1 and 0 on every jinfer face: Java's PromptCache.Options.MAXIMUM_CONTEXT, Python's
+ * jinfer.MAXIMUM_CONTEXT, the CLI's -c max. */
 #define JINFER_CONTEXT_MAXIMUM (-1)
 
 /* Initialized by jinfer_model_options_init, which sets struct_size and leaves every other field zero,
@@ -132,8 +132,8 @@ typedef struct {
     int32_t            companion_count;   /* 0 = none */
     /* a prompt catalog file, read at load, extended at free; NULL = RAM only */
     const char*        prompt_cache;
-    /* tokens of context each state holds, at most JINFER_MAX_CONTEXT_LENGTH; 0 = the default, 4096 or the
-     * maximum when smaller, for every kind of model and on every jinfer face; JINFER_CONTEXT_MAXIMUM =
+    /* tokens of context each state holds, at most the model's trained context; 0 = the default, 4096 or
+     * the maximum when smaller, for every kind of model and on every jinfer face; JINFER_CONTEXT_MAXIMUM =
      * the maximum; above it, or another negative, is JINFER_EINVAL */
     int32_t            context_capacity;
 } jinfer_model_options;
@@ -144,18 +144,20 @@ JINFER_API void          jinfer_model_options_init(jinfer_model_options* o);
 JINFER_API jinfer_model* jinfer_model_load(const char* source, const jinfer_model_options* o);
 JINFER_API void          jinfer_model_free(jinfer_model* m);
 
-enum {   /* jinfer_model_property's keys; every value spelled out: they are the ABI */
-    JINFER_VOCAB_SIZE          = 1,
-    JINFER_CONTEXT_CAPACITY    = 2,
-    JINFER_EMBEDDING_DIMENSION = 3,
-    JINFER_SAMPLE_RATE         = 4,
-    JINFER_MAX_CONTEXT_LENGTH  = 5,     /* what the model was trained for; CONTEXT_CAPACITY what its states hold */
-    JINFER_HAS_CHAT            = 100,
-    JINFER_HAS_MEDIA           = 101,   /* images and audio in, through the media companion */
-    JINFER_HAS_EMBEDDING       = 102,
-    JINFER_HAS_RERANK          = 103,
-    JINFER_HAS_SPEECH          = 104,
-    JINFER_HAS_TRANSCRIPTION   = 105
+/* jinfer_model_property's keys, named JINFER_PROPERTY_* so none reads as a value; every value spelled out:
+ * they are the ABI */
+enum {
+    JINFER_PROPERTY_VOCAB_SIZE          = 1,
+    JINFER_PROPERTY_CONTEXT_CAPACITY    = 2,     /* the tokens of context the model's states hold */
+    JINFER_PROPERTY_EMBEDDING_DIMENSION = 3,
+    JINFER_PROPERTY_SAMPLE_RATE         = 4,
+    JINFER_PROPERTY_MAX_CONTEXT_LENGTH  = 5,     /* what the model was trained for, CONTEXT_CAPACITY's bound */
+    JINFER_PROPERTY_HAS_CHAT            = 100,
+    JINFER_PROPERTY_HAS_MEDIA           = 101,   /* images and audio in, through the media companion */
+    JINFER_PROPERTY_HAS_EMBEDDING       = 102,
+    JINFER_PROPERTY_HAS_RERANK          = 103,
+    JINFER_PROPERTY_HAS_SPEECH          = 104,
+    JINFER_PROPERTY_HAS_TRANSCRIPTION   = 105
 };
 
 /* A JINFER_* key's value; 0 = not applicable, JINFER_EINVAL = an unknown key. */
@@ -170,8 +172,9 @@ JINFER_API toknroll_tokenizer* jinfer_model_tokenizer(const jinfer_model* m);
 /* --------------------------------------- state: one sequence of your own, the raw door */
 typedef struct jinfer_state jinfer_state;
 
-/* Holds context_capacity tokens of context; 0 = the model's JINFER_CONTEXT_CAPACITY, JINFER_CONTEXT_MAXIMUM
- * = JINFER_MAX_CONTEXT_LENGTH; above it, or another negative, is JINFER_EINVAL. */
+/* Holds context_capacity tokens of context: 0 = what the model's states hold (JINFER_PROPERTY_CONTEXT_CAPACITY),
+ * JINFER_CONTEXT_MAXIMUM = its trained context (JINFER_PROPERTY_MAX_CONTEXT_LENGTH); above that, or another
+ * negative, is JINFER_EINVAL. */
 JINFER_API jinfer_state* jinfer_state_new(jinfer_model* m, int32_t context_capacity);
 JINFER_API void          jinfer_state_free(jinfer_state* s);
 JINFER_API int32_t       jinfer_state_reset(jinfer_state* s);
@@ -179,10 +182,10 @@ JINFER_API int32_t       jinfer_state_position(const jinfer_state* s);
 
 /* A forward pass only; returns the new position, JINFER_EINVAL past the context capacity. */
 JINFER_API int32_t jinfer_state_ingest(jinfer_state* s, const int32_t* ids, int32_t count);
-/* The last position projected, JINFER_VOCAB_SIZE floats. */
+/* The last position projected, JINFER_PROPERTY_VOCAB_SIZE floats. */
 JINFER_API int32_t jinfer_state_logits(const jinfer_state* s, float* out, int32_t float_capacity);
-/* What was ingested pooled, JINFER_EMBEDDING_DIMENSION floats; JINFER_EUNSUPPORTED but on an embedding
- * model. */
+/* What was ingested pooled, JINFER_PROPERTY_EMBEDDING_DIMENSION floats; JINFER_EUNSUPPORTED but on an
+ * embedding model. */
 JINFER_API int32_t jinfer_state_embedding(const jinfer_state* s, float* out, int32_t float_capacity);
 
 /* ------------------------------ stream: every generation, stepped like a statement */
@@ -192,7 +195,7 @@ typedef struct jinfer_stream jinfer_stream;
 JINFER_API int32_t      jinfer_stream_step(jinfer_stream* s);
 /* The chunk's text; "" if none, or on error. */
 JINFER_API const char*  jinfer_stream_text(const jinfer_stream* s);
-/* The chunk's mono PCM at JINFER_SAMPLE_RATE, *count samples; NULL if none. */
+/* The chunk's mono PCM at JINFER_PROPERTY_SAMPLE_RATE, *count samples; NULL if none. */
 JINFER_API const float* jinfer_stream_samples(const jinfer_stream* s, int32_t* count);
 /* After JINFER_DONE or a cancellation, the result as JSON; cancelled, the text produced so far and
  * finish_reason "cancelled". "" before then, or on error. */
