@@ -73,7 +73,7 @@ Hub references are fetched through `curl` on the PATH, so the image carries no T
 ## Build and check
 
 GraalVM 25.0.4 or later (`native-image`; `JAVA_HOME` picks it), a C compiler and Maven.
-With Oracle GraalVM, `make libtoknroll` first records a profile on enwik8 and a tokenizer per fast path, fetched once, and compiles with it at `-O3`; that is the build we ship.
+With Oracle GraalVM, `make libtoknroll` first records a profile that drives every header function through the image's entry points, over enwik8 and FLORES-200 sentences in every script, with a tokenizer per fast path and one from a GGUF, all fetched once, and compiles with it at `-O3`; that is the build we ship.
 GraalVM CE builds without a profile.
 From this directory:
 

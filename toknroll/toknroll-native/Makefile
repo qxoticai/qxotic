@@ -24,8 +24,9 @@ include ../../native.mk
 # up to 70% faster on many cores, but a forked child that allocates hangs, its parent's GC threads gone.
 PGO = $(if $(QUICK),,$(shell $(NATIVE_IMAGE) --version 2>/dev/null | grep -q 'Oracle GraalVM' && echo yes))
 PROFILE := target/pgo/default.iprof
-# The profile's workload: enwik8, where the tests find it, and PgoTraining's tokenizers (PGO_SOURCES, if set)
+# The profile's workload: enwik8, where the tests find it, FLORES-200 beside it, and PgoTraining's tokenizers (PGO_SOURCES, if set)
 CORPUS = $(shell python3 -c "import runpy; print(runpy.run_path('$(ROOT)/toknroll/scripts/download_enwik8.py', run_name='lib')['default_corpus_dir']() / 'enwik8')")
+FLORES = $(dir $(CORPUS))flores200
 
 libtoknroll:
 	@$(MAKE) -s -C $(ROOT) check-native-image
@@ -37,18 +38,20 @@ libtoknroll:
 	ln -sf $(notdir $(LIB)) target/$(SONAME)
 	src/main/c/static.sh include/toknroll.h target/cc.log $(STATIC)
 
-# The profile, recorded by an instrumented build of PgoTraining with the library's own feature and options,
-# rebuilt every time so it follows the code. The reactor's classes, not the installed jars; the runtime
-# classpath, the builder's own jars (provided) being the builder's to bring.
+# The profile, recorded by an instrumented build of PgoTraining, every header function through the image's own
+# entry points, with the library's feature and options, rebuilt every time so it follows the code. The reactor's
+# classes, not the installed jars; the runtime classpath, the builder's own jars (provided) being the builder's to bring.
 pgo-profile:
 	@[ -f "$(CORPUS)" ] || python3 $(ROOT)/toknroll/scripts/download_enwik8.py
+	@[ -f "$(FLORES)" ] || python3 $(ROOT)/toknroll/scripts/download_flores200.py
 	mkdir -p target/pgo && cd $(ROOT) && $(MAVEN) $(MAVEN_FLAGS) -q -pl toknroll/toknroll-native -am test-compile \
 	  dependency:build-classpath -DincludeScope=runtime -Dmdep.outputFile=$(abspath target/pgo/classpath)
 	$(CC) -std=c11 -O2 -fPIC -Wall -Wextra -Wpedantic -Iinclude -c src/main/c/toknroll_isolate.c -o target/pgo/toknroll_isolate.o   # Workers' threads; the pom's shim.cflags
 	cd target/pgo && rm -f default.iprof && NATIVE_IMAGE_OPTIONS="$(IMAGE_OPTIONS)" $(NATIVE_IMAGE) --pgo-instrument \
 	  -H:NativeLinkerOption=$(abspath target/pgo/toknroll_isolate.o) \
+	  --initialize-at-build-time=com.qxotic.toknroll.libtoknroll.PgoTraining \
 	  -cp $(abspath target/classes):$(abspath target/test-classes):$$(cat classpath) com.qxotic.toknroll.libtoknroll.PgoTraining -o train
-	cd target/pgo && ./train "$(CORPUS)" $(PGO_SOURCES)
+	cd target/pgo && ./train "$(CORPUS)" "$(FLORES)" $(PGO_SOURCES)
 
 target/tokenize: examples/c/tokenize.c include/toknroll.h $(LIB)
 	$(CC) -std=c99 -Wall -Wextra -Wpedantic -Iinclude -o $@ $< -L target -ltoknroll -Wl,-rpath,$(abspath target)

@@ -9,14 +9,16 @@
 param([Parameter(Position = 0, ValueFromRemainingArguments = $true)][string[]] $Targets = @('help'), [switch] $Quick, [string] $Source = 'Qwen/Qwen3-0.6B')
 $Here = $PSScriptRoot; $Name = 'toknroll'
 $Headers = 'include\toknroll.h'; $Syms = 'toknroll'
-# Oracle GraalVM's profile, as the Makefile's pgo-profile: PgoTraining built instrumented with the library's own
-# feature and options, and run on enwik8 -> target\pgo\default.iprof
+# Oracle GraalVM's profile, as the Makefile's pgo-profile: PgoTraining, every header function through the image's
+# entry points, built instrumented with the library's own feature and options and run on enwik8 and FLORES-200 -> target\pgo\default.iprof
 $PgoProfile = {
     $pgo = "$Here\target\pgo"
     New-Item -ItemType Directory -Force $pgo | Out-Null; Remove-Item -Force -ErrorAction Ignore "$pgo\default.iprof"
     $script = "$Root\toknroll\scripts\download_enwik8.py"
     $corpus = python -c "import runpy; print(runpy.run_path(r'$script', run_name='lib')['default_corpus_dir']() / 'enwik8')"
     if (-not (Test-Path $corpus)) { python $script; if ($LASTEXITCODE) { throw "enwik8 failed" } }
+    $flores = Join-Path (Split-Path $corpus) 'flores200'
+    if (-not (Test-Path $flores)) { python "$Root\toknroll\scripts\download_flores200.py"; if ($LASTEXITCODE) { throw "flores200 failed" } }
     Push-Location $Root
     try { mvn -q -pl toknroll/toknroll-native -am test-compile dependency:build-classpath -DincludeScope=runtime "-Dmdep.outputFile=$pgo\classpath"; if ($LASTEXITCODE) { throw "mvn failed" } }
     finally { Pop-Location }
@@ -25,9 +27,10 @@ $PgoProfile = {
     try {
         # quoted: PowerShell 5.1 splits an unquoted -argument at its first dot
         native-image --pgo-instrument "-H:NativeLinkerOption=$pgo\toknroll_isolate.obj" `
+            --initialize-at-build-time=com.qxotic.toknroll.libtoknroll.PgoTraining `
             -cp "$Here\target\classes;$Here\target\test-classes;$(Get-Content classpath)" com.qxotic.toknroll.libtoknroll.PgoTraining -o train
         if ($LASTEXITCODE) { throw "native-image failed" }
-        & .\train.exe $corpus; if ($LASTEXITCODE) { throw "training failed" }
+        & .\train.exe $corpus $flores; if ($LASTEXITCODE) { throw "training failed" }
     } finally { Pop-Location }
 }
 $Example = {

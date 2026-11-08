@@ -516,7 +516,8 @@
               <buildArg>-Djam.vector.wideTiles=${jam.wideTiles}</buildArg>
               <buildArg>-march=${jinfer.image.march}</buildArg>
               <buildArg>-Djinfer.vectorBitSize=${jinfer.image.vectorBits}</buildArg>
-              <buildArg>-EMACOSX_DEPLOYMENT_TARGET</buildArg>   <!-- the builder filters the environment; the Makefiles export 14.0 on macOS -->
+              <buildArg>-EMACOSX_DEPLOYMENT_TARGET</buildArg>
+              <!-- the builder filters the environment; the Makefiles export 14.0 on macOS -->
               <!-- downloads go through curl as a process (fetch's CurlTransport): no TLS stack in the image -->
               <buildArg>-H:+UnlockExperimentalVMOptions</buildArg>
               <buildArg>-H:ServiceLoaderFeatureExcludeServiceProviders=com.qxotic.fetch.JdkTransport</buildArg>
