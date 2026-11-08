@@ -35,7 +35,7 @@ public final class TestCachePaths {
         return osCacheDir().resolve(ORG_DIR).resolve(APP_DIR);
     }
 
-    public static Path testArtifactsRoot() {
+    private static Path testArtifactsRoot() {
         String override = System.getProperty(CACHE_ROOT_PROPERTY);
         if (override != null && !override.isBlank()) {
             return Paths.get(override);

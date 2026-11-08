@@ -132,6 +132,7 @@ Common models that do not load, and why:
 `Specials.of(tokenizer).encode(tokenizer, text)` matches every added token in the text and substitutes its id, as Hugging Face's `encode` and llama.cpp with `parse_special` do.
 Use it for text you wrote, such as a rendered chat template, never for a user's text.
 Each mode is parity-tested against its own reference: `encode` against the reference with its added tokens switched off, `Specials` against the reference as it is.
+[docs/SPECIALS.md](docs/SPECIALS.md) has the usage and the behavioral notes.
 
 ## Known divergences
 

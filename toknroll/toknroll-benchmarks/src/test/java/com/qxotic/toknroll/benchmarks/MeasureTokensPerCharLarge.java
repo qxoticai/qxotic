@@ -2,6 +2,7 @@ package com.qxotic.toknroll.benchmarks;
 
 import com.qxotic.toknroll.IntSequence;
 import com.qxotic.toknroll.Tokenizer;
+import com.qxotic.toknroll.benchmarks.support.ModelFamilies;
 import com.qxotic.toknroll.testkit.TestTokenizers;
 import java.util.List;
 import java.util.Optional;
@@ -92,7 +93,7 @@ public class MeasureTokensPerCharLarge {
         };
         for (String family : families) {
             try {
-                Optional<Tokenizer> opt = TestTokenizers.modelFamily(family);
+                Optional<Tokenizer> opt = ModelFamilies.load(family);
                 if (opt.isPresent()) {
                     measure(opt.get(), family);
                 } else {

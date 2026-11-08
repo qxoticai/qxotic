@@ -11,8 +11,6 @@ import java.util.Random;
 /** Shared splitter parity harness against a source-of-truth splitter. */
 public final class SplitterParityHarness {
 
-    private static final List<String> REPRESENTATIVE_SAMPLES = TestCorpora.SPLITTER_PARITY_SAMPLES;
-
     private SplitterParityHarness() {}
 
     public static void runFullBattery(String name, Splitter splitter, Splitter sourceOfTruth) {
@@ -24,14 +22,14 @@ public final class SplitterParityHarness {
 
     private static void compareRepresentative(
             String name, Splitter splitter, Splitter sourceOfTruth) {
-        for (String sample : REPRESENTATIVE_SAMPLES) {
+        for (String sample : TestCorpora.TOKENIZER_UNIVERSAL_SAMPLES) {
             assertRangesMatch(
                     name + " representative", splitter, sourceOfTruth, sample, 0, sample.length());
         }
     }
 
     private static void compareSubRanges(String name, Splitter splitter, Splitter sourceOfTruth) {
-        for (String sample : REPRESENTATIVE_SAMPLES) {
+        for (String sample : TestCorpora.TOKENIZER_UNIVERSAL_SAMPLES) {
             int len = sample.length();
             int[][] ranges = {
                 {0, len},

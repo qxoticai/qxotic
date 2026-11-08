@@ -55,8 +55,8 @@ import java.util.regex.Pattern;
  */
 public final class HuggingFaceTokenizerLoader {
     private static final String DEFAULT_HUGGING_FACE_REVISION = "main";
-    private static final String SOURCE_HUGGING_FACE = "huggingface";
-    private static final String SOURCE_MODELSCOPE = "modelscope";
+    static final String SOURCE_HUGGING_FACE = "huggingface";
+    static final String SOURCE_MODELSCOPE = "modelscope";
     private static final String TOKENIZER_JSON = "tokenizer.json";
     private static final String TIKTOKEN_MODEL_FILE = "tiktoken.model";
     private static final String TOKENIZER_CONFIG_JSON = "tokenizer_config.json";
@@ -321,36 +321,10 @@ public final class HuggingFaceTokenizerLoader {
     }
 
     /**
-     * Internal fallback loader for repositories that ship {@code tiktoken.model} instead of {@code
-     * tokenizer.json}.
+     * A repository that ships {@code tiktoken.model} instead of {@code tokenizer.json}, from {@code
+     * source}, {@link #SOURCE_HUGGING_FACE} or {@link #SOURCE_MODELSCOPE}.
      */
-    static Tokenizer loadFromHfTiktokenModel(
-            RepositoryArtifactCache cache,
-            String user,
-            String repository,
-            String revision,
-            boolean forceRefresh)
-            throws IOException {
-        return loadFromTiktokenModel(
-                SOURCE_HUGGING_FACE, cache, user, repository, revision, forceRefresh);
-    }
-
-    /**
-     * Internal fallback loader for ModelScope repositories that ship {@code tiktoken.model} instead
-     * of {@code tokenizer.json}.
-     */
-    static Tokenizer loadFromModelScopeTiktokenModel(
-            RepositoryArtifactCache cache,
-            String user,
-            String repository,
-            String revision,
-            boolean forceRefresh)
-            throws IOException {
-        return loadFromTiktokenModel(
-                SOURCE_MODELSCOPE, cache, user, repository, revision, forceRefresh);
-    }
-
-    private static Tokenizer loadFromTiktokenModel(
+    static Tokenizer loadFromTiktokenModel(
             String source,
             RepositoryArtifactCache cache,
             String user,

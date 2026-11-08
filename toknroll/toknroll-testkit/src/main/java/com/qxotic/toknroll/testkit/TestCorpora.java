@@ -103,26 +103,4 @@ public final class TestCorpora {
                     "vietnamese with nbsp: Xin\u00A0chào\u00A0thế\u00A0giới",
                     "emoji + unicode spaces: 😀\u00A0😀\u202F😀\u3000😀",
                     "spaces  \t\n\r\n  end");
-
-    public static final List<String> SPLITTER_CONTRACT_SAMPLES = TOKENIZER_UNIVERSAL_SAMPLES;
-
-    public static final List<String> SPLITTER_PARITY_SAMPLES = TOKENIZER_UNIVERSAL_SAMPLES;
-
-    public static final List<String> QWEN35_SPLITTER_REPRESENTATIVE_SAMPLES =
-            List.of(
-                    "Hello world",
-                    "It's we're THEY'LL I'd",
-                    "digits 1234567890",
-                    "unicode digits ١٢٣ ۱۲۳ १२३ １２３",
-                    "tabs\tand\nnewlines\r\n",
-                    "Thai: สวัสดีชาวโลก",
-                    "Vietnamese: Xin chào thế giới",
-                    "Arabic: مرحبا بالعالم",
-                    "NEL only: a\u0085b\u0085c",
-                    "line separator: a\u2028b",
-                    "paragraph separator: a\u2029b");
-
-    public static final List<String> REGEX_SPLITTER_CORNER_SAMPLES = TOKENIZER_UNIVERSAL_SAMPLES;
-
-    public static final List<String> MODEL_TOKENIZER_AGREEMENT_TEXTS = TOKENIZER_UNIVERSAL_SAMPLES;
 }

@@ -39,7 +39,8 @@ class HuggingFaceTokenizerTiktokenFallbackTest {
                 "{\"pat_str\":\"[a-z]+|\\\\s+\",\"added_tokens_decoder\":{\"99\":{\"content\":\"<|end|>\"}}}");
 
         Tokenizer tokenizer =
-                HuggingFaceTokenizerLoader.loadFromHfTiktokenModel(
+                HuggingFaceTokenizerLoader.loadFromTiktokenModel(
+                        HuggingFaceTokenizerLoader.SOURCE_HUGGING_FACE,
                         RepositoryArtifactCache.create(tempDir, Transport.offline()),
                         "alice",
                         "demo",
@@ -69,7 +70,8 @@ class HuggingFaceTokenizerTiktokenFallbackTest {
                         + "\"258\":{\"content\":\"<|tool_call_begin|>\",\"special\":false}}}");
 
         Tokenizer tokenizer =
-                HuggingFaceTokenizerLoader.loadFromHfTiktokenModel(
+                HuggingFaceTokenizerLoader.loadFromTiktokenModel(
+                        HuggingFaceTokenizerLoader.SOURCE_HUGGING_FACE,
                         RepositoryArtifactCache.create(tempDir, Transport.offline()),
                         "carol",
                         "demo",
@@ -105,7 +107,8 @@ class HuggingFaceTokenizerTiktokenFallbackTest {
                 assertThrows(
                         IllegalArgumentException.class,
                         () ->
-                                HuggingFaceTokenizerLoader.loadFromHfTiktokenModel(
+                                HuggingFaceTokenizerLoader.loadFromTiktokenModel(
+                                        HuggingFaceTokenizerLoader.SOURCE_HUGGING_FACE,
                                         RepositoryArtifactCache.create(
                                                 tempDir, Transport.offline()),
                                         "dave",
@@ -142,7 +145,8 @@ class HuggingFaceTokenizerTiktokenFallbackTest {
                         + "])\n");
 
         Tokenizer tokenizer =
-                HuggingFaceTokenizerLoader.loadFromHfTiktokenModel(
+                HuggingFaceTokenizerLoader.loadFromTiktokenModel(
+                        HuggingFaceTokenizerLoader.SOURCE_HUGGING_FACE,
                         RepositoryArtifactCache.create(tempDir, Transport.offline()),
                         "bob",
                         "demo",
@@ -179,7 +183,8 @@ class HuggingFaceTokenizerTiktokenFallbackTest {
                 assertThrows(
                         IllegalArgumentException.class,
                         () ->
-                                HuggingFaceTokenizerLoader.loadFromHfTiktokenModel(
+                                HuggingFaceTokenizerLoader.loadFromTiktokenModel(
+                                        HuggingFaceTokenizerLoader.SOURCE_HUGGING_FACE,
                                         RepositoryArtifactCache.create(
                                                 tempDir, Transport.offline()),
                                         "nopat",

@@ -31,11 +31,6 @@
     </dependency>
     <dependency>
       <groupId>com.qxotic</groupId>
-      <artifactId>toknroll-incubator</artifactId>
-      <scope>test</scope>
-    </dependency>
-    <dependency>
-      <groupId>com.qxotic</groupId>
       <artifactId>toknroll-hf</artifactId>
       <scope>test</scope>
     </dependency>
@@ -63,6 +58,25 @@
 
   <build>
     <plugins>
+      <plugin>
+        <!-- toknroll-core's tiktoken fixtures, compiled from source (toknroll-core publishes no test-jar). -->
+        <groupId>org.codehaus.mojo</groupId>
+        <artifactId>build-helper-maven-plugin</artifactId>
+        <executions>
+          <execution>
+            <id>shared-test-sources</id>
+            <goals>
+              <goal>add-test-source</goal>
+            </goals>
+            <phase>generate-test-sources</phase>
+            <configuration>
+              <sources>
+                <source>${project.basedir}/../toknroll-core/src/testkit/java</source>
+              </sources>
+            </configuration>
+          </execution>
+        </executions>
+      </plugin>
       <plugin>
         <groupId>org.apache.maven.plugins</groupId>
         <artifactId>maven-compiler-plugin</artifactId>

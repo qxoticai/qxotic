@@ -93,7 +93,7 @@ class SplitterComponentTest {
 
         for (int i = 0; i < splitters.size(); i++) {
             Splitter splitter = splitters.get(i);
-            for (String sample : TestCorpora.REGEX_SPLITTER_CORNER_SAMPLES) {
+            for (String sample : TestCorpora.TOKENIZER_UNIVERSAL_SAMPLES) {
                 SplitterContractHarness.assertConformsOnText("regex-corner-" + i, splitter, sample);
             }
         }

@@ -6,6 +6,7 @@ import com.qxotic.toknroll.Splitter;
 import com.qxotic.toknroll.Tokenizer;
 import com.qxotic.toknroll.Vocabulary;
 import com.qxotic.toknroll.benchmarks.support.BenchmarkSplitters;
+import com.qxotic.toknroll.benchmarks.support.ModelFamilies;
 import com.qxotic.toknroll.testkit.TestTokenizers;
 import com.qxotic.toknroll.testkit.TiktokenFixtures;
 import java.nio.ByteBuffer;
@@ -146,21 +147,19 @@ public class ModelTokenizerBenchmark {
             case "gpt2":
                 return TestTokenizers.tiktokenReference("r50k_base");
             case "openai.gpt-oss":
-                return TestTokenizers.modelFamilyFromHf(
-                                "openai.gpt-oss", GPT_OSS_HF_MODEL_REF, null)
+                return ModelFamilies.fromHf("openai.gpt-oss", GPT_OSS_HF_MODEL_REF, null)
                         .orElseThrow(
                                 () ->
                                         new IllegalStateException(
                                                 "HF reference unavailable for openai.gpt-oss"));
             case "alibaba.qwen3_5":
-                return TestTokenizers.modelFamilyFromHf(
-                                "alibaba.qwen3_5", QWEN35_HF_MODEL_REF, null)
+                return ModelFamilies.fromHf("alibaba.qwen3_5", QWEN35_HF_MODEL_REF, null)
                         .orElseThrow(
                                 () ->
                                         new IllegalStateException(
                                                 "HF reference unavailable for alibaba.qwen3_5"));
             case "google.gemma4":
-                return TestTokenizers.modelFamilyFromHf("google.gemma4", GEMMA4_HF_MODEL_REF, null)
+                return ModelFamilies.fromHf("google.gemma4", GEMMA4_HF_MODEL_REF, null)
                         .orElseThrow(
                                 () ->
                                         new IllegalStateException(
@@ -171,27 +170,25 @@ public class ModelTokenizerBenchmark {
             case "ibm.granite4_0":
             case "deepseek.v3_2":
             case "deepseek.v4_pro":
-                return TestTokenizers.modelFamily(model)
+                return ModelFamilies.load(model)
                         .orElseThrow(
                                 () ->
                                         new IllegalStateException(
                                                 "HF reference unavailable for " + model));
             case "meta.llama3":
-                return TestTokenizers.modelFamilyFromHf(
-                                "meta.llama3", LLAMA3_HF_MODEL_REF, LLAMA3_HF_REVISION)
+                return ModelFamilies.fromHf("meta.llama3", LLAMA3_HF_MODEL_REF, LLAMA3_HF_REVISION)
                         .orElseThrow(
                                 () ->
                                         new IllegalStateException(
                                                 "HF reference unavailable for meta.llama3"));
             case "mistral.v0_3_spbpe":
-                return TestTokenizers.modelFamilyFromHf(
-                                "mistral.v0_3_spbpe", MISTRAL_V03_HF_MODEL_REF, null)
+                return ModelFamilies.fromHf("mistral.v0_3_spbpe", MISTRAL_V03_HF_MODEL_REF, null)
                         .orElseThrow(
                                 () ->
                                         new IllegalStateException(
                                                 "HF reference unavailable for mistral.v0_3_spbpe"));
             case "mistral.tekken":
-                return TestTokenizers.modelFamilyFromHf(
+                return ModelFamilies.fromHf(
                                 "mistral.tekken",
                                 MISTRAL_TEKKEN_HF_MODEL_REF,
                                 MISTRAL_TEKKEN_HF_REVISION)
@@ -269,7 +266,7 @@ public class ModelTokenizerBenchmark {
         }
         if ("alibaba.qwen3_5".equals(model)) {
             if ("fast".equals(implementation)) {
-                return TestTokenizers.modelFamilyFast("alibaba.qwen3_5")
+                return ModelFamilies.load("alibaba.qwen3_5")
                         .orElseThrow(
                                 () ->
                                         new IllegalStateException(
@@ -340,14 +337,14 @@ public class ModelTokenizerBenchmark {
             Splitter fastSplitter,
             String implementation) {
         Tokenizer fidelityGguf =
-                TestTokenizers.modelFamily(familyId)
+                ModelFamilies.load(familyId)
                         .orElseThrow(
                                 () ->
                                         new IllegalStateException(
                                                 "Failed to load GGUF tokenizer for " + familyId));
         switch (implementation) {
             case "hf-transformers":
-                return TestTokenizers.modelFamilyFromHf(familyId, hfModelRef, hfRevision)
+                return ModelFamilies.fromHf(familyId, hfModelRef, hfRevision)
                         .orElseThrow(
                                 () ->
                                         new IllegalStateException(
@@ -363,7 +360,7 @@ public class ModelTokenizerBenchmark {
 
     private static Tokenizer gemma4Tokenizer(String implementation) {
         Tokenizer fidelityGguf =
-                TestTokenizers.modelFamily("google.gemma4")
+                ModelFamilies.load("google.gemma4")
                         .orElseThrow(
                                 () ->
                                         new IllegalStateException(
@@ -379,8 +376,7 @@ public class ModelTokenizerBenchmark {
     private static Tokenizer gptOssTokenizer(String implementation) {
         switch (implementation) {
             case "hf-transformers":
-                return TestTokenizers.modelFamilyFromHf(
-                                "openai.gpt-oss", GPT_OSS_HF_MODEL_REF, null)
+                return ModelFamilies.fromHf("openai.gpt-oss", GPT_OSS_HF_MODEL_REF, null)
                         .orElseGet(
                                 () ->
                                         fast(
@@ -398,7 +394,7 @@ public class ModelTokenizerBenchmark {
 
     private static Tokenizer passthroughFamilyTokenizer(String familyId, String implementation) {
         Tokenizer fidelity =
-                TestTokenizers.modelFamily(familyId)
+                ModelFamilies.load(familyId)
                         .orElseThrow(
                                 () ->
                                         new IllegalStateException(

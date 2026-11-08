@@ -1,28 +1,23 @@
-package com.qxotic.toknroll.testkit;
+package com.qxotic.toknroll.benchmarks.support;
 
-import com.qxotic.toknroll.Splitter;
 import com.qxotic.toknroll.Tokenizer;
 import com.qxotic.toknroll.hf.HuggingFaceTokenizerLoader;
+import com.qxotic.toknroll.testkit.FamilyGoldenFixture;
 import com.qxotic.toknroll.testkit.FamilyGoldenFixture.Family;
 import java.util.LinkedHashMap;
 import java.util.Map;
 import java.util.Objects;
 import java.util.Optional;
 
-/**
- * Single entry point for tokenizer construction in tests.
- *
- * <p>This keeps model-family and tiktoken creation logic centralized so tests do not each wire
- * tokenizers slightly differently.
- */
-public final class TestTokenizers {
+/** The tokenizer of a model family, from the Hugging Face repository its golden fixture names. */
+public final class ModelFamilies {
 
     private static final FamilyGoldenFixture FAMILY_FIXTURE = FamilyGoldenFixture.load();
     private static final Map<String, HfSpec> HF_ALIAS = buildAliasMap();
 
-    private TestTokenizers() {}
+    private ModelFamilies() {}
 
-    public static Optional<Tokenizer> modelFamily(String familyId) {
+    public static Optional<Tokenizer> load(String familyId) {
         HfSpec spec = resolveFamilySpec(familyId);
         if (spec == null) {
             return Optional.empty();
@@ -30,11 +25,7 @@ public final class TestTokenizers {
         return loadFromHf(spec);
     }
 
-    public static Optional<Tokenizer> modelFamilyFast(String familyId) {
-        return modelFamily(familyId);
-    }
-
-    public static Optional<Tokenizer> modelFamilyFromHf(
+    public static Optional<Tokenizer> fromHf(
             String familyId, String hfModelRef, String hfRevision) {
         String modelRef = hfModelRef;
         String revision = hfRevision;
@@ -54,25 +45,6 @@ public final class TestTokenizers {
             return Optional.empty();
         }
         return loadFromHf(spec);
-    }
-
-    public static Tokenizer tiktokenReference(String encoding) {
-        return TiktokenFixtures.createJtokkitTokenizer(encoding);
-    }
-
-    public static Tokenizer tiktoken(String encoding) {
-        return TiktokenFixtures.createTiktokenTokenizer(encoding);
-    }
-
-    public static Tokenizer tiktoken(String encoding, Splitter splitter) {
-        return TiktokenFixtures.createTiktokenTokenizer(encoding, splitter);
-    }
-
-    public static Tokenizer tiktoken(
-            Map<String, Integer> mergeableRanks,
-            Map<String, Integer> specialTokens,
-            Splitter splitter) {
-        return TiktokenFixtures.createTiktokenTokenizer(mergeableRanks, specialTokens, splitter);
     }
 
     private static Optional<Tokenizer> loadFromHf(HfSpec spec) {

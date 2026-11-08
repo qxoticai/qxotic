@@ -14,7 +14,7 @@ class SplitterContractHarnessTest {
     @ParameterizedTest(name = "{0}")
     @MethodSource("strictCases")
     void splittersRespectStrictContract(SplitterCase splitterCase) {
-        for (String sample : TestCorpora.SPLITTER_CONTRACT_SAMPLES) {
+        for (String sample : TestCorpora.TOKENIZER_UNIVERSAL_SAMPLES) {
             SplitterContractHarness.assertConformsOnText(
                     splitterCase.name, splitterCase.splitter, sample);
         }
@@ -22,7 +22,7 @@ class SplitterContractHarnessTest {
 
     @Test
     void identityRespectsStrictContract() {
-        for (String sample : TestCorpora.SPLITTER_CONTRACT_SAMPLES) {
+        for (String sample : TestCorpora.TOKENIZER_UNIVERSAL_SAMPLES) {
             SplitterContractHarness.assertConformsOnText("identity", Splitter.identity(), sample);
         }
     }

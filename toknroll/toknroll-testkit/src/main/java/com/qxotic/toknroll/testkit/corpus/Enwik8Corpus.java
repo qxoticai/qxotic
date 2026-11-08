@@ -2,160 +2,76 @@ package com.qxotic.toknroll.testkit.corpus;
 
 import com.qxotic.toknroll.testkit.TestCachePaths;
 import java.io.IOException;
+import java.io.UncheckedIOException;
 import java.net.URI;
 import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
-import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.StandardCopyOption;
-import java.util.ArrayList;
-import java.util.List;
 import java.util.zip.ZipEntry;
 import java.util.zip.ZipInputStream;
 
-/** Utility for managing and accessing the enwik8 corpus for tests and benchmarks. */
+/** The enwik8 corpus for tests, fetched once into the shared corpus cache. */
 public final class Enwik8Corpus {
 
     private static final String DOWNLOAD_URL = "https://www.mattmahoney.net/dc/enwik8.zip";
     private static final long EXPECTED_SIZE = 100_000_000L;
-    // Shared corpus cache; the test-artifacts location is the legacy home, still honored.
-    private static final Path CACHE_DIR = TestCachePaths.corpusDir();
-    private static final Path LEGACY_DIR = TestCachePaths.resolveUnderTestArtifacts("corpus");
 
-    private final Path enwik8Path;
     private final byte[] data;
 
-    private Enwik8Corpus(byte[] data, Path path) {
+    private Enwik8Corpus(byte[] data) {
         this.data = data;
-        this.enwik8Path = path;
     }
 
     public static Enwik8Corpus load() {
-        for (Path cacheDir : new Path[] {CACHE_DIR, LEGACY_DIR}) {
-            Path enwik8Path = cacheDir.resolve("enwik8");
-            if (Files.exists(enwik8Path) && enwik8Path.toFile().length() == EXPECTED_SIZE) {
-                try {
-                    return new Enwik8Corpus(Files.readAllBytes(enwik8Path), enwik8Path);
-                } catch (IOException e) {
-                    // Fall through to the next location
-                }
-            }
-        }
-
-        Path enwik8Path = CACHE_DIR.resolve("enwik8");
+        Path dir = TestCachePaths.corpusDir();
+        Path enwik8 = dir.resolve("enwik8");
         try {
-            downloadAndExtract(CACHE_DIR);
-            return new Enwik8Corpus(Files.readAllBytes(enwik8Path), enwik8Path);
-        } catch (IOException | InterruptedException e) {
-            throw new RuntimeException("Failed to download enwik8 corpus", e);
-        }
-    }
-
-    public List<Chunk> generateChunks(List<Integer> chunkSizes, int samplesPerSize) {
-        List<Chunk> chunks = new ArrayList<Chunk>();
-        int totalSize = data.length;
-
-        for (int size : chunkSizes) {
-            int stride = Math.max(1, (totalSize - size) / samplesPerSize);
-            for (int i = 0; i < samplesPerSize; i++) {
-                int offset = Math.min(i * stride, totalSize - size);
-
-                while (offset > 0 && (data[offset] & 0xC0) == 0x80) {
-                    offset--;
-                }
-
-                int end = offset + size;
-                while (end < totalSize && (data[end] & 0xC0) == 0x80) {
-                    end++;
-                }
-
-                byte[] chunkData = new byte[end - offset];
-                System.arraycopy(data, offset, chunkData, 0, end - offset);
-                String text = new String(chunkData, StandardCharsets.UTF_8);
-
-                chunks.add(new Chunk(offset, end - offset, text));
+            if (!Files.exists(enwik8) || Files.size(enwik8) != EXPECTED_SIZE) {
+                download(dir, enwik8);
             }
+            return new Enwik8Corpus(Files.readAllBytes(enwik8));
+        } catch (IOException e) {
+            throw new UncheckedIOException("enwik8 corpus at " + enwik8, e);
         }
-
-        return chunks;
-    }
-
-    public List<Chunk> generateDefaultChunks() {
-        return generateChunks(List.of(256, 1024, 4096, 16384), 20);
     }
 
     public byte[] data() {
         return data;
     }
 
-    public Path path() {
-        return enwik8Path;
-    }
-
-    public static final class Chunk {
-        private final int offset;
-        private final int size;
-        private final String text;
-
-        public Chunk(int offset, int size, String text) {
-            this.offset = offset;
-            this.size = size;
-            this.text = text;
-        }
-
-        public int offset() {
-            return offset;
-        }
-
-        public int size() {
-            return size;
-        }
-
-        public String text() {
-            return text;
-        }
-
-        @Override
-        public String toString() {
-            return String.format(
-                    "Chunk[offset=%d, size=%d, text_length=%d]", offset, size, text.length());
-        }
-    }
-
-    private static void downloadAndExtract(Path cacheDir) throws IOException, InterruptedException {
-        cacheDir.toFile().mkdirs();
-        Path zipPath = cacheDir.resolve("enwik8.zip");
-
-        if (!Files.exists(zipPath)) {
+    private static void download(Path dir, Path enwik8) throws IOException {
+        Files.createDirectories(dir);
+        Path zip = dir.resolve("enwik8.zip");
+        if (!Files.exists(zip)) {
             System.out.println("Downloading enwik8 from " + DOWNLOAD_URL + "...");
             HttpClient client =
                     HttpClient.newBuilder().followRedirects(HttpClient.Redirect.NORMAL).build();
-            HttpRequest request = HttpRequest.newBuilder().uri(URI.create(DOWNLOAD_URL)).build();
-
-            HttpResponse<Path> response =
-                    client.send(request, HttpResponse.BodyHandlers.ofFile(zipPath));
-
+            HttpResponse<Path> response;
+            try {
+                response =
+                        client.send(
+                                HttpRequest.newBuilder(URI.create(DOWNLOAD_URL)).build(),
+                                HttpResponse.BodyHandlers.ofFile(zip));
+            } catch (InterruptedException e) {
+                Thread.currentThread().interrupt();
+                throw new IOException("interrupted downloading enwik8", e);
+            }
             if (response.statusCode() != 200) {
+                Files.deleteIfExists(zip);
                 throw new IOException("Failed to download enwik8: HTTP " + response.statusCode());
             }
-            System.out.println("Downloaded enwik8.zip to " + zipPath);
         }
-
-        System.out.println("Extracting enwik8.zip...");
-        try (ZipInputStream zis = new ZipInputStream(Files.newInputStream(zipPath))) {
-            ZipEntry entry;
-            while ((entry = zis.getNextEntry()) != null) {
+        try (ZipInputStream in = new ZipInputStream(Files.newInputStream(zip))) {
+            for (ZipEntry entry; (entry = in.getNextEntry()) != null; ) {
                 if ("enwik8".equals(entry.getName())) {
-                    Path extracted = cacheDir.resolve("enwik8");
-                    Files.copy(zis, extracted, StandardCopyOption.REPLACE_EXISTING);
-                    System.out.println("Extracted enwik8 to " + extracted);
+                    Files.copy(in, enwik8, StandardCopyOption.REPLACE_EXISTING);
                     return;
                 }
             }
         }
-
-        throw new IOException("enwik8 file not found in zip archive");
+        throw new IOException("enwik8 not found in " + zip);
     }
 }

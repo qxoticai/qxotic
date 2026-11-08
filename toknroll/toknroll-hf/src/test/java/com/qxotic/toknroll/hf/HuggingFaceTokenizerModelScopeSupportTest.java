@@ -65,7 +65,8 @@ class HuggingFaceTokenizerModelScopeSupportTest {
                 "{\"pat_str\":\"[a-z]+\",\"added_tokens_decoder\":{\"99\":{\"content\":\"<|end|>\"}}}");
 
         Tokenizer tokenizer =
-                HuggingFaceTokenizerLoader.loadFromModelScopeTiktokenModel(
+                HuggingFaceTokenizerLoader.loadFromTiktokenModel(
+                        HuggingFaceTokenizerLoader.SOURCE_MODELSCOPE,
                         RepositoryArtifactCache.create(tempDir, Transport.offline()),
                         "org",
                         "repo",

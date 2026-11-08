@@ -88,7 +88,7 @@ public final class TokenizerParityHarness {
     }
 
     @SuppressWarnings("unchecked")
-    public static Map<String, int[]> loadGoldenByHash(Path goldenPath) throws IOException {
+    private static Map<String, int[]> loadGoldenByHash(Path goldenPath) throws IOException {
         String json =
                 Files.readString(goldenPath.toAbsolutePath().normalize(), StandardCharsets.UTF_8);
         Object parsed = Json.parse(json);
@@ -123,7 +123,7 @@ public final class TokenizerParityHarness {
         return byHash;
     }
 
-    public static List<Chunk> buildChunks(byte[] data, int chunkSize) {
+    private static List<Chunk> buildChunks(byte[] data, int chunkSize) {
         List<Chunk> out = new ArrayList<>();
         if (data.length == 0) {
             return out;
