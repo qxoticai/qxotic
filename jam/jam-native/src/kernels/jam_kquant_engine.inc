@@ -1,11 +1,12 @@
 /* ARM K-quant GEMM bodies (Q4_K/Q5_K/Q6_K @ F32 -> F32), shared across ARM int8 ISAs. The decode +
  * scale/min correction live here once; the includer supplies the int8 dot (per ISA) and the names:
  *
- *   JAM_KDOT32(w0u, w1u, a, &sum)   32-wide signed dot of weight bytes w0u|w1u and int8 acts a; sets Σa
- *   JAM_KDOT16(w, a)                16-wide signed dot of int8 weights w and int8 acts a  (Q6_K)
+ *   JAM_KDOT32(w0u, w1u, a) -> int  32-wide signed dot of weight bytes w0u|w1u and int8 acts a (Σa: J->asum)
+ *   JAM_KDOT16(w, a)        -> int  16-wide signed dot of int8 weights w and int8 acts a  (Q6_K)
  *   JAM_Q4K_NAME / JAM_Q5K_NAME / JAM_Q6K_NAME   exported symbols
  *
- * Consumes jam_q8_job (J->aq int8 activations + J->ad per-32 scales, from jam_q8_0_requant). K-quant
+ * Consumes jam_q8_job (J->aq int8 activations, J->ad per-32 scales, J->asum per-32 Σaq, from
+ * jam_q8_0_requant). Requires <arm_neon.h>, "jam_internal.h", "jam_decode_neon.h". K-quant
  * weights decode to non-negative small ints (Q6_K folds the -32 into a signed weight), so the signed dot
  * is exact; the dmin·min term is corrected in float via Σx ≈ ad·Σaq. Mirrors jam_kernels_generic.c.
  *
@@ -30,7 +31,7 @@ void JAM_Q4K_NAME(void* arg, int rb, int re, int tid) {
             float acc[JAM_KTN]; for (int c = 0; c < JAM_KTN; ++c) acc[c] = 0.0f;
             const uint8_t* w = wrow;
             for (int B = 0; B < sblocks; ++B, w += JAM_Q4K_BYTES) {
-                float d = (float) *(const __fp16*) w, dmin = (float) *(const __fp16*) (w + 2);
+                float d = jam_neon_half_at(w), dmin = jam_neon_half_at(w + 2);
                 uint8_t sc[8], mn[8]; jam_q4k_scales_mins(w + 4, sc, mn);
                 const uint8_t* q = w + 16;
                 for (int g = 0; g < 4; ++g) {
@@ -70,7 +71,7 @@ void JAM_Q5K_NAME(void* arg, int rb, int re, int tid) {
             float acc[JAM_KTN]; for (int c = 0; c < JAM_KTN; ++c) acc[c] = 0.0f;
             const uint8_t* w = wrow;
             for (int B = 0; B < sblocks; ++B, w += JAM_Q5K_BYTES) {
-                float d = (float) *(const __fp16*) w, dmin = (float) *(const __fp16*) (w + 2);
+                float d = jam_neon_half_at(w), dmin = jam_neon_half_at(w + 2);
                 uint8_t sc[8], mn[8]; jam_q4k_scales_mins(w + 4, sc, mn);
                 const uint8_t* qh = w + 16; const uint8_t* qs = w + 48;
                 uint8x16_t h0 = vld1q_u8(qh), h1 = vld1q_u8(qh + 16);
@@ -118,7 +119,7 @@ void JAM_Q6K_NAME(void* arg, int rb, int re, int tid) {
             for (int B = 0; B < sblocks; ++B, w += JAM_Q6K_BYTES) {
                 const uint8_t* ql = w; const uint8_t* qh = w + 128;
                 const int8_t* sc = (const int8_t*) (w + 192);
-                float d = (float) *(const __fp16*) (w + 208);
+                float d = jam_neon_half_at(w + 208);
                 for (int h = 0; h < 2; ++h) {
                     const uint8_t* qlb = ql + h*64; const uint8_t* qhb = qh + h*32;
                     for (int g = 0; g < 4; ++g) {

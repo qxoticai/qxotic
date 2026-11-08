@@ -2,12 +2,10 @@
  * LSB-first; elem = bit ? +d : -d). The includer defines, before #include:
  *     JAM_Q1_0_DOT16(w, a) -> int   16-element signed int8 dot                          [per ISA]
  *     JAM_MM_NAME                   exported symbol
- * Requires <arm_neon.h>, "jam_internal.h", "jam_fp16.h". Sign expansion follows llama.cpp's arm
+ * Requires <arm_neon.h>, "jam_internal.h", "jam_decode_neon.h". Sign expansion follows llama.cpp's arm
  * kernel: a 256-entry byte->8-nibble table (b << 4 per bit, LSB-first), shifted right by 4 to 0/1,
  * then 2*b - 1 -> -1/+1 sign bytes; dot(signs, activations) per 16, scaled per-32 by ad, per-128
  * by d. */
-
-#include "jam_q1_0.h"   /* jam_blk_q1_0, JAM_Q1_0_TBL */
 
 void JAM_MM_NAME(void* arg, int rb, int re, int tid) {
     (void) tid;
@@ -17,7 +15,7 @@ void JAM_MM_NAME(void* arg, int rb, int re, int tid) {
     float* C = (float*) J->c;
     const int ldc = J->ldc, n = J->n, k = J->k;
     const int nblk = k / 128;
-    const size_t wrow = (size_t)(J->lda / 128) * sizeof(jam_blk_q1_0);
+    const size_t wrow = (size_t)(J->lda / 128) * JAM_Q1_0_BYTES;
     const int8x8_t one = vdup_n_s8(1);
     for (int i = rb; i < re; ++i) {
         const char* wr = W + (size_t) i * wrow;
@@ -26,11 +24,11 @@ void JAM_MM_NAME(void* arg, int rb, int re, int tid) {
             const float* ad = AD + (size_t) j * (k / 32);
             float acc = 0.0f;
             for (int bb = 0; bb < nblk; ++bb) {
-                const jam_blk_q1_0* w = (const jam_blk_q1_0*) (wr + (size_t) bb * sizeof(jam_blk_q1_0));
-                const float d = jam_half2float(w->d);
+                const uint8_t* w = (const uint8_t*) wr + (size_t) bb * JAM_Q1_0_BYTES;   /* fp16 d, then qs[16] */
+                const float d = jam_neon_half_at(w);
                 float bacc = 0.0f;
                 for (int K = 0; K < 4; ++K) {                 /* 4 spans of 32 = 4 sign bytes each */
-                    const uint8_t* bits = w->qs + K * 4;
+                    const uint8_t* bits = w + 2 + K * 4;
                     int8x8_t s0 = vreinterpret_s8_u8(vshr_n_u8(vcreate_u8(JAM_Q1_0_TBL[bits[0]]), 4));
                     int8x8_t s1 = vreinterpret_s8_u8(vshr_n_u8(vcreate_u8(JAM_Q1_0_TBL[bits[1]]), 4));
                     int8x8_t s2 = vreinterpret_s8_u8(vshr_n_u8(vcreate_u8(JAM_Q1_0_TBL[bits[2]]), 4));

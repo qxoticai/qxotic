@@ -1,9 +1,9 @@
-/* I8MM block-quant @ F32 -> F32 (this TU built with -march=armv8.6-a+i8mm). SMMLA (vmmlaq_s32) computes
- * a 2x2 block of 8-deep signed int8 dots. The production kernels compose those instructions into direct-
- * layout 4x4 Q8_0/Q4_0 tiles. */
+/* I8MM block-quant @ F32 -> F32 (this TU built with -mcpu=generic+dotprod+i8mm). SMMLA (vmmlaq_s32)
+ * computes a 2x2 block of 8-deep signed int8 dots. The production kernels compose those instructions into
+ * direct-layout 4x4 Q8_0/Q4_0/Q5_0 tiles. */
 #include "jam_internal.h"
 #include <arm_neon.h>
-#include "jam_decode_neon.h"   /* jam_q8_blk + jam_neon_h2f */
+#include "jam_decode_neon.h"   /* Q8_0/Q4_0/Q5_0 blocks and decoders */
 
 /* Accumulate two 16-element row vectors against two 16-element column vectors.  Each SMMLA consumes
  * eight K elements, hence the low/high halves.  Lane order is r0c0,r0c1,r1c0,r1c1. */
@@ -23,8 +23,9 @@ static inline void jam_i8mm_store_2x2(float* c, int ldc, int row, int col, float
     c[(size_t)(col + 1) * ldc + row + 1] = vgetq_lane_f32(tile, 3);
 }
 
-/* The production direct-layout 4x4 kernels.  Q8 is load-only; Q4 decodes ordinary GGUF nibbles in
- * registers.  Both share the same SMMLA tiling and complete 2x2/1x1 tails without scalar int8 loops. */
+/* The production direct-layout 4x4 kernels.  Q8 is load-only; Q4 and Q5 decode ordinary GGUF nibbles
+ * (and Q5's high bits) in registers.  All share the same SMMLA tiling and complete 2x2/1x1 tails without
+ * scalar int8 loops. */
 #define JAM_BLK        jam_q8_blk
 #define JAM_DECODE     jam_decode_q8_0_neon
 #define JAM_EDGE_NAME  jam_q8_i8mm_edge

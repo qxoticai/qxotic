@@ -6,10 +6,10 @@
 
 #include <pmmintrin.h>   /* SSE3 (_mm_hadd_ps); pulls in SSE/SSE2 */
 #include <stdint.h>
+#include "jam_kquant.h"   /* jam_q8_0_blk */
 #include "jam_mxfp4.h"   /* jam_mxfp4_blk, jam_mxfp4_dhalf, JAM_MXFP4_CODES (pure C) */
 #include "jam_fp16.h"    /* jam_half2float (shared software fp16->fp32; SSE3 has no F16C) */
 
-typedef struct __attribute__((packed)) { uint16_t d; int8_t qs[32]; } jam_q8_blk;   /* Q8_0: 34 bytes */
 typedef struct __attribute__((packed)) { uint16_t d; uint8_t qs[16]; } jam_q4_0_blk; /* Q4_0: 18 bytes */
 
 /* signed int8 -> int16 (low / high 8 lanes): interleave each byte with its sign mask; dot of 16+16 int8
@@ -23,7 +23,7 @@ typedef struct __attribute__((packed)) { uint16_t d; uint8_t qs[16]; } jam_q4_0_
 
 /* Q8_0: weights are already int8 (two 16-byte halves); scale is the fp16 block delta. */
 static inline void jam_decode_q8_0_128(const void* blk, __m128i* wlo, __m128i* whi, float* dW) {
-    const jam_q8_blk* w = (const jam_q8_blk*) blk;
+    const jam_q8_0_blk* w = (const jam_q8_0_blk*) blk;
     *wlo = _mm_loadu_si128((const __m128i*) w->qs);
     *whi = _mm_loadu_si128((const __m128i*) (w->qs + 16));
     *dW  = jam_half2float(w->d);

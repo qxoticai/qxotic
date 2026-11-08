@@ -16,7 +16,7 @@
 #include <stdint.h>
 #include "jam_internal.h"
 #include "jam_kquant.h"          /* JAM_QKK, JAM_Q4K/5K/6K_BYTES, jam_q4k_scales_mins */
-#include "jam_fp16.h"            /* jam_half2float (software fp16 -> fp32; SSE3 has no F16C) */
+#include "jam_fp16.h"            /* jam_half_at (software fp16 -> fp32; SSE3 has no F16C) */
 #include "jam_decode_x86_128.h"  /* JAM_DOT16 (shared int8 madd dot) */
 
 /* Q4_K/Q5_K weights are 0..31, so they ZERO-extend (unpack with 0); spelled out because gcc does not see
@@ -68,7 +68,7 @@ static inline void kq_store4(const jam_q8_job* J, int i, int j, __m128 acc) {
 
 typedef struct { float d, dmin; uint8_t sc[8], mn[8]; } kq_sb;   /* super-block scales */
 static inline kq_sb kq45_scales(const uint8_t* w) {
-    kq_sb s; s.d = jam_half2float(*(const uint16_t*) w); s.dmin = jam_half2float(*(const uint16_t*) (w + 2));
+    kq_sb s; s.d = jam_half_at(w); s.dmin = jam_half_at(w + 2);
     jam_q4k_scales_mins(w + 4, s.sc, s.mn);
     return s;
 }
@@ -226,7 +226,7 @@ INLINE __m128 q6k_cols4(const jam_q8_job* J, const uint8_t* w, int j) {
     __m128 acc = _mm_setzero_ps();
     for (int B = 0; B < J->k / JAM_QKK; ++B, w += JAM_Q6K_BYTES) {
         const int8_t* sc = (const int8_t*) (w + 192);
-        const float d = jam_half2float(*(const uint16_t*) (w + 208));
+        const float d = jam_half_at(w + 208);
         for (int h = 0; h < 2; ++h)
             KQ_UNROLL4 for (int g = 0; g < 4; ++g) {
                 __m128i w0, w1; q6k_decode(w, h, g, &w0, &w1);
@@ -249,8 +249,8 @@ INLINE __m128 q6k_rows4(const jam_q8_job* J, const uint8_t* w0, size_t w_stride,
     for (int B = 0; B < J->k / JAM_QKK; ++B) {
         const uint8_t* w[4];
         for (int r = 0; r < 4; ++r) w[r] = w0 + r * w_stride + (size_t) B * JAM_Q6K_BYTES;
-        const __m128 d = _mm_setr_ps(jam_half2float(*(const uint16_t*) (w[0] + 208)), jam_half2float(*(const uint16_t*) (w[1] + 208)),
-                                     jam_half2float(*(const uint16_t*) (w[2] + 208)), jam_half2float(*(const uint16_t*) (w[3] + 208)));
+        const __m128 d = _mm_setr_ps(jam_half_at(w[0] + 208), jam_half_at(w[1] + 208),
+                                     jam_half_at(w[2] + 208), jam_half_at(w[3] + 208));
         for (int h = 0; h < 2; ++h)
             KQ_UNROLL4 for (int g = 0; g < 4; ++g) {
                 const int blk = B*8 + h*4 + g, e0 = h*8 + g*2;
@@ -276,7 +276,7 @@ INLINE float q6k_one(const jam_q8_job* J, const uint8_t* w, int j) {
     float acc = 0.0f;
     for (int B = 0; B < J->k / JAM_QKK; ++B, w += JAM_Q6K_BYTES) {
         const int8_t* sc = (const int8_t*) (w + 192);
-        const float d = jam_half2float(*(const uint16_t*) (w + 208));
+        const float d = jam_half_at(w + 208);
         for (int h = 0; h < 2; ++h)
             KQ_UNROLL4 for (int g = 0; g < 4; ++g) {
                 __m128i w0, w1; q6k_decode(w, h, g, &w0, &w1);

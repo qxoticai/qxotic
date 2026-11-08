@@ -1,5 +1,5 @@
-/* K-quant (Q4_K / Q5_K / Q6_K) @ s8 activations, AVX-512-VNNI, without a repack: decode (n == 1) and
- * every call too short to amortize a band (n < JAM_VNNI_MIN_SEQ).
+/* Quantized rows @ s8 activations, AVX-512-VNNI, without a repack: decode (n == 1) and every call too
+ * short to amortize a band (n < JAM_VNNI_MIN_SEQ). The K-quants (Q4_K / Q5_K / Q6_K), then Q8_0.
  *
  * The job is a jam_q8_job: activations requantized per 32 elements (aq = s8 [n][k], ad = f32 [n][k/32]
  * scales, asum = f32 [n][k/32] sums of the codes). Weights are read in place:
@@ -10,9 +10,9 @@
  *     registers across the group, a further row costs only its weight stream and its dots. */
 #include "jam_internal.h"
 #include "jam_kquant.h"
+#include "jam_decode_x86_256.h"   /* jam_hsum8_256 */
 #include <immintrin.h>
 #include <stdint.h>
-#include <string.h>
 
 #define INLINE static inline __attribute__((always_inline))
 
@@ -31,12 +31,6 @@ typedef struct { __m512 f; float min; } kq_acc;
 typedef void (*kq_prepare)(kq_column* c, const float* sums);
 typedef kq_acc (*kq_row)(const uint8_t* w, const kq_column* c, kq_acc a);
 
-INLINE float h2f(const uint8_t* p) { uint16_t h; memcpy(&h, p, 2); return _cvtsh_ss(h); }
-INLINE float hsum256(__m256 v) {
-    __m128 s = _mm_add_ps(_mm256_castps256_ps128(v), _mm256_extractf128_ps(v, 1));
-    s = _mm_add_ps(s, _mm_movehl_ps(s, s));
-    return _mm_cvtss_f32(_mm_add_ss(s, _mm_movehdup_ps(s)));
-}
 INLINE __m256 u8x8_ps(const void* p) {                       /* 8 unsigned bytes -> 8 floats */
     return _mm256_cvtepi32_ps(_mm256_cvtepu8_epi32(_mm_loadl_epi64((const __m128i*) p)));
 }
@@ -59,9 +53,9 @@ INLINE void k32_prepare(kq_column* c, const float* sums) {
 INLINE __m512 k32_header(const uint8_t* w, const kq_column* c, float* min) {
     uint8_t sc[8], mn[8];
     jam_q4k_scales_mins(w + 4, sc, mn);
-    float d = h2f(w), dmin = h2f(w + 2);
+    float d = jam_half_at(w), dmin = jam_half_at(w + 2);
     __m256 f8 = _mm256_mul_ps(_mm256_mul_ps(c->d8, u8x8_ps(sc)), _mm256_set1_ps(d));
-    *min += dmin * hsum256(_mm256_mul_ps(u8x8_ps(mn), c->sum8));
+    *min += dmin * jam_hsum8_256(_mm256_mul_ps(u8x8_ps(mn), c->sum8));
     return _mm512_insertf32x8(_mm512_castps256_ps512(f8), f8, 1);
 }
 
@@ -123,7 +117,7 @@ INLINE kq_acc q6k_row(const uint8_t* w, const kq_column* c, kq_acc a) {
     /* per-16-bit-lane shift counts: the low 256 bits one count, the high 256 bits the other */
     const __m512i shl42 = _mm512_inserti64x4(_mm512_set1_epi16(4), _mm256_set1_epi16(2), 1);
     const __m512i shr02 = _mm512_inserti64x4(_mm512_set1_epi16(0), _mm256_set1_epi16(2), 1);
-    float d = h2f(w + 208);
+    float d = jam_half_at(w + 208);
     __m512 sc = _mm512_cvtepi32_ps(_mm512_cvtepi8_epi32(_mm_loadu_si128((const __m128i*) (w + 192))));
     __m512 scales = _mm512_mul_ps(_mm512_mul_ps(c->d16, _mm512_set1_ps(d)), sc);
     for (int h = 0; h < 2; h++) {
@@ -194,4 +188,138 @@ void jam_mm_q5k_avx512vnni(void* job, int rb, int re, int tid) {
 void jam_mm_q6k_avx512vnni(void* job, int rb, int re, int tid) {
     (void) tid;
     kernel((const jam_q8_job*) job, rb, re, JAM_Q6K_BYTES, q6k_prepare, q6k_row);
+}
+
+/* ======================= Q8_0 (weight) × F32 (activation) via AVX-512-VNNI =======================
+ * Q8_0 block = { fp16 d; int8 qs[32] }. Dequant(x) = d * qs. C[i,j] = Σ_blk dA·dB · Σ_e qa·qb.
+ *
+ * VNNI vpdpbusd does UNSIGNED×SIGNED (u8·s8). The weight qa is s8, so the dot runs on |qa| (u8) against
+ * qb negated where qa < 0: Σ |qa|·sign(qb, qa) = Σ qa·qb, no bias correction. The activation B is
+ * requantized once to int8 (per-32-block scale dB, jam_q8_0_requant) into context scratch, then reused
+ * across every weight row. Both phases are row-range kernels (auto-multithreaded). Here, not in the
+ * jam_avx512 TU, because that one is bound on AVX-512 CPUs without VNNI. */
+
+/* ---- 512-bit VNNI Q8_0 helpers: process a block-PAIR (64 int8 = two Q8_0 blocks) per vpdpbusd ----
+ * dpbusd yields 16 i32 lanes: 0..7 = first block's partials, 8..15 = second's, so each pair is scaled
+ * by scale2(dA0·dB0, dA1·dB1) and float-accumulated; reduce_add at the end. abs/sign trick keeps the
+ * weight unsigned (no +128 correction): dpbusd(|w|, sign(a,w)) = Σ w·a. */
+static inline __m512i q8_wpair(const jam_q8_0_blk* a, const jam_q8_0_blk* b) {
+    return _mm512_inserti64x4(_mm512_castsi256_si512(_mm256_loadu_si256((const __m256i*) a->qs)),
+                              _mm256_loadu_si256((const __m256i*) b->qs), 1);
+}
+static inline __m512i q8_sgnfold(__m512i a, __m512i w) {   /* negate a where w<0 (w==0 nulled by |w|=0) */
+    return _mm512_mask_sub_epi8(a, _mm512_movepi8_mask(w), _mm512_setzero_si512(), a);
+}
+static inline __m512 q8_scl2(float lo, float hi) {         /* lanes 0..7 = lo (block A), 8..15 = hi (block B) */
+    return _mm512_insertf32x8(_mm512_set1_ps(lo), _mm256_set1_ps(hi), 1);
+}
+static inline __m512 q8_dot(__m512i aw, __m512i sa) {
+    return _mm512_cvtepi32_ps(_mm512_dpbusd_epi32(_mm512_setzero_si512(), aw, sa));
+}
+
+/* one weight row · one activation col (block-pairs) -> float; used for the m/n tile remainders. */
+static inline float q8_bp_row(const jam_q8_0_blk* w, const int8_t* a, const float* ad, int nb) {
+    __m512 f = _mm512_setzero_ps();
+    int blk = 0;
+    for (; blk + 2 <= nb; blk += 2) {
+        __m512i wp = q8_wpair(&w[blk], &w[blk+1]);
+        __m512i ap = _mm512_loadu_si512((const void*)(a + (size_t)blk*32));
+        f = _mm512_fmadd_ps(q8_scl2(jam_h2f(w[blk].d)*ad[blk], jam_h2f(w[blk+1].d)*ad[blk+1]),
+                            q8_dot(_mm512_abs_epi8(wp), q8_sgnfold(ap, wp)), f);
+    }
+    if (blk < nb) {
+        __m512i wp = _mm512_zextsi256_si512(_mm256_loadu_si256((const __m256i*) w[blk].qs));
+        __m512i ap = _mm512_zextsi256_si512(_mm256_loadu_si256((const __m256i*)(a + (size_t)blk*32)));
+        f = _mm512_fmadd_ps(q8_scl2(jam_h2f(w[blk].d)*ad[blk], 0.f),
+                            q8_dot(_mm512_abs_epi8(wp), q8_sgnfold(ap, wp)), f);
+    }
+    return _mm512_reduce_add_ps(f);
+}
+
+/* Phase 1 (requant B -> int8) is the shared scalar jam_q8_0_requant. Phase 2: 512-bit vpdpbusd with an
+ * RM×RN register tile (RM weight rows × RN activation cols), processed row-at-a-time so only the current
+ * row's weight pair is live alongside RN activation pairs (RM·RN + RN + temps zmm). The RM/RN loops have
+ * compile-time bounds so -O3 fully unrolls them and keeps the f[][] accumulators in registers.
+ * Output token-major C[(j+c)·ldc + (i+r)]. */
+void jam_mm_q8_0_avx512(void* arg, int rb, int re, int tid) {
+    (void) tid;
+    const jam_q8_job* J = (const jam_q8_job*) arg;
+    const char* A = (const char*) J->a;
+    float* C = (float*) J->c;
+    const int ldc = J->ldc, n = J->n, k = J->k, nb = J->nb;
+    const size_t wrow = (size_t)(J->lda / 32);          /* weight-row stride in blocks */
+    enum { RM = 4, RN = 4 };   /* the measured tile: 4 weight rows x 4 activation columns */
+    #define WROW(ii) ((const jam_q8_0_blk*) (A + (size_t)(ii) * wrow * sizeof(jam_q8_0_blk)))
+    int i = rb;
+    for (; i + RM <= re; i += RM) {
+        const jam_q8_0_blk* w[RM];
+        for (int r = 0; r < RM; r++) w[r] = WROW(i + r);
+        int j = 0;
+        for (; j + RN <= n; j += RN) {
+            const int8_t* a[RN]; const float* b[RN];
+            for (int c = 0; c < RN; c++) { a[c] = J->aq + (size_t)(j+c)*k; b[c] = J->ad + (size_t)(j+c)*nb; }
+            __m512 f[RM][RN];
+            for (int r = 0; r < RM; r++) for (int c = 0; c < RN; c++) f[r][c] = _mm512_setzero_ps();
+            int blk = 0;
+            for (; blk + 2 <= nb; blk += 2) {                 /* block-pair: 64 int8 per vpdpbusd */
+                __m512i ap[RN]; float al[RN], ah[RN];
+                for (int c = 0; c < RN; c++) {
+                    ap[c] = _mm512_loadu_si512((const void*)(a[c] + (size_t)blk*32));
+                    al[c] = b[c][blk]; ah[c] = b[c][blk+1];
+                }
+                for (int r = 0; r < RM; r++) {
+                    __m512i wp = q8_wpair(&w[r][blk], &w[r][blk+1]), aw = _mm512_abs_epi8(wp);
+                    float wl = jam_h2f(w[r][blk].d), wh = jam_h2f(w[r][blk+1].d);
+                    for (int c = 0; c < RN; c++)
+                        f[r][c] = _mm512_fmadd_ps(q8_scl2(wl*al[c], wh*ah[c]), q8_dot(aw, q8_sgnfold(ap[c], wp)), f[r][c]);
+                }
+            }
+            if (blk < nb) {                                   /* odd block: zero-extend, hi scale = 0 */
+                __m512i ap[RN]; float al[RN];
+                for (int c = 0; c < RN; c++) {
+                    ap[c] = _mm512_zextsi256_si512(_mm256_loadu_si256((const __m256i*)(a[c] + (size_t)blk*32)));
+                    al[c] = b[c][blk];
+                }
+                for (int r = 0; r < RM; r++) {
+                    __m512i wp = _mm512_zextsi256_si512(_mm256_loadu_si256((const __m256i*) w[r][blk].qs)), aw = _mm512_abs_epi8(wp);
+                    float wl = jam_h2f(w[r][blk].d);
+                    for (int c = 0; c < RN; c++)
+                        f[r][c] = _mm512_fmadd_ps(q8_scl2(wl*al[c], 0.f), q8_dot(aw, q8_sgnfold(ap[c], wp)), f[r][c]);
+                }
+            }
+            for (int r = 0; r < RM; r++) for (int c = 0; c < RN; c++)
+                C[(size_t)(j+c)*ldc + (i+r)] = _mm512_reduce_add_ps(f[r][c]);
+        }
+        for (; j < n; ++j)                                    /* column remainder: RM rows × 1 col */
+            for (int r = 0; r < RM; r++)
+                C[(size_t)j*ldc + (i+r)] = q8_bp_row(w[r], J->aq+(size_t)j*k, J->ad+(size_t)j*nb, nb);
+    }
+    for (; i < re; ++i) {                                     /* row remainder: 1 row × all cols */
+        const jam_q8_0_blk* w = WROW(i);
+        for (int j = 0; j < n; ++j)
+            C[(size_t)j*ldc+i] = q8_bp_row(w, J->aq+(size_t)j*k, J->ad+(size_t)j*nb, nb);
+    }
+    #undef WROW
+}
+
+/* ---- Q8_0 MATVEC (n==1, decode). Bandwidth-bound: each weight row read once from DRAM, dotted with
+ * the single (cached, pre-requantized) activation column. SW-prefetch rows ahead to hide DRAM latency;
+ * the row-range fan-out keeps every core streaming a different slice. Output token-major n=1 -> C[i]. */
+void jam_mm_q8_0_gemv_avx512(void* arg, int rb, int re, int tid) {
+    (void) tid;
+    const jam_q8_job* J = (const jam_q8_job*) arg;
+    const char* A = (const char*) J->a;
+    float* C = (float*) J->c;
+    const int nb = J->nb;
+    const size_t wstride = (size_t)(J->lda / 32) * sizeof(jam_q8_0_blk);   /* bytes per weight row */
+    const int8_t* aq = J->aq; const float* ad = J->ad;
+    for (int i = rb; i < re; ++i) {
+        const char* wp = A + (size_t) i * wstride;
+        if (i + 3 < re) {                                              /* prefetch ~3 rows ahead */
+            const char* pf = A + (size_t)(i + 3) * wstride;
+            _mm_prefetch(pf, _MM_HINT_T0);
+            _mm_prefetch(pf + 64, _MM_HINT_T0);
+        }
+        C[i] = q8_bp_row((const jam_q8_0_blk*) wp, aq, ad, nb);
+    }
 }

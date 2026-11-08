@@ -22,6 +22,11 @@
 #define JAM_VNNI_BAND   32     /* weight rows per parallel work unit (2 groups of 16) */
 #define JAM_VNNI_MIN_SEQ 8     /* columns from which a band amortizes its repack; below, the row kernels */
 
+/* GGML block_q8_0. Packed: a row may start at any byte (the API has no alignment contract), so the
+ * scale is read through the packed member, never through a uint16_t pointer. */
+typedef struct __attribute__((packed)) { uint16_t d; int8_t qs[32]; } jam_q8_0_blk;
+_Static_assert(sizeof(jam_q8_0_blk) == JAM_Q8_0_BYTES, "block_q8_0 is 34 bytes");
+
 /* The 8 6-bit (scale, min) pairs of a Q4_K / Q5_K super-block, 12 packed bytes -> one byte each.
  * Branch- and loop-free (llama.cpp's three-mask word trick): scales 0-3 and mins 0-3 are the low 6
  * bits of bytes 0-3 and 4-7, scales / mins 4-7 the nibbles of bytes 8-11 under their top 2 bits. */

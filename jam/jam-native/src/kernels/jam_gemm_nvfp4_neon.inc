@@ -1,7 +1,7 @@
 /* Shared NEON NVFP4 body (GGUF block_nvfp4). The includer defines, before #include:
  *     JAM_NVFP4_DOT16(w, a) -> int   16-element signed int8 dot                          [per ISA]
  *     JAM_MM_NAME                    exported symbol
- * Requires <arm_neon.h>, "jam_internal.h", "jam_nvfp4.h". Decode = MXFP4's vqtbl1q LUT; the sub-block
+ * Requires <arm_neon.h>, "jam_internal.h", "jam_decode_neon.h". Decode = MXFP4's vqtbl1q LUT; the sub-block
  * nibble order (byte s*8+j: low=elem j, high=elem j+8) is reassembled per sub-block via vcombine; each
  * 16-element sub-block is dotted and scaled by its UE4M3 scale (× the per-32 activation scale ad). */
 void JAM_MM_NAME(void* arg, int rb, int re, int tid) {

@@ -12,11 +12,16 @@
  * k must be a multiple of 32 (else dispatch falls back to the convert-tile kernel). */
 #include "jam_internal.h"
 #include <immintrin.h>
+#include <string.h>
 
-static inline uint16_t jam_f2bf_rne(float v) {   /* round-to-nearest-even, matches vcvtneps2bf16 */
-    union { float f; uint32_t u; } x; x.f = v;
-    uint32_t r = x.u + 0x7FFF + ((x.u >> 16) & 1);
-    return (uint16_t) (r >> 16);
+/* vcvtneps2bf16 in scalar code, bit for bit (checked over all 2^32 floats): round to nearest even,
+ * except that the instruction reads a denormal as zero (sign kept) and quiets a NaN (sets bit 6 of
+ * the truncated value) instead of letting the rounding carry turn it into inf. */
+static inline uint16_t jam_f2bf_rne(float v) {
+    uint32_t u; memcpy(&u, &v, 4);
+    if ((u & 0x7F800000u) == 0) return (uint16_t) ((u >> 16) & 0x8000u);       /* zero, denormal */
+    if ((u & 0x7FFFFFFFu) > 0x7F800000u) return (uint16_t) ((u >> 16) | 0x40u); /* NaN */
+    return (uint16_t) ((u + 0x7FFFu + ((u >> 16) & 1u)) >> 16);
 }
 
 /* phase 1: rows [rb,re) of the n×k F32 activation X -> bf16 scratch XB (same row order, stride k) */
@@ -29,13 +34,10 @@ void jam_bf16_cvt_avx512bf16(void* arg, int rb, int re, int tid) {
     for (int s = rb; s < re; s++) {
         const float* xs = X + (size_t) s * ldx;
         uint16_t* os = XB + (size_t) s * k;
-        long t = 0;
-        for (; t + 32 <= k; t += 32) {
+        for (long t = 0; t + 32 <= k; t += 32) {   /* k % 32 == 0 (dispatch); the dots read whole 32s only */
             __m512 lo = _mm512_loadu_ps(xs + t), hi = _mm512_loadu_ps(xs + t + 16);
             _mm512_storeu_si512((void*) (os + t), (__m512i) _mm512_cvtne2ps_pbh(hi, lo));
         }
-        for (; t < k; t++)   /* tail (dispatch gates k%32==0, but stay correct) */
-            os[t] = jam_f2bf_rne(xs[t]);
     }
 }
 
@@ -286,7 +288,7 @@ void jam_mm_bf16p_avx512bf16(void* arg, int rb, int re, int tid) {
             }
             float tile[32] __attribute__((aligned(64)));
             _mm512_store_ps(tile, ca); _mm512_store_ps(tile + 16, cb);
-            for (int j = 0; j < cols; j++) C[(size_t)(j0 + j) * ldc + r] = tile[j >> 4 ? 16 + (j & 15) : j];
+            for (int j = 0; j < cols; j++) C[(size_t)(j0 + j) * ldc + r] = tile[j];
         }
     }
 }

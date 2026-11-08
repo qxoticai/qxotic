@@ -1,24 +1,26 @@
-/* AVX2 8-row K-quant repack bands - the jam_q4k/q5k/q6k avx512 bands ported to ymm + maddubs.
- * This TU is compiled with -mavx2 -mfma -mf16c only (part of the jam_avx2 target): it is the
- * K-quant prefill fast path for CPUs BELOW avx512-vnni (Haswell..Rocket Lake, Zen 2/3, and
- * Alder-Lake-class clients for whom no K-quant VNNI band exists).
+/* AVX2 8-row repack bands (ymm + maddubs): the quantized prefill below AVX-512-VNNI. This TU is
+ * compiled with -mavx2 -mfma -mf16c only (part of the jam_avx2 target). The K-quants and MXFP4 run
+ * here on every such CPU (Haswell..Rocket Lake, Zen 2/3, and the Alder-Lake-class AVX-VNNI clients,
+ * which have no K-quant or MXFP4 VNNI band); Q8_0, Q5_0 and Q4_0 only on plain AVX2 (AVX-VNNI has
+ * its own bands for those).
  *
- * Same bounded per-worker scratch as the VNNI bands (jam_repack, sized by ensure_kquant: the
- * 4-groups-of-8 layouts are byte-for-byte the 2-groups-of-16 ones), same two-phase launch, same
- * deferred-float scale/min math. Only the int8 dot differs: no vpdpbusd, so the base ladder is
- * maddubs(w_u8, x_s8) -> madd(1) -> add int32 - and wherever the per-maddubs int16 bound allows,
- * products ACCUMULATE IN INT16 (wrap/saturation provably unreachable) with ONE deferred
- * madd, cutting the ladder to ~2 ops/group:
+ * The same per-worker scratch as the VNNI bands (jam_repack from ensure_kquant, whose 32-row blob
+ * also holds a band's four 8-row groups: at most 256 B of codes per group per 32-block), the same
+ * two-phase launch, scales and corrections in float. Only the int8 dot differs: no vpdpbusd, so the
+ * base ladder is maddubs(w_u8, x_s8) -> madd(1) -> add int32 - and wherever the per-maddubs int16
+ * bound allows, products ACCUMULATE IN INT16 (wrap/saturation provably unreachable) with ONE
+ * deferred madd, cutting the ladder to ~2 ops/group:
  *   Q4_K, Q4_0 : peak 2*15*127 = 3810/maddubs -> all 8 groups chain (8*3810 = 30480 < 32767)
  *   MXFP4      : peak 2*255*12 = 6120        -> chains of 4 (24480)
  *   Q5_K       : peak 2*31*127 = 7874        -> chains of 4 (31496)
  *   Q6_K       : peak 2*63*127 = 16002       -> NO chaining (2 already wrap); per-group madd
- *   Q8_0       : sign trick peaks at 32258   -> NO chaining; per-group madd
- * Weight operands are UNSIGNED for every quant except Q8_0 (sign trick: u = |w|, s = sign(x,w)). */
+ *   Q8_0, Q5_0 : sign trick peak 2*128*127 = 32512 (w = -128) -> NO chaining; per-group madd
+ * Weight operands are UNSIGNED except for Q8_0 and Q5_0 (sign trick: u = |w|, s = sign(x,w)) and
+ * MXFP4 (u = x + 128, s = w). */
 #include "jam_internal.h"
 #include "jam_kquant.h"
 #include "jam_mxfp4.h"
-#include "jam_decode_x86_256.h"   /* jam_nibbles_256, jam_q5_0_codes_256, jam_put32_rows8, jam_sum_i8_256 */
+#include "jam_decode_x86_256.h"   /* decoders, jam_put32_rows8, jam_quant32_256, JAM_BAND8_DRIVER */
 #include <stddef.h>
 #include <stdint.h>
 #include <immintrin.h>
@@ -31,8 +33,6 @@
 #define B8_NR_Q4K 4
 #define B8_NR_KQ  6
 #define B8_NR_Q8  8
-
-static inline float b8_h2f(uint16_t h) { return _cvtsh_ss(h); }
 
 /* one 32-byte weight group (8 rows x 4 elems) dotted against a 4-elem activation broadcast */
 static inline __m256i b8_dot(__m256i acc, __m256i wu, __m256i xb) {
@@ -63,46 +63,18 @@ static inline __m256i b8_plane(__m256i v, int shift, int mask) {
     return _mm256_slli_epi16(_mm256_and_si256(_mm256_srli_epi16(v, shift), _mm256_set1_epi8((char) mask)), 4);
 }
 
-/* ---- phase 1: F32 activations -> int8 + per-32 scale + per-16 RAW float sums ----
- * Semantics identical to the avx512 quantize_row_q8s (raw sums feed the exact dmin*min /
- * -32-offset corrections); 256-bit only. */
-static inline float b8_hmax8(__m256 v) {
-    __m128 h = _mm_max_ps(_mm256_castps256_ps128(v), _mm256_extractf128_ps(v, 1));
-    h = _mm_max_ps(h, _mm_movehl_ps(h, h));
-    h = _mm_max_ss(h, _mm_movehdup_ps(h));
-    return _mm_cvtss_f32(h);
-}
-
-static inline float b8_hsum8(__m256 v) {
-    __m128 h = _mm_add_ps(_mm256_castps256_ps128(v), _mm256_extractf128_ps(v, 1));
-    h = _mm_add_ps(h, _mm_movehl_ps(h, h));
-    h = _mm_add_ss(h, _mm_movehdup_ps(h));
-    return _mm_cvtss_f32(h);
-}
-
+/* ---- phase 1: F32 activations -> int8 (jam_quant32_256) + per-32 scale + per-16 RAW float sums,
+ * which feed the exact dmin*min / -32-offset corrections ---- */
 static void quantize_row_q8s_avx2(const float* x, int kblocks, int8_t* xq, float* dx, float* xs) {
-    const __m256 absmask = _mm256_castsi256_ps(_mm256_set1_epi32(0x7FFFFFFF));
-    const __m256i perm = _mm256_setr_epi32(0, 4, 1, 5, 2, 6, 3, 7);
     for (int b = 0; b < kblocks; b++, x += JAM_QK, xq += JAM_QK, xs += 2) {
-        __m256 a0 = _mm256_loadu_ps(x),      a1 = _mm256_loadu_ps(x + 8);
-        __m256 a2 = _mm256_loadu_ps(x + 16), a3 = _mm256_loadu_ps(x + 24);
-        __m256 mx = _mm256_max_ps(_mm256_max_ps(_mm256_and_ps(a0, absmask), _mm256_and_ps(a1, absmask)),
-                                  _mm256_max_ps(_mm256_and_ps(a2, absmask), _mm256_and_ps(a3, absmask)));
-        float max = b8_hmax8(mx);
-        float d = max / 127.0f, inv = max > 0.0f ? 127.0f / max : 0.0f;
-        dx[b] = d;
-        xs[0] = b8_hsum8(_mm256_add_ps(a0, a1));   /* raw per-16 sums (exact min term) */
-        xs[1] = b8_hsum8(_mm256_add_ps(a2, a3));
-        __m256 v = _mm256_set1_ps(inv);
-        __m256i i0 = _mm256_cvtps_epi32(_mm256_mul_ps(a0, v)), i1 = _mm256_cvtps_epi32(_mm256_mul_ps(a1, v));
-        __m256i i2 = _mm256_cvtps_epi32(_mm256_mul_ps(a2, v)), i3 = _mm256_cvtps_epi32(_mm256_mul_ps(a3, v));
-        /* packs are 128-lane-local; the {0,4,1,5,2,6,3,7} permute restores element order */
-        __m256i p = _mm256_packs_epi16(_mm256_packs_epi32(i0, i1), _mm256_packs_epi32(i2, i3));
-        _mm256_storeu_si256((__m256i*) xq, _mm256_permutevar8x32_epi32(p, perm));
+        __m256 a[4]; __m256i q[4];
+        dx[b] = jam_quant32_256(x, xq, a, q);
+        xs[0] = jam_hsum8_256(_mm256_add_ps(a[0], a[1]));   /* raw per-16 sums (exact min term) */
+        xs[1] = jam_hsum8_256(_mm256_add_ps(a[2], a[3]));
     }
 }
 
-void jam_q4k_quant_avx2(void* arg, int s0, int s1, int tid) {
+void jam_band8_quant_avx2(void* arg, int s0, int s1, int tid) {
     (void) tid;
     const jam_band_job* J = (const jam_band_job*) arg;
     for (int s = s0; s < s1; s++)
@@ -121,7 +93,7 @@ static void repack_q4k_group8(const uint8_t* wbase, int64_t w_stride, int sblock
     for (int r = 0; r < 8; r++) {
         const uint8_t* w = wbase + r * w_stride;
         for (int B = 0; B < sblocks; B++, w += JAM_Q4K_BYTES) {
-            float d = b8_h2f(*(const uint16_t*) w), dmin = b8_h2f(*(const uint16_t*) (w + 2));
+            float d = jam_half_at(w), dmin = jam_half_at(w + 2);
             uint8_t sc[8], mn[8];
             jam_q4k_scales_mins(w + 4, sc, mn);
             const uint8_t* q = w + 16;
@@ -147,9 +119,9 @@ static inline __m256 q4k_block8(const uint8_t* qs, const float* dw, const float*
         __m256i iLo = _mm256_setzero_si256(), iHi = _mm256_setzero_si256();
         B8_UNROLL2 for (int g = 0; g < 8; g++) {   /* 8 chained maddubs stay under int16 (8*3810) */
             __m256i pk = _mm256_load_si256((const void*) (qs + g * 32));
-            iLo = b8_chain(iLo, _mm256_and_si256(pk, m4), _mm256_set1_epi32(((const int*) x)[g]));
+            iLo = b8_chain(iLo, _mm256_and_si256(pk, m4), _mm256_set1_epi32(jam_load32(x + 4 * g)));
             iHi = b8_chain(iHi, _mm256_and_si256(_mm256_srli_epi16(pk, 4), m4),
-                           _mm256_set1_epi32(((const int*) (x + JAM_QK))[g]));
+                           _mm256_set1_epi32(jam_load32(x + JAM_QK + 4 * g)));
         }
         __m256i aLo = b8_fold(_mm256_setzero_si256(), iLo);
         __m256i aHi = b8_fold(_mm256_setzero_si256(), iHi);
@@ -183,8 +155,8 @@ static inline void q4k_block8_nr(const uint8_t* qs, const float* dw, const float
             __m256i lo = _mm256_and_si256(pk, m4);                       /* decode once, reuse NR cols */
             __m256i hi = _mm256_and_si256(_mm256_srli_epi16(pk, 4), m4);
             for (int c = 0; c < B8_NR_Q4K; c++) {
-                iLo[c] = b8_chain(iLo[c], lo, _mm256_set1_epi32(((const int*) x[c])[g]));
-                iHi[c] = b8_chain(iHi[c], hi, _mm256_set1_epi32(((const int*) (x[c] + JAM_QK))[g]));
+                iLo[c] = b8_chain(iLo[c], lo, _mm256_set1_epi32(jam_load32(x[c] + 4 * g)));
+                iHi[c] = b8_chain(iHi[c], hi, _mm256_set1_epi32(jam_load32(x[c] + JAM_QK + 4 * g)));
             }
         }
         __m256 dwLo = _mm256_load_ps(dw), mwLo = _mm256_load_ps(mw);
@@ -207,32 +179,12 @@ static inline void q4k_block8_nr(const uint8_t* qs, const float* dw, const float
 void jam_q4k_band8_avx2(void* arg, int t0, int t1, int tid) {
     const jam_band_job* J = (const jam_band_job*) arg;
     const int kblocks = J->kblocks, sblocks = J->dim1 / JAM_QKK, seq = J->seq;
-    const int64_t ldc = J->out_stride;
-    jam_repack* rp = &J->repack[tid];
-    for (int tile = t0; tile < t1; tile++) {
-        int row = tile * JAM_VNNI_BAND, row_end = row + JAM_VNNI_BAND;
-        if (row_end > J->dim0) row_end = J->dim0;
-        int group = 0;
-        for (int r = row; r + 7 < row_end; r += 8, group++) {
-            uint8_t* qs = rp->qs + (int64_t) group * kblocks * 128;   /* packed: 128 B/32-block/group8 */
-            float* dw = rp->dw + (int64_t) group * kblocks * 8;
-            float* mw = rp->mw + (int64_t) group * kblocks * 8;
-            repack_q4k_group8(J->w + (int64_t) r * J->w_stride, J->w_stride, sblocks, qs, dw, mw);
-            int s = 0;
-            for (; s + B8_NR_Q4K <= seq; s += B8_NR_Q4K)
-                q4k_block8_nr(qs, dw, mw, J->xq, J->dx, J->xsum, s, kblocks / 2, kblocks, ldc, J->out, r);
-            for (; s < seq; s++) {
-                const int8_t* x = J->xq + (int64_t) s * kblocks * JAM_QK;
-                const float* d = J->dx + (int64_t) s * kblocks;
-                const float* sv = J->xsum + (int64_t) s * kblocks * 2;
-                _mm256_storeu_ps(J->out + (int64_t) s * ldc + r, q4k_block8(qs, dw, mw, x, d, sv, kblocks / 2));
-            }
-        }
-        for (int r = row + group * 8; r < row_end; r++)          /* <8-row tail: scalar */
-            for (int s = 0; s < seq; s++)
-                J->out[(int64_t) s * ldc + r] =
-                    jam_q4k_dot_f32(J->w + (int64_t) r * J->w_stride, sblocks, J->rhs + (int64_t) s * J->rhs_stride);
-    }
+    JAM_BAND8_DRIVER(kblocks * 128, kblocks * 8, B8_NR_Q4K,   /* packed: 128 B/32-block/group8 */
+        repack_q4k_group8(J->w + (int64_t) r * J->w_stride, J->w_stride, sblocks, qs, dw, mw),
+        q4k_block8_nr(qs, dw, mw, J->xq, J->dx, J->xsum, s, kblocks / 2, kblocks, ldc, J->out, r),
+        q4k_block8(qs, dw, mw, J->xq + (int64_t) s * kblocks * JAM_QK, J->dx + (int64_t) s * kblocks,
+                   J->xsum + (int64_t) s * kblocks * 2, kblocks / 2),
+        jam_q4k_dot_f32(J->w + (int64_t) r * J->w_stride, sblocks, J->rhs + (int64_t) s * J->rhs_stride));
 }
 
 /* ================= Q5_K - Q4_K scheme, 5-bit byte-expanded (256 B/sub-block/group8) ==== */
@@ -242,7 +194,7 @@ static void repack_q5k_group8(const uint8_t* wbase, int64_t w_stride, int sblock
     for (int r = 0; r < 8; r++) {
         const uint8_t* w = wbase + r * w_stride;
         for (int B = 0; B < sblocks; B++, w += JAM_Q5K_BYTES) {
-            float d = b8_h2f(*(const uint16_t*) w), dmin = b8_h2f(*(const uint16_t*) (w + 2));
+            float d = jam_half_at(w), dmin = jam_half_at(w + 2);
             uint8_t sc[8], mn[8]; jam_q4k_scales_mins(w + 4, sc, mn);
             const uint8_t* qh = w + 16; const uint8_t* q5 = w + 48;
             for (int g = 0; g < 4; g++) {
@@ -269,7 +221,7 @@ static inline __m256 q5k_block8(const uint8_t* qs, const float* dw, const float*
             __m256i i16 = _mm256_setzero_si256();
             for (int g = h * 4; g < h * 4 + 4; g++)
                 i16 = b8_chain4(i16, _mm256_load_si256((const void*) (qs + g * 32)),
-                               _mm256_set1_epi32(((const int*) x)[g]));
+                               _mm256_set1_epi32(jam_load32(x + 4 * g)));
             acc = b8_fold(acc, i16);
         }
         f = _mm256_fmadd_ps(_mm256_cvtepi32_ps(acc), _mm256_mul_ps(_mm256_load_ps(dw), _mm256_set1_ps(d[b])), f);
@@ -299,7 +251,7 @@ static inline void q5k_block8_nr(const uint8_t* qs, const float* dw, const float
             for (int g = h * 4; g < h * 4 + 4; g++) {
                 __m256i w = _mm256_load_si256((const void*) (qs + g * 32));   /* shared across NR cols */
                 for (int c = 0; c < B8_NR_KQ; c++)
-                    i16[c] = b8_chain4(i16[c], w, _mm256_set1_epi32(((const int*) x[c])[g]));
+                    i16[c] = b8_chain4(i16[c], w, _mm256_set1_epi32(jam_load32(x[c] + 4 * g)));
             }
             for (int c = 0; c < B8_NR_KQ; c++) acc[c] = b8_fold(acc[c], i16[c]);
         }
@@ -318,31 +270,12 @@ static inline void q5k_block8_nr(const uint8_t* qs, const float* dw, const float
 void jam_q5k_band8_avx2(void* arg, int t0, int t1, int tid) {
     const jam_band_job* J = (const jam_band_job*) arg;
     const int kblocks = J->kblocks, sblocks = J->dim1 / JAM_QKK, seq = J->seq;
-    const int64_t ldc = J->out_stride;
-    jam_repack* rp = &J->repack[tid];
-    for (int tile = t0; tile < t1; tile++) {
-        int row = tile * JAM_VNNI_BAND, row_end = row + JAM_VNNI_BAND;
-        if (row_end > J->dim0) row_end = J->dim0;
-        int group = 0;
-        for (int r = row; r + 7 < row_end; r += 8, group++) {
-            uint8_t* qs = rp->qs + (int64_t) group * kblocks * 256;   /* byte-expanded: 256 B/sub-block/group8 */
-            float* dw = rp->dw + (int64_t) group * kblocks * 8;
-            float* mw = rp->mw + (int64_t) group * kblocks * 8;
-            repack_q5k_group8(J->w + (int64_t) r * J->w_stride, J->w_stride, sblocks, qs, dw, mw);
-            int s = 0;
-            for (; s + B8_NR_KQ <= seq; s += B8_NR_KQ)
-                q5k_block8_nr(qs, dw, mw, J->xq, J->dx, J->xsum, s, kblocks, ldc, J->out, r);
-            for (; s < seq; s++)
-                _mm256_storeu_ps(J->out + (int64_t) s * ldc + r,
-                                 q5k_block8(qs, dw, mw, J->xq + (int64_t) s * kblocks * JAM_QK,
-                                            J->dx + (int64_t) s * kblocks,
-                                            J->xsum + (int64_t) s * kblocks * 2, kblocks));
-        }
-        for (int r = row + group * 8; r < row_end; r++)
-            for (int s = 0; s < seq; s++)
-                J->out[(int64_t) s * ldc + r] =
-                    jam_q5k_dot_f32(J->w + (int64_t) r * J->w_stride, sblocks, J->rhs + (int64_t) s * J->rhs_stride);
-    }
+    JAM_BAND8_DRIVER(kblocks * 256, kblocks * 8, B8_NR_KQ,    /* byte-expanded: 256 B/sub-block/group8 */
+        repack_q5k_group8(J->w + (int64_t) r * J->w_stride, J->w_stride, sblocks, qs, dw, mw),
+        q5k_block8_nr(qs, dw, mw, J->xq, J->dx, J->xsum, s, kblocks, ldc, J->out, r),
+        q5k_block8(qs, dw, mw, J->xq + (int64_t) s * kblocks * JAM_QK, J->dx + (int64_t) s * kblocks,
+                   J->xsum + (int64_t) s * kblocks * 2, kblocks),
+        jam_q5k_dot_f32(J->w + (int64_t) r * J->w_stride, sblocks, J->rhs + (int64_t) s * J->rhs_stride));
 }
 
 /* ================= Q6_K - 6-bit biased +32 (0..63 unsigned), per-16 scales, no min ===== */
@@ -353,7 +286,7 @@ static void repack_q6k_group8(const uint8_t* wbase, int64_t w_stride, int sblock
         for (int B = 0; B < sblocks; B++, w += JAM_Q6K_BYTES) {
             const uint8_t* ql = w; const uint8_t* qh = w + 128;
             const int8_t* sc = (const int8_t*) (w + 192);
-            float d = b8_h2f(*(const uint16_t*) (w + 208));
+            float d = jam_half_at(w + 208);
             for (int h = 0; h < 2; h++) {
                 const uint8_t* qlb = ql + h * 64; const uint8_t* qhb = qh + h * 32;
                 for (int j = 0; j < 4; j++) {
@@ -378,7 +311,7 @@ static inline __m256 q6k_block8(const uint8_t* qs, const float* dw,
         __m256i acc = _mm256_setzero_si256();
         for (int g = 0; g < 4; g++)
             acc = b8_dot(acc, _mm256_load_si256((const void*) (qs + g * 32)),
-                         _mm256_set1_epi32(((const int*) x)[g]));
+                         _mm256_set1_epi32(jam_load32(x + 4 * g)));
         __m256 dwv = _mm256_load_ps(dw);
         f = _mm256_fmadd_ps(_mm256_cvtepi32_ps(acc), _mm256_mul_ps(dwv, _mm256_set1_ps(d[b >> 1])), f);
         f = _mm256_fnmadd_ps(dwv, _mm256_set1_ps(32.0f * s[b]), f);          /* -32 offset, exact sum */
@@ -404,7 +337,7 @@ static inline void q6k_block8_nr(const uint8_t* qs, const float* dw, const int8_
         for (int g = 0; g < 4; g++) {
             __m256i w = _mm256_load_si256((const void*) (qs + g * 32));   /* shared across NR cols */
             for (int c = 0; c < B8_NR_KQ; c++)
-                acc[c] = b8_dot(acc[c], w, _mm256_set1_epi32(((const int*) x[c])[g]));
+                acc[c] = b8_dot(acc[c], w, _mm256_set1_epi32(jam_load32(x[c] + 4 * g)));
         }
         __m256 dwv = _mm256_load_ps(dw);
         for (int c = 0; c < B8_NR_KQ; c++) {
@@ -421,31 +354,12 @@ static inline void q6k_block8_nr(const uint8_t* qs, const float* dw, const int8_
 void jam_q6k_band8_avx2(void* arg, int t0, int t1, int tid) {
     const jam_band_job* J = (const jam_band_job*) arg;
     const int kblocks = J->kblocks, sblocks = J->dim1 / JAM_QKK, subs16 = J->dim1 / 16, seq = J->seq;
-    const int64_t ldc = J->out_stride;
-    jam_repack* rp = &J->repack[tid];
-    for (int tile = t0; tile < t1; tile++) {
-        int row = tile * JAM_VNNI_BAND, row_end = row + JAM_VNNI_BAND;
-        if (row_end > J->dim0) row_end = J->dim0;
-        int group = 0;
-        for (int r = row; r + 7 < row_end; r += 8, group++) {
-            uint8_t* qs = rp->qs + (int64_t) group * kblocks * 256;   /* 2 sub16 x 128 B per 32-block */
-            float* dw = rp->dw + (int64_t) group * subs16 * 8;
-            repack_q6k_group8(J->w + (int64_t) r * J->w_stride, J->w_stride, sblocks, qs, dw);
-            int s = 0;
-            for (; s + B8_NR_KQ <= seq; s += B8_NR_KQ)
-                q6k_block8_nr(qs, dw, J->xq, J->dx, J->xsum, s, subs16, kblocks, ldc, J->out, r);
-            for (; s < seq; s++) {
-                const int8_t* x = J->xq + (int64_t) s * kblocks * JAM_QK;
-                const float* d = J->dx + (int64_t) s * kblocks;
-                const float* sv = J->xsum + (int64_t) s * kblocks * 2;
-                _mm256_storeu_ps(J->out + (int64_t) s * ldc + r, q6k_block8(qs, dw, x, d, sv, subs16));
-            }
-        }
-        for (int r = row + group * 8; r < row_end; r++)
-            for (int s = 0; s < seq; s++)
-                J->out[(int64_t) s * ldc + r] =
-                    jam_q6k_dot_f32(J->w + (int64_t) r * J->w_stride, sblocks, J->rhs + (int64_t) s * J->rhs_stride);
-    }
+    JAM_BAND8_DRIVER(kblocks * 256, subs16 * 8, B8_NR_KQ,     /* 2 sub16 x 128 B per 32-block */
+        repack_q6k_group8(J->w + (int64_t) r * J->w_stride, J->w_stride, sblocks, qs, dw),
+        q6k_block8_nr(qs, dw, J->xq, J->dx, J->xsum, s, subs16, kblocks, ldc, J->out, r),
+        q6k_block8(qs, dw, J->xq + (int64_t) s * kblocks * JAM_QK, J->dx + (int64_t) s * kblocks,
+                   J->xsum + (int64_t) s * kblocks * 2, subs16),
+        jam_q6k_dot_f32(J->w + (int64_t) r * J->w_stride, sblocks, J->rhs + (int64_t) s * J->rhs_stride));
 }
 
 /* ================= 32-block quants (Q8_0 / Q4_0 / MXFP4) - 8-row bands ==================
@@ -453,7 +367,7 @@ void jam_q6k_band8_avx2(void* arg, int t0, int t1, int tid) {
  *   Q8_0 : signed weights, so maddubs needs the SIGN TRICK - u = |w|, s = sign(x, w): |w| is the u8
  *          operand because a weight may be -128 (|-128| reads as u8 128, exact) while sign() cannot
  *          negate -128; the activation is requantized to +-127, so sign(x, w) is always exact
- *          (int16 peak 127*127*2 = 32258, the exact margin) -> exact w*x, no bias correction.
+ *          (int16 peak 2*128*127 = 32512 < 32767) -> exact w*x, no bias correction.
  *   Q4_0 : unsigned nibbles 0..15 as the u operand, x signed as s (peak 15*127*2) - the -8
  *          offset folds into mw = 8*d against the RAW per-32 activation sums (exact).
  *   MXFP4: signed codes |w| <= 12, so the a+128 scheme is safe (peak 255*12*2 = 6120):
@@ -464,7 +378,7 @@ static void repack_q8s_group8(const uint8_t* wbase, int64_t w_stride, int nb, ui
     for (int r = 0; r < 8; r++) {
         const uint8_t* w = wbase + r * w_stride;
         for (int B = 0; B < nb; B++, w += JAM_Q8_0_BYTES) {
-            dw[(int64_t) B * 8 + r] = b8_h2f(*(const uint16_t*) w);
+            dw[(int64_t) B * 8 + r] = jam_half_at(w);
             jam_put32_rows8(qs + (int64_t) B * 256 + r * 4, _mm256_loadu_si256((const __m256i*) (w + 2)));
         }
     }
@@ -475,7 +389,7 @@ static inline __m256 q8s_block8(const uint8_t* qs, const float* dw, const int8_t
     for (int b = 0; b < nb; b++) {
         __m256i acc = _mm256_setzero_si256();
         for (int g = 0; g < 8; g++) {
-            __m256i xb = _mm256_set1_epi32(((const int*) x)[g]);
+            __m256i xb = _mm256_set1_epi32(jam_load32(x + 4 * g));
             __m256i w = _mm256_load_si256((const void*) (qs + g * 32));
             acc = _mm256_add_epi32(acc, _mm256_madd_epi16(
                       _mm256_maddubs_epi16(_mm256_abs_epi8(w), _mm256_sign_epi8(xb, w)),
@@ -502,7 +416,7 @@ static inline void q8s_block8_nr(const uint8_t* qs, const float* dw, const int8_
         for (int g = 0; g < 8; g++) {
             __m256i w = _mm256_load_si256((const void*) (qs + g * 32));   /* shared across NR cols */
             for (int c = 0; c < B8_NR_Q8; c++) {
-                __m256i xb = _mm256_set1_epi32(((const int*) x[c])[g]);
+                __m256i xb = _mm256_set1_epi32(jam_load32(x[c] + 4 * g));
                 acc[c] = _mm256_add_epi32(acc[c], _mm256_madd_epi16(
                              _mm256_maddubs_epi16(_mm256_abs_epi8(w), _mm256_sign_epi8(xb, w)),
                              _mm256_set1_epi16(1)));
@@ -522,29 +436,11 @@ static inline void q8s_block8_nr(const uint8_t* qs, const float* dw, const int8_
 void jam_q8_0_band8_avx2(void* arg, int t0, int t1, int tid) {
     const jam_band_job* J = (const jam_band_job*) arg;
     const int nb = J->kblocks, seq = J->seq;
-    const int64_t ldc = J->out_stride;
-    jam_repack* rp = &J->repack[tid];
-    for (int tile = t0; tile < t1; tile++) {
-        int row = tile * JAM_VNNI_BAND, row_end = row + JAM_VNNI_BAND;
-        if (row_end > J->dim0) row_end = J->dim0;
-        int group = 0;
-        for (int r = row; r + 7 < row_end; r += 8, group++) {
-            uint8_t* qs = rp->qs + (int64_t) group * nb * 256;
-            float* dw = rp->dw + (int64_t) group * nb * 8;
-            repack_q8s_group8(J->w + (int64_t) r * J->w_stride, J->w_stride, nb, qs, dw);
-            int s = 0;
-            for (; s + B8_NR_Q8 <= seq; s += B8_NR_Q8)
-                q8s_block8_nr(qs, dw, J->xq, J->dx, s, nb, ldc, J->out, r);
-            for (; s < seq; s++)
-                _mm256_storeu_ps(J->out + (int64_t) s * ldc + r,
-                                 q8s_block8(qs, dw, J->xq + (int64_t) s * nb * JAM_QK,
-                                            J->dx + (int64_t) s * nb, nb));
-        }
-        for (int r = row + group * 8; r < row_end; r++)
-            for (int s = 0; s < seq; s++)
-                J->out[(int64_t) s * ldc + r] =
-                    jam_q8_0_dot_f32(J->w + (int64_t) r * J->w_stride, nb, J->rhs + (int64_t) s * J->rhs_stride);
-    }
+    JAM_BAND8_DRIVER(nb * 256, nb * 8, B8_NR_Q8,
+        repack_q8s_group8(J->w + (int64_t) r * J->w_stride, J->w_stride, nb, qs, dw),
+        q8s_block8_nr(qs, dw, J->xq, J->dx, s, nb, ldc, J->out, r),
+        q8s_block8(qs, dw, J->xq + (int64_t) s * nb * JAM_QK, J->dx + (int64_t) s * nb, nb),
+        jam_q8_0_dot_f32(J->w + (int64_t) r * J->w_stride, nb, J->rhs + (int64_t) s * J->rhs_stride));
 }
 
 /* Q5_0: the Q8_0 sign-trick band over Q5_0 blocks (q-16 is an int8; only the block unpack differs). */
@@ -552,7 +448,7 @@ static void repack_q5_0s_group8(const uint8_t* wbase, int64_t w_stride, int nb, 
     for (int r = 0; r < 8; r++) {
         const uint8_t* w = wbase + r * w_stride;
         for (int B = 0; B < nb; B++, w += JAM_Q5_0_BYTES) {
-            dw[(int64_t) B * 8 + r] = b8_h2f(*(const uint16_t*) w);
+            dw[(int64_t) B * 8 + r] = jam_half_at(w);
             jam_put32_rows8(qs + (int64_t) B * 256 + r * 4, jam_q5_0_codes_256(w));
         }
     }
@@ -561,29 +457,11 @@ static void repack_q5_0s_group8(const uint8_t* wbase, int64_t w_stride, int nb, 
 void jam_q5_0_band8_avx2(void* arg, int t0, int t1, int tid) {
     const jam_band_job* J = (const jam_band_job*) arg;
     const int nb = J->kblocks, seq = J->seq;
-    const int64_t ldc = J->out_stride;
-    jam_repack* rp = &J->repack[tid];
-    for (int tile = t0; tile < t1; tile++) {
-        int row = tile * JAM_VNNI_BAND, row_end = row + JAM_VNNI_BAND;
-        if (row_end > J->dim0) row_end = J->dim0;
-        int group = 0;
-        for (int r = row; r + 7 < row_end; r += 8, group++) {
-            uint8_t* qs = rp->qs + (int64_t) group * nb * 256;
-            float* dw = rp->dw + (int64_t) group * nb * 8;
-            repack_q5_0s_group8(J->w + (int64_t) r * J->w_stride, J->w_stride, nb, qs, dw);
-            int s = 0;
-            for (; s + B8_NR_Q8 <= seq; s += B8_NR_Q8)
-                q8s_block8_nr(qs, dw, J->xq, J->dx, s, nb, ldc, J->out, r);
-            for (; s < seq; s++)
-                _mm256_storeu_ps(J->out + (int64_t) s * ldc + r,
-                                 q8s_block8(qs, dw, J->xq + (int64_t) s * nb * JAM_QK,
-                                            J->dx + (int64_t) s * nb, nb));
-        }
-        for (int r = row + group * 8; r < row_end; r++)
-            for (int s = 0; s < seq; s++)
-                J->out[(int64_t) s * ldc + r] =
-                    jam_q5_0_dot_f32(J->w + (int64_t) r * J->w_stride, nb, J->rhs + (int64_t) s * J->rhs_stride);
-    }
+    JAM_BAND8_DRIVER(nb * 256, nb * 8, B8_NR_Q8,
+        repack_q5_0s_group8(J->w + (int64_t) r * J->w_stride, J->w_stride, nb, qs, dw),
+        q8s_block8_nr(qs, dw, J->xq, J->dx, s, nb, ldc, J->out, r),
+        q8s_block8(qs, dw, J->xq + (int64_t) s * nb * JAM_QK, J->dx + (int64_t) s * nb, nb),
+        jam_q5_0_dot_f32(J->w + (int64_t) r * J->w_stride, nb, J->rhs + (int64_t) s * J->rhs_stride));
 }
 
 /* ---- Q4_0: unsigned nibbles (0..15), -8 offset via mw = 8*d against raw per-32 x sums ---- */
@@ -592,7 +470,7 @@ static void repack_q4_0_group8(const uint8_t* wbase, int64_t w_stride, int nb,
     for (int r = 0; r < 8; r++) {
         const uint8_t* w = wbase + r * w_stride;
         for (int B = 0; B < nb; B++, w += JAM_Q4_0_BYTES) {
-            float d = b8_h2f(*(const uint16_t*) w);
+            float d = jam_half_at(w);
             dw[(int64_t) B * 8 + r] = d;
             mw[(int64_t) B * 8 + r] = 8.0f * d;
             jam_put32_rows8(qs + (int64_t) B * 256 + r * 4, jam_nibbles_256(w + 2));   /* 16 packed bytes = 32 nibbles */
@@ -607,7 +485,7 @@ static inline __m256 q4_0_block8(const uint8_t* qs, const float* dw, const float
         __m256i i16 = _mm256_setzero_si256();
         B8_UNROLL2 for (int g = 0; g < 8; g++)   /* 8 chained maddubs stay under int16 (8*3810) */
             i16 = b8_chain(i16, _mm256_load_si256((const void*) (qs + g * 32)),
-                           _mm256_set1_epi32(((const int*) x)[g]));
+                           _mm256_set1_epi32(jam_load32(x + 4 * g)));
         __m256i acc = b8_fold(_mm256_setzero_si256(), i16);
         f = _mm256_fmadd_ps(_mm256_cvtepi32_ps(acc), _mm256_mul_ps(_mm256_load_ps(dw), _mm256_set1_ps(d[b])), f);
         f = _mm256_fnmadd_ps(_mm256_load_ps(mw), _mm256_set1_ps(s[2 * b] + s[2 * b + 1]), f);
@@ -633,7 +511,7 @@ static inline void q4_0_block8_nr(const uint8_t* qs, const float* dw, const floa
         B8_UNROLL2 for (int g = 0; g < 8; g++) {   /* 8 chained maddubs stay under int16 (8*3810) */
             __m256i w = _mm256_load_si256((const void*) (qs + g * 32));
             for (int c = 0; c < B8_NR_KQ; c++)
-                i16[c] = b8_chain(i16[c], w, _mm256_set1_epi32(((const int*) x[c])[g]));
+                i16[c] = b8_chain(i16[c], w, _mm256_set1_epi32(jam_load32(x[c] + 4 * g)));
         }
         __m256 dwv = _mm256_load_ps(dw), mwv = _mm256_load_ps(mw);
         for (int c = 0; c < B8_NR_KQ; c++) {
@@ -651,31 +529,12 @@ static inline void q4_0_block8_nr(const uint8_t* qs, const float* dw, const floa
 void jam_q4_0_band8_avx2(void* arg, int t0, int t1, int tid) {
     const jam_band_job* J = (const jam_band_job*) arg;
     const int nb = J->kblocks, seq = J->seq;
-    const int64_t ldc = J->out_stride;
-    jam_repack* rp = &J->repack[tid];
-    for (int tile = t0; tile < t1; tile++) {
-        int row = tile * JAM_VNNI_BAND, row_end = row + JAM_VNNI_BAND;
-        if (row_end > J->dim0) row_end = J->dim0;
-        int group = 0;
-        for (int r = row; r + 7 < row_end; r += 8, group++) {
-            uint8_t* qs = rp->qs + (int64_t) group * nb * 256;
-            float* dw = rp->dw + (int64_t) group * nb * 8;
-            float* mw = rp->mw + (int64_t) group * nb * 8;
-            repack_q4_0_group8(J->w + (int64_t) r * J->w_stride, J->w_stride, nb, qs, dw, mw);
-            int s = 0;
-            for (; s + B8_NR_KQ <= seq; s += B8_NR_KQ)
-                q4_0_block8_nr(qs, dw, mw, J->xq, J->dx, J->xsum, s, nb, ldc, J->out, r);
-            for (; s < seq; s++)
-                _mm256_storeu_ps(J->out + (int64_t) s * ldc + r,
-                                 q4_0_block8(qs, dw, mw, J->xq + (int64_t) s * nb * JAM_QK,
-                                             J->dx + (int64_t) s * nb,
-                                             J->xsum + (int64_t) s * nb * 2, nb));
-        }
-        for (int r = row + group * 8; r < row_end; r++)
-            for (int s = 0; s < seq; s++)
-                J->out[(int64_t) s * ldc + r] =
-                    jam_q4_0_dot_f32(J->w + (int64_t) r * J->w_stride, nb, J->rhs + (int64_t) s * J->rhs_stride);
-    }
+    JAM_BAND8_DRIVER(nb * 256, nb * 8, B8_NR_KQ,
+        repack_q4_0_group8(J->w + (int64_t) r * J->w_stride, J->w_stride, nb, qs, dw, mw),
+        q4_0_block8_nr(qs, dw, mw, J->xq, J->dx, J->xsum, s, nb, ldc, J->out, r),
+        q4_0_block8(qs, dw, mw, J->xq + (int64_t) s * nb * JAM_QK, J->dx + (int64_t) s * nb,
+                    J->xsum + (int64_t) s * nb * 2, nb),
+        jam_q4_0_dot_f32(J->w + (int64_t) r * J->w_stride, nb, J->rhs + (int64_t) s * J->rhs_stride));
 }
 
 /* ---- MXFP4: LUT-decoded signed codes |w|<=12; a+128 scheme, cw = d*128*sum(w) ---- */
@@ -703,7 +562,7 @@ static inline __m256 mxfp4_block8(const uint8_t* qs, const float* dw, const floa
         for (int h = 0; h < 2; h++) {   /* chains of 4 maddubs stay under int16 (4*6120) */
             __m256i i16 = _mm256_setzero_si256();
             for (int g = h * 4; g < h * 4 + 4; g++)
-                i16 = b8_chain4(i16, _mm256_set1_epi32((int) (((const uint32_t*) x)[g] ^ 0x80808080u)),
+                i16 = b8_chain4(i16, _mm256_set1_epi32(jam_load32(x + 4 * g) ^ (int32_t) 0x80808080u),
                                _mm256_load_si256((const void*) (qs + g * 32)));
             acc = b8_fold(acc, i16);
         }
@@ -733,7 +592,7 @@ static inline void mxfp4_block8_nr(const uint8_t* qs, const float* dw, const flo
             for (int g = h * 4; g < h * 4 + 4; g++) {
                 __m256i w = _mm256_load_si256((const void*) (qs + g * 32));
                 for (int c = 0; c < B8_NR_KQ; c++)
-                    i16[c] = b8_chain4(i16[c], _mm256_set1_epi32((int) (((const uint32_t*) x[c])[g] ^ 0x80808080u)), w);
+                    i16[c] = b8_chain4(i16[c], _mm256_set1_epi32(jam_load32(x[c] + 4 * g) ^ (int32_t) 0x80808080u), w);
             }
             for (int c = 0; c < B8_NR_KQ; c++) acc[c] = b8_fold(acc[c], i16[c]);
         }
@@ -753,28 +612,9 @@ static inline void mxfp4_block8_nr(const uint8_t* qs, const float* dw, const flo
 void jam_mxfp4_band8_avx2(void* arg, int t0, int t1, int tid) {
     const jam_band_job* J = (const jam_band_job*) arg;
     const int nb = J->kblocks, seq = J->seq;
-    const int64_t ldc = J->out_stride;
-    jam_repack* rp = &J->repack[tid];
-    for (int tile = t0; tile < t1; tile++) {
-        int row = tile * JAM_VNNI_BAND, row_end = row + JAM_VNNI_BAND;
-        if (row_end > J->dim0) row_end = J->dim0;
-        int group = 0;
-        for (int r = row; r + 7 < row_end; r += 8, group++) {
-            uint8_t* qs = rp->qs + (int64_t) group * nb * 256;
-            float* dw = rp->dw + (int64_t) group * nb * 8;
-            float* cw = rp->mw + (int64_t) group * nb * 8;
-            repack_mxfp4_group8(J->w + (int64_t) r * J->w_stride, J->w_stride, nb, qs, dw, cw);
-            int s = 0;
-            for (; s + B8_NR_KQ <= seq; s += B8_NR_KQ)
-                mxfp4_block8_nr(qs, dw, cw, J->xq, J->dx, s, nb, ldc, J->out, r);
-            for (; s < seq; s++)
-                _mm256_storeu_ps(J->out + (int64_t) s * ldc + r,
-                                 mxfp4_block8(qs, dw, cw, J->xq + (int64_t) s * nb * JAM_QK,
-                                              J->dx + (int64_t) s * nb, nb));
-        }
-        for (int r = row + group * 8; r < row_end; r++)
-            for (int s = 0; s < seq; s++)
-                J->out[(int64_t) s * ldc + r] =
-                    jam_mxfp4_dot_f32(J->w + (int64_t) r * J->w_stride, nb, J->rhs + (int64_t) s * J->rhs_stride);
-    }
+    JAM_BAND8_DRIVER(nb * 256, nb * 8, B8_NR_KQ,              /* mw holds the corrections cw */
+        repack_mxfp4_group8(J->w + (int64_t) r * J->w_stride, J->w_stride, nb, qs, dw, mw),
+        mxfp4_block8_nr(qs, dw, mw, J->xq, J->dx, s, nb, ldc, J->out, r),
+        mxfp4_block8(qs, dw, mw, J->xq + (int64_t) s * nb * JAM_QK, J->dx + (int64_t) s * nb, nb),
+        jam_mxfp4_dot_f32(J->w + (int64_t) r * J->w_stride, nb, J->rhs + (int64_t) s * J->rhs_stride));
 }

@@ -5,11 +5,12 @@
 #ifndef JAM_DECODE_X86_256_H
 #define JAM_DECODE_X86_256_H
 
+#include <float.h>
 #include <immintrin.h>
 #include <stdint.h>
+#include "jam_kquant.h"   /* jam_q8_0_blk */
 #include "jam_mxfp4.h"
 
-typedef struct __attribute__((packed)) { uint16_t d; int8_t qs[32]; } jam_q8_blk;   /* Q8_0: 34 bytes */
 
 /* fp16 scale -> broadcast f32, converted as a vector. A scalar _cvtsh_ss lets clang load the half with a
  * merging vpinsrw into whatever register is free - in the decode loop that was the FMA accumulator, so
@@ -18,7 +19,7 @@ static inline __m256 jam_h2f_splat256(uint16_t h) { return _mm256_cvtph_ps(_mm_s
 
 /* Q8_0: weights are already int8; scale is the fp16 block delta. */
 static inline void jam_decode_q8_0_256(const void* blk, __m256i* wq, __m256* dW) {
-    const jam_q8_blk* w = (const jam_q8_blk*) blk;
+    const jam_q8_0_blk* w = (const jam_q8_0_blk*) blk;
     *wq = _mm256_loadu_si256((const __m256i*) w->qs);
     *dW = jam_h2f_splat256(w->d);
 }
@@ -78,19 +79,73 @@ static inline void jam_put32_rows8(uint8_t* dst, __m256i v) {
                            _mm_cvtsi128_si32(hi), _mm_extract_epi32(hi, 1), _mm_extract_epi32(hi, 2), _mm_extract_epi32(hi, 3) };
     for (int g = 0; g < 8; g++) __builtin_memcpy(dst + g * 32, &d[g], 4);
 }
-/* sum of 32 signed bytes */
-static inline int jam_sum_i8_256(__m256i v) {
-    const __m256i s32 = _mm256_madd_epi16(_mm256_maddubs_epi16(_mm256_set1_epi8(1), v), _mm256_set1_epi16(1));
-    __m128i s = _mm_add_epi32(_mm256_castsi256_si128(s32), _mm256_extracti128_si256(s32, 1));
+/* The driver every 8-row band shares (jam_band_job J, tiles [t0, t1), worker tid, seq columns). Per
+ * 32-row tile, each full 8-row group is repacked once into the worker's scratch - qs at GROUP_BYTES per
+ * group, dw and mw at GROUP_FLOATS - then dotted NR columns at a time (the statement COLS) and the column
+ * tail one by one (COL, the 8-row partial vector); rows past the last full group take the exact scalar
+ * ROW_DOT. REPACK, COLS, COL and ROW_DOT read r, s, qs, dw, mw, ldc. GROUP_* expand unparenthesized, so
+ * a product stays int64 from (int64_t) group on. */
+#define JAM_BAND8_DRIVER(GROUP_BYTES, GROUP_FLOATS, NR, REPACK, COLS, COL, ROW_DOT)                     \
+    const int64_t ldc = J->out_stride;                                                                   \
+    jam_repack* rp = &J->repack[tid];                                                                    \
+    for (int tile = t0; tile < t1; tile++) {                                                             \
+        int row = tile * JAM_VNNI_BAND, row_end = row + JAM_VNNI_BAND;                                   \
+        if (row_end > J->dim0) row_end = J->dim0;                                                        \
+        int group = 0;                                                                                   \
+        for (int r = row; r + 7 < row_end; r += 8, group++) {                                            \
+            uint8_t* qs = rp->qs + (int64_t) group * GROUP_BYTES;                                        \
+            float* dw = rp->dw + (int64_t) group * GROUP_FLOATS;                                         \
+            float* mw = rp->mw + (int64_t) group * GROUP_FLOATS;                                         \
+            (void) mw;                                                                                   \
+            REPACK;                                                                                      \
+            int s = 0;                                                                                   \
+            for (; s + (NR) <= seq; s += (NR))                                                           \
+                COLS;                                                                                    \
+            for (; s < seq; s++)                                                                         \
+                _mm256_storeu_ps(J->out + (int64_t) s * ldc + r, COL);                                   \
+        }                                                                                                \
+        for (int r = row + group * 8; r < row_end; r++)                                                  \
+            for (int s = 0; s < seq; s++)                                                                \
+                J->out[(int64_t) s * ldc + r] = ROW_DOT;                                                 \
+    }
+
+/* sum of 8 int32 lanes (wrapping) */
+static inline int jam_hsum_i32_256(__m256i v) {
+    __m128i s = _mm_add_epi32(_mm256_castsi256_si128(v), _mm256_extracti128_si256(v, 1));
     s = _mm_add_epi32(s, _mm_shuffle_epi32(s, _MM_SHUFFLE(1, 0, 3, 2)));
     return _mm_cvtsi128_si32(_mm_add_epi32(s, _mm_shuffle_epi32(s, _MM_SHUFFLE(2, 3, 0, 1))));
+}
+/* sum of 32 signed bytes */
+static inline int jam_sum_i8_256(__m256i v) {
+    return jam_hsum_i32_256(_mm256_madd_epi16(_mm256_maddubs_epi16(_mm256_set1_epi8(1), v), _mm256_set1_epi16(1)));
 }
 
 static inline float jam_hsum8_256(__m256 v) {
     __m128 s = _mm_add_ps(_mm256_castps256_ps128(v), _mm256_extractf128_ps(v, 1));
     s = _mm_add_ps(s, _mm_movehl_ps(s, s));
-    s = _mm_add_ss(s, _mm_shuffle_ps(s, s, 0x1));
+    s = _mm_add_ss(s, _mm_movehdup_ps(s));
     return _mm_cvtss_f32(s);
+}
+
+/* The 8-row bands' activation requant (the AVX2 and the AVX-VNNI phase 1): one 32-block x -> 32 s8
+ * codes at xq, round(x * 127 / amax) half to even - jam_band32_quant32_avx512's codes without its +128
+ * bias. Returns the scale amax / 127; a[] holds x, q[] the codes as int32 (q[i] = elements 8i..8i+7).
+ * An amax below FLT_MIN would overflow 127 / amax: the block quantizes to zeros at scale 0. */
+static inline float jam_quant32_256(const float* x, int8_t* xq, __m256 a[4], __m256i q[4]) {
+    const __m256 absmask = _mm256_castsi256_ps(_mm256_set1_epi32(0x7FFFFFFF));
+    for (int i = 0; i < 4; i++) a[i] = _mm256_loadu_ps(x + 8 * i);
+    const __m256 mx = _mm256_max_ps(_mm256_max_ps(_mm256_and_ps(a[0], absmask), _mm256_and_ps(a[1], absmask)),
+                                    _mm256_max_ps(_mm256_and_ps(a[2], absmask), _mm256_and_ps(a[3], absmask)));
+    __m128 h = _mm_max_ps(_mm256_castps256_ps128(mx), _mm256_extractf128_ps(mx, 1));
+    h = _mm_max_ps(h, _mm_movehl_ps(h, h));
+    float amax = _mm_cvtss_f32(_mm_max_ss(h, _mm_movehdup_ps(h)));
+    if (amax < FLT_MIN) amax = 0.0f;
+    const __m256 v = _mm256_set1_ps(amax > 0.0f ? 127.0f / amax : 0.0f);
+    for (int i = 0; i < 4; i++) q[i] = _mm256_cvtps_epi32(_mm256_mul_ps(a[i], v));
+    /* packs are 128-lane-local; the {0,4,1,5,2,6,3,7} permute restores element order */
+    const __m256i p = _mm256_packs_epi16(_mm256_packs_epi32(q[0], q[1]), _mm256_packs_epi32(q[2], q[3]));
+    _mm256_storeu_si256((__m256i*) xq, _mm256_permutevar8x32_epi32(p, _mm256_setr_epi32(0, 4, 1, 5, 2, 6, 3, 7)));
+    return amax / 127.0f;
 }
 
 #endif /* JAM_DECODE_X86_256_H */

@@ -12,14 +12,24 @@
  * as constants the compiler folds away: `halves`, a scale per 16 elements (Q6_K, NVFP4), and `mins`,
  * a min to subtract (Q4_K, Q5_K: value = d·q - m, so the dot gains -m·Σa).
  *
- * Tuning: JAM_B4_ROWS is the tile (16 rows of k=2048 Q8_0 are 35 KB of scratch, inside L1; 4 and 32
- * measured the same on M3 Pro); 4 columns per pass is vdotq_laneq's lane count. ponytail: no SMMLA
- * (i8mm) layout - 8-byte row-pair interleaves with vmmlaq 2x2 tiles measured slower than this on
- * Apple cores, where SMMLA issues at half SDOT's rate, and no Neoverse box was at hand to measure;
- * add it as a second layout when one is. The includer defines, per format,
+ * Tuning: JAM_B4_ROWS is the tile (16 rows at k=2048 are 44 KB of scratch, 32 KB codes + 12 KB
+ * scales, whatever the format; 4 and 32 measured the same on M3 Pro, and 32 would need a larger dw
+ * in ensure_repack, see the asserts below); 4 columns per pass is vdotq_laneq's lane count.
+ * ponytail: no SMMLA (i8mm) layout - 8-byte row-pair interleaves with vmmlaq 2x2 tiles measured slower
+ * than this on Apple cores, where SMMLA issues at half SDOT's rate, and no Neoverse box was at hand to
+ * measure; add it as a second layout when one is. The includer defines, per format,
  * JAM_B4_EXPORT(name, decoder, elements per weight block, bytes per weight block, halves, mins). */
 #include <stdatomic.h>
 #define JAM_B4_ROWS 16
+/* The tile lives in jam.c ensure_repack's per-worker scratch, sized for the x86 bands: qs holds
+ * (JAM_VNNI_BAND / 16) * ceil(nb / 8) * JAM_BAND32_BLOB bytes, dw (JAM_VNNI_BAND / 16) * nb * 32 floats.
+ * A tile takes JAM_B4_ROWS / 4 * nb * 128 bytes of qs (checked per 8 blocks, one blob's span) and
+ * JAM_B4_ROWS / 4 * nb * 12 floats of dw. */
+_Static_assert(JAM_B4_ROWS % 4 == 0, "the band tile is whole 4-row groups");
+_Static_assert(JAM_B4_ROWS / 4 * 128 * 8 <= JAM_VNNI_BAND / 16 * JAM_BAND32_BLOB,
+               "the band tile's codes outgrow jam.c ensure_repack's qs scratch");
+_Static_assert(JAM_B4_ROWS / 4 * 12 <= JAM_VNNI_BAND / 16 * 2 * 16,
+               "the band tile's scales outgrow jam.c ensure_repack's dw scratch");
 #define JAM_B4_INLINE static inline __attribute__((always_inline))
 
 typedef struct { const int8_t* a[4]; const float* d[4]; const float* s[4]; } jam_b4_cols;   /* codes, scales, sums */

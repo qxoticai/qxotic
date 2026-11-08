@@ -543,7 +543,7 @@ static void badtid_pfor(int32_t n, jam_task_fn task, void* task_user, void* user
 static void reentry_pfor(int32_t n, jam_task_fn task, void* task_user, void* user) {
     (void) user;
     if (g_reentry_status == 99) {
-        float w[32], a[32], c[1];
+        float w[32] = {0}, a[32] = {0}, c[1];   /* never read: the guard refuses first */
         g_reentry_status = jam_mm(g_reentry_ctx, w, JAM_F32, 32, a, JAM_F32, 32, c, JAM_F32, 1, 1, 1, 32);
     }
     for (int i = 0; i < n; i++) task(i, i+1, 0, task_user);
@@ -561,7 +561,7 @@ static void reentry_pfor(int32_t n, jam_task_fn task, void* task_user, void* use
  * only from 8 columns up. The correctness suites cannot tell: a band that silently fell back to the
  * row kernels would pass them. The fan-out widths can, through the host executor: a band call fans
  * the requant over the n columns and then one unit per worker (the tiles are claimed inside), where
- * the row kernels fan the m rows. */
+ * the row kernels fan the m rows in 4-row tiles. */
 static int g_fan[4], g_nfan;
 static void record_pfor(int32_t n, jam_task_fn task, void* task_user, void* user) {
     (void) user;
@@ -586,15 +586,15 @@ static void suite_band_path(void) {
         { JAM_Q4_K, "Q4_K", jam_ref_make_q4k(m, k, 1, s1, s2) },  { JAM_Q5_K, "Q5_K", jam_ref_make_q5k(m, k, 1, s1, s2) },
         { JAM_Q6_K, "Q6_K", jam_ref_make_q6k(m, k, 1, s1, s2) } };
     for (unsigned i = 0; i < sizeof F / sizeof *F; i++) {
-        char lbl[64];
+        char lbl[128];
         g_nfan = 0;
         int st = jam_mm(c, F[i].w, F[i].dt, k, A, JAM_F32, k, C, JAM_F32, m, m, n, k);
         snprintf(lbl, sizeof lbl, "%s at %d columns: the band (requant over n, then a unit per worker)", F[i].nm, n);
         OK(lbl, st == JAM_OK && g_nfan == 2 && g_fan[0] == n && g_fan[1] == threads);
         g_nfan = 0;
         st = jam_mm(c, F[i].w, F[i].dt, k, A, JAM_F32, k, C, JAM_F32, m, m, 4, k);
-        snprintf(lbl, sizeof lbl, "%s at 4 columns: the row kernels (requant over n, then the m rows)", F[i].nm);
-        OK(lbl, st == JAM_OK && g_nfan == 2 && g_fan[0] == 4 && g_fan[1] == m);
+        snprintf(lbl, sizeof lbl, "%s at 4 columns: the row kernels (requant over n, then m in 4-row tiles)", F[i].nm);
+        OK(lbl, st == JAM_OK && g_nfan == 2 && g_fan[0] == 4 && g_fan[1] == m / 4);
         free(F[i].w);
     }
     free(Wf); free(A); free(C); free(s1); free(s2);
@@ -604,6 +604,50 @@ static void suite_band_path(void) {
 #else
 static void suite_band_path(void) {}
 #endif
+
+/* A result never depends on the thread count: 3 threads cut m = 40 into 14/13/13 rows, so a kernel
+ * fanned per row would end slices mid-tile and take those rows through its tail path. Every level, at
+ * 1 and 3 threads, must agree bit for bit for every type, at decode, small n and band widths. */
+static jam_context* split_ctx(int32_t cap, int threads) {
+    jam_context_options cfg; memset(&cfg, 0, sizeof cfg);
+    cfg.max_isa = cap; cfg.threads = threads;
+    jam_context* c = jam_context_new(&cfg);
+    if (c && jam_context_isa(c) != cap) { jam_context_free(c); c = NULL; }   /* hw lacks it */
+    return c;
+}
+static void suite_split(void) {
+    #define OK(label, cond) do { ++g_checks; if (!(cond)) { printf("  [FAIL] split  %s\n", label); ++g_fail; } } while(0)
+    enum { m = 40, k = 256, nmax = 16 };
+    static const int N[] = { 1, 3, nmax };
+    float* Wf = malloc(4ul * m * k); float* A = malloc(4ul * nmax * k);
+    float* C1 = malloc(4ul * m * nmax); float* C3 = malloc(4ul * m * nmax);
+    float* s1 = malloc(4ul * m * k); float* s2 = malloc(4ul * m * k);   /* the makers' dequant scratch */
+    jam_ref_fill(Wf, (size_t) m * k, 3); jam_ref_fill(A, (size_t) nmax * k, 4);
+    struct { int dt; const char* nm; void* w; } F[] = {
+        { JAM_F32, "F32", Wf },                                   { JAM_Q8_0, "Q8_0", jam_ref_quant_q8_0(Wf, m, k) },
+        { JAM_Q4_0, "Q4_0", jam_ref_make_q4_0(m, k, 1, s1, s2) }, { JAM_Q5_0, "Q5_0", jam_ref_make_q5_0(m, k, 1, s1, s2) },
+        { JAM_MXFP4, "MXFP4", jam_ref_quant_mxfp4(Wf, m, k) },    { JAM_NVFP4, "NVFP4", jam_ref_quant_nvfp4(Wf, m, k) },
+        { JAM_Q1_0, "Q1_0", jam_ref_quant_q1_0(Wf, m, k) },       { JAM_Q4_K, "Q4_K", jam_ref_make_q4k(m, k, 1, s1, s2) },
+        { JAM_Q5_K, "Q5_K", jam_ref_make_q5k(m, k, 1, s1, s2) },  { JAM_Q6_K, "Q6_K", jam_ref_make_q6k(m, k, 1, s1, s2) } };
+    for (unsigned L = 0; L < JAM_ISA_LEVELS_N; L++) {
+        jam_context* c1 = split_ctx(jam_isa_levels[L], 1);
+        jam_context* c3 = split_ctx(jam_isa_levels[L], 3);
+        for (unsigned i = 0; c1 && c3 && i < sizeof F / sizeof *F; i++)
+            for (unsigned j = 0; j < sizeof N / sizeof *N; j++) {
+                char lbl[96];
+                memset(C1, 0x7f, 4ul * m * nmax); memset(C3, 0xff, 4ul * m * nmax);
+                int s1t = jam_mm(c1, F[i].w, F[i].dt, k, A, JAM_F32, k, C1, JAM_F32, m, m, N[j], k);
+                int s3t = jam_mm(c3, F[i].w, F[i].dt, k, A, JAM_F32, k, C3, JAM_F32, m, m, N[j], k);
+                snprintf(lbl, sizeof lbl, "%s %s n=%d: 1 and 3 threads agree bit for bit",
+                         jam_isa_name(jam_isa_levels[L]), F[i].nm, N[j]);
+                OK(lbl, s1t == JAM_OK && s3t == JAM_OK && !memcmp(C1, C3, 4ul * m * N[j]));
+            }
+        jam_context_free(c1); jam_context_free(c3);
+    }
+    for (unsigned i = 1; i < sizeof F / sizeof *F; i++) free(F[i].w);
+    free(Wf); free(A); free(C1); free(C3); free(s1); free(s2);
+    #undef OK
+}
 
 static void suite_api(void) {
     #define OK(label, cond) do { ++g_checks; if (!(cond)) { printf("  [FAIL] api  %s\n", label); ++g_fail; } } while(0)
@@ -650,7 +694,10 @@ static void suite_api(void) {
     OK("share(NULL) EINVAL",     jam_share(NULL, W, sizeof W, 0) == JAM_EINVAL);
     OK("share past the end EINVAL", jam_share(d, (const void*) (UINTPTR_MAX - 15), 32, 0) == JAM_EINVAL);
     OK("share past the end reason", strstr(jam_last_error(&code), "end of the address space") && code == JAM_EINVAL);
-    jam_unshare(NULL, W);        /* a no-op */
+    jam_unshare(NULL, W);        /* nothing to end, but a bad handle shows in the last error */
+    OK("unshare(NULL) reason",   strstr(jam_last_error(&code), "NULL") && code == JAM_EINVAL);
+    jam_unshare(d, W);           /* no share starts at W: a success */
+    OK("unshare of nothing ok",  !strcmp(jam_last_error(&code), "") && code == JAM_OK);
 
     /* explicit contexts agree */
     OK("explicit-d mm ok",    jam_mm(d, W, JAM_F32, k, A, JAM_F32, k, Cd, JAM_F32, m, m, n, k) == JAM_OK);
@@ -707,6 +754,7 @@ static void suite_api(void) {
     OK("bad-slot ctx non-null", bt != NULL);
     OK("slot >= threads -> EINVAL", jam_mm(bt, W, JAM_F32, k, A, JAM_F32, k, C, JAM_F32, m, m, n, k) == JAM_EINVAL);
     jam_context_free(bt);
+    OK("free clears the error", !strcmp(jam_last_error(&code), "") && code == JAM_OK);
 
     jam_context_free(d); jam_context_free(g); jam_context_free(r);
     #undef OK
@@ -874,7 +922,10 @@ static size_t heap_inuse(void) {
     struct mallinfo2 mi = mallinfo2();
     return mi.uordblks;
 #  else
+#    pragma GCC diagnostic push
+#    pragma GCC diagnostic ignored "-Wdeprecated-declarations"   /* the only probe before mallinfo2 */
     struct mallinfo mi = mallinfo();   /* pre-2.33 (the glibc 2.17 release target): int fields, enough for a delta */
+#    pragma GCC diagnostic pop
     return (size_t)(unsigned)mi.uordblks;
 #  endif
 #else
@@ -1012,6 +1063,7 @@ int main(void) {
     suite_leak();       /* create/use/destroy cycles must not leak (mallinfo2 gate + LeakSanitizer) */
     suite_api();        /* contexts, options, errors, EINVAL vs EUNSUPPORTED, EBUSY */
     suite_band_path();  /* ARM: the prefill band runs for every format from 8 columns, seen in the fan-outs */
+    suite_split();      /* 1 and 3 threads give the same bits on every level */
 #ifndef _WIN32
     suite_fork();       /* a parent's context refuses in a forked child */
 #endif

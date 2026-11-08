@@ -9,15 +9,15 @@
  * Built -mavx2 -mfma. */
 #include <immintrin.h>
 #include "jam_internal.h"
-#include "jam_fp16.h"
-#include "jam_q1_0.h"             /* jam_blk_q1_0 */
+#include "jam_fp16.h"              /* jam_half_at: vcvtph2ps here (F16C) */
+#include "jam_q1_0.h"             /* JAM_Q1_0_BYTES */
 #include "jam_decode_x86_256.h"   /* jam_hsum8_256 */
 
 #define Q1_HSUM(sy) _mm256_cvtepi32_ps(_mm256_madd_epi16(_mm256_maddubs_epi16(_mm256_set1_epi8(1), (sy)), _mm256_set1_epi16(1)))
 
-/* Expand sub-block K's 4 sign bytes to a 32-lane negate mask (0xFF where bit clear). */
-#define Q1_SM(qs32, K, shuf, masks, zero) \
-    _mm256_cmpeq_epi8(_mm256_and_si256(_mm256_shuffle_epi8(_mm256_set1_epi32(jam_load32((qs32) + (K))), (shuf)), (masks)), (zero))
+/* Expand sub-block K's 4 sign bytes (qs + 4K, any alignment) to a 32-lane negate mask (0xFF where bit clear). */
+#define Q1_SM(qs, K, shuf, masks, zero) \
+    _mm256_cmpeq_epi8(_mm256_and_si256(_mm256_shuffle_epi8(_mm256_set1_epi32(jam_load32((qs) + 4 * (K))), (shuf)), (masks)), (zero))
 
 #define Q1_SIGNED(qy, sm) _mm256_sub_epi8(_mm256_xor_si256((qy), (sm)), (sm))
 
@@ -30,7 +30,7 @@ void jam_mm_q1_0_avx2(void* arg, int rb, int re, int tid) {
     const int ldc = J->ldc, n = J->n, k = J->k;
     const int nblk = k / 128;
     const int nb32 = k / 32;
-    const size_t wrow = (size_t)(J->lda / 128) * sizeof(jam_blk_q1_0);   /* row stride honors lda (ldw) */
+    const size_t wrow = (size_t)(J->lda / 128) * JAM_Q1_0_BYTES;   /* row stride honors lda (ldw) */
     const __m256i byte_shuf = _mm256_setr_epi8(
             0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 1, 1, 1, 1, 1, 1,
             2, 2, 2, 2, 2, 2, 2, 2, 3, 3, 3, 3, 3, 3, 3, 3);
@@ -47,12 +47,12 @@ void jam_mm_q1_0_avx2(void* arg, int rb, int re, int tid) {
             const float  *d0=AD+(size_t)(j+0)*nb32, *d1=AD+(size_t)(j+1)*nb32, *d2=AD+(size_t)(j+2)*nb32, *d3=AD+(size_t)(j+3)*nb32;
             __m256 f0=_mm256_setzero_ps(), f1=_mm256_setzero_ps(), f2=_mm256_setzero_ps(), f3=_mm256_setzero_ps();
             for (int bb = 0; bb < nblk; ++bb) {
-                const jam_blk_q1_0* w = (const jam_blk_q1_0*) (wr + (size_t) bb * sizeof(jam_blk_q1_0));
-                const uint32_t* qs32 = (const uint32_t*) w->qs;
-                const __m256 vd = _mm256_set1_ps(jam_half2float(w->d));
+                const uint8_t* w = (const uint8_t*) wr + (size_t) bb * JAM_Q1_0_BYTES;   /* {fp16 d; qs[16]} */
+                const uint8_t* qs = w + 2;
+                const __m256 vd = _mm256_set1_ps(jam_half_at(w));
                 __m256 b0=_mm256_setzero_ps(), b1=_mm256_setzero_ps(), b2=_mm256_setzero_ps(), b3=_mm256_setzero_ps();
                 for (int K = 0; K < 4; ++K) {
-                    const __m256i sm = Q1_SM(qs32, K, byte_shuf, bit_masks, zero);
+                    const __m256i sm = Q1_SM(qs, K, byte_shuf, bit_masks, zero);
                     const int blk32 = bb * 4 + K; const size_t off = (size_t) blk32 * 32;
                     b0 = _mm256_fmadd_ps(_mm256_set1_ps(d0[blk32]), Q1_HSUM(Q1_SIGNED(_mm256_loadu_si256((const __m256i*)(a0+off)), sm)), b0);
                     b1 = _mm256_fmadd_ps(_mm256_set1_ps(d1[blk32]), Q1_HSUM(Q1_SIGNED(_mm256_loadu_si256((const __m256i*)(a1+off)), sm)), b1);
@@ -70,12 +70,12 @@ void jam_mm_q1_0_avx2(void* arg, int rb, int re, int tid) {
             const float* dj = AD + (size_t) j * nb32;
             __m256 f = _mm256_setzero_ps();
             for (int bb = 0; bb < nblk; ++bb) {
-                const jam_blk_q1_0* w = (const jam_blk_q1_0*) (wr + (size_t) bb * sizeof(jam_blk_q1_0));
-                const uint32_t* qs32 = (const uint32_t*) w->qs;
-                const __m256 vd = _mm256_set1_ps(jam_half2float(w->d));
+                const uint8_t* w = (const uint8_t*) wr + (size_t) bb * JAM_Q1_0_BYTES;   /* {fp16 d; qs[16]} */
+                const uint8_t* qs = w + 2;
+                const __m256 vd = _mm256_set1_ps(jam_half_at(w));
                 __m256 fb = _mm256_setzero_ps();
                 for (int K = 0; K < 4; ++K) {
-                    const __m256i sm = Q1_SM(qs32, K, byte_shuf, bit_masks, zero);
+                    const __m256i sm = Q1_SM(qs, K, byte_shuf, bit_masks, zero);
                     const int blk32 = bb * 4 + K;
                     const __m256i qy = _mm256_loadu_si256((const __m256i*)(aj + (size_t) blk32 * 32));
                     fb = _mm256_fmadd_ps(_mm256_set1_ps(dj[blk32]), Q1_HSUM(Q1_SIGNED(qy, sm)), fb);

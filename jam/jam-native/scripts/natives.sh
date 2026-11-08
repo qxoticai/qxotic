@@ -13,7 +13,7 @@
 #   linux-x86-64     Linux x86-64: zig cc against glibc 2.17 (cmake/toolchains/linux-x86-64-glibc2.17.cmake)
 #   linux-aarch64    Linux aarch64, the manylinux container on an Apple-silicon Mac (`make jam-natives` there
 #                    runs this script inside it): zig cc against glibc 2.17, the tests on the CPU itself
-#   windows-x86-64   Linux x86-64: MinGW-w64 cross (cmake/toolchains/windows-x86-64.cmake)
+#   windows-x86-64   Linux x86-64: zig cc cross, MinGW-w64 ABI (cmake/toolchains/windows-x86-64.cmake)
 #   darwin-aarch64   an Apple-silicon Mac: Xcode's clang, Metal on, its ctest suite run on the GPU
 #
 # A release takes both hosts, at the same commit: `build` on each, then the Mac's
@@ -112,15 +112,25 @@ jdk_root() {
     dirname "$(dirname "$(readlink -f "$javac")")"
 }
 
+# Every leg configures --fresh: CMake reads a toolchain file only on a build directory's first
+# configure, so a reused cache would build with the toolchain it was first given.
+
+# The zig every zig leg builds with ($ZIG, else zig on PATH), warning when it is not $ZIG_EXPECTED.x.
+zig_bin() {
+    local zig=${ZIG:-zig} v
+    v=$("$zig" version)
+    case "$v" in "$ZIG_EXPECTED".*) ;; *) echo "natives: WARNING: zig $v, expected $ZIG_EXPECTED.x" >&2 ;; esac
+    echo "$zig"
+}
+
 # This host's Linux library: zig cc against glibc $GLIBC_FLOOR, the host JDK's headers for JNI, the
 # tests run here (binaries linked for 2.17 run on any newer glibc).
 build_linux() {  # <target>
-    local t=$1 b=build-$1 zig=${ZIG:-zig} v jdk
-    v=$("$zig" version)
-    case "$v" in "$ZIG_EXPECTED".*) ;; *) echo "natives: WARNING: zig $v, expected $ZIG_EXPECTED.x" >&2 ;; esac
+    local t=$1 b=build-$1 zig jdk
+    zig=$(zig_bin)
     jdk=$(jdk_root)
     # The toolchain's zig-cc wrapper reads $ZIG, so the chosen binary reaches every compile.
-    ZIG=$zig cmake -S . -B "$b" -DCMAKE_BUILD_TYPE=Release -DJAM_STRIP=ON \
+    ZIG=$zig cmake --fresh -S . -B "$b" -DCMAKE_BUILD_TYPE=Release -DJAM_STRIP=ON \
         -DCMAKE_TOOLCHAIN_FILE=cmake/toolchains/$t-glibc$GLIBC_FLOOR.cmake \
         -DJNI_INCLUDE_DIRS="$jdk/include;$jdk/include/linux"
     ZIG=$zig cmake --build "$b" -j
@@ -135,14 +145,17 @@ build_linux() {  # <target>
         || die "$t needs $floor, above the $GLIBC_FLOOR floor"
 }
 
+# The Windows library, cross-compiled with zig cc; the JNI binding pairs the JDK's jni.h with the
+# checked-in Windows jni_md.h. Its tests cannot run here.
 build_windows_x86_64() {
-    local b=build-windows-x86-64 jdk
+    local b=build-windows-x86-64 zig jdk
+    zig=$(zig_bin)
     jdk=$(jdk_root)
-    cmake -S . -B "$b" -DCMAKE_BUILD_TYPE=Release -DJAM_STRIP=ON -DJAM_TESTS=OFF \
+    ZIG=$zig cmake --fresh -S . -B "$b" -DCMAKE_BUILD_TYPE=Release -DJAM_STRIP=ON -DJAM_TESTS=OFF \
         -DCMAKE_TOOLCHAIN_FILE=cmake/toolchains/windows-x86-64.cmake \
         -DJNI_INCLUDE_DIRS="$jdk/include;$PWD/cmake/cross-jni/win32"
-    cmake --build "$b" -j
-    stage windows-x86-64 "$b/libjam.dll"    # MinGW names it libjam.dll; the loader wants jam.dll
+    ZIG=$zig cmake --build "$b" -j
+    stage windows-x86-64 "$b/jam.dll"
 }
 
 # Everything a leg needs, checked BEFORE its staged library is replaced, so a misconfigured host
@@ -151,12 +164,10 @@ preflight() {  # <targets>
     local t
     for t in $1; do
         case "$t" in
-            linux-*)
+            linux-* | windows-x86-64)
                 command -v "${ZIG:-zig}" >/dev/null || die "zig not found (set ZIG=/path/to/zig, or install zig $ZIG_EXPECTED)"
                 command -v objdump >/dev/null || die "objdump not found (binutils)"
-                [ -f "$(jdk_root)/include/jni.h" ] || die "$(jdk_root)/include/jni.h not found (set JDK)" ;;
-            windows-x86-64)
-                command -v x86_64-w64-mingw32-gcc >/dev/null || die "MinGW-w64 (x86_64-w64-mingw32-gcc) not installed"
+                command -v strip >/dev/null || die "strip not found (binutils)"
                 [ -f "$(jdk_root)/include/jni.h" ] || die "$(jdk_root)/include/jni.h not found (set JDK)" ;;
             darwin-aarch64)
                 xcrun --find clang >/dev/null 2>&1 || die "no clang (xcode-select --install)"
@@ -170,7 +181,7 @@ preflight() {  # <targets>
 # declined (EUNSUPPORTED), so only this leg exercises the share table on a device.
 build_darwin_aarch64() {
     local b=build-darwin-aarch64
-    JAVA_HOME=$(jdk_root) cmake -S . -B "$b" -DCMAKE_BUILD_TYPE=Release -DJAM_STRIP=ON
+    JAVA_HOME=$(jdk_root) cmake --fresh -S . -B "$b" -DCMAKE_BUILD_TYPE=Release -DJAM_STRIP=ON
     cmake --build "$b" -j
     ctest --test-dir "$b" --output-on-failure
     echo "natives: darwin-aarch64 contexts: $("$b/jam_test" 2>/dev/null | sed -n 2p)"

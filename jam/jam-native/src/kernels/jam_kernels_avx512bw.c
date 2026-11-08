@@ -9,12 +9,11 @@
  *   2. AVX-512 has no vpsignb. The abs/sign identity (dpbusd(|qa|, sign(qb,qa)) = Σ qa·qb) is kept by
  *      negating qb where qa<0 via movepi8_mask + mask_sub; qa==0 is nulled by |qa|=0. */
 #include "jam_internal.h"
+#include "jam_kquant.h"  /* jam_q8_0_blk */
 #include "jam_nvfp4.h"   /* jam_nvfp4_blk, jam_ue4m3_lut, JAM_MXFP4_CODES (for the NVFP4 kernel below) */
 #include <stddef.h>
 #include <stdint.h>
 #include <immintrin.h>
-
-typedef struct __attribute__((packed)) { uint16_t d; int8_t qs[32]; } block_q8_0;
 
 /* dot of a block-PAIR (64 elems) -> 16 float lanes (lower 8 = first block, upper 8 = second). */
 static inline __m512 dotpair(__m512i aqa, __m512i sqb) {
@@ -34,7 +33,7 @@ static inline __m512 scale2(float s0, float s1) {
 }
 
 /* the two weight blocks' int8 (interleaved by their fp16 scales in memory) -> one 512-bit register. */
-static inline __m512i wpair(const block_q8_0* w0, const block_q8_0* w1) {
+static inline __m512i wpair(const jam_q8_0_blk* w0, const jam_q8_0_blk* w1) {
     __m256i lo = _mm256_loadu_si256((const __m256i*) w0->qs);
     __m256i hi = _mm256_loadu_si256((const __m256i*) w1->qs);
     return _mm512_inserti64x4(_mm512_castsi256_si512(lo), hi, 1);
@@ -48,7 +47,7 @@ void jam_mm_q8_0_avx512bw(void* arg, int rb, int re, int tid) {
     const int ldc = J->ldc, n = J->n, nb = J->nb, k = J->k;
     const size_t wrow = (size_t)(J->lda / 32);
     for (int i = rb; i < re; ++i) {
-        const block_q8_0* arow = (const block_q8_0*) (A + (size_t) i * wrow * sizeof(block_q8_0));
+        const jam_q8_0_blk* arow = (const jam_q8_0_blk*) (A + (size_t) i * wrow * sizeof(jam_q8_0_blk));
         int j = 0;
         for (; j + 4 <= n; j += 4) {                          /* tile 4 activation cols, reuse the weight pair */
             const int8_t *q0=J->aq+(size_t)(j+0)*k,*q1=J->aq+(size_t)(j+1)*k,*q2=J->aq+(size_t)(j+2)*k,*q3=J->aq+(size_t)(j+3)*k;
@@ -58,7 +57,7 @@ void jam_mm_q8_0_avx512bw(void* arg, int rb, int re, int tid) {
             for (; blk + 2 <= nb; blk += 2) {                 /* a block-PAIR per iteration */
                 __m512i qa  = wpair(&arow[blk], &arow[blk+1]);
                 __m512i aqa = _mm512_abs_epi8(qa);
-                float a0 = _cvtsh_ss(arow[blk].d), a1 = _cvtsh_ss(arow[blk+1].d);
+                float a0 = jam_h2f(arow[blk].d), a1 = jam_h2f(arow[blk+1].d);
                 f0=_mm512_fmadd_ps(scale2(a0*d0[blk],a1*d0[blk+1]), dotpair(aqa, sign_fold(_mm512_loadu_si512((const void*)(q0+(size_t)blk*32)), qa)), f0);
                 f1=_mm512_fmadd_ps(scale2(a0*d1[blk],a1*d1[blk+1]), dotpair(aqa, sign_fold(_mm512_loadu_si512((const void*)(q1+(size_t)blk*32)), qa)), f1);
                 f2=_mm512_fmadd_ps(scale2(a0*d2[blk],a1*d2[blk+1]), dotpair(aqa, sign_fold(_mm512_loadu_si512((const void*)(q2+(size_t)blk*32)), qa)), f2);
@@ -67,7 +66,7 @@ void jam_mm_q8_0_avx512bw(void* arg, int rb, int re, int tid) {
             if (blk < nb) {                                   /* odd leftover block: zero-extend into the lower half */
                 __m512i qa  = _mm512_zextsi256_si512(_mm256_loadu_si256((const __m256i*) arow[blk].qs));
                 __m512i aqa = _mm512_abs_epi8(qa);
-                float a0 = _cvtsh_ss(arow[blk].d);
+                float a0 = jam_h2f(arow[blk].d);
                 f0=_mm512_fmadd_ps(scale2(a0*d0[blk],0.f), dotpair(aqa, sign_fold(_mm512_zextsi256_si512(_mm256_loadu_si256((const __m256i*)(q0+(size_t)blk*32))), qa)), f0);
                 f1=_mm512_fmadd_ps(scale2(a0*d1[blk],0.f), dotpair(aqa, sign_fold(_mm512_zextsi256_si512(_mm256_loadu_si256((const __m256i*)(q1+(size_t)blk*32))), qa)), f1);
                 f2=_mm512_fmadd_ps(scale2(a0*d2[blk],0.f), dotpair(aqa, sign_fold(_mm512_zextsi256_si512(_mm256_loadu_si256((const __m256i*)(q2+(size_t)blk*32))), qa)), f2);
@@ -83,13 +82,13 @@ void jam_mm_q8_0_avx512bw(void* arg, int rb, int re, int tid) {
             for (; blk + 2 <= nb; blk += 2) {
                 __m512i qa = wpair(&arow[blk], &arow[blk+1]);
                 __m512i aqa = _mm512_abs_epi8(qa);
-                f=_mm512_fmadd_ps(scale2(_cvtsh_ss(arow[blk].d)*dj[blk], _cvtsh_ss(arow[blk+1].d)*dj[blk+1]),
+                f=_mm512_fmadd_ps(scale2(jam_h2f(arow[blk].d)*dj[blk], jam_h2f(arow[blk+1].d)*dj[blk+1]),
                         dotpair(aqa, sign_fold(_mm512_loadu_si512((const void*)(qj+(size_t)blk*32)), qa)), f);
             }
             if (blk < nb) {
                 __m512i qa = _mm512_zextsi256_si512(_mm256_loadu_si256((const __m256i*) arow[blk].qs));
                 __m512i aqa = _mm512_abs_epi8(qa);
-                f=_mm512_fmadd_ps(scale2(_cvtsh_ss(arow[blk].d)*dj[blk], 0.f),
+                f=_mm512_fmadd_ps(scale2(jam_h2f(arow[blk].d)*dj[blk], 0.f),
                         dotpair(aqa, sign_fold(_mm512_zextsi256_si512(_mm256_loadu_si256((const __m256i*)(qj+(size_t)blk*32))), qa)), f);
             }
             C[(size_t)j*ldc+i] = _mm512_reduce_add_ps(f);
@@ -133,7 +132,7 @@ void jam_mm_nvfp4_avx512(void* arg, int rb, int re, int tid) {
                 __m512i wq = nvfp4_block(w->qs, lut, m4);                              /* elems 0..63 */
                 __m512i av = _mm512_loadu_si512((const __m512i*) (aq + (size_t) bb * 64));
                 __m512 prod = dotpair(_mm512_abs_epi8(wq), sign_fold(av, wq));          /* 16 lanes (4×4) */
-                __m128 a = _mm_castpd_ps(_mm_load_sd((const double*) (ad + 2*bb)));     /* a0 a1 */
+                __m128 a = _mm_castsi128_ps(_mm_loadl_epi64((const __m128i*) (ad + 2*bb)));   /* a0 a1 */
                 __m128 sd = _mm_setr_ps(jam_ue4m3_lut[w->d[0]], jam_ue4m3_lut[w->d[1]],
                                         jam_ue4m3_lut[w->d[2]], jam_ue4m3_lut[w->d[3]]);
                 __m128 s4 = _mm_mul_ps(sd, _mm_unpacklo_ps(a, a));                      /* s0 s1 s2 s3 */

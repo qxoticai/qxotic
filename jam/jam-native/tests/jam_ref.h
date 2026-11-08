@@ -90,7 +90,7 @@ static inline uint8_t jam_ref_fp4_code(float q) {      /* nearest E2M1 code */
 }
 static inline jam_ref_mxfp4_blk* jam_ref_quant_mxfp4(const float* X, int rows, int k) {
     int nb = k / 32;
-    jam_ref_mxfp4_blk* o = (jam_ref_mxfp4_blk*) malloc((size_t) rows * nb * sizeof(jam_ref_mxfp4_blk));
+    jam_ref_mxfp4_blk* o = (jam_ref_mxfp4_blk*) calloc((size_t) rows * nb, sizeof(jam_ref_mxfp4_blk));
     for (int i = 0; i < rows; ++i) for (int b = 0; b < nb; ++b) {
         const float* x = X + (size_t) i * k + b * 32;
         float amax = 0; for (int e = 0; e < 32; ++e) { float a = fabsf(x[e]); if (a > amax) amax = a; }

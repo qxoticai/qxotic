@@ -1,9 +1,9 @@
 /* jam_metal.mm - Apple GPU backend (chosen by JAM_ISA_AUTO on Apple silicon). A different executor from the CPU
  * row-range kernels: jam_mm routes dense weights and n >= 16 quant prefill here before the pool
  * (small-n quant decode stays on the CPU GEMVs - see jam.c). Two kernel families:
- *  - block-quant weights (Q8_0, Q4_0, Q4_K, Q5_K, Q6_K, canonical or JAM_PACKED): one simdgroup-MMA
- *    template, llama.cpp's kernel_mul_mm structure (ggml-metal, MIT). A format only contributes a
- *    loader that decodes 16 weights to half; accumulation is float.
+ *  - block-quant weights (Q8_0, Q4_0, Q4_K, Q5_K, Q6_K, and the JAM_PACKED forms of all but Q8_0):
+ *    one simdgroup-MMA template, llama.cpp's kernel_mul_mm structure (ggml-metal, MIT). A format
+ *    only contributes a loader that decodes 16 weights to half; accumulation is float.
  *  - dense weights and MXFP4: a scalar tiled kernel on the exact F32 activations (each thread
  *    decodes a weight block once and reuses it across TN columns).
  * MSL is compiled at runtime (no .metallib). Output is token-major C[j*ldc+i].
@@ -24,6 +24,7 @@
 #include <os/lock.h>
 
 #define JAM_MTN 8   /* output columns per GPU thread - the one tunable; injected into the MSL as TN */
+#define JAM_MTG 128 /* threads per threadgroup in both families; the MMA kernel's 4 simdgroups of 32 */
 
 static const char* JAM_MSL = R"MSL(
 #include <metal_stdlib>
@@ -359,24 +360,26 @@ template [[host_name("q6kp_mma")]]  kernel mma_t mma<q6_k_packed>;
 )MSL";
 
 /* Per weight dtype: its tiled kernel (dense, MXFP4), MMA kernel (block quants), packed-layout MMA
- * kernel, and the block geometry K and the weight stride must divide. */
+ * kernel, the block geometry, and the alignment its canonical weight loads need (the widest scalar
+ * the MSL reads: f32, else the half/ushort of a dense row or a block's d; MXFP4 reads bytes only). */
 typedef struct {
     jam_dtype dtype;
     const char *tiled, *mma, *packed;
     int blk;        /* elements per block */
     size_t bpb;     /* bytes per block */
+    int walign;     /* weight address alignment, canonical layout */
 } jam_metal_kind;
 
 static const jam_metal_kind JAM_METAL_KINDS[] = {
-    {JAM_F32,   "f32_mm",   NULL,       NULL,        1,   4},
-    {JAM_F16,   "f16_mm",   NULL,       NULL,        1,   2},
-    {JAM_BF16,  "bf16_mm",  NULL,       NULL,        1,   2},
-    {JAM_MXFP4, "mxfp4_mm", NULL,       NULL,        32,  17},
-    {JAM_Q8_0,  NULL,       "q8_0_mma", NULL,        32,  34},
-    {JAM_Q4_0,  NULL,       "q4_0_mma", "q4_0p_mma", 32,  18},
-    {JAM_Q4_K,  NULL,       "q4k_mma",  "q4kp_mma",  256, 144},
-    {JAM_Q5_K,  NULL,       "q5k_mma",  "q5kp_mma",  256, 176},
-    {JAM_Q6_K,  NULL,       "q6k_mma",  "q6kp_mma",  256, 210},
+    {JAM_F32,   "f32_mm",   NULL,       NULL,        1,   4,   4},
+    {JAM_F16,   "f16_mm",   NULL,       NULL,        1,   2,   2},
+    {JAM_BF16,  "bf16_mm",  NULL,       NULL,        1,   2,   2},
+    {JAM_MXFP4, "mxfp4_mm", NULL,       NULL,        32,  17,  1},
+    {JAM_Q8_0,  NULL,       "q8_0_mma", NULL,        32,  34,  2},
+    {JAM_Q4_0,  NULL,       "q4_0_mma", "q4_0p_mma", 32,  18,  2},
+    {JAM_Q4_K,  NULL,       "q4k_mma",  "q4kp_mma",  256, 144, 2},
+    {JAM_Q5_K,  NULL,       "q5k_mma",  "q5kp_mma",  256, 176, 2},
+    {JAM_Q6_K,  NULL,       "q6k_mma",  "q6kp_mma",  256, 210, 2},
 };
 #define JAM_METAL_NKINDS ((int)(sizeof JAM_METAL_KINDS / sizeof *JAM_METAL_KINDS))
 #define JAM_MMA_SHMEM 8192   /* the mma kernel's threadgroup memory, see the MSL */
@@ -391,7 +394,8 @@ struct jam_metal {
     id<MTLComputePipelineState> tiled[JAM_METAL_NKINDS], mma[JAM_METAL_NKINDS], packed[JAM_METAL_NKINDS];
     int profile;
     uint64_t profile_calls, profile_mma, profile_tiled, profile_failures;
-    double profile_encode_s, profile_submit_s, profile_wait_s, profile_gpu_s, profile_total_s;
+    double profile_encode_s, profile_submit_s, profile_wait_s, profile_gpu_s;
+    jam_metal* profile_next;                /* the live profiling contexts, under g_profile_lock */
     os_unfair_lock share_lock;              /* guards the jam_share table below */
     jam_metal_share_entry* shares;
     int nshares, share_cap;
@@ -468,6 +472,8 @@ static id<MTLBuffer> jam_host_buffer(jam_metal* m, const void* tensor, size_t by
     uintptr_t base=0;
     id<MTLBuffer> buffer=jam_wrap(m,addr,bytes,&base);
     if (buffer) *offset=(size_t)(addr-base);
+    else if (jam_debug)
+        fprintf(stderr, "[jam] metal cannot map %p (%zu bytes), the CPU takes the call\n", tensor, bytes);
     return buffer;
 }
 
@@ -494,7 +500,7 @@ extern "C" jam_status jam_metal_share(jam_metal* m, const void* p, size_t bytes)
         e->lo=lo; e->hi=hi; e->base=base; e->buffer=buffer;
     }
     os_unfair_lock_unlock(&m->share_lock);
-    if (status != JAM_OK) [buffer release];
+    if (status != JAM_OK) @autoreleasepool { [buffer release]; }
     return status;
 }
 
@@ -508,7 +514,7 @@ extern "C" void jam_metal_unshare(jam_metal* m, const void* p) {
             break;
         }
     os_unfair_lock_unlock(&m->share_lock);
-    [gone release];
+    @autoreleasepool { [gone release]; }
 }
 
 static void jam_metal_resources_release(jam_metal_resources* resources) {
@@ -521,38 +527,57 @@ static void jam_metal_resources_release(jam_metal_resources* resources) {
 static int jam_command_ok(id<MTLCommandBuffer> cb) {
     if (cb.status == MTLCommandBufferStatusCompleted) return 1;
     NSError* err=cb.error;
-    fprintf(stderr,"[jam] metal command failed: %s\n",
-            err ? err.localizedDescription.UTF8String : "(unknown)");
+    if (jam_debug)
+        fprintf(stderr,"[jam] metal command failed, the CPU takes the call: %s\n",
+                err ? err.localizedDescription.UTF8String : "(unknown)");
     return 0;
 }
 
 static double jam_metal_time_s(uint64_t ticks) {
-    static mach_timebase_info_data_t info={0,0};
-    if (!info.denom) mach_timebase_info(&info);
+    mach_timebase_info_data_t info;   /* a commpage read, no shared cache to race on */
+    mach_timebase_info(&info);
     return (double)ticks*(double)info.numer/(double)info.denom*1e-9;
 }
 
-static int jam_metal_profile_enabled(void) {
-    const char* value=getenv("JAM_METAL_PROFILE");
-    return value && *value && strcmp(value,"0") && strcmp(value,"false") && strcmp(value,"no");
-}
-
-static id<MTLComputePipelineState> jam_pipe(id<MTLDevice> dev, id<MTLLibrary> lib, const char* name) {
+/* The pipeline for kernel name, or nil. A build failure clears *ok: the MSL is broken and no context
+ * is made. A pipeline this GPU cannot run as dispatched (JAM_MTG threads per threadgroup; for the
+ * MMA kernel, simd32, 32-wide simdgroups) is only unavailable: the CPU takes its calls. */
+static id<MTLComputePipelineState> jam_pipe(id<MTLDevice> dev, id<MTLLibrary> lib, const char* name,
+                                            int simd32, int* ok) {
     id<MTLFunction> fn = [lib newFunctionWithName:[NSString stringWithUTF8String:name]];
     if (!fn) {
-        fprintf(stderr, "[jam] metal function not found: %s\n", name);
+        if (jam_debug) fprintf(stderr, "[jam] metal function not found: %s\n", name);
+        *ok = 0;
         return nil;
     }
     NSError* err = nil;
     id<MTLComputePipelineState> p = [dev newComputePipelineStateWithFunction:fn error:&err];
-    if (!p)
-        fprintf(stderr, "[jam] metal pipeline %s failed: %s\n", name,
-                err ? err.localizedDescription.UTF8String : "(unknown)");
     [fn release];
+    if (!p) {
+        if (jam_debug)
+            fprintf(stderr, "[jam] metal pipeline %s failed: %s\n", name,
+                    err ? err.localizedDescription.UTF8String : "(unknown)");
+        *ok = 0;
+        return nil;
+    }
+    if (p.maxTotalThreadsPerThreadgroup < JAM_MTG || (simd32 && p.threadExecutionWidth != 32)) {
+        if (jam_debug)
+            fprintf(stderr, "[jam] metal pipeline %s unavailable, the CPU takes its calls: %lu threads"
+                            " per threadgroup (needs %d), SIMD width %lu%s\n", name,
+                    (unsigned long) p.maxTotalThreadsPerThreadgroup, JAM_MTG,
+                    (unsigned long) p.threadExecutionWidth, simd32 ? " (needs 32)" : "");
+        [p release];
+        return nil;
+    }
     return p;
 }
 
-static jam_metal* g_profile_atexit_ctx;
+/* JAM_METAL_PROFILE: the live profiling contexts, each printed at its free, or at exit (one atexit
+ * for the process) if still live then. */
+static os_unfair_lock g_profile_lock = OS_UNFAIR_LOCK_INIT;
+static jam_metal* g_profile_live;
+static int g_profile_atexit;
+static pid_t g_profile_pid;   /* the process that registered it: a forked child's exit prints nothing */
 static void jam_metal_profile_atexit(void);
 
 extern "C" jam_metal* jam_metal_create(void) {
@@ -564,8 +589,9 @@ extern "C" jam_metal* jam_metal_create(void) {
         NSString* src = [NSString stringWithFormat:@"#define TN %d\n%s", JAM_MTN, JAM_MSL];
         id<MTLLibrary> lib = [dev newLibraryWithSource:src options:nil error:&err];
         if (!lib) {
-            fprintf(stderr, "[jam] metal MSL compile failed: %s\n",
-                    err ? err.localizedDescription.UTF8String : "(unknown)");
+            if (jam_debug)
+                fprintf(stderr, "[jam] metal MSL compile failed: %s\n",
+                        err ? err.localizedDescription.UTF8String : "(unknown)");
             [dev release]; return NULL;
         }
         jam_metal* m = (jam_metal*) calloc(1, sizeof(jam_metal));
@@ -574,52 +600,77 @@ extern "C" jam_metal* jam_metal_create(void) {
         m->queue = [dev newCommandQueue];
         m->command_desc = [MTLCommandBufferDescriptor new];
         m->command_desc.retainedReferences = NO;         /* synchronous call owns every resource until wait */
-        m->profile = jam_metal_profile_enabled();
-        if (m->profile && !g_profile_atexit_ctx) {
-            g_profile_atexit_ctx = m;
-            atexit(jam_metal_profile_atexit);
-        }
+        m->profile = jam_metal_profile;
         int ok = m->queue && m->command_desc;
         for (int i = 0; i < JAM_METAL_NKINDS; i++) {
             const jam_metal_kind* kind = &JAM_METAL_KINDS[i];
-            if (kind->tiled)  ok &= (m->tiled[i]  = jam_pipe(dev, lib, kind->tiled))  != nil;
-            if (kind->mma)    ok &= (m->mma[i]    = jam_pipe(dev, lib, kind->mma))    != nil;
-            if (kind->packed) ok &= (m->packed[i] = jam_pipe(dev, lib, kind->packed)) != nil;
+            if (kind->tiled)  m->tiled[i]  = jam_pipe(dev, lib, kind->tiled,  0, &ok);
+            if (kind->mma)    m->mma[i]    = jam_pipe(dev, lib, kind->mma,    1, &ok);
+            if (kind->packed) m->packed[i] = jam_pipe(dev, lib, kind->packed, 1, &ok);
         }
         [lib release];
         if (!ok) { jam_metal_destroy(m); return NULL; }
+        if (m->profile) {
+            os_unfair_lock_lock(&g_profile_lock);
+            if (!g_profile_atexit) {
+                g_profile_pid = getpid();
+                g_profile_atexit = atexit(jam_metal_profile_atexit) == 0;
+            }
+            m->profile_next = g_profile_live;
+            g_profile_live = m;
+            os_unfair_lock_unlock(&g_profile_lock);
+        }
         return m;
     }
 }
 
+/* encode = operand views + encoding; calls = mma + tiled (calls that ran) + failures. */
 static void jam_metal_profile_print(jam_metal* m) {
-    if (!m || !m->profile || !m->profile_calls) return;
+    if (!m->profile_calls) return;
     double calls=(double)m->profile_calls;
     double gpu=m->profile_gpu_s/calls*1e6;
     fprintf(stderr,"[jam] metal profile: calls=%llu mma=%llu tiled=%llu failures=%llu\n",
             (unsigned long long)m->profile_calls,(unsigned long long)m->profile_mma,
             (unsigned long long)m->profile_tiled,(unsigned long long)m->profile_failures);
     fprintf(stderr,"[jam] metal profile: per-call encode=%.2fus submit=%.2f wait=%.2f"
-                   " gpu=%.2f queue+completion=%.2fus; total_gpu_s=%.3f total_wait_s=%.3f\n",
+                   " gpu=%.2f queue+completion=%.2fus; total_gpu_s=%.3f total_call_s=%.3f\n",
             m->profile_encode_s/calls*1e6,
             m->profile_submit_s/calls*1e6,m->profile_wait_s/calls*1e6,gpu,
-            m->profile_wait_s/calls*1e6-gpu,m->profile_gpu_s,m->profile_total_s);
+            m->profile_wait_s/calls*1e6-gpu,m->profile_gpu_s,
+            m->profile_encode_s+m->profile_submit_s+m->profile_wait_s);
 }
 
 /* Hosts that never destroy their context (the JVM) still get the numbers at process exit. */
-static void jam_metal_profile_atexit(void) { jam_metal_profile_print(g_profile_atexit_ctx); }
+static void jam_metal_profile_atexit(void) {
+    if (getpid() != g_profile_pid) return;
+    os_unfair_lock_lock(&g_profile_lock);
+    for (jam_metal* m=g_profile_live; m; m=m->profile_next) jam_metal_profile_print(m);
+    g_profile_live=NULL;   /* a free after this prints nothing again */
+    os_unfair_lock_unlock(&g_profile_lock);
+}
+
+/* 1 if m was live in the profile list (now removed), so its free prints it. */
+static int jam_metal_profile_unlink(jam_metal* m) {
+    int found=0;
+    os_unfair_lock_lock(&g_profile_lock);
+    for (jam_metal** p=&g_profile_live; *p; p=&(*p)->profile_next)
+        if (*p == m) { *p=m->profile_next; found=1; break; }
+    os_unfair_lock_unlock(&g_profile_lock);
+    return found;
+}
 
 extern "C" void jam_metal_destroy(jam_metal* m) {
     if (!m) return;
-    jam_metal_profile_print(m);
-    if (m == g_profile_atexit_ctx) g_profile_atexit_ctx = NULL;
-    for (int i = 0; i < JAM_METAL_NKINDS; i++) {
-        [m->tiled[i] release]; [m->mma[i] release]; [m->packed[i] release];
+    if (jam_metal_profile_unlink(m)) jam_metal_profile_print(m);
+    @autoreleasepool {
+        for (int i = 0; i < JAM_METAL_NKINDS; i++) {
+            [m->tiled[i] release]; [m->mma[i] release]; [m->packed[i] release];
+        }
+        for (int i = 0; i < m->nshares; i++) [m->shares[i].buffer release];
+        [m->command_desc release];
+        [m->queue release]; [m->dev release];
     }
-    for (int i = 0; i < m->nshares; i++) [m->shares[i].buffer release];
     free(m->shares);
-    [m->command_desc release];
-    [m->queue release]; [m->dev release];
     free(m);
 }
 
@@ -635,20 +686,34 @@ static jam_status jam_metal_prepare_mm(jam_metal* m, jam_metal_resources* resour
     while (i < JAM_METAL_NKINDS && JAM_METAL_KINDS[i].dtype != base) i++;
     if (i == JAM_METAL_NKINDS) return JAM_EUNSUPPORTED;
     const jam_metal_kind* kind = &JAM_METAL_KINDS[i];
-    /* Match CPU dispatch: a quantized shape outside its block granularity is a valid call for which
-     * no kernel exists, not a malformed leading dimension. */
-    if (K % kind->blk || lda % kind->blk) return JAM_EUNSUPPORTED;
 
     size_t wbytes;
+    uintptr_t walign;
     if (at & JAM_PACKED) {
-        /* Packed rows are dense 4-row groups (bytes mirror jam_pack_group_bytes), so lda == K; a
-         * layout without a Metal kernel falls back to the packed CPU kernels. */
-        if (!m->packed[i] || lda != K) return JAM_EUNSUPPORTED;
+        /* Packed rows are dense 4-row groups (bytes mirror jam_pack_group_bytes; jam_mm checked
+         * lda == K and M % 4 == 0); their f32 scales need 4-byte groups. */
         plan->pipeline = m->packed[i];
+        plan->mma = 1;
+        walign = 4;
         wbytes = (size_t)(M/4)*jam_pack_group_bytes(base, K);
     } else {
-        plan->pipeline = m->mma[i] ? m->mma[i] : m->tiled[i];
+        plan->mma = kind->mma != NULL;
+        plan->pipeline = plan->mma ? m->mma[i] : m->tiled[i];
+        walign = (uintptr_t)kind->walign;
         wbytes = (size_t)(M-1)*(lda/kind->blk)*kind->bpb + (size_t)(K/kind->blk)*kind->bpb;
+    }
+    /* no kernel for the layout (packed MXFP4), or this GPU cannot run it: the CPU kernels */
+    if (!plan->pipeline) return JAM_EUNSUPPORTED;
+    /* A misaligned device load is undefined in MSL, and the CPU takes any alignment. The MMA kernel
+     * reads activations as float4 (16-byte rows: b aligned, ldb % 4 == 0), the tiled ones as float;
+     * results are float stores. A buffer offset is the address minus a page-aligned base, so it
+     * inherits the address's alignment. */
+    const uintptr_t balign = plan->mma ? 16 : 4;
+    if ((uintptr_t)a % walign || (uintptr_t)b % balign || (plan->mma && ldb % 4) || (uintptr_t)c % 4) {
+        if (jam_debug)
+            fprintf(stderr, "[jam] metal: operands misaligned for the GPU kernel, the CPU takes the call"
+                            " (w=%p a=%p lda=%d r=%p)\n", a, b, ldb, c);
+        return JAM_EUNSUPPORTED;
     }
     resources->weight.buffer=jam_host_buffer(m,a,wbytes,&resources->weight.offset);
     resources->activation.buffer=jam_host_buffer(m,b,((size_t)(N-1)*ldb+K)*sizeof(float),
@@ -659,15 +724,12 @@ static jam_status jam_metal_prepare_mm(jam_metal* m, jam_metal_resources* resour
         return JAM_EUNSUPPORTED;
 
     plan->params=(jam_metal_mm_params){M,N,K,lda,ldb,ldc};
-    plan->mma = plan->pipeline != m->tiled[i];
     if (plan->mma) {
         plan->grid=MTLSizeMake((N+31)/32,(M+63)/64,1);
-        plan->threads=MTLSizeMake(128,1,1);
-        if (m->profile) ++m->profile_mma;
+        plan->threads=MTLSizeMake(JAM_MTG,1,1);
     } else {
         plan->grid=MTLSizeMake((N+JAM_MTN-1)/JAM_MTN,M,1);
-        plan->threads=MTLSizeMake(8,16,1);
-        if (m->profile) ++m->profile_tiled;
+        plan->threads=MTLSizeMake(8,JAM_MTG/8,1);
     }
     return JAM_OK;
 }
@@ -718,10 +780,11 @@ extern "C" jam_status jam_metal_mm(jam_metal* m, const void* a, jam_dtype at, in
                 if (m->profile) {
                     ++m->profile_calls;
                     if (status != JAM_OK) ++m->profile_failures;
+                    else if (plan.mma) ++m->profile_mma;
+                    else ++m->profile_tiled;
                     m->profile_encode_s+=jam_metal_time_s(t_encoded-t0);
                     m->profile_submit_s+=jam_metal_time_s(t_submitted-t_encoded);
                     m->profile_wait_s+=jam_metal_time_s(t_done-t_submitted);
-                    m->profile_total_s+=jam_metal_time_s(t_done-t_encoded);
                     if (cb.GPUEndTime >= cb.GPUStartTime)
                         m->profile_gpu_s+=cb.GPUEndTime-cb.GPUStartTime;
                 }

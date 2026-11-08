@@ -1,28 +1,14 @@
-/* DOTPROD simple-block kernels (Q8_0/Q4_0/MXFP4 @ F32 -> F32; built -march=armv8.2-a+dotprod). The int8
- * block-dot is two vdotq_s32 (signed 8-bit dot-product, 4 elems/lane) - the int8 workhorse on modern ARM
- * (all Apple M-series, Graviton2+, recent phones). Decode per quant in jam_decode_neon.h; engine shared. */
+/* DOTPROD kernels (built -mcpu=generic+dotprod): Q8_0/Q4_0/MXFP4 4-row decode GEMVs, the packed Q4_0/MXFP4
+ * GEMVs (jam.h JAM_PACK_ABI), Q8_0/Q4_0/Q5_0/MXFP4 row kernels, the prefill bands of every quantized format
+ * (jam_band4_neon.inc) and the F16/BF16 dense kernels, all @ F32 -> F32. The int8 block-dot is two
+ * vdotq_s32 (signed 8-bit dot-product, 4 elems/lane) - the int8 workhorse on modern ARM (all Apple
+ * M-series, Graviton2+, recent phones). Decode per quant in jam_decode_neon.h; engine shared. */
 #include "jam_internal.h"
 #include <arm_neon.h>
 #include "jam_decode_neon.h"
 
 /* vdotq_s32(acc,a,b): acc[l] += Σ_{4} a[4l+..]·b[4l+..]. Two of them cover the 32-elem block -> int32x4. */
 #define JAM_BLKDOT(wlo,whi,blo,bhi) vdotq_s32(vdotq_s32(vdupq_n_s32(0), wlo, blo), whi, bhi)
-
-static inline int32x4_t jam_mxfp4_rows4(const uint8_t* p, int8x16_t lut, uint8x16_t m4,
-                                        int8x16_t a0, int8x16_t a1) {
-    int32x4_t s = vdupq_n_s32(0);
-#define JAM_MXFP4_CHUNK(off, lane) do {                                                    \
-    const uint8x16_t w = vld1q_u8(p + (off));                                              \
-    s = vdotq_laneq_s32(s, vqtbl1q_s8(lut, vandq_u8(w, m4)), a0, (lane));                  \
-    s = vdotq_laneq_s32(s, vqtbl1q_s8(lut, vshrq_n_u8(w, 4)), a1, (lane));                 \
-} while (0)
-    JAM_MXFP4_CHUNK(0, 0);
-    JAM_MXFP4_CHUNK(16, 1);
-    JAM_MXFP4_CHUNK(32, 2);
-    JAM_MXFP4_CHUNK(48, 3);
-#undef JAM_MXFP4_CHUNK
-    return s;
-}
 
 /* Decode (n==1) GEMV specializes across output rows: one activation load feeds four independent
  * weight streams - cuts activation/scale loads 4x and gives the core 4 independent SDOT chains. */
@@ -72,7 +58,7 @@ void jam_gemv_q4_0_packed_4x1(void* arg, int rb, int re, int tid) {
         const int r0 = i - g * 4;
         const int r1 = re - g * 4 < 4 ? re - g * 4 : 4;
         const uint8_t* pg = P + (size_t) g * GB;
-        const float*   sg = (const float*) (pg + (size_t) nb * 64);
+        const uint8_t* sg = pg + (size_t) nb * 64;   /* f32 scale[4] per block */
         if (r0 == 0 && r1 == 4) {
             float32x4_t f0 = vdupq_n_f32(0), f1 = vdupq_n_f32(0);
             float32x4_t f2 = vdupq_n_f32(0), f3 = vdupq_n_f32(0);
@@ -90,8 +76,8 @@ void jam_gemv_q4_0_packed_4x1(void* arg, int rb, int re, int tid) {
                 uint8x16_t w2 = vld1q_u8(g1 + 32), w3 = vld1q_u8(g1 + 48);
                 const int8x16_t alo = vld1q_s8(p), ahi = vld1q_s8(p + 16);
                 const int8x16_t blo = vld1q_s8(p + 32), bhi = vld1q_s8(p + 48);
-                const float32x4_t s0 = vmulq_n_f32(vld1q_f32(sg + (size_t) b * 4), d[b]);
-                const float32x4_t s1 = vmulq_n_f32(vld1q_f32(sg + (size_t) b * 4 + 4), d[b + 1]);
+                const float32x4_t s0 = vmulq_n_f32(jam_neon_f32x4_at(sg + (size_t) b * 16), d[b]);
+                const float32x4_t s1 = vmulq_n_f32(jam_neon_f32x4_at(sg + (size_t) b * 16 + 16), d[b + 1]);
                 int8x16_t lo, hi;
                 lo = vsubq_s8(vreinterpretq_s8_u8(vandq_u8(q0, m4)), e8);
                 hi = vsubq_s8(vreinterpretq_s8_u8(vshrq_n_u8(q0, 4)), e8);
@@ -122,7 +108,7 @@ void jam_gemv_q4_0_packed_4x1(void* arg, int rb, int re, int tid) {
                 const uint8_t* gq = pg + (size_t) b * 64;
                 const int8_t* p = q + (size_t) b * 32;
                 const int8x16_t alo = vld1q_s8(p), ahi = vld1q_s8(p + 16);
-                const float32x4_t sc = vmulq_n_f32(vld1q_f32(sg + (size_t) b * 4), d[b]);
+                const float32x4_t sc = vmulq_n_f32(jam_neon_f32x4_at(sg + (size_t) b * 16), d[b]);
                 uint8x16_t q0 = vld1q_u8(gq), q1 = vld1q_u8(gq + 16);
                 uint8x16_t q2 = vld1q_u8(gq + 32), q3 = vld1q_u8(gq + 48);
                 int8x16_t lo, hi;
@@ -152,7 +138,7 @@ void jam_gemv_q4_0_packed_4x1(void* arg, int rb, int re, int tid) {
                     int8x16_t lo = vsubq_s8(vreinterpretq_s8_u8(vandq_u8(qs, m4)), e8);
                     int8x16_t hi = vsubq_s8(vreinterpretq_s8_u8(vshrq_n_u8(qs, 4)), e8);
                     f = vfmaq_n_f32(f, vcvtq_f32_s32(JAM_BLKDOT(lo, hi, vld1q_s8(p), vld1q_s8(p + 16))),
-                                    sg[(size_t) b * 4 + r] * d[b]);
+                                    jam_neon_f32_at(sg + (size_t) b * 16 + (size_t) r * 4) * d[b]);
                 }
                 C[g * 4 + r] = vaddvq_f32(f);
             }
@@ -184,7 +170,13 @@ void jam_gemv_mxfp4_packed_4x1(void* arg, int rb, int re, int tid) {
             const uint8_t* p = pg + (size_t) b * 68;
             const int8_t* a = q + (size_t) b * 32;
             const int8x16_t a0 = vld1q_s8(a), a1 = vld1q_s8(a + 16);
-            const int32x4_t si = jam_mxfp4_rows4(p + 4, lut, m4, a0, a1);
+            int8x16_t lo[4], hi[4];
+            for (int ch = 0; ch < 4; ++ch) {   /* k-chunk ch of the 4 rows */
+                const uint8x16_t w = vld1q_u8(p + 4 + ch * 16);
+                lo[ch] = vqtbl1q_s8(lut, vandq_u8(w, m4));
+                hi[ch] = vqtbl1q_s8(lut, vshrq_n_u8(w, 4));
+            }
+            const int32x4_t si = jam_mxfp4_rows4(lo, hi, a0, a1);
             const float32x4_t sw = { jam_mxfp4_dhalf(p[0]), jam_mxfp4_dhalf(p[1]),
                                      jam_mxfp4_dhalf(p[2]), jam_mxfp4_dhalf(p[3]) };
             f = vfmaq_f32(f, vcvtq_f32_s32(si), vmulq_n_f32(sw, d[b]));

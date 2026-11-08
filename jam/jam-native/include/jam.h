@@ -2,23 +2,37 @@
  *
  *   Errors     A function returns its result; a negative value is a JAM_E* code, NULL for a pointer.
  *              jam_last_error has the message and the code, per thread, until the thread's next jam
- *              call (reading it changes nothing); after a success, "" and JAM_OK.
+ *              call (reading it changes nothing); after a success, "" and JAM_OK. Every call sets it but
+ *              jam_version, jam_last_error, jam_isa_name, jam_pack_abi and a free of NULL. A goroutine
+ *              or a Java virtual thread may change OS thread between two calls, so it reads the message
+ *              pinned to the thread that failed or goes by the returned code, which is always the call's.
  *   Ownership  Operands are borrowed for the call, shared memory until jam_unshare. A context owns
- *              its scratch and its pool, and jam_context_free releases them.
+ *              its scratch and its pool, and jam_context_free releases them. A string returned to you
+ *              is the library's: jam_version's and jam_isa_name's for good, jam_last_error's until the
+ *              calling thread's next jam call.
  *   Threads    Any function may be called from any thread, unless its comment says otherwise. A
- *              context is a serial stream: one jam_mm at a time, a concurrent one is JAM_EBUSY. For
- *              parallel matmuls, make several contexts.
- *   Fork       A context made before fork refuses jam_mm and jam_share in the child with JAM_ERROR;
- *              make a new one there, which stays on the CPU (Apple's GPU is unusable after fork without
+ *              context is a serial stream: one jam_mm at a time, a concurrent one is JAM_EBUSY, and
+ *              jam_context_free not during any call on it; jam_share and jam_unshare may run beside a
+ *              jam_mm. For parallel matmuls, make several contexts.
+ *   Fork       A context made before fork refuses jam_mm and jam_share in the child with JAM_ERROR, and
+ *              jam_context_free there releases nothing, as its threads stayed in the parent; make a new
+ *              one in the child, which stays on the CPU (Apple's GPU is unusable after fork without
  *              exec). The fork handler lives as long as the process, so once loaded libjam stays loaded.
- *   Settings   Through jam_context_options. JAM_DEBUG=1 in the environment prints the dispatch on
- *              stderr; jam is otherwise silent.
+ *   Settings   Through jam_context_options. The environment holds two diagnostic switches, read once
+ *              as the library loads, on when set to anything but "", "0", "false" or "no": JAM_DEBUG
+ *              prints the dispatch on stderr, and why a Metal setup or call fell back to the CPU;
+ *              JAM_METAL_PROFILE prints Metal's per-call timings at jam_context_free and at exit. jam
+ *              is otherwise silent.
  *   Work       One call, jam_mm: R = W @ A^T, k the contiguous axis of both W and A. W may be any
  *              type below and selects the kernel; A and R are float. jam multiplies quantized
  *              weights, it never converts them. The kernel level is chosen once per context, from
- *              what the CPU (or GPU) offers, below the context's cap.
- *   Stability  Before 1.0 any release may break this API. From 1.0 a PATCH changes nothing a caller
- *              relies on, a MINOR only adds, a MAJOR may break, and every release is checked.
+ *              what the CPU (or GPU) offers, below the context's cap. On the Apple GPU the block quants
+ *              (Q8_0, Q4_0, Q4_K, Q5_K, Q6_K) multiply in half precision with float sums, as llama.cpp's
+ *              Metal does: an activation beyond +-65504 turns infinite there, where the CPU stays finite.
+ *   Stability  Before 1.0 any release may break this API or its ABI, and the soname is the whole
+ *              version: a program loads the release it was built against. From 1.0 a PATCH changes
+ *              nothing a caller relies on, a MINOR only adds, a MAJOR may break, and every release is
+ *              checked.
  */
 #ifndef JAM_H
 #define JAM_H
@@ -49,8 +63,8 @@ extern "C" {
 /* status: the values jam, toknroll and jinfer share */
 #define JAM_OK             0
 #define JAM_ERROR        (-1)   /* see jam_last_error */
-#define JAM_EINVAL       (-2)   /* a NULL, a shape, stride or type jam refuses, an unknown flag */
-#define JAM_EUNSUPPORTED (-4)   /* a valid request no kernel here serves: fall back */
+#define JAM_EINVAL       (-2)   /* a NULL, a shape or stride the type cannot have, an unknown flag bit */
+#define JAM_EUNSUPPORTED (-4)   /* a valid request no kernel here serves, an unknown type included: fall back */
 #define JAM_EBUSY        (-6)   /* another jam_mm is running on this context */
 #define JAM_ENOMEM       (-7)
 
@@ -82,7 +96,8 @@ JAM_API const char* jam_isa_name(int32_t isa);       /* "avx512_vnni"; "" for an
 typedef void (*jam_task_fn)(int32_t begin, int32_t end, int32_t slot, void* task_data);
 /* Runs task over [0, count) in slices and returns when all are done. Each slice's slot is below
  * the context's threads and unique among the slices running at once. jam calls it only from the
- * thread inside jam_mm; it must return normally and must not call jam. */
+ * thread inside jam_mm; it must return normally and must not call jam. A slot at or past threads
+ * fails that jam_mm with JAM_EINVAL. */
 typedef void (*jam_parallel_fn)(int32_t count, jam_task_fn task, void* task_data, void* user_data);
 
 #define JAM_MAX_THREADS 1024
@@ -96,18 +111,22 @@ typedef struct {                    /* zero = default in every field; NULL optio
 
 typedef struct jam_context jam_context;
 
-/* NULL on failure; jam_last_error says why (a cap of another architecture, threads out of range). */
+/* NULL on failure, jam_last_error saying why: JAM_EINVAL for a cap of another architecture or threads
+ * out of range, JAM_ENOMEM. */
 JAM_API jam_context* jam_context_new(const jam_context_options* options);
-JAM_API void         jam_context_free(jam_context* context);        /* NULL: nothing; not during a call on it */
-JAM_API int32_t      jam_context_isa(const jam_context* context);   /* the level in use */
+/* Releases the context; NULL does nothing, and so does a context made before fork (Fork). */
+JAM_API void         jam_context_free(jam_context* context);
+/* The level in use; JAM_EINVAL for NULL. */
+JAM_API int32_t      jam_context_isa(const jam_context* context);
 
 /* ---- the work: R = W @ A^T ----
  *   W [m x k], type wt, row stride ldw   the weights, any type above (wt | JAM_PACKED: packed)
  *   A [n x k], type at, row stride lda   the activations, JAM_F32
  *   R [n x m], type rt, row stride ldr   the result, JAM_F32, token-major: R[j*ldr + i] = W[i,:] . A[j,:]
- * Strides count elements, ldr >= m. Pointers are borrowed for the call. One call at a time per
- * context (JAM_EBUSY). JAM_EINVAL for a shape or stride the type cannot have, JAM_EUNSUPPORTED for
- * a valid one no kernel serves. */
+ * m, n and k are positive; strides count elements, ldw and lda at least k, ldr at least m. A block
+ * type takes k and ldw in whole blocks: 32 elements, NVFP4 64, Q1_0 128, Q4_K, Q5_K and Q6_K 256.
+ * Anything else is JAM_EINVAL. JAM_EUNSUPPORTED: a valid call no kernel here serves, such as a type,
+ * at or rt jam has no kernel for, or packed weights on a context whose jam_pack_size is 0. */
 JAM_API int32_t jam_mm(jam_context* context,
                        const void* w, int32_t wt, int32_t ldw,
                        const void* a, int32_t at, int32_t lda,
@@ -142,7 +161,8 @@ JAM_API int32_t jam_mm(jam_context* context,
  */
 
 JAM_API int32_t jam_pack_abi(void);   /* the JAM_PACK_ABI this library reads */
-/* Bytes of the packed form; 0 = keep the canonical bytes (not packable here). */
+/* Bytes of the packed form; 0 = keep the canonical bytes: a type, shape or CPU this cannot pack,
+ * a negative m or k included. JAM_EINVAL for a NULL context. */
 JAM_API int64_t jam_pack_size(const jam_context* context, int32_t wt, int32_t m, int32_t k);
 
 /* ---- sharing: a hint for GPU backends; results never depend on it ---- */
@@ -150,9 +170,10 @@ JAM_API int64_t jam_pack_size(const jam_context* context, int32_t wt, int32_t m,
 
 /* [p, p + bytes) goes to many jam_mm calls, so a device maps it once; bytes > 0. JAM_EUNSUPPORTED:
  * ignored (a CPU context). Shares on one context must not overlap (JAM_EINVAL). Unshare before
- * freeing the memory. Also during jam_mm. */
+ * freeing the memory. Both may run during a jam_mm on the context. */
 JAM_API int32_t jam_share(jam_context* context, const void* p, int64_t bytes, uint32_t flags);
-JAM_API void    jam_unshare(jam_context* context, const void* p);   /* ends the share starting at p, if any */
+/* Ends the share starting at p, if any; a NULL context is JAM_EINVAL in jam_last_error. */
+JAM_API void    jam_unshare(jam_context* context, const void* p);
 
 #ifdef __cplusplus
 }

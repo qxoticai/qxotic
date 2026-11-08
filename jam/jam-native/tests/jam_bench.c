@@ -88,7 +88,9 @@ int main(int argc, char** argv) {
     int M, N, K, iters;
     if (argc >= 4) { M=atoi(argv[1]); N=atoi(argv[2]); K=atoi(argv[3]); iters = argc>4?atoi(argv[4]):6; }
     else { int S = argc>1?atoi(argv[1]):1024; M=N=K=S; iters = argc>2?atoi(argv[2]):6; }
-    if (M<1) M=1; if (N<1) N=1; if (K<32) K=32; if (K%32) K -= K%32;   /* Q8_0 needs k a multiple of 32 */
+    if (M < 1) M = 1;
+    if (N < 1) N = 1;
+    K = K < 32 ? 32 : K - K % 32;   /* Q8_0 needs k a multiple of 32 */
     const char* nts = getenv("JAM_NATIVE_THREADS");
     if (!nts || !*nts) nts = getenv("JAM_THREADS");
     int nt = nts?atoi(nts):0;

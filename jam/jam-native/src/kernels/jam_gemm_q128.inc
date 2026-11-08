@@ -1,18 +1,15 @@
-/* 128-bit (SSE3) quantized GEMM engine: C = W @ Aᵀ, W decoded to int8 (two __m128i halves), A int8-requantized.
- * A *true* SSE3 floor: the int8 dot is sign-extend (unpacklo/hi + arithmetic-shift) + madd_epi16 - NO SSSE3
- * maddubs, so no abs/sign trick (signed int16 madd carries the signs). The block reduce is SSE3 haddps and the
- * scale·dot accumulate is mul+add (SSE has no FMA). The includer defines, before #include:
+/* 128-bit quantized GEMM engine: C = W @ Aᵀ, W decoded to int8 (two __m128i halves), A int8-requantized.
+ * The tiling (4 activation columns) and the deferred-float accumulation live HERE, once; the block reduce
+ * is SSE3 haddps and the scale·dot accumulate is mul+add (SSE has no FMA). The includer composes one
+ * kernel from a (quant) decoder and an (ISA) dot by defining, before #include:
  *
  *   JAM_BLK                            weight block struct (for the row stride)           [per QUANT]
  *   JAM_DECODE(blk, &wlo, &whi, &dW)   decode -> two __m128i int8 halves + float scale    [per QUANT]
+ *   JAM_DOT(wlo, whi, p) -> __m128i    the 32-int8 block dot against activations at p,     [per ISA]
+ *                                      4 int32 partial sums
  *   JAM_MM_NAME                        exported symbol
  *
  * Requires jam_decode_x86_128.h (jam_hsum4_sse3) and "jam_internal.h" (jam_q8_job) already included. */
-
-/* full 32-int8 block dot (two halves) for activation pointer p -> 4 int32 (8 products per lane). */
-#define JAM_DOTBLK(wlo, whi, p) _mm_add_epi32( \
-        JAM_DOT16((wlo), _mm_loadu_si128((const __m128i*) (p))), \
-        JAM_DOT16((whi), _mm_loadu_si128((const __m128i*) ((p) + 16))))
 
 void JAM_MM_NAME(void* arg, int rb, int re, int tid) {
     (void) tid;
@@ -30,10 +27,10 @@ void JAM_MM_NAME(void* arg, int rb, int re, int tid) {
             __m128 f0=_mm_setzero_ps(),f1=_mm_setzero_ps(),f2=_mm_setzero_ps(),f3=_mm_setzero_ps();
             for (int b = 0; b < nb; ++b) {
                 __m128i wlo, whi; float dW; JAM_DECODE(&wr[b], &wlo, &whi, &dW);
-                f0=_mm_add_ps(f0,_mm_mul_ps(_mm_set1_ps(dW*s0[b]),_mm_cvtepi32_ps(JAM_DOTBLK(wlo,whi,a0+(size_t)b*32))));
-                f1=_mm_add_ps(f1,_mm_mul_ps(_mm_set1_ps(dW*s1[b]),_mm_cvtepi32_ps(JAM_DOTBLK(wlo,whi,a1+(size_t)b*32))));
-                f2=_mm_add_ps(f2,_mm_mul_ps(_mm_set1_ps(dW*s2[b]),_mm_cvtepi32_ps(JAM_DOTBLK(wlo,whi,a2+(size_t)b*32))));
-                f3=_mm_add_ps(f3,_mm_mul_ps(_mm_set1_ps(dW*s3[b]),_mm_cvtepi32_ps(JAM_DOTBLK(wlo,whi,a3+(size_t)b*32))));
+                f0=_mm_add_ps(f0,_mm_mul_ps(_mm_set1_ps(dW*s0[b]),_mm_cvtepi32_ps(JAM_DOT(wlo,whi,a0+(size_t)b*32))));
+                f1=_mm_add_ps(f1,_mm_mul_ps(_mm_set1_ps(dW*s1[b]),_mm_cvtepi32_ps(JAM_DOT(wlo,whi,a1+(size_t)b*32))));
+                f2=_mm_add_ps(f2,_mm_mul_ps(_mm_set1_ps(dW*s2[b]),_mm_cvtepi32_ps(JAM_DOT(wlo,whi,a2+(size_t)b*32))));
+                f3=_mm_add_ps(f3,_mm_mul_ps(_mm_set1_ps(dW*s3[b]),_mm_cvtepi32_ps(JAM_DOT(wlo,whi,a3+(size_t)b*32))));
             }
             C[(size_t)(j+0)*ldc+i]=jam_hsum4_sse3(f0); C[(size_t)(j+1)*ldc+i]=jam_hsum4_sse3(f1);
             C[(size_t)(j+2)*ldc+i]=jam_hsum4_sse3(f2); C[(size_t)(j+3)*ldc+i]=jam_hsum4_sse3(f3);
@@ -43,11 +40,9 @@ void JAM_MM_NAME(void* arg, int rb, int re, int tid) {
             __m128 f = _mm_setzero_ps();
             for (int b = 0; b < nb; ++b) {
                 __m128i wlo, whi; float dW; JAM_DECODE(&wr[b], &wlo, &whi, &dW);
-                f=_mm_add_ps(f,_mm_mul_ps(_mm_set1_ps(dW*sj[b]),_mm_cvtepi32_ps(JAM_DOTBLK(wlo,whi,aj+(size_t)b*32))));
+                f=_mm_add_ps(f,_mm_mul_ps(_mm_set1_ps(dW*sj[b]),_mm_cvtepi32_ps(JAM_DOT(wlo,whi,aj+(size_t)b*32))));
             }
             C[(size_t)j*ldc+i] = jam_hsum4_sse3(f);
         }
     }
 }
-
-#undef JAM_DOTBLK

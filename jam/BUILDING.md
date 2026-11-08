@@ -3,7 +3,7 @@
 Everything is built, tested and packaged locally, inside VMs. There is no CI. A build needs
 **CMake ≥ 3.16**, a **C11 compiler** (GCC or Clang; MSVC is rejected at configure), **Maven**, and
 a **JDK ≥ 25**. On macOS, Apple silicon only, `xcode-select --install` covers clang and the
-Metal frameworks; install CMake with `brew install cmake`. Windows builds use **MinGW-w64**, normally cross-compiled from Linux (below).
+Metal frameworks; install CMake with `brew install cmake`. The Windows library is cross-compiled from Linux with zig (below).
 
 **Maven** runs cmake, javac and the tests in one step, from the **repository root**. jam is not
 dependency-closed (`jam-core` builds on `jota-core`), so `mvn` inside this directory only works
@@ -40,7 +40,7 @@ backends when none matches. The shipped set, and where each library is built:
 |---|---|---|
 | `linux-x86-64/libjam.so` | the Linux release host | `zig cc` targeting glibc 2.17 + `cmake/toolchains/linux-x86-64-glibc2.17.cmake` |
 | `linux-aarch64/libjam.so` | the Mac's manylinux container | `zig cc` targeting glibc 2.17 + `cmake/toolchains/linux-aarch64-glibc2.17.cmake` |
-| `windows-x86-64/jam.dll` | the Linux release host | MinGW-w64 (`x86_64-w64-mingw32-gcc`) + `cmake/toolchains/windows-x86-64.cmake` |
+| `windows-x86-64/jam.dll` | the Linux release host | `zig cc` targeting `x86_64-windows-gnu` + `cmake/toolchains/windows-x86-64.cmake` |
 | `darwin-aarch64/libjam.dylib` | an Apple-silicon Mac | Xcode CLT (clang, ObjC++, Metal); Intel Macs unsupported |
 
 Other platforms get the Java backends.
@@ -60,8 +60,9 @@ Linux libraries are compiled with [zig](https://ziglang.org) as the C compiler, 
 `x86_64-linux-gnu.2.17` and `aarch64-linux-gnu.2.17`: zig bundles the glibc stubs for every
 version, so the artifacts run on RHEL 7 or Ubuntu 14.04 class systems whatever the build box runs,
 and the script fails if a link ever needs a newer glibc symbol. The
-Windows library comes from MinGW-w64 (the checked-in `cmake/cross-jni/win32/` shim supplies the
-target `jni_md.h`; any JDK's `jni.h` works). The Mac builds its library with Metal on and runs the
+Windows library is zig's too, targeting `x86_64-windows-gnu`, with zig's MinGW-w64 runtime linked in,
+so `jam.dll` needs only `KERNEL32.dll` and the Universal C Runtime of Windows 10 and later (the
+checked-in `cmake/cross-jni/win32/` shim supplies the target `jni_md.h`; any JDK's `jni.h` works). The Mac builds its library with Metal on and runs the
 C test suite on the real GPU. `import` checks a library as `verify` does, its stamp naming these
 native sources included, before staging it. `JAM_TARGETS="linux-x86-64"` builds a subset of this
 host's targets while iterating on one leg.
@@ -74,7 +75,7 @@ load; the stamps make that impossible. `NativeJAMProvider` also binds every symb
 reports the backend available, so an unusable bundle degrades to the Java backends with a warning
 instead of failing on the first matmul.
 
-Host requirements: cmake, a JDK, zig 0.16 and MinGW-w64 on the Linux host; Xcode Command Line
+Host requirements: cmake, a JDK, zig 0.16 and binutils on the Linux host; Xcode Command Line
 Tools, cmake and any JDK on the Mac. The script checks all of that first and only then replaces a
 staged library, so a misconfigured host fails in seconds with the previous set intact.
 

@@ -1,11 +1,12 @@
 /* AVX2 kernels - this TU only, built with -mavx2 -mfma -mf16c. Bound at create when
- * JAM_ISA_AVX2 <= ctx->active < JAM_ISA_AVX512 (consumer / older CPUs, Haswell 2013+).
+ * ctx->active >= JAM_ISA_AVX2 (Haswell 2013+). On AVX-512 the F32/F16/BF16 and Q8_0 kernels give way
+ * to the AVX-512 TUs, while the Q4_0/Q5_0/MXFP4 row kernels stay bound unless AVX-VNNI replaces them.
  *
  * Same structure as the AVX-512 TU but 8-wide (__m256) with only 16 ymm registers, so tiles cap at
- * 4×2 (F32 mnpack; the F16/BF16 dense gemm at the bottom uses a 2×4 dot tile). Q8_0 has NO VNNI here:
+ * 4×2 (F32 mnpack; the dense F32/F16/BF16 gemm at the bottom uses a 3×4 dot tile). Q8_0 has NO VNNI here:
  * the int8 dot uses maddubs(|qa|, sign(qb,qa)) -> int16 pairs, then madd_epi16 -> int32 - the standard
- * ggml AVX2 path, same deferred-float accumulation as VNNI. (The 8-feature-wide cached-repack K-quant +
- * Q8_0 rp kernels live in jam_kernels_kquant_avx2.c.) */
+ * ggml AVX2 path, same deferred-float accumulation as VNNI. (The 8-row repack bands live in
+ * jam_kernels_band8_avx2.c.) */
 #include "jam_internal.h"
 #include <stddef.h>
 #include <stdint.h>
@@ -77,7 +78,7 @@ void jam_mm_f32_avx2(void* arg, int rb, int re, int tid) {
 #define JAM_DOT(aqa, sqb) \
     _mm256_cvtepi32_ps(_mm256_madd_epi16(_mm256_maddubs_epi16(aqa, sqb), _mm256_set1_epi16(1)))
 
-#define JAM_BLK    jam_q8_blk
+#define JAM_BLK    jam_q8_0_blk
 #define JAM_DECODE jam_decode_q8_0_256
 #define JAM_MM_NAME jam_mm_q8_0_avx2
 #include "jam_gemm_q256.inc"
@@ -111,9 +112,9 @@ void jam_mm_f32_avx2(void* arg, int rb, int re, int tid) {
 
 #undef JAM_DOT
 
-/* F16/BF16 dense weight @ F32 -> F32, avx2: a 2-weight-row × 4-activation-col dot tile, so each row's
- * vcvtph2ps converts amortize across 4 columns (matches the avx512 4x4's 1:4 convert:FMA ratio). 8 ymm
- * accumulators (+ 2 wv + 4 xv) fit the 16 registers. k stepped by 8 (dispatch gates on k%16==0). */
+/* F32/F16/BF16 dense weight @ F32 -> F32, avx2: a 3-weight-row × 4-activation-col dot tile (2 and 1
+ * rows at the block's end), so each row's vcvtph2ps converts amortize across 4 columns. 12 ymm
+ * accumulators (+ 3 wv + 1 xv) fit the 16 registers. k stepped by 8 (dispatch gates on k%8 or k%16). */
 static inline __m256 loadw_f16_256(const uint16_t* p)  { return _mm256_cvtph_ps(_mm_loadu_si128((const __m128i*) p)); }
 static inline __m256 loadw_bf16_256(const uint16_t* p) { return _mm256_castsi256_ps(_mm256_slli_epi32(_mm256_cvtepu16_epi32(_mm_loadu_si128((const __m128i*) p)), 16)); }
 

@@ -40,6 +40,7 @@
 #include "jam_kquant.h"
 #include "jam_mxfp4.h"
 #include "jam_q1_0.h"
+#include <float.h>
 #include <immintrin.h>
 #include <stdatomic.h>
 #include <stdint.h>
@@ -61,25 +62,30 @@ typedef enum {
 #define INLINE static inline __attribute__((always_inline))
 #define ALIGN64 __attribute__((aligned(64)))
 
-INLINE float h2f(const uint8_t* p) { uint16_t h; memcpy(&h, p, 2); return _cvtsh_ss(h); }
-
 /* ================= phase 1: activations -> biased s8 codes ================= */
 
-/* One 32-block at scale 1 / inv; returns the sum of its s8 codes. */
+/* One 32-block at scale 1 / inv; returns the sum of its s8 codes, taken off the stored biased bytes
+ * (sad against zero): nothing to overflow, even where an inf input made the int32 codes INT_MIN. */
 INLINE int quant32(const float* x, float inv, uint8_t* xq) {
     const __m512 v = _mm512_set1_ps(inv);
     __m512i q0 = _mm512_cvtps_epi32(_mm512_mul_ps(_mm512_loadu_ps(x), v));
     __m512i q1 = _mm512_cvtps_epi32(_mm512_mul_ps(_mm512_loadu_ps(x + 16), v));
     __m256i q = _mm256_inserti128_si256(_mm256_castsi128_si256(_mm512_cvtsepi32_epi8(q0)),
                                         _mm512_cvtsepi32_epi8(q1), 1);
-    _mm256_storeu_si256((__m256i*) xq, _mm256_xor_si256(q, _mm256_set1_epi8((char) 0x80)));
-    return _mm512_reduce_add_epi32(_mm512_add_epi32(q0, q1));
+    const __m256i u = _mm256_xor_si256(q, _mm256_set1_epi8((char) 0x80));
+    _mm256_storeu_si256((__m256i*) xq, u);
+    const __m256i s4 = _mm256_sad_epu8(u, _mm256_setzero_si256());   /* 4 x 64-bit partial sums */
+    __m128i s = _mm_add_epi64(_mm256_castsi256_si128(s4), _mm256_extracti128_si256(s4, 1));
+    s = _mm_add_epi64(s, _mm_unpackhi_epi64(s, s));
+    return _mm_cvtsi128_si32(s) - 32 * 128;
 }
 
+/* An amax below FLT_MIN reads as 0: 127 / amax would overflow, so the stretch quantizes to zeros. */
 INLINE float absmax(const float* x, int n) {                  /* n a multiple of 16 */
     __m512 m = _mm512_setzero_ps();
     for (int i = 0; i < n; i += 16) m = _mm512_max_ps(m, _mm512_abs_ps(_mm512_loadu_ps(x + i)));
-    return _mm512_reduce_max_ps(m);
+    const float amax = _mm512_reduce_max_ps(m);
+    return amax < FLT_MIN ? 0.0f : amax;
 }
 
 /* what maps [-amax, amax] onto the s8 codes; an all-zero stretch quantizes to zeros */
@@ -157,7 +163,7 @@ INLINE void k32_header(const uint8_t* w, void* scales, float* d, float* dmin) { 
     uint8_t scmn[16];
     jam_q4k_scales_mins(w + 4, scmn, scmn + 8);
     _mm512_store_si512(scales, _mm512_cvtepu8_epi32(_mm_loadu_si128((const __m128i*) scmn)));
-    *d = h2f(w); *dmin = h2f(w + 2);
+    *d = jam_half_at(w); *dmin = jam_half_at(w + 2);
 }
 
 DECODER(decode_q4k) {
@@ -188,7 +194,7 @@ DECODER(decode_q6k) {
     (void) nbs; (void) dmin;
     w += (size_t) sb * JAM_Q6K_BYTES;              /* ql[128] qh[64] scales[16] d */
     _mm512_store_si512(scales, _mm512_cvtepi8_epi32(_mm_loadu_si128((const __m128i*) (w + 192))));
-    *d = h2f(w + 208);
+    *d = jam_half_at(w + 208);
     const __m256i b32 = _mm256_set1_epi8(32);
     for (int h = 0; h < 2; h++) {                  /* a half: 4 planes of 32 codes */
         const __m256i qh = _mm256_loadu_si256((const __m256i*) (w + 128 + h * 32));
@@ -206,7 +212,7 @@ DECODER(decode_q8_0) {
     (void) d; (void) dmin;
     w += (size_t) sb * 8 * JAM_Q8_0_BYTES;
     for (int b = 0; b < nbs; b++, w += JAM_Q8_0_BYTES) {
-        ((float*) scales)[b] = h2f(w);
+        ((float*) scales)[b] = jam_half_at(w);
         put(codes + b * 32, _mm256_loadu_si256((const __m256i*) (w + 2)));
     }
 }
@@ -215,7 +221,7 @@ DECODER(decode_q4_0) {
     (void) d; (void) dmin;
     w += (size_t) sb * 8 * JAM_Q4_0_BYTES;
     for (int b = 0; b < nbs; b++, w += JAM_Q4_0_BYTES) {
-        ((float*) scales)[b] = h2f(w);
+        ((float*) scales)[b] = jam_half_at(w);
         put(codes + b * 32, _mm256_sub_epi8(nibbles32(w + 2), _mm256_set1_epi8(8)));
     }
 }
@@ -224,7 +230,7 @@ DECODER(decode_q5_0) {
     (void) d; (void) dmin;
     w += (size_t) sb * 8 * JAM_Q5_0_BYTES;
     for (int b = 0; b < nbs; b++, w += JAM_Q5_0_BYTES) {
-        ((float*) scales)[b] = h2f(w);
+        ((float*) scales)[b] = jam_half_at(w);
         const __m256i high = _mm256_movm_epi8((__mmask32) jam_load32(w + 2));   /* bit e: element e */
         const __m256i bit4 = _mm256_and_si256(high, _mm256_set1_epi8(0x10));
         const __m256i code = _mm256_or_si256(nibbles32(w + 6), bit4);
@@ -248,7 +254,7 @@ DECODER(decode_q1_0) {
     for (int b = 0; b < nbs; b++) {                /* a 128-element block spans four 32-blocks */
         const int b32 = sb * 8 + b;
         const uint8_t* blk = w + (size_t) (b32 >> 2) * JAM_Q1_0_BYTES;
-        ((float*) scales)[b] = h2f(blk);
+        ((float*) scales)[b] = jam_half_at(blk);
         const __m256i set = _mm256_movm_epi8((__mmask32) jam_load32(blk + 2 + (b32 & 3) * 4));
         const __m256i clear = _mm256_xor_si256(set, _mm256_set1_epi8(-1));
         put(codes + b * 32, _mm256_or_si256(clear, _mm256_set1_epi8(1)));   /* bit set: +1, clear: -1 */
@@ -297,8 +303,8 @@ INLINE void repack16(const uint8_t* w, int64_t w_stride, int nrows, int nb, uint
                      const band_kind kind, band_decode decode) {
     const int nsub = kind == KIND_K16 ? 16 : 8, ni = 64 / nsub;   /* 4-k groups per sub-block */
     const __m512i ones = _mm512_set1_epi8(1);
-    ALIGN64 uint8_t codes[16 * JAM_QKK] = { 0 };   /* what no row writes stays zero: the padding rows */
-    ALIGN64 uint8_t scales[16 * 64] = { 0 };       /* of a short group, the blocks past a ragged k */
+    ALIGN64 uint8_t codes[16 * JAM_QKK] = { 0 };   /* the padding rows of a short group stay zero; past a */
+    ALIGN64 uint8_t scales[16 * 64] = { 0 };       /* ragged k, a stretch keeps stale blocks the tile never reads */
     for (int sb = 0; sb * 8 < nb; sb++, blob += JAM_BAND32_BLOB) {
         const int nbs = nb - sb * 8 < 8 ? nb - sb * 8 : 8;
         memset(blob + D_OFF, 0, JAM_BAND32_BLOB - D_OFF);   /* d, dmin of the padding rows */

@@ -8,7 +8,12 @@
 #include "jam_decode_x86_128.h"
 #include "jam_q1_0.h"
 
-#define JAM_BLK     jam_q8_blk
+/* The true-SSE3 int8 dot: sign-extend (unpack with a cmpgt sign mask) + madd_epi16 - no SSSE3 maddubs, so
+ * no abs/sign trick (signed int16 madd carries the signs). */
+#define JAM_DOT(wlo, whi, p) _mm_add_epi32(JAM_DOT16((wlo), _mm_loadu_si128((const __m128i*) (p))), \
+                                           JAM_DOT16((whi), _mm_loadu_si128((const __m128i*) ((p) + 16))))
+
+#define JAM_BLK     jam_q8_0_blk
 #define JAM_DECODE  jam_decode_q8_0_128
 #define JAM_MM_NAME jam_mm_q8_0_sse3
 #include "jam_gemm_q128.inc"
@@ -39,6 +44,7 @@
 #undef JAM_BLK
 #undef JAM_DECODE
 #undef JAM_MM_NAME
+#undef JAM_DOT
 
 /* ---- dense F32 / F16 / BF16 weight @ F32 -> F32 (the pre-AVX2 float floor) ----
  * Every output is one serial sum over k in element order (as the portable loop), so speed comes from many

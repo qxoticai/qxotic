@@ -1,11 +1,12 @@
-/* ARM DOTPROD K-quant kernels (Q4_K/Q5_K/Q6_K @ F32 -> F32) - same decode as the NEON baseline, but the
- * int8 dot uses the dot-product extension (vdotq_s32 / sdot): one instruction does a 16-wide int8 dot into
- * 4 i32 lanes, so 32-wide = two sdots. Built with -march=armv8.2-a+dotprod. i8mm cores reuse this (sdot is
- * available there too); an smmla 2x2 variant would be a further step but barely helps the decode-bound K-quants. */
+/* ARM DOTPROD K-quant kernels (built -mcpu=generic+dotprod), all @ F32 -> F32: the Q4_K/Q5_K/Q6_K row
+ * kernels (jam_kquant_engine.inc, same decode as the NEON baseline) and their 4-row decode GEMVs, the
+ * packed Q4_K/Q5_K/Q6_K GEMVs and the packed Q4_0/MXFP4/Q4_K/Q5_K/Q6_K prefill kernels (jam.h
+ * JAM_PACK_ABI). The int8 dot uses the dot-product extension (vdotq_s32 / sdot): one instruction does a
+ * 16-wide int8 dot into 4 i32 lanes, so 32-wide = two sdots. i8mm cores reuse this (sdot is available
+ * there too); an smmla 2x2 variant would be a further step but barely helps the decode-bound K-quants. */
 #include "jam_internal.h"
-#include "jam_kquant.h"
-#include "jam_mxfp4.h"
 #include <arm_neon.h>
+#include "jam_decode_neon.h"   /* jam_kquant.h, jam_mxfp4.h, the unaligned loads, jam_dot16_dotprod, jam_mxfp4_rows4 */
 
 /* 32-wide signed int8 dot via two sdots (Σ activations is precomputed in requant). */
 static inline int jam_kdot32_dotprod(uint8x16_t w0u, uint8x16_t w1u, const int8_t* a) {
@@ -16,16 +17,11 @@ static inline int jam_kdot32_dotprod(uint8x16_t w0u, uint8x16_t w1u, const int8_
     return (int) vaddvq_s32(d);
 }
 
-/* 16-wide signed int8 dot (Q6_K; weight already holds qv-32). */
-static inline int jam_kdot16_dotprod(int8x16_t w, const int8_t* a) {
-    return (int) vaddvq_s32(vdotq_s32(vdupq_n_s32(0), w, vld1q_s8(a)));
-}
-
-#define JAM_KDOT32   jam_kdot32_dotprod
-#define JAM_KDOT16   jam_kdot16_dotprod
-#define JAM_Q4K_NAME jam_mm_q4k_dotprod
-#define JAM_Q5K_NAME jam_mm_q5k_dotprod
-#define JAM_Q6K_NAME jam_mm_q6k_dotprod
+#define JAM_KDOT32         jam_kdot32_dotprod
+#define JAM_KDOT16(w, a)   jam_dot16_dotprod((w), vld1q_s8(a))   /* Q6_K; weight already holds qv-32 */
+#define JAM_Q4K_NAME       jam_mm_q4k_dotprod
+#define JAM_Q5K_NAME       jam_mm_q5k_dotprod
+#define JAM_Q6K_NAME       jam_mm_q6k_dotprod
 #include "jam_kquant_engine.inc"
 
 /* ---- 4-row decode (n==1) GEMVs ----
@@ -37,20 +33,6 @@ static inline int jam_kdot16_dotprod(int8x16_t w, const int8_t* a) {
 /* [r0 r1 r2 r3] row sums from four per-row sdot partials. */
 static inline int32x4_t jam_krow4(int32x4_t p0, int32x4_t p1, int32x4_t p2, int32x4_t p3) {
     return vpaddq_s32(vpaddq_s32(p0, p1), vpaddq_s32(p2, p3));
-}
-
-static inline int32x4_t jam_mxfp4_rows4_packed(const int8x16_t lo[4], const int8x16_t hi[4],
-                                               int8x16_t a0, int8x16_t a1) {
-    int32x4_t s = vdupq_n_s32(0);
-    s = vdotq_laneq_s32(s, lo[0], a0, 0);
-    s = vdotq_laneq_s32(s, hi[0], a1, 0);
-    s = vdotq_laneq_s32(s, lo[1], a0, 1);
-    s = vdotq_laneq_s32(s, hi[1], a1, 1);
-    s = vdotq_laneq_s32(s, lo[2], a0, 2);
-    s = vdotq_laneq_s32(s, hi[2], a1, 2);
-    s = vdotq_laneq_s32(s, lo[3], a0, 3);
-    s = vdotq_laneq_s32(s, hi[3], a1, 3);
-    return s;
 }
 
 void jam_gemv_q6k_dotprod_4x1(void* arg, int rb, int re, int tid) {
@@ -69,7 +51,7 @@ void jam_gemv_q6k_dotprod_4x1(void* arg, int rb, int re, int tid) {
         float32x4_t facc = vdupq_n_f32(0);
         for (int B = 0; B < sblocks; ++B) {
             float dv[4];
-            for (int r = 0; r < 4; ++r) dv[r] = (float) *(const __fp16*) (wr[r] + (size_t) B * JAM_Q6K_BYTES + 208);
+            for (int r = 0; r < 4; ++r) dv[r] = jam_neon_half_at(wr[r] + (size_t) B * JAM_Q6K_BYTES + 208);
             for (int h = 0; h < 2; ++h)
                 for (int g = 0; g < 4; ++g) {
                     int blk = B*8 + h*4 + g;
@@ -126,7 +108,7 @@ void jam_gemv_q4k_dotprod_4x1(void* arg, int rb, int re, int tid) {
             uint8_t sc[4][8], mn[4][8];
             for (int r = 0; r < 4; ++r) {
                 const uint8_t* w = wr[r] + (size_t) B * JAM_Q4K_BYTES;
-                d[r] = (float) *(const __fp16*) w; dmin[r] = (float) *(const __fp16*) (w + 2);
+                d[r] = jam_neon_half_at(w); dmin[r] = jam_neon_half_at(w + 2);
                 jam_q4k_scales_mins(w + 4, sc[r], mn[r]);
             }
             for (int g = 0; g < 4; ++g) {
@@ -181,7 +163,7 @@ void jam_gemv_q5k_dotprod_4x1(void* arg, int rb, int re, int tid) {
             uint8x16_t h0[4], h1[4];
             for (int r = 0; r < 4; ++r) {
                 const uint8_t* w = wr[r] + (size_t) B * JAM_Q5K_BYTES;
-                d[r] = (float) *(const __fp16*) w; dmin[r] = (float) *(const __fp16*) (w + 2);
+                d[r] = jam_neon_half_at(w); dmin[r] = jam_neon_half_at(w + 2);
                 jam_q4k_scales_mins(w + 4, sc[r], mn[r]);
                 h0[r] = vld1q_u8(w + 16); h1[r] = vld1q_u8(w + 32);
             }
@@ -237,11 +219,11 @@ void jam_gemv_q6k_packed_4x1(void* arg, int rb, int re, int tid) {
         const int r1 = re - g * 4 < 4 ? re - g * 4 : 4;
         const int8_t* pg = P + (size_t) g * GB;
         const int8_t* scg = pg + (size_t) nb * 128;
-        const float*  dg = (const float*) (scg + (size_t) nb * 8);
+        const int8_t* dg = scg + (size_t) nb * 8;   /* f32 d[4] per super-block */
         if (r0 == 0 && r1 == 4) {
             float32x4_t facc = vdupq_n_f32(0);
             for (int B = 0; B < sblocks; ++B) {
-                const float32x4_t d4 = vld1q_f32(dg + (size_t) B * 4);
+                const float32x4_t d4 = jam_neon_f32x4_at(dg + (size_t) B * 16);
                 for (int b8 = 0; b8 < 8; ++b8) {
                     int blk = B * 8 + b8;
                     const int8_t* p = pg + (size_t) blk * 128;
@@ -267,7 +249,7 @@ void jam_gemv_q6k_packed_4x1(void* arg, int rb, int re, int tid) {
             for (int r = r0; r < r1; ++r) {
                 float32x4_t f = vdupq_n_f32(0);
                 for (int B = 0; B < sblocks; ++B) {
-                    const float dr = dg[(size_t) B * 4 + r];
+                    const float dr = jam_neon_f32_at(dg + (size_t) B * 16 + (size_t) r * 4);
                     for (int b8 = 0; b8 < 8; ++b8) {
                         int blk = B * 8 + b8;
                         const int8_t* p = pg + (size_t) blk * 128 + (size_t) r * 32;
@@ -310,7 +292,6 @@ void jam_gemv_q4k_packed_4x1(void* arg, int rb, int re, int tid) {
     const uint8_t* P = (const uint8_t*) J->a;
     const int8_t* AQ = J->aq; const float* AD = J->ad; const float* AS = J->asum;
     float* C = (float*) J->c;
-    const int8x16_t zero = vdupq_n_s8(0);
     const uint8x16_t m4 = vdupq_n_u8(0x0F);
     int i = rb;
     while (i < re) {
@@ -319,12 +300,12 @@ void jam_gemv_q4k_packed_4x1(void* arg, int rb, int re, int tid) {
         const int r1 = re - g * 4 < 4 ? re - g * 4 : 4;
         const uint8_t* pg = P + (size_t) g * GB;
         const uint8_t* smg = pg + (size_t) nb * 64;
-        const float*   ddg = (const float*) (smg + (size_t) nb * 8);
+        const uint8_t* ddg = smg + (size_t) nb * 8;   /* f32 d[4] | dmin[4] per super-block */
         if (r0 == 0 && r1 == 4) {
             float32x4_t facc = vdupq_n_f32(0);
             for (int B = 0; B < sblocks; ++B) {
-                const float32x4_t d4 = vld1q_f32(ddg + (size_t) B * 8);
-                const float32x4_t dmin4 = vld1q_f32(ddg + (size_t) B * 8 + 4);
+                const float32x4_t d4 = jam_neon_f32x4_at(ddg + (size_t) B * 32);
+                const float32x4_t dmin4 = jam_neon_f32x4_at(ddg + (size_t) B * 32 + 16);
                 for (int b8 = 0; b8 < 8; ++b8) {
                     int blk = B * 8 + b8;
                     const uint8_t* p = pg + (size_t) blk * 64;
@@ -348,7 +329,8 @@ void jam_gemv_q4k_packed_4x1(void* arg, int rb, int re, int tid) {
                 float32x4_t f = vdupq_n_f32(0);
                 float minsum = 0;
                 for (int B = 0; B < sblocks; ++B) {
-                    const float dr = ddg[(size_t) B * 8 + r], dm = ddg[(size_t) B * 8 + 4 + r];
+                    const float dr = jam_neon_f32_at(ddg + (size_t) B * 32 + (size_t) r * 4);
+                    const float dm = jam_neon_f32_at(ddg + (size_t) B * 32 + 16 + (size_t) r * 4);
                     for (int b8 = 0; b8 < 8; ++b8) {
                         int blk = B * 8 + b8;
                         const uint8_t* p = pg + (size_t) blk * 64 + (size_t) r * 16;
@@ -367,7 +349,6 @@ void jam_gemv_q4k_packed_4x1(void* arg, int rb, int re, int tid) {
         }
         i = g * 4 + r1;
     }
-    (void) zero;
 }
 
 /* Q5_K packed GEMV (jam.h JAM_PACK_ABI layout): int8-expanded payload, zero decode. */
@@ -386,12 +367,12 @@ void jam_gemv_q5k_packed_4x1(void* arg, int rb, int re, int tid) {
         const int r1 = re - g * 4 < 4 ? re - g * 4 : 4;
         const int8_t* pg = P + (size_t) g * GB;
         const uint8_t* smg = (const uint8_t*) pg + (size_t) nb * 128;
-        const float*   ddg = (const float*) (smg + (size_t) nb * 8);
+        const uint8_t* ddg = smg + (size_t) nb * 8;   /* f32 d[4] | dmin[4] per super-block */
         if (r0 == 0 && r1 == 4) {
             float32x4_t facc = vdupq_n_f32(0);
             for (int B = 0; B < sblocks; ++B) {
-                const float32x4_t d4 = vld1q_f32(ddg + (size_t) B * 8);
-                const float32x4_t dmin4 = vld1q_f32(ddg + (size_t) B * 8 + 4);
+                const float32x4_t d4 = jam_neon_f32x4_at(ddg + (size_t) B * 32);
+                const float32x4_t dmin4 = jam_neon_f32x4_at(ddg + (size_t) B * 32 + 16);
                 for (int b8 = 0; b8 < 8; ++b8) {
                     int blk = B * 8 + b8;
                     const int8_t* p = pg + (size_t) blk * 128;
@@ -412,7 +393,8 @@ void jam_gemv_q5k_packed_4x1(void* arg, int rb, int re, int tid) {
                 float32x4_t f = vdupq_n_f32(0);
                 float minsum = 0;
                 for (int B = 0; B < sblocks; ++B) {
-                    const float dr = ddg[(size_t) B * 8 + r], dm = ddg[(size_t) B * 8 + 4 + r];
+                    const float dr = jam_neon_f32_at(ddg + (size_t) B * 32 + (size_t) r * 4);
+                    const float dm = jam_neon_f32_at(ddg + (size_t) B * 32 + 16 + (size_t) r * 4);
                     for (int b8 = 0; b8 < 8; ++b8) {
                         int blk = B * 8 + b8;
                         const int8_t* p = pg + (size_t) blk * 128 + (size_t) r * 32;
@@ -448,7 +430,7 @@ void jam_mm_q4_0_packed_dotprod(void* arg, int gb, int ge, int tid) {
     const uint8x16_t m4 = vdupq_n_u8(0x0F);
     for (int g = gb; g < ge; ++g) {
         const uint8_t* pg = base + (size_t) g * GB;
-        const float*   sg = (const float*) (pg + (size_t) nb * 64);
+        const uint8_t* sg = pg + (size_t) nb * 64;   /* f32 scale[4] per block */
         const int i = g * 4;
         for (int j0 = 0; j0 < n; j0 += 4) {
             const int jn = n - j0 < 4 ? n - j0 : 4;
@@ -461,7 +443,7 @@ void jam_mm_q4_0_packed_dotprod(void* arg, int gb, int ge, int tid) {
                     lo[r] = vsubq_s8(vreinterpretq_s8_u8(vandq_u8(q, m4)), e8);
                     hi[r] = vsubq_s8(vreinterpretq_s8_u8(vshrq_n_u8(q, 4)), e8);
                 }
-                const float32x4_t s4 = vld1q_f32(sg + (size_t) b * 4);
+                const float32x4_t s4 = jam_neon_f32x4_at(sg + (size_t) b * 16);
                 for (int c = 0; c < jn; ++c) {
                     const int j = j0 + c;
                     const int8_t* a = J->aq + (size_t) j * k + (size_t) b * 32;
@@ -497,10 +479,10 @@ void jam_mm_mxfp4_packed_dotprod(void* arg, int gb, int ge, int tid) {
             for (int b = 0; b < nb; ++b) {
                 const uint8_t* p = pg + (size_t) b * 68;
                 int8x16_t lo[4], hi[4];
-                for (int r = 0; r < 4; ++r) {
-                    const uint8x16_t w = vld1q_u8(p + 4 + r * 16);
-                    lo[r] = vqtbl1q_s8(lut, vandq_u8(w, m4));
-                    hi[r] = vqtbl1q_s8(lut, vshrq_n_u8(w, 4));
+                for (int ch = 0; ch < 4; ++ch) {   /* k-chunk ch of the 4 rows */
+                    const uint8x16_t w = vld1q_u8(p + 4 + ch * 16);
+                    lo[ch] = vqtbl1q_s8(lut, vandq_u8(w, m4));
+                    hi[ch] = vqtbl1q_s8(lut, vshrq_n_u8(w, 4));
                 }
                 const float32x4_t sw = { jam_mxfp4_dhalf(p[0]), jam_mxfp4_dhalf(p[1]),
                                          jam_mxfp4_dhalf(p[2]), jam_mxfp4_dhalf(p[3]) };
@@ -508,7 +490,7 @@ void jam_mm_mxfp4_packed_dotprod(void* arg, int gb, int ge, int tid) {
                     const int j = j0 + c;
                     const int8_t* a = J->aq + (size_t) j * k + (size_t) b * 32;
                     const int8x16_t a0 = vld1q_s8(a), a1 = vld1q_s8(a + 16);
-                    const int32x4_t pr = jam_mxfp4_rows4_packed(lo, hi, a0, a1);
+                    const int32x4_t pr = jam_mxfp4_rows4(lo, hi, a0, a1);
                     facc[c] = vfmaq_f32(facc[c], vcvtq_f32_s32(pr),
                                         vmulq_n_f32(sw, J->ad[(size_t) j * nb + b]));
                 }
@@ -529,14 +511,14 @@ void jam_mm_q4k_packed_dotprod(void* arg, int gb, int ge, int tid) {
     for (int g = gb; g < ge; ++g) {
         const uint8_t* pg = base + (size_t) g * GB;
         const uint8_t* smg = pg + (size_t) nb * 64;
-        const float*   ddg = (const float*) (smg + (size_t) nb * 8);
+        const uint8_t* ddg = smg + (size_t) nb * 8;   /* f32 d[4] | dmin[4] per super-block */
         const int i = g * 4;
         for (int j0 = 0; j0 < n; j0 += 4) {
             const int jn = n - j0 < 4 ? n - j0 : 4;
             float32x4_t facc[4] = { vdupq_n_f32(0), vdupq_n_f32(0), vdupq_n_f32(0), vdupq_n_f32(0) };
             for (int B = 0; B < sblocks; ++B) {
-                const float32x4_t d4 = vld1q_f32(ddg + (size_t) B * 8);
-                const float32x4_t dmin4 = vld1q_f32(ddg + (size_t) B * 8 + 4);
+                const float32x4_t d4 = jam_neon_f32x4_at(ddg + (size_t) B * 32);
+                const float32x4_t dmin4 = jam_neon_f32x4_at(ddg + (size_t) B * 32 + 16);
                 for (int b8 = 0; b8 < 8; ++b8) {
                     const int blk = B * 8 + b8;
                     const uint8_t* p = pg + (size_t) blk * 64;
@@ -579,14 +561,14 @@ void jam_mm_q5k_packed_dotprod(void* arg, int gb, int ge, int tid) {
     for (int g = gb; g < ge; ++g) {
         const int8_t*  pg = (const int8_t*) (base + (size_t) g * GB);
         const uint8_t* smg = (const uint8_t*) pg + (size_t) nb * 128;
-        const float*   ddg = (const float*) (smg + (size_t) nb * 8);
+        const uint8_t* ddg = smg + (size_t) nb * 8;   /* f32 d[4] | dmin[4] per super-block */
         const int i = g * 4;
         for (int j0 = 0; j0 < n; j0 += 4) {
             const int jn = n - j0 < 4 ? n - j0 : 4;
             float32x4_t facc[4] = { vdupq_n_f32(0), vdupq_n_f32(0), vdupq_n_f32(0), vdupq_n_f32(0) };
             for (int B = 0; B < sblocks; ++B) {
-                const float32x4_t d4 = vld1q_f32(ddg + (size_t) B * 8);
-                const float32x4_t dmin4 = vld1q_f32(ddg + (size_t) B * 8 + 4);
+                const float32x4_t d4 = jam_neon_f32x4_at(ddg + (size_t) B * 32);
+                const float32x4_t dmin4 = jam_neon_f32x4_at(ddg + (size_t) B * 32 + 16);
                 for (int b8 = 0; b8 < 8; ++b8) {
                     const int blk = B * 8 + b8;
                     const int8_t* p = pg + (size_t) blk * 128;
@@ -628,13 +610,13 @@ void jam_mm_q6k_packed_dotprod(void* arg, int gb, int ge, int tid) {
     for (int g = gb; g < ge; ++g) {
         const int8_t* pg = (const int8_t*) (base + (size_t) g * GB);
         const int8_t* scg = pg + (size_t) nb * 128;
-        const float*  dg = (const float*) (scg + (size_t) nb * 8);
+        const int8_t* dg = scg + (size_t) nb * 8;   /* f32 d[4] per super-block */
         const int i = g * 4;
         for (int j0 = 0; j0 < n; j0 += 4) {
             const int jn = n - j0 < 4 ? n - j0 : 4;
             float32x4_t facc[4] = { vdupq_n_f32(0), vdupq_n_f32(0), vdupq_n_f32(0), vdupq_n_f32(0) };
             for (int B = 0; B < sblocks; ++B) {
-                const float32x4_t d4 = vld1q_f32(dg + (size_t) B * 4);
+                const float32x4_t d4 = jam_neon_f32x4_at(dg + (size_t) B * 16);
                 for (int b8 = 0; b8 < 8; ++b8) {
                     const int blk = B * 8 + b8;
                     const int8_t* p = pg + (size_t) blk * 128;

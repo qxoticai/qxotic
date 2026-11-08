@@ -130,7 +130,7 @@ For concurrent matmuls, use one context per thread.
 
 ## Build
 
-Requirements: **CMake ≥ 3.16**, a **C11 compiler** (GCC or Clang), **JDK ≥ 25**. On macOS, `xcode-select --install` covers clang and Metal; install CMake with `brew install cmake`. On Windows the toolchain is MinGW-w64; MSVC is refused because the kernel flags are GCC/Clang spellings.
+Requirements: **CMake ≥ 3.16**, a **C11 compiler** (GCC or Clang), **JDK ≥ 25**. On macOS, `xcode-select --install` covers clang and Metal; install CMake with `brew install cmake`. On Windows the toolchain is clang: zig's, cross-compiling from Linux, or clang on the MSVC ABI; MSVC is refused because the kernel flags are GCC/Clang spellings.
 
 **Maven** runs cmake, javac, and tests in one step, from the repository root once a root `mvn install` has built `jam-core` and `jota-core`:
 
@@ -148,7 +148,7 @@ cmake --build build           # -> build/libjam.so, staged into dist/native/
 
 Flags: `-DJAM_METAL=OFF` (no Metal), `-DJAM_JNI=OFF` (C only), `-DJAM_TESTS=OFF`, `-DJAM_STRIP=ON`. `mvn package -Djam.native.skip=true` reuses a pre-staged `dist/native/`.
 
-Every build carries all kernel tiers of its architecture; the library binds the best one at runtime. The shipped libraries (linux-x86-64, linux-aarch64, windows-x86-64, darwin-aarch64) are built by `jam-native/scripts/natives.sh` at one commit on two hosts: a Linux host builds the Linux x86-64 one with zig against glibc 2.17 and cross-compiles the Windows one with MinGW-w64, an Apple-silicon Mac builds the macOS one and, in its manylinux aarch64 container, the Linux aarch64 one with zig, and the script imports the Mac's libraries into the Linux host's release set. There is no CI.
+Every build carries all kernel tiers of its architecture; the library binds the best one at runtime. The shipped libraries (linux-x86-64, linux-aarch64, windows-x86-64, darwin-aarch64) are built by `jam-native/scripts/natives.sh` at one commit on two hosts: a Linux host builds the Linux x86-64 one with zig against glibc 2.17 and cross-compiles the Windows one with zig, an Apple-silicon Mac builds the macOS one and, in its manylinux aarch64 container, the Linux aarch64 one with zig, and the script imports the Mac's libraries into the Linux host's release set. There is no CI.
 
 ## Tests
 

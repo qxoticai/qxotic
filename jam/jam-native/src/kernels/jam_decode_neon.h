@@ -1,6 +1,8 @@
-/* NEON weight decoders for the jam_gemm_neon simple-block engine: each turns one 32-element weight block
- * into two signed int8x16 halves + a float block scale (ARM has a native signed int8 dot, so no abs/sign
- * trick). One decoder per quant, shared by every ARM ISA - the dot is the ISA knob. */
+/* NEON weight decoders for the ARM simple-block kernels (jam_gemm_neon.inc, jam_gemv4_dotprod.inc,
+ * jam_gemm_i8mm_4x4.inc): each turns one 32-element weight block into two signed int8x16 halves + a float
+ * block scale (ARM has a native signed int8 dot, so no abs/sign trick). One decoder per quant, shared by
+ * every ARM ISA - the dot is the ISA knob. Also the prefill band's row decoders and the small loads and
+ * dots the ARM kernel files share. */
 #ifndef JAM_DECODE_NEON_H
 #define JAM_DECODE_NEON_H
 
@@ -13,6 +15,37 @@ typedef struct __attribute__((packed)) { uint16_t d; int8_t  qs[32]; } jam_q8_bl
 typedef struct __attribute__((packed)) { uint16_t d; uint8_t qs[16]; } jam_q4_0_blk;  /* Q4_0: 18 B */
 
 static inline float jam_neon_h2f(uint16_t h) { __fp16 x; memcpy(&x, &h, 2); return (float) x; }  /* fp16->f32 (FCVT) */
+
+/* Loads at any alignment: GGUF block fields and the packed layouts' f32 scales (jam.h JAM_PACK_ABI)
+ * need not sit on their type's alignment. Each compiles to the plain ldr. */
+static inline float jam_neon_half_at(const void* p) { __fp16 x; memcpy(&x, p, 2); return (float) x; }
+static inline float jam_neon_f32_at(const void* p) { float x; memcpy(&x, p, 4); return x; }
+static inline float32x4_t jam_neon_f32x4_at(const void* p) { return vreinterpretq_f32_u8(vld1q_u8((const uint8_t*) p)); }
+
+/* 16-element signed int8 dot -> int: widening multiply + pairwise accumulate (NEON), one SDOT (dotprod). */
+static inline int jam_dot16_neon(int8x16_t w, int8x16_t a) {
+    int32x4_t d = vdupq_n_s32(0);
+    d = vpadalq_s16(d, vmull_s8(vget_low_s8(w),  vget_low_s8(a)));
+    d = vpadalq_s16(d, vmull_s8(vget_high_s8(w), vget_high_s8(a)));
+    return (int) vaddvq_s32(d);
+}
+#ifdef __ARM_FEATURE_DOTPROD
+static inline int jam_dot16_dotprod(int8x16_t w, int8x16_t a) {
+    return (int) vaddvq_s32(vdotq_s32(vdupq_n_s32(0), w, a));
+}
+
+/* MXFP4 packed layout (jam.h JAM_PACK_ABI): lo[c] / hi[c] are k-chunk c of a 4-row group, 4 bytes per
+ * row, lane = row, decoded to the low / high nibbles' codes (elements 4c..4c+3 and 16+4c..16+4c+3).
+ * Returns the 4 rows' int32 dots against one activation block a0 (elements 0-15) | a1 (16-31). */
+static inline int32x4_t jam_mxfp4_rows4(const int8x16_t lo[4], const int8x16_t hi[4], int8x16_t a0, int8x16_t a1) {
+    int32x4_t s = vdupq_n_s32(0);
+    s = vdotq_laneq_s32(s, lo[0], a0, 0); s = vdotq_laneq_s32(s, hi[0], a1, 0);
+    s = vdotq_laneq_s32(s, lo[1], a0, 1); s = vdotq_laneq_s32(s, hi[1], a1, 1);
+    s = vdotq_laneq_s32(s, lo[2], a0, 2); s = vdotq_laneq_s32(s, hi[2], a1, 2);
+    s = vdotq_laneq_s32(s, lo[3], a0, 3); s = vdotq_laneq_s32(s, hi[3], a1, 3);
+    return s;
+}
+#endif
 
 /* Q8_0: weights are already int8. */
 static inline void jam_decode_q8_0_neon(const void* b, int8x16_t* wlo, int8x16_t* whi, float* dA) {
@@ -63,9 +96,9 @@ static inline void jam_decode_mxfp4_neon(const void* b, int8x16_t* wlo, int8x16_
  * the float scales of its two 16-element halves (equal where the format scales per 32 or more) and its min
  * (value = d·q - m; 0 where the format has none). Every format jam reads on ARM, so the band is the one
  * prefill path; the decode runs once per weight row per call, so clarity beats cleverness here. ---- */
-#include "jam_kquant.h"   /* K-quant block layouts, jam_q4k_scales_mins, jam_half_at */
+#include "jam_kquant.h"   /* K-quant block layouts, jam_q4k_scales_mins */
 #include "jam_nvfp4.h"    /* jam_nvfp4_blk, jam_ue4m3_lut */
-#include "jam_q1_0.h"     /* jam_blk_q1_0, JAM_Q1_0_TBL */
+#include "jam_q1_0.h"     /* JAM_Q1_0_BYTES, JAM_Q1_0_TBL */
 
 typedef struct { int8x16_t lo, hi; float d, dh, m; } jam_b4_blk;
 typedef void (*jam_b4_decode)(const uint8_t* row, int blk, jam_b4_blk* b);
@@ -93,7 +126,7 @@ static inline void jam_b4_q4k(const uint8_t* row, int blk, jam_b4_blk* b) {
     const uint8x16_t q0 = vld1q_u8(w + 16 + (s >> 1) * 32), q1 = vld1q_u8(w + 16 + (s >> 1) * 32 + 16);
     b->lo = vreinterpretq_s8_u8(s & 1 ? vshrq_n_u8(q0, 4) : vandq_u8(q0, m4));
     b->hi = vreinterpretq_s8_u8(s & 1 ? vshrq_n_u8(q1, 4) : vandq_u8(q1, m4));
-    b->d = b->dh = jam_half_at(w) * sc[s]; b->m = jam_half_at(w + 2) * mn[s];
+    b->d = b->dh = jam_neon_half_at(w) * sc[s]; b->m = jam_neon_half_at(w + 2) * mn[s];
 }
 /* Q5_K: Q4_K plus a 5th bit per element, bit s of qh[e] (qh at +16, the nibbles at +48). */
 static inline void jam_b4_q5k(const uint8_t* row, int blk, jam_b4_blk* b) {
@@ -107,7 +140,7 @@ static inline void jam_b4_q5k(const uint8_t* row, int blk, jam_b4_blk* b) {
     const uint8x16_t h1 = vshlq_n_u8(vandq_u8(vshlq_u8(vld1q_u8(w + 32), sh), one), 4);
     b->lo = vreinterpretq_s8_u8(vorrq_u8(s & 1 ? vshrq_n_u8(q0, 4) : vandq_u8(q0, m4), h0));
     b->hi = vreinterpretq_s8_u8(vorrq_u8(s & 1 ? vshrq_n_u8(q1, 4) : vandq_u8(q1, m4), h1));
-    b->d = b->dh = jam_half_at(w) * sc[s]; b->m = jam_half_at(w + 2) * mn[s];
+    b->d = b->dh = jam_neon_half_at(w) * sc[s]; b->m = jam_neon_half_at(w + 2) * mn[s];
 }
 /* Q6_K: ql[128] nibbles, qh[64] 2-bit highs, int8 scales per 16 elements, d; value = d·sc·(q - 32).
  * Sub-block s = half h (0..1) x group g (0..3): nibbles of ql[64h + 32(g&1)..], low for g < 2, highs
@@ -127,7 +160,7 @@ static inline void jam_b4_q6k(const uint8_t* row, int blk, jam_b4_blk* b) {
     const uint8x16_t hi1 = vshlq_n_u8(vandq_u8(vshlq_u8(vld1q_u8(qh + 16), sh), m2), 4);
     b->lo = vsubq_s8(vreinterpretq_s8_u8(vorrq_u8(lo0, hi0)), bias);
     b->hi = vsubq_s8(vreinterpretq_s8_u8(vorrq_u8(lo1, hi1)), bias);
-    const float d = jam_half_at(w + 208);
+    const float d = jam_neon_half_at(w + 208);
     b->d = d * sc[h * 8 + g * 2]; b->dh = d * sc[h * 8 + g * 2 + 1]; b->m = 0;
 }
 /* NVFP4: 64-element blocks of 4 UE4M3-scaled 16-element sub-blocks; byte 8s+j holds elements j (low
@@ -146,8 +179,8 @@ static inline void jam_b4_nvfp4(const uint8_t* row, int blk, jam_b4_blk* b) {
 }
 /* Q1_0: 128 sign bits per block, LSB first; value = bit ? +d : -d. */
 static inline void jam_b4_q1_0(const uint8_t* row, int blk, jam_b4_blk* b) {
-    const jam_blk_q1_0* w = (const jam_blk_q1_0*) (row + (size_t) (blk >> 2) * sizeof(jam_blk_q1_0));
-    const uint8_t* bits = w->qs + (blk & 3) * 4;
+    const uint8_t* w = row + (size_t) (blk >> 2) * JAM_Q1_0_BYTES;   /* fp16 d, then qs[16] */
+    const uint8_t* bits = w + 2 + (blk & 3) * 4;
     const int8x8_t one = vdup_n_s8(1);
     int8x8_t s[4];
     for (int i = 0; i < 4; ++i) {
@@ -155,7 +188,7 @@ static inline void jam_b4_q1_0(const uint8_t* row, int blk, jam_b4_blk* b) {
         s[i] = vsub_s8(vadd_s8(s[i], s[i]), one);                                     /* -> -1/+1 */
     }
     b->lo = vcombine_s8(s[0], s[1]); b->hi = vcombine_s8(s[2], s[3]);
-    b->d = b->dh = jam_half2float(w->d); b->m = 0;
+    b->d = b->dh = jam_neon_half_at(w); b->m = 0;
 }
 
 #endif /* JAM_DECODE_NEON_H */

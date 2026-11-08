@@ -1,7 +1,8 @@
 /* AVX-VNNI kernels - this TU only, built with -mavxvnni -mavx2 -mfma -mf16c. Bound at create when the
  * CPU has AVX-VNNI (256-bit vpdpbusd in the VEX encoding) but NOT AVX-512 - i.e. modern CLIENT chips
- * (Alder/Raptor Lake). The F32 path reuses the AVX2 kernel (same 256-bit float); only Q8_0 changes:
- * the int8 dot is one vpdpbusd instead of AVX2's maddubs+madd (no int16 saturation edge, fewer ops).
+ * (Alder/Raptor Lake). The float kernels, the K-quant bands and the MXFP4 band reuse AVX2's. Here: the
+ * Q8_0 / MXFP4 / Q4_0 / Q5_0 row kernels, where the int8 dot is one vpdpbusd instead of AVX2's
+ * maddubs+madd, and the 8-row Q8_0 / Q5_0 / Q4_0 prefill bands with their phase-1 requant.
  *
  * NOTE: _mm256_dpbusd_avx_epi32 (the _avx_ spelling) is the AVX-VNNI VEX intrinsic - distinct from the
  * AVX-512-VL _mm256_dpbusd_epi32 used by the AVX-512 TU. */
@@ -10,14 +11,12 @@
 #include <stddef.h>
 #include <stdint.h>
 #include <immintrin.h>
-#include "jam_decode_x86_256.h"   /* LOAD-BEARING: defines jam_q8_blk/jam_q4_0_blk/jam_mxfp4_blk + the
-                                     256-bit decode helpers that jam_gemm_q256.inc expands below. Looks
-                                     unused here (no direct refs) but the .inc needs it - do NOT drop. */
+#include "jam_decode_x86_256.h"   /* the block structs and decoders jam_gemm_q256.inc expands, the band helpers */
 
 #define JAM_DOT(aqa, sqb) \
     _mm256_cvtepi32_ps(_mm256_dpbusd_avx_epi32(_mm256_setzero_si256(), aqa, sqb))
 
-#define JAM_BLK    jam_q8_blk
+#define JAM_BLK    jam_q8_0_blk
 #define JAM_DECODE jam_decode_q8_0_256
 #define JAM_MM_NAME jam_mm_q8_0_avxvnni
 #include "jam_gemm_q256.inc"
@@ -54,18 +53,15 @@
 /* ================= Q8_0 8-row 256-bit AVX-VNNI repack band: 8 i32 lanes = 8 rows/group,
  * _mm256_dpbusd_avx_epi32. Weight s8 is the signed operand,
  * activation a+128 the unsigned one, +128 bias corrected per row via cw = d·128·Σw. The per-worker repack
- * scratch is byte-for-byte the AVX-512 one (4 groups of 8 == 2 groups of 16). ================= */
-#ifndef JAM_VNNI_NR
-#define JAM_VNNI_NR 4
-#endif
-static inline float q8b_h2f(uint16_t h) { return _cvtsh_ss(h); }
+ * scratch is the VNNI bands' (ensure_kquant), which holds a band's four 8-row groups. ================= */
+#define JAM_VNNI_NR 4   /* activation columns per register tile (measured) */
 
 static void repack_q8_group8(const uint8_t* wbase, int64_t w_stride, int nb,
                              uint8_t* qs, float* dw, float* cw) {
     for (int r = 0; r < 8; r++) {
         const uint8_t* w = wbase + r * w_stride;
         for (int B = 0; B < nb; B++, w += JAM_Q8_0_BYTES) {
-            float d = q8b_h2f(*(const uint16_t*) w);
+            float d = jam_half_at(w);
             const __m256i v = _mm256_loadu_si256((const __m256i*) (w + 2));
             jam_put32_rows8(qs + (int64_t) B * 256 + r * 4, v);              /* 8 rows × 4 = 32 B/group */
             const int sumw = jam_sum_i8_256(v);
@@ -81,7 +77,7 @@ static inline __m256 q8_block8(const uint8_t* qs, const float* dw, const float* 
     for (int b = 0; b < nb; b++) {
         __m256i acc = _mm256_setzero_si256();
         for (int g = 0; g < 8; g++)
-            acc = _mm256_dpbusd_avx_epi32(acc, _mm256_set1_epi32(((const int*) x)[g] ^ 0x80808080),
+            acc = _mm256_dpbusd_avx_epi32(acc, _mm256_set1_epi32(jam_load32(x + 4 * g) ^ (int32_t) 0x80808080u),
                                           _mm256_load_si256((const void*) (qs + g * 32)));
         __m256 da = _mm256_set1_ps(dx[b]);
         f = _mm256_fmadd_ps(_mm256_cvtepi32_ps(acc), _mm256_mul_ps(_mm256_load_ps(dw), da), f);
@@ -106,7 +102,7 @@ static inline void q8_block8_nr(const uint8_t* qs, const float* dw, const float*
         for (int g = 0; g < 8; g++) {
             __m256i w = _mm256_load_si256((const void*) (qs + g * 32));
             for (int c = 0; c < JAM_VNNI_NR; c++)
-                acc[c] = _mm256_dpbusd_avx_epi32(acc[c], _mm256_set1_epi32(((const int*) x[c])[g] ^ 0x80808080), w);
+                acc[c] = _mm256_dpbusd_avx_epi32(acc[c], _mm256_set1_epi32(jam_load32(x[c] + 4 * g) ^ (int32_t) 0x80808080u), w);
         }
         __m256 dwv = _mm256_load_ps(dw), cwv = _mm256_load_ps(cw);
         for (int c = 0; c < JAM_VNNI_NR; c++) {
@@ -123,29 +119,11 @@ static inline void q8_block8_nr(const uint8_t* qs, const float* dw, const float*
 void jam_q8_0_repack_band_avxvnni(void* arg, int t0, int t1, int tid) {
     const jam_band_job* J = (const jam_band_job*) arg;
     const int nb = J->kblocks, seq = J->seq;
-    const int64_t ldc = J->out_stride;
-    jam_repack* rp = &J->repack[tid];
-    for (int tile = t0; tile < t1; tile++) {
-        int row = tile * JAM_VNNI_BAND, row_end = row + JAM_VNNI_BAND;
-        if (row_end > J->dim0) row_end = J->dim0;
-        int group = 0;
-        for (int r = row; r + 7 < row_end; r += 8, group++) {
-            uint8_t* qs = rp->qs + (int64_t) group * nb * 256;
-            float* dw = rp->dw + (int64_t) group * nb * 8;
-            float* cw = rp->mw + (int64_t) group * nb * 8;
-            repack_q8_group8(J->w + (int64_t) r * J->w_stride, J->w_stride, nb, qs, dw, cw);
-            int s = 0;
-            for (; s + JAM_VNNI_NR <= seq; s += JAM_VNNI_NR)
-                q8_block8_nr(qs, dw, cw, J->xq, J->dx, s, nb, ldc, J->out, r);
-            for (; s < seq; s++)
-                _mm256_storeu_ps(J->out + (int64_t) s * ldc + r,
-                                 q8_block8(qs, dw, cw, J->xq + (int64_t) s * nb * JAM_QK, J->dx + (int64_t) s * nb, nb));
-        }
-        for (int r = row + group * 8; r < row_end; r++)
-            for (int s = 0; s < seq; s++)
-                J->out[(int64_t) s * ldc + r] =
-                    jam_q8_0_dot_f32(J->w + (int64_t) r * J->w_stride, nb, J->rhs + (int64_t) s * J->rhs_stride);
-    }
+    JAM_BAND8_DRIVER(nb * 256, nb * 8, JAM_VNNI_NR,           /* mw holds the corrections cw */
+        repack_q8_group8(J->w + (int64_t) r * J->w_stride, J->w_stride, nb, qs, dw, mw),
+        q8_block8_nr(qs, dw, mw, J->xq, J->dx, s, nb, ldc, J->out, r),
+        q8_block8(qs, dw, mw, J->xq + (int64_t) s * nb * JAM_QK, J->dx + (int64_t) s * nb, nb),
+        jam_q8_0_dot_f32(J->w + (int64_t) r * J->w_stride, nb, J->rhs + (int64_t) s * J->rhs_stride));
 }
 
 /* Q5_0 8-row band: the Q8_0 band over Q5_0 blocks (q-16 is an int8; only the block unpack differs). */
@@ -154,7 +132,7 @@ static void repack_q5_0_group8(const uint8_t* wbase, int64_t w_stride, int nb,
     for (int r = 0; r < 8; r++) {
         const uint8_t* w = wbase + r * w_stride;
         for (int B = 0; B < nb; B++, w += JAM_Q5_0_BYTES) {
-            float d = q8b_h2f(*(const uint16_t*) w);
+            float d = jam_half_at(w);
             const __m256i v = jam_q5_0_codes_256(w);
             jam_put32_rows8(qs + (int64_t) B * 256 + r * 4, v);
             const int sumw = jam_sum_i8_256(v);
@@ -167,55 +145,31 @@ static void repack_q5_0_group8(const uint8_t* wbase, int64_t w_stride, int nb,
 void jam_q5_0_repack_band_avxvnni(void* arg, int t0, int t1, int tid) {
     const jam_band_job* J = (const jam_band_job*) arg;
     const int nb = J->kblocks, seq = J->seq;
-    const int64_t ldc = J->out_stride;
-    jam_repack* rp = &J->repack[tid];
-    for (int tile = t0; tile < t1; tile++) {
-        int row = tile * JAM_VNNI_BAND, row_end = row + JAM_VNNI_BAND;
-        if (row_end > J->dim0) row_end = J->dim0;
-        int group = 0;
-        for (int r = row; r + 7 < row_end; r += 8, group++) {
-            uint8_t* qs = rp->qs + (int64_t) group * nb * 256;
-            float* dw = rp->dw + (int64_t) group * nb * 8;
-            float* cw = rp->mw + (int64_t) group * nb * 8;
-            repack_q5_0_group8(J->w + (int64_t) r * J->w_stride, J->w_stride, nb, qs, dw, cw);
-            int s = 0;
-            for (; s + JAM_VNNI_NR <= seq; s += JAM_VNNI_NR)
-                q8_block8_nr(qs, dw, cw, J->xq, J->dx, s, nb, ldc, J->out, r);
-            for (; s < seq; s++)
-                _mm256_storeu_ps(J->out + (int64_t) s * ldc + r,
-                                 q8_block8(qs, dw, cw, J->xq + (int64_t) s * nb * JAM_QK, J->dx + (int64_t) s * nb, nb));
-        }
-        for (int r = row + group * 8; r < row_end; r++)
-            for (int s = 0; s < seq; s++)
-                J->out[(int64_t) s * ldc + r] =
-                    jam_q5_0_dot_f32(J->w + (int64_t) r * J->w_stride, nb, J->rhs + (int64_t) s * J->rhs_stride);
-    }
+    JAM_BAND8_DRIVER(nb * 256, nb * 8, JAM_VNNI_NR,           /* mw holds the corrections cw */
+        repack_q5_0_group8(J->w + (int64_t) r * J->w_stride, J->w_stride, nb, qs, dw, mw),
+        q8_block8_nr(qs, dw, mw, J->xq, J->dx, s, nb, ldc, J->out, r),
+        q8_block8(qs, dw, mw, J->xq + (int64_t) s * nb * JAM_QK, J->dx + (int64_t) s * nb, nb),
+        jam_q5_0_dot_f32(J->w + (int64_t) r * J->w_stride, nb, J->rhs + (int64_t) s * J->rhs_stride));
 }
 
-/* Pure (no-AVX-512) phase-1 activation requant feeding jam_q8_0_repack_band_avxvnni: F32 [seq×k] -> s8 xq +
- * per-32-block scale dx (amax/127). Per-token task (jam_run over seq). Scalar today - correct and portable;
- * AVX2-vectorize the max-abs + convert if it ever shows up in a profile. Q8_0 ignores xsum. */
+/* Phase 1 of the AVX-VNNI bands: F32 [seq x k] -> s8 codes xq and per-32 scales dx (jam_quant32_256,
+ * the AVX2 band's codes bit for bit), plus per-16 SCALED code sums xsum = dx * sum(xq), the Q4_0 band's
+ * -8 term in activation units (the Q8_0 and Q5_0 bands ignore them). Per-token task (jam_run over seq). */
 void jam_q8_0_requant_256(void* arg, int s0, int s1, int tid) {
     (void) tid;
     const jam_band_job* J = (const jam_band_job*) arg;
-    int nb = J->kblocks;
+    const int nb = J->kblocks;
     for (int s = s0; s < s1; s++) {
-        const float* row = J->rhs + (int64_t) s * J->rhs_stride;
+        const float* x = J->rhs + (int64_t) s * J->rhs_stride;
         int8_t* xq = J->xq + (int64_t) s * nb * JAM_QK;
         float*  dx = J->dx + (int64_t) s * nb;
-        float*  xs = J->xsum ? J->xsum + (int64_t) s * nb * 2 : 0;
-        for (int b = 0; b < nb; b++, row += JAM_QK, xq += JAM_QK) {
-            float amax = 0.0f;
-            for (int e = 0; e < JAM_QK; e++) { float a = row[e] < 0 ? -row[e] : row[e]; if (a > amax) amax = a; }
-            float d  = amax / 127.0f;
-            float id = d > 0.0f ? 1.0f / d : 0.0f;
-            for (int e = 0; e < JAM_QK; e++) {
-                float fv = row[e] * id;
-                int v = (int)(fv + (fv >= 0 ? 0.5f : -0.5f));
-                xq[e] = (int8_t)(v > 127 ? 127 : v < -128 ? -128 : v);
-            }
+        float*  xs = J->xsum + (int64_t) s * nb * 2;
+        for (int b = 0; b < nb; b++, x += JAM_QK, xq += JAM_QK) {
+            __m256 a[4]; __m256i q[4];
+            const float d = jam_quant32_256(x, xq, a, q);
             dx[b] = d;
-            if (xs) { int h0=0,h1=0; for (int e=0;e<16;e++) h0+=xq[e]; for (int e=16;e<JAM_QK;e++) h1+=xq[e]; xs[2*b]=(float)h0*d; xs[2*b+1]=(float)h1*d; }   /* SCALED sum (dx·Σxq): Q4_0 -8 term is in activation units */
+            xs[2 * b]     = (float) jam_hsum_i32_256(_mm256_add_epi32(q[0], q[1])) * d;
+            xs[2 * b + 1] = (float) jam_hsum_i32_256(_mm256_add_epi32(q[2], q[3])) * d;
         }
     }
 }
@@ -228,7 +182,7 @@ static void repack_q4_0_group8(const uint8_t* wbase, int64_t w_stride, int nb,
     for (int r = 0; r < 8; r++) {
         const uint8_t* w = wbase + r * w_stride;
         for (int B = 0; B < nb; B++, w += JAM_Q4_0_BYTES) {
-            float d = q8b_h2f(*(const uint16_t*) w);
+            float d = jam_half_at(w);
             /* plane i byte e = nibble 8i+e | nibble 8i+4+e << 4: each even dword ORs in its odd neighbour,
              * shifted up a nibble; the even dwords (0, 2, 4, 6) are the planes (8 rows × 4 = 32 B/plane) */
             const __m256i n = jam_nibbles_256(w + 2);
@@ -251,8 +205,8 @@ static inline __m256 q4_0_block8(const uint8_t* qs, const float* dw, const float
         __m256i acc = _mm256_setzero_si256();
         for (int i = 0; i < 4; i++) {
             __m256i pk = _mm256_load_si256((const void*) (qs + i * 32));
-            acc = _mm256_dpbusd_avx_epi32(acc, _mm256_and_si256(pk, m4), _mm256_set1_epi32(((const int*) x)[2 * i]));
-            acc = _mm256_dpbusd_avx_epi32(acc, _mm256_and_si256(_mm256_srli_epi16(pk, 4), m4), _mm256_set1_epi32(((const int*) x)[2 * i + 1]));
+            acc = _mm256_dpbusd_avx_epi32(acc, _mm256_and_si256(pk, m4), _mm256_set1_epi32(jam_load32(x + 8 * i)));
+            acc = _mm256_dpbusd_avx_epi32(acc, _mm256_and_si256(_mm256_srli_epi16(pk, 4), m4), _mm256_set1_epi32(jam_load32(x + 8 * i + 4)));
         }
         __m256 da = _mm256_set1_ps(dx[b]);
         f = _mm256_fmadd_ps(_mm256_cvtepi32_ps(acc), _mm256_mul_ps(_mm256_load_ps(dw), da), f);
@@ -275,8 +229,8 @@ static inline void q4_0_block8_nr(const uint8_t* qs, const float* dw, const floa
             __m256i pk = _mm256_load_si256((const void*) (qs + i * 32));
             __m256i lo = _mm256_and_si256(pk, m4), hi = _mm256_and_si256(_mm256_srli_epi16(pk, 4), m4);
             for (int c = 0; c < JAM_VNNI_NR; c++) {
-                acc[c] = _mm256_dpbusd_avx_epi32(acc[c], lo, _mm256_set1_epi32(((const int*) x[c])[2 * i]));
-                acc[c] = _mm256_dpbusd_avx_epi32(acc[c], hi, _mm256_set1_epi32(((const int*) x[c])[2 * i + 1]));
+                acc[c] = _mm256_dpbusd_avx_epi32(acc[c], lo, _mm256_set1_epi32(jam_load32(x[c] + 8 * i)));
+                acc[c] = _mm256_dpbusd_avx_epi32(acc[c], hi, _mm256_set1_epi32(jam_load32(x[c] + 8 * i + 4)));
             }
         }
         __m256 dwv = _mm256_load_ps(dw), mwv = _mm256_load_ps(mw);
@@ -294,27 +248,11 @@ static inline void q4_0_block8_nr(const uint8_t* qs, const float* dw, const floa
 
 void jam_q4_0_repack_band_avxvnni(void* arg, int t0, int t1, int tid) {
     const jam_band_job* J = (const jam_band_job*) arg;
-    const int nb = J->kblocks, seq = J->seq; const int64_t ldc = J->out_stride;
-    jam_repack* rp = &J->repack[tid];
-    for (int tile = t0; tile < t1; tile++) {
-        int row = tile * JAM_VNNI_BAND, row_end = row + JAM_VNNI_BAND;
-        if (row_end > J->dim0) row_end = J->dim0;
-        int group = 0;
-        for (int r = row; r + 7 < row_end; r += 8, group++) {
-            uint8_t* qs = rp->qs + (int64_t) group * nb * 128;
-            float* dw = rp->dw + (int64_t) group * nb * 8;
-            float* mw = rp->mw + (int64_t) group * nb * 8;
-            repack_q4_0_group8(J->w + (int64_t) r * J->w_stride, J->w_stride, nb, qs, dw, mw);
-            int s = 0;
-            for (; s + JAM_VNNI_NR <= seq; s += JAM_VNNI_NR)
-                q4_0_block8_nr(qs, dw, mw, J->xq, J->dx, J->xsum, s, nb, ldc, J->out, r);
-            for (; s < seq; s++)
-                _mm256_storeu_ps(J->out + (int64_t) s * ldc + r,
-                                 q4_0_block8(qs, dw, mw, J->xq + (int64_t) s * nb * JAM_QK,
-                                             J->dx + (int64_t) s * nb, J->xsum + (int64_t) s * nb * 2, nb));
-        }
-        for (int r = row + group * 8; r < row_end; r++)
-            for (int s = 0; s < seq; s++)
-                J->out[(int64_t) s * ldc + r] = jam_q4_0_dot_f32(J->w + (int64_t) r * J->w_stride, nb, J->rhs + (int64_t) s * J->rhs_stride);
-    }
+    const int nb = J->kblocks, seq = J->seq;
+    JAM_BAND8_DRIVER(nb * 128, nb * 8, JAM_VNNI_NR,           /* packed nibbles: 128 B/block/group8 */
+        repack_q4_0_group8(J->w + (int64_t) r * J->w_stride, J->w_stride, nb, qs, dw, mw),
+        q4_0_block8_nr(qs, dw, mw, J->xq, J->dx, J->xsum, s, nb, ldc, J->out, r),
+        q4_0_block8(qs, dw, mw, J->xq + (int64_t) s * nb * JAM_QK, J->dx + (int64_t) s * nb,
+                    J->xsum + (int64_t) s * nb * 2, nb),
+        jam_q4_0_dot_f32(J->w + (int64_t) r * J->w_stride, nb, J->rhs + (int64_t) s * J->rhs_stride));
 }

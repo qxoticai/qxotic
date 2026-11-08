@@ -17,11 +17,13 @@ typedef struct { uint8_t e; uint8_t qs[16]; } jam_mxfp4_blk;   /* 17 bytes */
 /* int8 codes = FP4 value × 2 (ggml kvalues_mxfp4); the ×½ lives in jam_mxfp4_dhalf. */
 #define JAM_MXFP4_CODES 0,1,2,3,4,6,8,12, 0,-1,-2,-3,-4,-6,-8,-12
 
-/* E8M0 byte -> 0.5 · 2^(e-127) = 2^(e-128). decode(value) = dhalf · (value×2) = 2^(e-127) · value. */
+/* E8M0 byte -> 0.5 · 2^(e-127) = 2^(e-128). decode(value) = dhalf · (value×2) = 2^(e-127) · value.
+ * ggml's ggml_e8m0_to_fp32_half bit for bit: e = 0, 1 are the subnormals 2^-128, 2^-127, and e = 255
+ * (E8M0's NaN) is the finite 2^127. */
 static inline float jam_mxfp4_dhalf(uint8_t e) {
-    uint32_t bits = (e == 0) ? 0x00400000u : ((uint32_t) e << 23);   /* 2^(e-127) */
+    uint32_t bits = e < 2 ? (uint32_t) (e + 1) << 21 : (uint32_t) (e - 1) << 23;   /* constant shifts */
     float s; memcpy(&s, &bits, 4);
-    return 0.5f * s;
+    return s;
 }
 
 /* Exact scalar MXFP4 · f32 dot over nb consecutive 32-blocks: the 8-row bands' partial-row tails. */

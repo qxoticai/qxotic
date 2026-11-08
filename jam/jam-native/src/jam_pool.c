@@ -29,7 +29,8 @@ struct jam_pool {
     jam_job_fn      fn;
     void*           arg;
     int             n;
-    _Atomic uint32_t seq;         /* (generation << 16) | participants: one read = one consistent job */
+    _Atomic uint64_t seq;         /* (generation << 16) | participants: one read = one consistent job; 48 bits
+                                   * of generation never wrap, so a worker can never mistake a new job for its last */
     _Atomic int     remaining;    /* workers still running the current job */
     _Atomic int     parked;
     _Atomic int     stop;
@@ -46,7 +47,7 @@ static void run_range(jam_job_fn fn, void* arg, int n, int idx, int total) {
 static void* worker_main(void* p) {
     jam_worker* w = (jam_worker*) p;
     jam_pool* pool = w->pool;
-    uint32_t my_seq = 0;
+    uint64_t my_seq = 0;
     for (;;) {
         int spins = 0;
         while (atomic_load_explicit(&pool->seq, memory_order_acquire) == my_seq
@@ -63,7 +64,7 @@ static void* worker_main(void* p) {
         if (atomic_load(&pool->stop)) break;
         /* A participant's job cannot complete without it, so fn/arg/n are pinned while it reads
          * them; a worker at or above the fan width reads nothing and just adopts the generation. */
-        uint32_t job = atomic_load_explicit(&pool->seq, memory_order_acquire);
+        uint64_t job = atomic_load_explicit(&pool->seq, memory_order_acquire);
         int part = (int) (job & 0xFFFF);
         if (w->idx < part) {
             run_range(pool->fn, pool->arg, pool->n, w->idx, part);
@@ -111,8 +112,8 @@ void jam_pool_parallel_for(jam_pool* pool, int n, jam_job_fn fn, void* arg) {
     pool->fn = fn; pool->arg = arg; pool->n = n;
     int part = pool->nworkers + 1;
     if (part > n) part = n;               /* never fan wider than the work units */
-    uint32_t next = ((atomic_load_explicit(&pool->seq, memory_order_relaxed) >> 16) + 1) << 16
-                    | (uint32_t) part;
+    uint64_t next = ((atomic_load_explicit(&pool->seq, memory_order_relaxed) >> 16) + 1) << 16
+                    | (uint64_t) part;
     atomic_store_explicit(&pool->remaining, part - 1, memory_order_relaxed);
     atomic_store_explicit(&pool->seq, next, memory_order_seq_cst);   /* publish (also orders vs parked) */
     if (atomic_load_explicit(&pool->parked, memory_order_seq_cst) > 0) {

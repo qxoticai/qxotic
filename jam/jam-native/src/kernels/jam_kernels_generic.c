@@ -4,12 +4,13 @@
 #include "jam_internal.h"
 #include <stddef.h>   /* size_t */
 #include <stdint.h>
+#include <float.h>    /* FLT_MIN */
 #include <math.h>     /* fabsf, lrintf */
 #include "jam_mxfp4.h"
 #include "jam_nvfp4.h"
 #include "jam_q1_0.h"
 #include "jam_kquant.h"
-#include "jam_fp16.h"   /* jam_half2float (shared software fp16->fp32) */
+#include "jam_fp16.h"   /* jam_half2float, jam_half_at (software fp16->fp32 at baseline flags) */
 #if defined(__aarch64__)
 #include <arm_neon.h>   /* baseline there: jam_q8_0_requant in intrinsics */
 #endif
@@ -39,9 +40,6 @@ void jam_mm_f32_generic(void* arg, int row_begin, int row_end, int tid) {
  * Dequantize the weight block (d * qs) and float-dot the F32 activation directly - no requant, no
  * scratch. The inner 32-wide loop is plain C the compiler vectorizes (int8->float convert + fmadd). */
 
-typedef struct { uint16_t d; int8_t qs[32]; } jam_blk_q8_0;   /* 34 bytes (matches GGML block_q8_0) */
-
-
 void jam_mm_q8_0_f32_generic(void* arg, int row_begin, int row_end, int tid) {
     (void) tid;
     const jam_q8_job* J = (const jam_q8_job*) arg;
@@ -52,12 +50,12 @@ void jam_mm_q8_0_f32_generic(void* arg, int row_begin, int row_end, int tid) {
     const size_t wrow = (size_t)(J->lda / 32);                 /* weight-row stride in blocks */
 
     for (int i = row_begin; i < row_end; ++i) {
-        const jam_blk_q8_0* arow = (const jam_blk_q8_0*) (A + (size_t) i * wrow * sizeof(jam_blk_q8_0));
+        const jam_q8_0_blk* arow = (const jam_q8_0_blk*) (A + (size_t) i * wrow * sizeof(jam_q8_0_blk));
         for (int t = 0; t < n; ++t) {
             const float* brow = B + (size_t) t * ldb;
             float acc = 0.0f;
             for (int blk = 0; blk < nb; ++blk) {
-                const jam_blk_q8_0* wb = &arow[blk];
+                const jam_q8_0_blk* wb = &arow[blk];
                 const float* b = brow + (size_t) blk * 32;
                 float d = jam_half2float(wb->d);
                 float s = 0.0f;
@@ -98,6 +96,7 @@ void jam_q8_0_requant(void* arg, int rb, int re, int tid) {
 #else
             float amax = 0.0f;
             for (int e = 0; e < 32; ++e) { float a = fabsf(b[e]); if (a > amax) amax = a; }
+            if (amax < FLT_MIN) amax = 0.0f;   /* 1 / a subnormal d overflows: an all-zero block */
             float d = amax / 127.0f, id = d > 0.0f ? 1.0f / d : 0.0f;
             int sum = 0;
             for (int e = 0; e < 32; ++e) {
@@ -217,7 +216,7 @@ void jam_mm_q4k_f32_generic(void* arg, int rb, int re, int tid) {
             const uint8_t* w = wrow; const float* x = xrow;
             float acc = 0.0f;
             for (int B = 0; B < sblocks; ++B, w += JAM_Q4K_BYTES, x += JAM_QKK) {
-                float d = jam_half2float(*(const uint16_t*) w), dmin = jam_half2float(*(const uint16_t*)(w + 2));
+                float d = jam_half_at(w), dmin = jam_half_at(w + 2);
                 uint8_t sc[8], mn[8]; jam_q4k_scales_mins(w + 4, sc, mn);
                 const uint8_t* q = w + 16;
                 for (int g = 0; g < 4; ++g) {
@@ -252,7 +251,7 @@ void jam_mm_q6k_f32_generic(void* arg, int rb, int re, int tid) {
             for (int B = 0; B < sblocks; ++B, w += JAM_Q6K_BYTES, x += JAM_QKK) {
                 const uint8_t* ql = w; const uint8_t* qh = w + 128;
                 const int8_t* sc = (const int8_t*) (w + 192);
-                float d = jam_half2float(*(const uint16_t*)(w + 208));
+                float d = jam_half_at(w + 208);
                 for (int h = 0; h < 2; ++h) {
                     const uint8_t* qlb = ql + h*64; const uint8_t* qhb = qh + h*32;
                     for (int g = 0; g < 4; ++g)
@@ -288,7 +287,7 @@ void jam_mm_q5k_f32_generic(void* arg, int rb, int re, int tid) {
             const uint8_t* w = wrow; const float* x = xrow;
             float acc = 0.0f;
             for (int B = 0; B < sblocks; ++B, w += JAM_Q5K_BYTES, x += JAM_QKK) {
-                float d = jam_half2float(*(const uint16_t*) w), dmin = jam_half2float(*(const uint16_t*)(w + 2));
+                float d = jam_half_at(w), dmin = jam_half_at(w + 2);
                 uint8_t sc[8], mn[8]; jam_q4k_scales_mins(w + 4, sc, mn);
                 const uint8_t* qh = w + 16; const uint8_t* qs = w + 48;
                 for (int g = 0; g < 4; ++g) {

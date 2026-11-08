@@ -27,8 +27,8 @@ if (NOT WIN32)
 endif()
 
 # The version is jam.h's JAM_VERSION_*, and it must be the jam Maven project's: one release number for the
-# jar and the library. The soname follows it, never set by hand: libjam.so.0.<minor> while the version
-# starts with 0 (any minor may break), libjam.so.<major> from 1.0.
+# jar and the library. The soname follows it, never set by hand, as native.mk derives libtoknroll's and
+# libjinfer's: the whole version while the major is 0 (any release may break), libjam.so.<major> from 1.0.
 file(STRINGS include/jam.h JAM_VERSION_DEFINES REGEX "^#define JAM_VERSION_(MAJOR|MINOR|PATCH) +[0-9]+")
 foreach(line IN LISTS JAM_VERSION_DEFINES)
     string(REGEX MATCH "JAM_VERSION_([A-Z]+) +([0-9]+)" _ "${line}")
@@ -36,7 +36,7 @@ foreach(line IN LISTS JAM_VERSION_DEFINES)
 endforeach()
 set(JAM_VERSION "${JAM_VERSION_MAJOR}.${JAM_VERSION_MINOR}.${JAM_VERSION_PATCH}")
 if (JAM_VERSION_MAJOR EQUAL 0)
-    set(JAM_SOVERSION "0.${JAM_VERSION_MINOR}")
+    set(JAM_SOVERSION "${JAM_VERSION}")
 else()
     set(JAM_SOVERSION "${JAM_VERSION_MAJOR}")
 endif()
@@ -53,12 +53,12 @@ if (EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/../pom.xml")   # absent in a copy of jam
     endif()
 endif()
 
-# The flag spellings below are GCC/Clang (-m..., -march=...); Windows builds use MinGW-w64
-# (cmake/toolchains/windows-*.cmake). Fail fast instead of erroring on the first -m flag.
+# The flag spellings below are GCC/Clang (-m..., -march=...); the shipped Windows library is zig's clang,
+# cross from Linux (cmake/toolchains/windows-x86-64.cmake). Fail fast instead of erroring on the first -m flag.
 if (MSVC)
     message(FATAL_ERROR "jam builds with GCC/Clang: on Windows with clang on the MSVC ABI "
-                        "(-DCMAKE_C_COMPILER=clang -G Ninja) or MinGW-w64 cross from Linux "
-                        "(cmake/toolchains/windows-*.cmake); MSVC flag spellings are not maintained")
+                        "(-DCMAKE_C_COMPILER=clang -G Ninja) or zig cross from Linux "
+                        "(cmake/toolchains/windows-x86-64.cmake); MSVC flag spellings are not maintained")
 endif()
 
 # macOS is Apple-silicon only: the x86 branch below is for Linux/Windows, and an Intel-Mac (or
@@ -70,6 +70,9 @@ endif()
 option(JAM_JNI "Build the JNI binding into libjam" ON)
 option(JAM_METAL "Build the Apple Metal GPU backend (macOS only)" ON)
 option(JAM_STRIP "Strip debug symbols from the shared library (Release builds)" OFF)
+
+# Every object, the kernels and the tests included, builds warning-free under these.
+add_compile_options(-Wall -Wextra)
 
 # AddressSanitizer + UBSan for the test build: instruments the whole lib (all ISA TUs) + the tests, so
 # OOB / use-after-free / misalignment / int-overflow in any kernel aborts loudly. Applied globally and
@@ -88,6 +91,9 @@ add_library(jam SHARED
 )
 target_include_directories(jam PUBLIC include PRIVATE src)
 set_target_properties(jam PROPERTIES VERSION ${JAM_VERSION} SOVERSION ${JAM_SOVERSION})
+if (WIN32)   # jam.dll with every toolchain: a GNU-ABI one (zig, MinGW) would say libjam.dll, inside the DLL too
+    set_target_properties(jam PROPERTIES PREFIX "")
+endif()
 
 # JAM_BUILD marks this as the library's own compilation so jam.h stamps the public API with
 # __declspec(dllexport) on Windows (PE hides everything else once jam_jni.c's JNIEXPORT appears - that
@@ -96,8 +102,8 @@ target_compile_definitions(jam PRIVATE JAM_BUILD=1)
 
 set(THREADS_PREFER_PTHREAD_FLAG ON)   # -pthread over -lpthread where it matters (GCC/ELF)
 find_package(Threads REQUIRED)
-target_link_libraries(jam PRIVATE Threads::Threads $<$<NOT:$<PLATFORM_ID:Windows>>:m>)   # libm: lrintf/fabsf in the requant floor; in the MSVC runtime on Windows
-                                                        # (a no-op alias on MinGW, part of libSystem on macOS)
+target_link_libraries(jam PRIVATE Threads::Threads $<$<NOT:$<PLATFORM_ID:Windows>>:m>)   # libm: lrintf/fabsf in the requant floor; in the C runtime on Windows,
+                                                        # part of libSystem on macOS
 target_link_libraries(jam PRIVATE ${CMAKE_DL_LIBS})    # dladdr/dlopen: the library pins itself (jam.c)
 
 # One per-ISA kernel TU: compiled with its OWN flags and bound at create; the dispatcher (src/jam.c)
@@ -136,7 +142,7 @@ if (CMAKE_SYSTEM_PROCESSOR MATCHES "x86_64|AMD64|amd64")
 
     # AVX-VNNI (Alder/Raptor Lake): 256-bit vpdpbusd without AVX-512 - the Q8_0/Q4_0 8-row repack bands
     # and the pure-256 requant (F32 reuses AVX2; K-quants use the avx2 8-row bands). The flag needs
-    # GCC 11+/Clang 12+ (Ubuntu LTS MinGW cross-GCC is older): probe like avx512bf16 below, and an old
+    # GCC 11+/Clang 12+ (an older distribution compiler lacks it): probe like avx512bf16 below, and an old
     # compiler just skips the TU - dispatch falls back to AVX2 on those builds.
     check_c_compiler_flag(-mavxvnni JAM_CC_AVXVNNI)
     if (JAM_CC_AVXVNNI)
@@ -149,12 +155,10 @@ if (CMAKE_SYSTEM_PROCESSOR MATCHES "x86_64|AMD64|amd64")
     jam_isa_tu(jam_avx512bw JAM_HAVE_AVX512BW ON "-mavx512f -mavx512bw -mavx512dq -mavx512vl -mfma -mf16c"
         src/kernels/jam_kernels_avx512bw.c)
 
-    # AVX-512: F32 mnpack + packed-panel + dense F16/BF16 + Q8_0 VNNI (avx512vnni + avx512vl + f16c).
-    jam_isa_tu(jam_avx512 JAM_HAVE_AVX512 ON "-mavx512f -mavx512bw -mavx512dq -mavx512vl -mavx512vnni -mfma -mf16c"
+    # AVX-512: F32 mnpack + packed-panel + dense F16/BF16. Bound on every AVX-512 CPU, Skylake-X included,
+    # so built WITHOUT -mavx512vnni: the compiler may not emit VNNI anywhere in it.
+    jam_isa_tu(jam_avx512 JAM_HAVE_AVX512 ON "-mavx512f -mavx512bw -mavx512dq -mavx512vl -mfma -mf16c"
         src/kernels/jam_kernels_avx512.c)
-    target_compile_definitions(jam_avx512 PRIVATE
-        $<$<BOOL:${JAM_Q8_RM}>:JAM_Q8_RM=${JAM_Q8_RM}>
-        $<$<BOOL:${JAM_Q8_RN}>:JAM_Q8_RN=${JAM_Q8_RN}>)
 
     # AVX512-BF16 (Zen 4+/Cooper Lake): vdpbf16ps dense BF16 tile + packed-panel. Own TU so the flag can't
     # leak; bound at create only when the CPU reports avx512bf16.
@@ -164,8 +168,8 @@ if (CMAKE_SYSTEM_PROCESSOR MATCHES "x86_64|AMD64|amd64")
             src/kernels/jam_kernels_bf16_avx512bf16.c)
     endif()
 
-    # AVX-512-VNNI quantized kernels: the 32x4 prefill band (every quant) and the K-quant rows without a
-    # repack (decode). Dispatcher symbols come via JAM_HAVE_AVX512 (already set).
+    # AVX-512-VNNI quantized kernels: the 32x4 prefill band (every quant) and the K-quant and Q8_0 rows
+    # without a repack (decode). Dispatcher symbols come via JAM_HAVE_AVX512 (already set).
     jam_isa_tu(jam_avx512_vnni JAM_HAVE_AVX512 OFF "-mavx512f -mavx512bw -mavx512dq -mavx512vl -mavx512vnni -mfma -mf16c"
         src/kernels/jam_kernels_kquant_avx512.c src/kernels/jam_kernels_band32_avx512.c)
 endif()

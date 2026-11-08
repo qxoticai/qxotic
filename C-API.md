@@ -147,9 +147,9 @@ Its `user_data` must stay valid as long as the callback is registered; a log cal
 
 Settings come through the API: an options struct, or `prefix_configure(options, count)` before first use (later it returns `EINVAL`).
 libtoknroll and libjinfer also read one environment variable, `TOKNROLL_OPTIONS` and `JINFER_OPTIONS`: the same options as configure's, separated by whitespace, applied after configure's, so whoever runs the program has the last word.
-libjam reads `JAM_DEBUG`, which prints its dispatch on stderr, and a few `JAM_*` tuning knobs.
+libjam reads two diagnostic switches: `JAM_DEBUG` prints its dispatch on stderr, `JAM_METAL_PROFILE` Metal's timings.
 A library reads its environment once, at first use.
-Beyond their log lines, libtoknroll and libjinfer write to stderr only the runtime's name for an option it rejects; libjam writes only its dispatch under `JAM_DEBUG`.
+Beyond their log lines, libtoknroll and libjinfer write to stderr only the runtime's name for an option it rejects; libjam writes only what its two switches ask for.
 
 ## Logging
 

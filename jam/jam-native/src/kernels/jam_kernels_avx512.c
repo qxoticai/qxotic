@@ -1,6 +1,8 @@
-/* AVX-512 kernels - this TU only, built with -mavx512f -mfma; bound at create when
- * ctx->active >= JAM_ISA_AVX512. C = A @ Bᵀ, F32 (== tinyBLAS's C = Aᵀ·B: k is contiguous on both,
- * each output is a dot of two contiguous k-vectors).
+/* AVX-512 float kernels - this TU only, built with -mavx512f -mavx512bw -mavx512dq -mavx512vl -mfma
+ * -mf16c and never -mavx512vnni: bound at create when ctx->active >= JAM_ISA_AVX512, which includes
+ * AVX-512 CPUs without VNNI (Skylake-X): F32 mnpack and packed panels, dense F16/BF16 (the Q8_0 VNNI
+ * kernels live in jam_kernels_kquant_avx512.c). C = A @ Bᵀ, F32 (== tinyBLAS's C = Aᵀ·B: k is
+ * contiguous on both, each output is a dot of two contiguous k-vectors).
  *
  * Design follows llamafile's tinyBLAS: register-tiled kernels + `mnpack` recursive tile selection so
  * the whole region is covered by register tiles down to 1×1 - no scalar edges. Tiles pre-load the RM
@@ -9,7 +11,7 @@
  * thread mnpacks [row_begin,row_end) × [0,n). */
 #include "jam_internal.h"
 #include <stddef.h>
-#include <stdlib.h>
+#include <stdint.h>
 #include <immintrin.h>
 
 /* Generate gemm_<RM>x<RN>: process every full RM×RN tile in [i0,iend) × [j0,jend). */
@@ -183,7 +185,7 @@ JAM_GEMM_TILE(4,4) JAM_GEMM_TILE(4,2) JAM_GEMM_TILE(4,1)
 JAM_GEMM_TILE(2,4) JAM_GEMM_TILE(2,2) JAM_GEMM_TILE(2,1)
 JAM_GEMM_TILE(1,4) JAM_GEMM_TILE(1,2) JAM_GEMM_TILE(1,1)
 
-/* tinyBLAS-style mnpack: pick the largest tile (from {4,2,1}²) that fits the remaining M,N; process
+/* tinyBLAS-style mnpack: pick the largest tile (5x5, else from {4,2,1}²) that fits the remaining M,N; process
  * its full-tile block; recurse on the row remainder then the column remainder. Bottoms out at 1×1. */
 static void mnpack(const float* A, long lda, const float* B, long ldb, float* C, long ldc,
                    long i0, long iend, long j0, long jend, long k) {
@@ -222,11 +224,9 @@ void jam_mm_f32_avx512(void* arg, int row_begin, int row_end, int tid) {
     (void) tid;
     const jam_mm_job* J = (const jam_mm_job*) arg;
     long k = J->k;
-    static long panel_bytes = 0;                           /* one-time read; benign race (idempotent) */
-    if (!panel_bytes) {
-        const char* pk = getenv("JAM_F32_PANEL_KB");       /* tunable per-uarch; ~3/4 of L3 by default */
-        panel_bytes = (pk ? atoi(pk) : 24576) * 1024L;
-    }
+    /* ponytail: one 24 MiB panel for every CPU, about 3/4 of a desktop Zen or Intel L3; derive it
+     * from the cache size if a CPU with a much smaller L3 measures slower */
+    const long panel_bytes = 24576 * 1024L;
     long nc = panel_bytes / (k * (long) sizeof(float));    /* cols whose k-vectors fill the panel */
     nc &= ~3L;                                             /* align to the register-tile width */
     if (nc < 4) nc = 4;
@@ -335,151 +335,6 @@ void jam_mm_f32p_avx512(void* arg, int rb, int re, int tid) {
             _mm512_store_ps(tile, ca); _mm512_store_ps(tile + 16, cb);
             for (int j = 0; j < cols; j++) C[(size_t)(j0 + j) * ldc + r] = tile[j];
         }
-    }
-}
-
-/* ======================= Q8_0 (weight) × F32 (activation) via AVX-512-VNNI =======================
- * Q8_0 block = { fp16 d; int8 qs[32] }. Dequant(x) = d * qs. C[i,j] = Σ_blk dA·dB · Σ_e qa·qb.
- *
- * VNNI vpdpbusd does UNSIGNED×SIGNED (u8·s8). The weight qa is s8; we make it u8 with uw = qa XOR 0x80
- * (= qa+128) and correct: Σ uw·qb = Σ(qa+128)·qb = Σ qa·qb + 128·Σqb, so Σ qa·qb = vpdpbusd − 128·qbsum.
- * The activation B is requantized once to int8 (per-32-block scale dB + block sum qbsum) into context
- * scratch, then reused across every weight row. Both phases are row-range kernels (auto-multithreaded). */
-
-#include <stdint.h>
-
-typedef struct __attribute__((packed)) { uint16_t d; int8_t qs[32]; } block_q8_0;  /* 34 bytes */
-
-static inline float h2f(uint16_t h) { return _cvtsh_ss(h); }
-
-/* ---- 512-bit VNNI Q8_0 helpers: process a block-PAIR (64 int8 = two Q8_0 blocks) per vpdpbusd ----
- * dpbusd yields 16 i32 lanes: 0..7 = first block's partials, 8..15 = second's, so each pair is scaled
- * by scale2(dA0·dB0, dA1·dB1) and float-accumulated; reduce_add at the end. abs/sign trick keeps the
- * weight unsigned (no +128 correction): dpbusd(|w|, sign(a,w)) = Σ w·a. */
-static inline __m512i q8_wpair(const block_q8_0* a, const block_q8_0* b) {
-    return _mm512_inserti64x4(_mm512_castsi256_si512(_mm256_loadu_si256((const __m256i*) a->qs)),
-                              _mm256_loadu_si256((const __m256i*) b->qs), 1);
-}
-static inline __m512i q8_sgnfold(__m512i a, __m512i w) {   /* negate a where w<0 (w==0 nulled by |w|=0) */
-    return _mm512_mask_sub_epi8(a, _mm512_movepi8_mask(w), _mm512_setzero_si512(), a);
-}
-static inline __m512 q8_scl2(float lo, float hi) {         /* lanes 0..7 = lo (block A), 8..15 = hi (block B) */
-    return _mm512_insertf32x8(_mm512_set1_ps(lo), _mm256_set1_ps(hi), 1);
-}
-static inline __m512 q8_dot(__m512i aw, __m512i sa) {
-    return _mm512_cvtepi32_ps(_mm512_dpbusd_epi32(_mm512_setzero_si512(), aw, sa));
-}
-
-/* one weight row · one activation col (block-pairs) -> float; used for the m/n tile remainders. */
-static inline float q8_bp_row(const block_q8_0* w, const int8_t* a, const float* ad, int nb) {
-    __m512 f = _mm512_setzero_ps();
-    int blk = 0;
-    for (; blk + 2 <= nb; blk += 2) {
-        __m512i wp = q8_wpair(&w[blk], &w[blk+1]);
-        __m512i ap = _mm512_loadu_si512((const void*)(a + (size_t)blk*32));
-        f = _mm512_fmadd_ps(q8_scl2(h2f(w[blk].d)*ad[blk], h2f(w[blk+1].d)*ad[blk+1]),
-                            q8_dot(_mm512_abs_epi8(wp), q8_sgnfold(ap, wp)), f);
-    }
-    if (blk < nb) {
-        __m512i wp = _mm512_zextsi256_si512(_mm256_loadu_si256((const __m256i*) w[blk].qs));
-        __m512i ap = _mm512_zextsi256_si512(_mm256_loadu_si256((const __m256i*)(a + (size_t)blk*32)));
-        f = _mm512_fmadd_ps(q8_scl2(h2f(w[blk].d)*ad[blk], 0.f),
-                            q8_dot(_mm512_abs_epi8(wp), q8_sgnfold(ap, wp)), f);
-    }
-    return _mm512_reduce_add_ps(f);
-}
-
-/* Phase 1 (requant B -> int8) is the shared scalar jam_q8_0_requant. Phase 2: 512-bit vpdpbusd with an
- * RM×RN register tile (RM weight rows × RN activation cols), processed row-at-a-time so only the current
- * row's weight pair is live alongside RN activation pairs (RM·RN + RN + temps zmm). The RM/RN loops have
- * compile-time bounds so -O3 fully unrolls them and keeps the f[][] accumulators in registers. Tune the
- * tile via -DJAM_Q8_RM / -DJAM_Q8_RN. Output token-major C[(j+c)·ldc + (i+r)]. */
-#ifndef JAM_Q8_RM
-#define JAM_Q8_RM 4
-#endif
-#ifndef JAM_Q8_RN
-#define JAM_Q8_RN 4
-#endif
-void jam_mm_q8_0_avx512(void* arg, int rb, int re, int tid) {
-    (void) tid;
-    const jam_q8_job* J = (const jam_q8_job*) arg;
-    const char* A = (const char*) J->a;
-    float* C = (float*) J->c;
-    const int ldc = J->ldc, n = J->n, k = J->k, nb = J->nb;
-    const size_t wrow = (size_t)(J->lda / 32);          /* weight-row stride in blocks */
-    enum { RM = JAM_Q8_RM, RN = JAM_Q8_RN };
-    #define WROW(ii) ((const block_q8_0*) (A + (size_t)(ii) * wrow * sizeof(block_q8_0)))
-    int i = rb;
-    for (; i + RM <= re; i += RM) {
-        const block_q8_0* w[RM];
-        for (int r = 0; r < RM; r++) w[r] = WROW(i + r);
-        int j = 0;
-        for (; j + RN <= n; j += RN) {
-            const int8_t* a[RN]; const float* b[RN];
-            for (int c = 0; c < RN; c++) { a[c] = J->aq + (size_t)(j+c)*k; b[c] = J->ad + (size_t)(j+c)*nb; }
-            __m512 f[RM][RN];
-            for (int r = 0; r < RM; r++) for (int c = 0; c < RN; c++) f[r][c] = _mm512_setzero_ps();
-            int blk = 0;
-            for (; blk + 2 <= nb; blk += 2) {                 /* block-pair: 64 int8 per vpdpbusd */
-                __m512i ap[RN]; float al[RN], ah[RN];
-                for (int c = 0; c < RN; c++) {
-                    ap[c] = _mm512_loadu_si512((const void*)(a[c] + (size_t)blk*32));
-                    al[c] = b[c][blk]; ah[c] = b[c][blk+1];
-                }
-                for (int r = 0; r < RM; r++) {
-                    __m512i wp = q8_wpair(&w[r][blk], &w[r][blk+1]), aw = _mm512_abs_epi8(wp);
-                    float wl = h2f(w[r][blk].d), wh = h2f(w[r][blk+1].d);
-                    for (int c = 0; c < RN; c++)
-                        f[r][c] = _mm512_fmadd_ps(q8_scl2(wl*al[c], wh*ah[c]), q8_dot(aw, q8_sgnfold(ap[c], wp)), f[r][c]);
-                }
-            }
-            if (blk < nb) {                                   /* odd block: zero-extend, hi scale = 0 */
-                __m512i ap[RN]; float al[RN];
-                for (int c = 0; c < RN; c++) {
-                    ap[c] = _mm512_zextsi256_si512(_mm256_loadu_si256((const __m256i*)(a[c] + (size_t)blk*32)));
-                    al[c] = b[c][blk];
-                }
-                for (int r = 0; r < RM; r++) {
-                    __m512i wp = _mm512_zextsi256_si512(_mm256_loadu_si256((const __m256i*) w[r][blk].qs)), aw = _mm512_abs_epi8(wp);
-                    float wl = h2f(w[r][blk].d);
-                    for (int c = 0; c < RN; c++)
-                        f[r][c] = _mm512_fmadd_ps(q8_scl2(wl*al[c], 0.f), q8_dot(aw, q8_sgnfold(ap[c], wp)), f[r][c]);
-                }
-            }
-            for (int r = 0; r < RM; r++) for (int c = 0; c < RN; c++)
-                C[(size_t)(j+c)*ldc + (i+r)] = _mm512_reduce_add_ps(f[r][c]);
-        }
-        for (; j < n; ++j)                                    /* column remainder: RM rows × 1 col */
-            for (int r = 0; r < RM; r++)
-                C[(size_t)j*ldc + (i+r)] = q8_bp_row(w[r], J->aq+(size_t)j*k, J->ad+(size_t)j*nb, nb);
-    }
-    for (; i < re; ++i) {                                     /* row remainder: 1 row × all cols */
-        const block_q8_0* w = WROW(i);
-        for (int j = 0; j < n; ++j)
-            C[(size_t)j*ldc+i] = q8_bp_row(w, J->aq+(size_t)j*k, J->ad+(size_t)j*nb, nb);
-    }
-    #undef WROW
-}
-
-/* ---- Q8_0 MATVEC (n==1, decode). Bandwidth-bound: each weight row read once from DRAM, dotted with
- * the single (cached, pre-requantized) activation column. SW-prefetch rows ahead to hide DRAM latency;
- * the row-range fan-out keeps every core streaming a different slice. Output token-major n=1 -> C[i]. */
-void jam_mm_q8_0_gemv_avx512(void* arg, int rb, int re, int tid) {
-    (void) tid;
-    const jam_q8_job* J = (const jam_q8_job*) arg;
-    const char* A = (const char*) J->a;
-    float* C = (float*) J->c;
-    const int nb = J->nb;
-    const size_t wstride = (size_t)(J->lda / 32) * sizeof(block_q8_0);   /* bytes per weight row */
-    const int8_t* aq = J->aq; const float* ad = J->ad;
-    for (int i = rb; i < re; ++i) {
-        const char* wp = A + (size_t) i * wstride;
-        if (i + 3 < re) {                                              /* prefetch ~3 rows ahead */
-            const char* pf = A + (size_t)(i + 3) * wstride;
-            _mm_prefetch(pf, _MM_HINT_T0);
-            _mm_prefetch(pf + 64, _MM_HINT_T0);
-        }
-        C[i] = q8_bp_row((const block_q8_0*) wp, aq, ad, nb);
     }
 }
 
