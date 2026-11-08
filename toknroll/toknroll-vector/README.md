@@ -51,5 +51,7 @@ Other tokenizers are untouched.
 - The pre-tokenization split runs as a bitstream program, 64 bytes per step, after the design of Hugging Face's `bitcannon`: one bitmap per character class, every rule as boolean algebra and carry-propagating adds over the bitmaps, no branch per piece or per character.
 - A word seen before is a probe into the tokenizer's word cache, which grows with use up to a million words, and its ids are written straight into the output; a run of such words is a loop of its own.
 - A new word is a token as it is when the merge loop would give it back whole, else merged: by hand up to three bytes, by a scan over flat arrays up to 95, by a heap beyond.
+- A merge starts from whole characters where it can, not from their bytes, which spares the merges that only reassemble a character: two a character in Chinese, most of a word's merges, one in Cyrillic.
+  Which characters may start whole is proven per vocabulary when the tokenizer loads: none whose own merges a merge with a neighbour outranks, and none beside a byte with which a straddling merge, say a space and a lead byte, could take it apart first.
 
-The split is proven exact against the regex on a fuzz corpus and piece for piece over all of enwik8, and the whole encoder against core's on the same.
+The split is proven exact against the regex on a fuzz corpus and piece for piece over all of enwik8, and the whole encoder against core's on the same, with every character of the Basic Multilingual Plane in the contexts that decide its seed.

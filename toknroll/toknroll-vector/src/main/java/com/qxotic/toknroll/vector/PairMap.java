@@ -198,6 +198,16 @@ final class PairMap {
         return (high(key) << 9) | low(key);
     }
 
+    /** The merged token of a {@link #get} result other than {@link #NONE}. */
+    static int id(long merged) {
+        return (int) (merged >>> 32);
+    }
+
+    /** The rank of a {@link #get} result other than {@link #NONE}. */
+    static int rank(long merged) {
+        return (int) merged;
+    }
+
     /** The merge of {@code left} and {@code right}: {@code id << 32 | rank}, or {@link #NONE}. */
     long get(int left, int right) {
         if ((left | right) < GRID && (left | right) >= 0) {

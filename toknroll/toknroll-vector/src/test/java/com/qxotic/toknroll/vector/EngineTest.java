@@ -231,6 +231,35 @@ class EngineTest {
         }
     }
 
+    /**
+     * Every character of the Basic Multilingual Plane, which the merge may start from whole, in the
+     * contexts that decide whether it may: run together with its neighbours, after a space, between
+     * ASCII letters, before CJK punctuation.
+     */
+    @ParameterizedTest(name = "{0}")
+    @MethodSource("pairs")
+    void everyCharacterInItsContexts(Pair pair) {
+        for (int from = 0x80; from < 0x10000; from += 256) {
+            StringBuilder run = new StringBuilder();
+            StringBuilder spaced = new StringBuilder();
+            StringBuilder lettered = new StringBuilder();
+            StringBuilder punctuated = new StringBuilder();
+            for (int cp = from; cp < from + 256; cp++) {
+                if (Character.isSurrogate((char) cp)) {
+                    continue;
+                }
+                run.append((char) cp);
+                spaced.append(' ').append((char) cp);
+                lettered.append('a').append((char) cp).append('b');
+                punctuated.append((char) cp).append('。');
+            }
+            same(pair, run.toString());
+            same(pair, spaced.toString());
+            same(pair, lettered.toString());
+            same(pair, punctuated.toString());
+        }
+    }
+
     @Tag("corpus")
     @ParameterizedTest(name = "{0}")
     @MethodSource("pairs")

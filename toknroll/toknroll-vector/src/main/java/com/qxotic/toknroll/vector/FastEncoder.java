@@ -1,5 +1,8 @@
 package com.qxotic.toknroll.vector;
 
+import static com.qxotic.toknroll.vector.PairMap.id;
+import static com.qxotic.toknroll.vector.PairMap.rank;
+
 import com.qxotic.toknroll.IntSequence;
 import com.qxotic.toknroll.spi.TiktokenEngine;
 import com.qxotic.toknroll.spi.TiktokenTables;
@@ -16,7 +19,8 @@ import java.util.concurrent.atomic.AtomicReferenceArray;
  * <p>A cache hit and a single byte write their ids straight into the output array, in a loop of
  * their own ({@link WordCache#run}); only a miss leaves it. A miss is a token as it is when the
  * merge loop would give it back whole ({@link ExactLookup}), else merged: by hand up to three
- * bytes, by a scan over flat arrays up to {@link #LARGE} bytes, by a heap beyond.
+ * bytes, by a scan over flat arrays up to {@link #LARGE} bytes, by a heap beyond. A merge starts
+ * from the word's bytes, or from whole characters where the {@link Seeds} proved the ids the same.
  *
  * <p>One {@link WordCache} serves every thread that encodes with this encoder, of at most {@code
  * -Dtoknroll.wordCache} megabytes ({@link #DEFAULT_CACHE_MB} by default, 0 for none), and goes when
@@ -50,6 +54,7 @@ final class FastEncoder implements TiktokenEngine.Encoder, TiktokenEngine.WordEn
     private final BitSplit split; // null when it encodes words only
     private final PairMap merges;
     private final int[] singleByte;
+    private final Seeds seeds; // null when the model lets no character start whole
     private final ExactLookup exact;
     private final WordCache cache = CACHE_SLOTS > 0 ? new WordCache(CACHE_SLOTS) : null;
 
@@ -74,6 +79,7 @@ final class FastEncoder implements TiktokenEngine.Encoder, TiktokenEngine.WordEn
         for (int id = 0; id < tokenBytes.length; id++) {
             tokenBytes[id] = model.tokenBytes(id);
         }
+        this.seeds = Seeds.prove(model, tokenBytes, merges, singleByte);
         // Last, since proving which tokens fold runs the merge loop.
         this.exact =
                 new ExactLookup(tokenBytes, model.ignoreMerges() ? null : provenFolds(tokenBytes));
@@ -309,6 +315,28 @@ final class FastEncoder implements TiktokenEngine.Encoder, TiktokenEngine.WordEn
         }
     }
 
+    /**
+     * The tokens the merge of {@code bytes[off, off + length)} starts from, into {@code tokens}:
+     * one per byte, or a seeded character's where the {@link Seeds} allow; returns how many.
+     */
+    private int seed(byte[] bytes, int off, int length, int[] tokens) {
+        if (seeds != null && !Seeds.ascii(bytes, off, length)) {
+            return seeds.fill(bytes, off, length, tokens);
+        }
+        // by four, which the JIT does not do for this loop by itself
+        int i = 0;
+        for (; i < (length & ~3); i += 4) {
+            tokens[i + 3] = singleByte[bytes[off + i + 3] & 0xFF];
+            tokens[i + 2] = singleByte[bytes[off + i + 2] & 0xFF];
+            tokens[i + 1] = singleByte[bytes[off + i + 1] & 0xFF];
+            tokens[i] = singleByte[bytes[off + i] & 0xFF];
+        }
+        for (; i < length; i++) {
+            tokens[i] = singleByte[bytes[off + i] & 0xFF];
+        }
+        return length;
+    }
+
     // ---- up to three bytes ----
 
     private void mergeTiny(byte[] bytes, int off, int length, IdBuffer out) {
@@ -362,19 +390,8 @@ final class FastEncoder implements TiktokenEngine.Encoder, TiktokenEngine.WordEn
         s.ensureSmall(length);
         int[] tokens = s.tokens;
         long[] pairs = s.pairs; // the merge of tokens[i] and tokens[i + 1], or NONE
-        int size = length;
-        // by four, which the JIT does not do for this loop by itself
-        int i = 0;
-        for (; i < (size & ~3); i += 4) {
-            tokens[i + 3] = singleByte[bytes[off + i + 3] & 0xFF];
-            tokens[i + 2] = singleByte[bytes[off + i + 2] & 0xFF];
-            tokens[i + 1] = singleByte[bytes[off + i + 1] & 0xFF];
-            tokens[i] = singleByte[bytes[off + i] & 0xFF];
-        }
-        for (; i < size; i++) {
-            tokens[i] = singleByte[bytes[off + i] & 0xFF];
-        }
-        for (i = 0; i + 1 < size; i++) {
+        int size = seed(bytes, off, length, tokens);
+        for (int i = 0; i + 1 < size; i++) {
             pairs[i] = merges.get(tokens[i], tokens[i + 1]);
         }
         while (size >= 2) {
@@ -410,14 +427,14 @@ final class FastEncoder implements TiktokenEngine.Encoder, TiktokenEngine.WordEn
 
     // ---- large words: a linked list and a heap of candidates ----
 
-    private void mergeLarge(byte[] bytes, int off, int n, IdBuffer out, Scratch s) {
-        s.ensureLarge(n);
+    private void mergeLarge(byte[] bytes, int off, int length, IdBuffer out, Scratch s) {
+        s.ensureLarge(length);
         int[] token = s.token;
         int[] prev = s.prev;
         int[] next = s.next;
         int[] edgeStamp = s.edgeStamp;
+        int n = seed(bytes, off, length, token);
         for (int i = 0; i < n; i++) {
-            token[i] = singleByte[bytes[off + i] & 0xFF];
             prev[i] = i - 1;
             next[i] = i + 1;
             edgeStamp[i] = 0;
@@ -556,14 +573,6 @@ final class FastEncoder implements TiktokenEngine.Encoder, TiktokenEngine.WordEn
     /** Lower rank first, then the leftmost node. */
     private static boolean less(int rankA, long nodeA, int rankB, long nodeB) {
         return rankA != rankB ? rankA < rankB : (int) (nodeA >>> 32) < (int) (nodeB >>> 32);
-    }
-
-    private static int id(long merged) {
-        return (int) (merged >>> 32);
-    }
-
-    private static int rank(long merged) {
-        return (int) merged;
     }
 
     /** What one call works with: the piece ends, its view of the cache, the merge arrays. */
