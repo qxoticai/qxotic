@@ -1,21 +1,38 @@
 package com.qxotic.toknroll.incubator;
 
+import com.qxotic.format.json.Json;
 import com.qxotic.toknroll.Tokenizer;
 import com.qxotic.toknroll.TokenizerLoadException;
 import com.qxotic.toknroll.gguf.GGUFTokenizerLoader;
 import java.io.IOException;
-import java.io.InputStream;
 import java.nio.file.Files;
 import java.nio.file.Path;
-import java.util.Locale;
+import java.util.List;
+import java.util.Map;
 import java.util.Objects;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
+import java.util.stream.Collectors;
+import java.util.stream.Stream;
 
-/** Loads GGUF tokenizers from local Ollama model manifests and blobs. */
+/**
+ * Loads the tokenizer of a model Ollama has pulled, from its local store, by the name {@code ollama
+ * run} takes: {@code [host/][namespace/]model[:tag]}, host {@code registry.ollama.ai}, namespace
+ * {@code library} and tag {@code latest} when left out, matched without regard to case as Ollama
+ * does ({@code qwen3:4b}, {@code hf.co/bartowski/Llama-3.2-1B-Instruct-GGUF:Q4_K_M}). The store is
+ * {@code $OLLAMA_MODELS}, else {@code ~/.ollama/models}; nothing is downloaded.
+ */
 public final class OllamaTokenizerLoader {
-    private static final Pattern OLLAMA_DIGEST_PATTERN =
-            Pattern.compile("\"digest\"\\s*:\\s*\"sha256:([0-9a-fA-F]{64})\"");
+    private static final String MODEL_LAYER = "application/vnd.ollama.image.model";
+
+    // Ollama's own name rules: host, namespace and model as in types/model/name.go, then the tag.
+    private static final Pattern NAME =
+            Pattern.compile(
+                    "(?:([A-Za-z0-9][A-Za-z0-9_.:-]{0,349})/)??"
+                            + "(?:([A-Za-z0-9][A-Za-z0-9_-]{0,79})/)?"
+                            + "([A-Za-z0-9][A-Za-z0-9_.-]{0,79})"
+                            + "(?::([A-Za-z0-9_][A-Za-z0-9_.-]{0,79}))?");
+    private static final Pattern DIGEST = Pattern.compile("sha256:([0-9a-f]{64})");
 
     private final GGUFTokenizerLoader ggufLoader;
 
@@ -27,108 +44,90 @@ public final class OllamaTokenizerLoader {
         this.ggufLoader = Objects.requireNonNull(ggufLoader, "ggufLoader");
     }
 
-    public Tokenizer fromLocal(String modelTag) {
-        return fromLocal(resolveOllamaModelsRoot(), modelTag);
-    }
-
-    public Tokenizer fromLocal(Path ollamaModelsRoot, String modelTag) {
-        Objects.requireNonNull(ollamaModelsRoot, "ollamaModelsRoot");
-        String normalizedTag = normalizeOllamaTag(modelTag);
-        Path modelsRoot = ollamaModelsRoot.toAbsolutePath().normalize();
-        Path manifest = resolveOllamaManifest(modelsRoot, normalizedTag);
-        Path ggufFile = resolveGgufBlobFromManifest(modelsRoot, manifest);
-        return ggufLoader.fromLocal(ggufFile);
-    }
-
-    private static Path resolveOllamaModelsRoot() {
+    /** The tokenizer of {@code name} in the default store. */
+    public Tokenizer fromLocal(String name) {
         String configured = System.getenv("OLLAMA_MODELS");
-        if (configured != null && !configured.isBlank()) {
-            return Path.of(configured);
-        }
-        String home = System.getProperty("user.home", ".");
-        return Path.of(home, ".ollama", "models");
+        return fromLocal(
+                configured != null && !configured.isBlank()
+                        ? Path.of(configured)
+                        : Path.of(System.getProperty("user.home"), ".ollama", "models"),
+                name);
     }
 
-    private static String normalizeOllamaTag(String modelTag) {
-        if (modelTag == null || modelTag.isBlank()) {
-            throw new IllegalArgumentException("modelTag must not be blank");
-        }
-        String normalized = modelTag.trim();
-        if (normalized.contains("\\") || normalized.contains("..")) {
+    /** The tokenizer of {@code name} in the Ollama store at {@code store} (its models folder). */
+    public Tokenizer fromLocal(Path store, String name) {
+        return ggufLoader.fromLocal(modelBlob(store, name));
+    }
+
+    /** The GGUF blob holding the model {@code name} names in {@code store}. */
+    static Path modelBlob(Path store, String name) {
+        Matcher m = NAME.matcher(Objects.requireNonNull(name, "name"));
+        if (!m.matches()) {
             throw new IllegalArgumentException(
-                    "modelTag contains invalid path characters: " + modelTag);
+                    "not an Ollama model name ([host/][namespace/]model[:tag]): '" + name + "'");
         }
-        return normalized;
-    }
+        String host = m.group(1) != null ? m.group(1) : "registry.ollama.ai";
+        String namespace = m.group(2) != null ? m.group(2) : "library";
+        String tag = m.group(4) != null ? m.group(4) : "latest";
+        Path root = store.toAbsolutePath().normalize();
 
-    private static Path resolveOllamaManifest(Path modelsRoot, String modelTag) {
-        String model = modelTag;
-        String tag = "latest";
-        int colon = modelTag.lastIndexOf(':');
-        if (colon > 0 && colon < modelTag.length() - 1) {
-            model = modelTag.substring(0, colon);
-            tag = modelTag.substring(colon + 1);
+        Path model = child(child(child(root.resolve("manifests"), host), namespace), m.group(3));
+        Path manifest = child(model, tag);
+        if (manifest == null || !Files.isRegularFile(manifest)) {
+            String full = host + "/" + namespace + "/" + m.group(3) + ":" + tag;
+            List<String> tags = entries(model);
+            throw new IllegalArgumentException(
+                    tags.isEmpty()
+                            ? "Ollama has not pulled " + full + " (store " + root + ")"
+                            : "Ollama has no "
+                                    + full
+                                    + "; pulled tags: "
+                                    + String.join(", ", tags));
         }
 
-        Path manifestsRoot = modelsRoot.resolve("manifests");
-        Path[] candidates =
-                new Path[] {
-                    manifestsRoot
-                            .resolve("registry.ollama.ai")
-                            .resolve("library")
-                            .resolve(model)
-                            .resolve(tag),
-                    manifestsRoot.resolve("registry.ollama.ai").resolve(model).resolve(tag),
-                    manifestsRoot.resolve(model).resolve(tag)
-                };
-        for (Path candidate : candidates) {
-            if (Files.exists(candidate) && Files.isRegularFile(candidate)) {
-                return candidate;
-            }
-        }
-        throw new IllegalArgumentException(
-                "Could not locate Ollama manifest for model tag '"
-                        + modelTag
-                        + "' under "
-                        + manifestsRoot);
-    }
-
-    private static Path resolveGgufBlobFromManifest(Path modelsRoot, Path manifestPath) {
-        String manifest;
+        // the model layer, the GGUF Ollama runs; a projector or adapter layer is GGUF too
+        String digest = null;
         try {
-            manifest = Files.readString(manifestPath);
-        } catch (IOException e) {
-            throw new TokenizerLoadException("Failed to read Ollama manifest " + manifestPath, e);
-        }
-
-        Matcher matcher = OLLAMA_DIGEST_PATTERN.matcher(manifest);
-        Path blobsRoot = modelsRoot.resolve("blobs");
-        while (matcher.find()) {
-            String digest = matcher.group(1).toLowerCase(Locale.ROOT);
-            Path blobPath = blobsRoot.resolve("sha256-" + digest);
-            if (!Files.exists(blobPath) || !Files.isRegularFile(blobPath)) {
-                continue;
+            for (Object layer : (List<?>) Json.parseMap(Files.readString(manifest)).get("layers")) {
+                Map<?, ?> l = (Map<?, ?>) layer;
+                if (MODEL_LAYER.equals(l.get("mediaType"))) {
+                    digest = (String) l.get("digest");
+                    break;
+                }
             }
-            if (isGgufFile(blobPath)) {
-                return blobPath;
-            }
+        } catch (IOException | RuntimeException e) {
+            throw new TokenizerLoadException("unreadable Ollama manifest " + manifest, e);
         }
-
-        throw new IllegalArgumentException(
-                "No GGUF blob found in Ollama manifest " + manifestPath + " under " + blobsRoot);
+        Matcher d = DIGEST.matcher(String.valueOf(digest));
+        if (!d.matches()) {
+            throw new TokenizerLoadException(
+                    "Ollama manifest " + manifest + " has no model layer with a sha256 digest");
+        }
+        Path blob = root.resolve("blobs").resolve("sha256-" + d.group(1));
+        if (!Files.isRegularFile(blob)) {
+            throw new TokenizerLoadException("Ollama blob " + blob + " is missing");
+        }
+        return blob;
     }
 
-    private static boolean isGgufFile(Path blobPath) {
-        try (InputStream in = Files.newInputStream(blobPath)) {
-            byte[] magic = new byte[4];
-            int read = in.read(magic);
-            return read == 4
-                    && magic[0] == 'G'
-                    && magic[1] == 'G'
-                    && magic[2] == 'U'
-                    && magic[3] == 'F';
+    /** {@code dir}'s entry named {@code name}, ignoring case as Ollama does; null when none. */
+    private static Path child(Path dir, String name) {
+        for (String entry : entries(dir)) {
+            if (entry.equalsIgnoreCase(name)) {
+                return dir.resolve(entry);
+            }
+        }
+        return null;
+    }
+
+    private static List<String> entries(Path dir) {
+        if (dir == null || !Files.isDirectory(dir)) {
+            return List.of();
+        }
+        try (Stream<Path> s = Files.list(dir)) {
+            return s.map(p -> p.getFileName().toString()).sorted().collect(Collectors.toList());
         } catch (IOException e) {
-            return false;
+            return List.of();
         }
     }
 }

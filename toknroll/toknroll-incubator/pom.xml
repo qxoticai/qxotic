@@ -28,6 +28,10 @@
       <artifactId>toknroll-gguf</artifactId>
     </dependency>
     <dependency>
+      <groupId>com.qxotic</groupId>
+      <artifactId>json</artifactId>
+    </dependency>
+    <dependency>
       <groupId>com.knuddels</groupId>
       <artifactId>jtokkit</artifactId>
     </dependency>
