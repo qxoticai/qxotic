@@ -33,8 +33,8 @@ tokenizer.vocabulary_size, tokenizer.token(0), tokenizer.id("<|im_end|>")
   A tokenizer it cannot reproduce exactly is refused at load, with the reason, never loaded approximately.
 - **One loader for every file the models ship.** A `tokenizer.json` or its folder, a GGUF read for its header only, a tiktoken checkout, and any of them by hub reference, Hugging Face or ModelScope, metadata fetched and cached, weights never.
   No other package reads all three formats.
-- **Fast, and out of the GIL.** Hundreds of MB/s of text on one core, `encode_batch` over every core, every call releasing the GIL; ids come back as an `array('i')`, four bytes each, that numpy and torch read without a copy.
-- **Nothing to carry.** A 6 MB wheel with the library inside, no `torch`, no `transformers`, no `huggingface_hub`; a model's tokenizer in a 20 MB container.
+- **Fast, and out of the GIL.** Over 100 MB/s of new text on one core for the byte-level BPE families (Qwen, Llama, GPT-4o, Mistral), tens for the SentencePiece ones (Gemma), `encode_batch` over every core, every call releasing the GIL; ids come back as an `array('i')`, four bytes each, that numpy and torch read without a copy.
+- **Nothing to carry.** A 6 MB wheel with the library inside, no `torch`, no `transformers`, no `huggingface_hub`; a model's tokenizer in a 20 MB container image, and about 80-200 MB of RSS at run time.
 - **Honest about its scope.** Raw text in, ids out, as tiktoken's `encode_ordinary`: no BOS, no EOS, no padding, no truncation, no offsets.
   Those belong to the chat template and the model, and leaving them out is what keeps the ids exact.
 - **The same engine everywhere.** Tok'n'Roll is a Java library, `libtoknroll` is its native build, and [`toknroll.h`](https://github.com/qxoticai/qxotic/blob/main/toknroll/toknroll-native/include/toknroll.h) is thirteen functions any language calls; [jinfer](https://pypi.org/project/jinfer/) serves its models' tokenizers through this very class.
@@ -60,9 +60,9 @@ tokenizer.vocabulary_size, tokenizer.token(0), tokenizer.id("<|im_end|>")
 | You want | Call |
 |---|---|
 | ids | `encode(text)`, an `array('i')`: four bytes an id, nothing boxed, `numpy.frombuffer(ids, dtype=numpy.int32)` without a copy; `specials=True` keeps spelled special tokens whole |
-| text | `decode(ids)`: an int32 buffer (`array('i')`, numpy) read in place, any other iterable of int copied once; `decode_bytes(ids)` for the raw bytes |
+| text | `decode(ids)`: a writable, contiguous int32 buffer (`array('i')`, numpy) read in place, anything else copied once; `decode_bytes(ids)` for the raw bytes |
 | a token budget | `count_tokens(text)`, no list built |
-| many texts | `encode_batch(texts)`: one call, the library spreads the texts over the cores |
+| many texts | `encode_batch(texts)`: one call, the library spreads the texts over the cores, the first such batch starting the workers (about 60 ms); a batch too small to share runs on the calling thread |
 | the vocabulary | `vocabulary_size`, `token(id)`, `id(token)`, `token_flags(id)` (a `TokenFlags` mask: `NORMAL`, `CONTROL`, `USER_DEFINED`, `BYTE`, ...), `None` when absent |
 | text without the specials | `decode(i for i in ids if not tokenizer.token_flags(i) & SPECIAL)` with `SPECIAL = TokenFlags.CONTROL \| TokenFlags.USER_DEFINED \| TokenFlags.UNKNOWN`: the special kinds only, a `BYTE` token is part of a character |
 | another process | a `Tokenizer` pickles as its `source`, so `multiprocessing` and `concurrent.futures` just work |
@@ -107,7 +107,8 @@ Errors are `toknroll.ToknrollError` subclasses, each with `.code`:
 | `NotFound` | `FileNotFoundError` | a missing file, repository or revision, or one not cached while offline |
 | `Unsupported` | `ValueError` | a valid tokenizer toknroll does not implement, the field named |
 
-An id that is negative or past int32 is an `OverflowError` and a non-int a `TypeError`, as in HF `tokenizers` and tiktoken; a wrong argument type is a `TypeError` naming the call.
+An id past int32 is an `OverflowError` and a non-int a `TypeError`, as in HF `tokenizers` and tiktoken; a negative id is an `OverflowError` in `token` and `token_flags`, an `InvalidArgument` in `decode`.
+A wrong argument type is a `TypeError` naming the call.
 
 ## Cache, offline, options
 

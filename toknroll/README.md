@@ -143,6 +143,8 @@ Where llama.cpp differs from the model's own tokenizer, Tok'n'Roll follows the m
 - llama.cpp matches gpt-oss's Harmony control tokens even in raw text.
 - llama.cpp retypes a normal token named like an end-of-generation marker (Qwen2's `</s>`) as a control token, so `parse_special` matches it.
 
+One difference is the file's own: a Qwen GGUF carries no normalizer, so it encodes decomposed accents (`e` + U+0301) as llama.cpp does, where the same model's `tokenizer.json` first composes them (NFC).
+
 ## Benchmarks
 
 Single-threaded encode and decode against the usual suspects. Competitive with native tokenizers,

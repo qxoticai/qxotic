@@ -17,8 +17,9 @@ sources fetch metadata only, never weights. A `Tokenizer` never changes, so it m
 between threads, and it pickles as its source. Errors are `ToknrollError` subclasses.
 
 Ids are `array('i')`, four bytes each and nothing boxed: slice it, iterate it, `len` it, or hand
-it to numpy with `numpy.frombuffer(ids, dtype=numpy.int32)` without a copy. `decode` takes any
-int32 buffer the same way, so `decode(encode(text))` copies nothing in either direction.
+it to numpy with `numpy.frombuffer(ids, dtype=numpy.int32)` without a copy. `decode` reads a writable,
+contiguous int32 buffer in place and copies anything else once, so `decode(encode(text))` copies
+nothing in either direction.
 """
 from __future__ import annotations
 
@@ -245,8 +246,8 @@ class Tokenizer:
         return [out[start:end] for start, end in pairwise(offsets)]
 
     def decode_bytes(self, ids: Iterable[int]) -> bytes:
-        """The tokens' bytes: UTF-8, except where a token holds part of a character. Any int32
-        buffer, an `array('i')` or a numpy array, is read in place."""
+        """The tokens' bytes: UTF-8, except where a token holds part of a character. A writable,
+        contiguous int32 buffer, an `array('i')` or a numpy array, is read in place."""
         return bytes(self._decoded(ids, "decode_bytes"))
 
     def decode(self, ids: Iterable[int], *, errors: str = "replace") -> str:
