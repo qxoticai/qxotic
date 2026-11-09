@@ -11,10 +11,10 @@ import org.graalvm.nativeimage.c.function.CFunction;
 import org.graalvm.word.PointerBase;
 
 /**
- * The threads a batch runs on: one per core, caller included, started by the first parallel batch, each
- * waiting for work in C between jobs, where a fork finds it idle (toknroll_isolate.c says why not
- * the common pool). Where C has no workers (Windows, libjinfer) a batch runs on the common pool; in
- * a forked child, which has none of the threads, on the calling thread.
+ * The threads a batch runs on: one per core, caller included, started by the first parallel batch,
+ * each waiting for work in C between jobs, where a fork finds it idle (toknroll_isolate.c says why
+ * not the common pool). Where C has no workers (Windows, libjinfer) a batch runs on the common
+ * pool; in a forked child, which has none of the threads, on the calling thread.
  */
 final class Workers {
     /** The threads a batch is shared between, the caller's included. */
