@@ -62,7 +62,7 @@ The library is a Java runtime compiled ahead of time; it starts at `jinfer_confi
 | offline | `-Djinfer.offline=true` serves the store and never touches the network; `false`, `0`, `off` and `no` mean online, anything else offline |
 | threads | `-Djinfer.threads=<n>` sizes the inference pool; the default is the machine's physical cores |
 | the prompt cache | `-Djinfer.cache.sessions=<n>` and `-Djinfer.cache.budget=<size>` bound what the engine keeps between turns |
-| memory | RAM for the model file, which is read whole, plus its context; `-XX:MaxHeapSize=<size>` caps the runtime's own heap; the runtime reserves the address space its heap may grow to, so under a virtual memory limit (`ulimit -v`) cap the heap, or the start fails saying so |
+| memory | RAM for the model file, which is read whole, plus its context; `-XX:MaxHeapSize=<size>` caps the runtime's own heap; the runtime reserves about 34 GB of address space for its heap, virtual memory and not RAM, whatever the heap cap, so under a virtual memory limit (`ulimit -v`) raise the limit or reserve less with `-XX:ReservedAddressSpaceSize=<size>`, the heap's ceiling, or the start fails saying so |
 
 Downloads go through `curl` on the PATH, so the image carries no TLS stack of its own; local models need nothing.
 An image or an audio file given to a chat is decoded with `ffmpeg` on the PATH, and speech synthesis with Kokoro voices needs `espeak-ng` (or `espeak`); a WAV file for transcription needs nothing.

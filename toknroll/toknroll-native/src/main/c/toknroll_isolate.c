@@ -86,9 +86,9 @@ static const char* configured_by;       /* the public function configure came th
 static long created;                    /* set when creation starts, port_load/port_store: then configure is too late */
 static long started;                    /* the runtime is up and this file's state with it: port_load/port_store */
 /* a failure with no isolate to hold the message, before it or in a forked child: the calling thread's own */
-static PORT_THREAD_LOCAL char early_error[256];
+static PORT_THREAD_LOCAL char early_error[1024];   /* the Java side's bound (Errors.LIMIT) */
 static PORT_THREAD_LOCAL int32_t early_code;
-static char start_error[256];           /* why there is no runtime, for every later call to say again */
+static char start_error[1024];          /* why there is no runtime, for every later call to say again */
 static int32_t start_code;
 
 /* What toknroll_log_set or jinfer_log_set gave, before the runtime starts; start hands it to Log.java. */
@@ -376,9 +376,9 @@ static void start(void) {
         const char* source = STR(TOKNROLL_OPTIONS_ENV);
         if (configured_by) source = from_env ? "configure or the environment" : configured_by;
         if (rc == 22) failed("the runtime could not be started: an option from %s was rejected, see stderr for which; a new process is needed", source);
-        /* 801 and 802: the address space the runtime reserves for the heap it may grow to, tens of GB of
-         * virtual memory, not RAM, exceeds what this process may have (ulimit -v, a container's limit) */
-        else if (rc == 801 || rc == 802) failed("the runtime could not be started (error %d): it could not reserve the address space for its heap, more virtual memory than this process may have; raise the limit (ulimit -v), or cap the heap with -XX:MaxHeapSize=<size> through configure or %s; a new process is needed", rc, STR(TOKNROLL_OPTIONS_ENV));
+        /* 801 and 802: the address space the runtime reserves for the heap it may grow to, 32 GiB of
+         * virtual memory, never committed, exceeds what this process may have: ulimit -v alone counts it */
+        else if (rc == 801 || rc == 802) failed("the runtime could not be started (error %d): it could not reserve the address space for its heap, virtual memory and not RAM, more than this process may have; raise the limit (ulimit -v), or reserve less with -XX:ReservedAddressSpaceSize=<size>, the heap's ceiling, through configure or %s; a new process is needed", rc, STR(TOKNROLL_OPTIONS_ENV));
         else failed("the runtime could not be started (error %d), a new process is needed", rc);
         return;
     }

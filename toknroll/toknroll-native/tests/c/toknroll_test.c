@@ -1369,13 +1369,14 @@ static toknroll_tokenizer* cached(const char* ref) {
 #ifdef __linux__
 #include <sys/resource.h>
 /* under a virtual memory limit below the address space the runtime reserves for its heap, the start fails in
- * words: what it reserved, and the two ways out (the limit, or -XX:MaxHeapSize); the limit is this
+ * words, whole: what it reserved, and the two ways out (the limit, or -XX:ReservedAddressSpaceSize); the limit is this
  * process's own, set before the first call (macOS does not enforce RLIMIT_AS; Windows has none) */
 static void address_space_too_small(void) {
     struct rlimit limit = {8ULL << 30, 8ULL << 30};
     if (setrlimit(RLIMIT_AS, &limit) != 0) skip("setrlimit: %s", strerror(errno));
     CHECK_NULL_ERROR(toknroll_tokenizer_load(tiny_json()), TOKNROLL_ERROR, LE, "could not reserve the address space");
-    CHECK_HAS(LE(NULL), "-XX:MaxHeapSize");
+    CHECK_HAS(LE(NULL), "-XX:ReservedAddressSpaceSize=<size>");
+    CHECK_HAS(LE(NULL), "; a new process is needed");   /* the message is whole, not cut */
 }
 #endif
 
