@@ -62,7 +62,7 @@ tokenizer.vocabulary_size, tokenizer.token(0), tokenizer.id("<|im_end|>")
 | ids | `encode(text)`, an `array('i')`: four bytes an id, nothing boxed, `numpy.frombuffer(ids, dtype=numpy.int32)` without a copy; `specials=True` keeps spelled special tokens whole |
 | text | `decode(ids)`: a writable, contiguous int32 buffer (`array('i')`, numpy) read in place, anything else copied once; `decode_bytes(ids)` for the raw bytes |
 | a token budget | `count_tokens(text)`, no list built |
-| many texts | `encode_batch(texts)`: one call, the library spreads the texts over the cores, the first such batch starting the workers (about 60 ms); a batch too small to share runs on the calling thread |
+| many texts | `encode_batch(texts)`: one call, the library spreads the texts over the cores; a batch too small to share runs on the calling thread |
 | the vocabulary | `vocabulary_size`, `token(id)`, `id(token)`, `token_flags(id)` (a `TokenFlags` mask: `NORMAL`, `CONTROL`, `USER_DEFINED`, `BYTE`, ...), `None` when absent |
 | text without the specials | `decode(i for i in ids if not tokenizer.token_flags(i) & SPECIAL)` with `SPECIAL = TokenFlags.CONTROL \| TokenFlags.USER_DEFINED \| TokenFlags.UNKNOWN`: the special kinds only, a `BYTE` token is part of a character |
 | another process | a `Tokenizer` pickles as its `source`, so `multiprocessing` and `concurrent.futures` just work |
@@ -70,6 +70,7 @@ tokenizer.vocabulary_size, tokenizer.token(0), tokenizer.id("<|im_end|>")
 
 A `Tokenizer` comes from `toknroll.load` only; it is closed by `close()`, a `with` block or garbage collection, and `source` says what it was loaded from.
 It never changes, so it may be shared between threads, `close` being the one call to make when no other thread is using it; every call releases the GIL.
+A tokenizer's first encode builds and checks its fast encoder, once: about 10-60 ms for the byte-level BPE families (gpt2 12 ms, Qwen3 55 ms), after which a short text takes microseconds.
 
 ## Sources
 
