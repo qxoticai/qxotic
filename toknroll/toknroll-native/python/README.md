@@ -34,7 +34,7 @@ tokenizer.vocabulary_size, tokenizer.token(0), tokenizer.id("<|im_end|>")
 - **One loader for every file the models ship.** A `tokenizer.json` or its folder, a GGUF read for its header only, a tiktoken checkout, and any of them by hub reference, Hugging Face or ModelScope, metadata fetched and cached, weights never.
   No other package reads all three formats.
 - **Fast, and out of the GIL.** Over 100 MB/s of new text on one core for the byte-level BPE families (Qwen, Llama, GPT-4o, Mistral), tens for the SentencePiece ones (Gemma), `encode_batch` over every core, every call releasing the GIL; ids come back as an `array('i')`, four bytes each, that numpy and torch read without a copy.
-- **Nothing to carry.** A 6 MB wheel with the library inside, no `torch`, no `transformers`, no `huggingface_hub`; a model's tokenizer in a 20 MB container image, and about 80-200 MB of RSS at run time.
+- **Nothing to carry.** A 6 MB wheel with the library inside, no `torch`, no `transformers`, no `huggingface_hub`; a model's tokenizer in a 20 MB container image, and about 90-330 MB of RSS once loaded (gpt2 to Gemma 4), up to 130 MB more while a large text encodes.
 - **Honest about its scope.** Raw text in, ids out, as tiktoken's `encode_ordinary`: no BOS, no EOS, no padding, no truncation, no offsets.
   Those belong to the chat template and the model, and leaving them out is what keeps the ids exact.
 - **The same engine everywhere.** Tok'n'Roll is a Java library, `libtoknroll` is its native build, and [`toknroll.h`](https://github.com/qxoticai/qxotic/blob/main/toknroll/toknroll-native/include/toknroll.h) is thirteen functions any language calls; [jinfer](https://pypi.org/project/jinfer/) serves its models' tokenizers through this very class.

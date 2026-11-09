@@ -144,6 +144,7 @@ Where llama.cpp differs from the model's own tokenizer, Tok'n'Roll follows the m
 - llama.cpp retypes a normal token named like an end-of-generation marker (Qwen2's `</s>`) as a control token, so `parse_special` matches it.
 
 One difference is the file's own: a Qwen GGUF carries no normalizer, so it encodes decomposed accents (`e` + U+0301) as llama.cpp does, where the same model's `tokenizer.json` first composes them (NFC).
+Another is the Unicode version: Tok'n'Roll knows the characters of Java 25's Unicode 16, Hugging Face tokenizers 1.0 those of Unicode 17, so a character added in 17 (2025), unassigned here, can split or normalize differently, such as the space before U+1F6D8.
 
 ## Benchmarks
 
