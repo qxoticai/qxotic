@@ -80,10 +80,25 @@ class ConfigTest(unittest.TestCase):
                         (env["PKG_CONFIG_PATH"],) = flags("--pkgconfigdir", env=env)
                         arguments = shlex.split(subprocess.check_output(
                             ["pkg-config", "--cflags", "--libs", "toknroll"], env=env, text=True, timeout=60))
-                    built = subprocess.run(compiler + ["-std=c99", str(example), "-o", str(executable), *arguments],
+                    built = subprocess.run(compiler + ["-std=c99", "-Wall", "-Wextra", "-Wpedantic", "-Werror",
+                                                      str(example), "-o", str(executable), *arguments],
                                            env=env, capture_output=True, text=True, timeout=60)
                     self.assertEqual(built.returncode, 0, built.stderr)
-                    run = subprocess.run([str(executable), fixture, "hello"], env=env,
-                                         capture_output=True, text=True, timeout=60)
-                    self.assertEqual(run.returncode, 0, run.stderr)
-                    self.assertIn("\nhello\n", run.stdout)
+                    for text in ("", "hello", "hello " * 400):
+                        with self.subTest(text_length=len(text)):
+                            run = subprocess.run([str(executable), fixture, text], env=env,
+                                                 capture_output=True, text=True, timeout=60)
+                            self.assertEqual(run.returncode, 0, run.stderr)
+                            self.assertEqual(run.stderr, "")
+                            lines = run.stdout.splitlines()
+                            self.assertEqual(len(lines), 3, run.stdout)
+                            self.assertEqual(lines[1], text)
+                            if not text:
+                                self.assertEqual(lines[0], "")
+                                self.assertTrue(lines[2].startswith("0 tokens,"), lines[2])
+                    with self.subTest(source="missing"):
+                        run = subprocess.run([str(executable), str(root / "missing.gguf"), "hello"], env=env,
+                                             capture_output=True, text=True, timeout=60)
+                        self.assertEqual(run.returncode, 1, run.stderr)
+                        self.assertEqual(run.stdout, "")
+                        self.assertRegex(run.stderr, r"^load: .* \(-3\)\n$")
