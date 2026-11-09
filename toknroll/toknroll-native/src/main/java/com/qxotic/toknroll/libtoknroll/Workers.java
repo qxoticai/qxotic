@@ -11,7 +11,7 @@ import org.graalvm.nativeimage.c.function.CFunction;
 import org.graalvm.word.PointerBase;
 
 /**
- * The threads a batch runs on: one per core beside the caller, started by the first batch, each
+ * The threads a batch runs on: one per core, caller included, started by the first parallel batch, each
  * waiting for work in C between jobs, where a fork finds it idle (toknroll_isolate.c says why not
  * the common pool). Where C has no workers (Windows, libjinfer) a batch runs on the common pool; in
  * a forked child, which has none of the threads, on the calling thread.
@@ -65,9 +65,9 @@ final class Workers {
 
     private static boolean started; // guarded by Workers.class
 
-    /** Runs {@code task} for 0 to {@code tasks} - 1, on every core, and returns when all ran. */
+    /** Runs every task, sharing work across cores only when there is more than one task. */
     static void run(int tasks, IntConsumer task) {
-        if (ProcessProperties.getProcessID() != PROCESS) {
+        if (tasks <= 1 || ProcessProperties.getProcessID() != PROCESS) {
             for (int i = 0; i < tasks; i++) task.accept(i);
             return;
         }

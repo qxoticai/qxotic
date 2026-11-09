@@ -995,15 +995,24 @@ static int batch_workers(void) {
     return n;
 }
 
-/* OPTIONS_VAR caps the cores at 2: the first batch starts one thread beside the caller, not one per core */
+/* OPTIONS_VAR caps the cores at 2: only a batch with work to share starts the worker beside the caller. */
 static void batch_threads_capped(void) {
     toknroll_tokenizer* t = tiny();
-    CHECK_EQ(batch_workers(), 0);   /* the first batch starts them */
+    CHECK_EQ(batch_workers(), 0);
     const char texts[] = "aaaabbbbccccddddeeeeffffgggghhhh";
     int64_t at[9];
     for (int i = 0; i <= 8; i++) at[i] = 4 * i;
     int32_t out[64], offsets[9];
+    CHECK_EQ(toknroll_encode_batch(t, NULL, NULL, 0, 0, NULL, 0, NULL), 0);
+    CHECK_EQ(batch_workers(), 0);
+    int32_t single[4];
+    CHECK_EQ(toknroll_encode(t, texts, at[1], 0, single, 4), 4);
+    CHECK_EQ(toknroll_encode_batch(t, texts, at, 1, 0, out, 64, offsets), 4);
+    CHECK(same_ids(out, single, 4) && offsets[0] == 0 && offsets[1] == 4);
+    CHECK_EQ(batch_workers(), 0);   /* a single task has nothing to share */
     CHECK_EQ(toknroll_encode_batch(t, texts, at, 8, 0, out, 64, offsets), 32);
+    for (int i = 0; i < 32; i++) CHECK_EQ(out[i], texts[i]);
+    for (int i = 0; i <= 8; i++) CHECK_EQ(offsets[i], 4 * i);
     CHECK_EQ(batch_workers(), 1);   /* ActiveProcessorCount=2: one beside the caller */
     toknroll_tokenizer_free(t);
 }
