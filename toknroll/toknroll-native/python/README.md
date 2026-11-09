@@ -150,6 +150,7 @@ PKG_CONFIG_PATH="$(toknroll-config --pkgconfigdir)" pkg-config --cflags --libs t
 ```
 
 pkg-config emits shell-escaped flags; in a Python build script, parse that output with `shlex.split()` rather than `splitlines()`.
+pkgconf before 1.8, such as RHEL 8's 1.4.2 and Ubuntu 20.04's 1.6.3, leaves spaces in the package's path unescaped: under a path with spaces, use `toknroll-config` there.
 
 On Windows the flags are `cl`'s, `/I` and `/LIBPATH` with `toknroll.lib`, one per line, and `toknroll.dll` sits beside the import library.
 The C API is [`toknroll.h`](https://github.com/qxoticai/qxotic/blob/main/toknroll/toknroll-native/include/toknroll.h); nothing else is a tool here, `jbang toknroll@qxoticai` is.

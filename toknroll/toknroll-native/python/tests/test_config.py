@@ -78,8 +78,12 @@ class ConfigTest(unittest.TestCase):
                         if not shutil.which("pkg-config"):
                             self.skipTest("pkg-config not installed")
                         (env["PKG_CONFIG_PATH"],) = flags("--pkgconfigdir", env=env)
-                        arguments = shlex.split(subprocess.check_output(
-                            ["pkg-config", "--cflags", "--libs", "toknroll"], env=env, text=True, timeout=60))
+                        output = subprocess.check_output(
+                            ["pkg-config", "--cflags", "--libs", "toknroll"], env=env, text=True, timeout=60)
+                        if str(root) in output:  # pkgconf before 1.8 (RHEL 8's 1.4.2) leaves the spaces unescaped
+                            version = subprocess.check_output(["pkg-config", "--version"], text=True).strip()
+                            self.skipTest(f"pkg-config {version} does not escape spaces: toknroll-config covers this path")
+                        arguments = shlex.split(output)
                     built = subprocess.run(compiler + ["-std=c99", "-Wall", "-Wextra", "-Wpedantic", "-Werror",
                                                       str(example), "-o", str(executable), *arguments],
                                            env=env, capture_output=True, text=True, timeout=60)

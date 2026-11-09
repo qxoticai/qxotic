@@ -141,11 +141,16 @@ dist: $(LIB)
 	cd target/dist && rm -f $(DIST).tar.gz && tar -czf $(DIST).tar.gz $(DIST) && sha256sum $(DIST).tar.gz > $(DIST).tar.gz.sha256   # a tarball: the Unix form, symlinks and modes kept; Windows' is a zip
 	@ls -la target/dist/$(DIST).tar.gz && cat target/dist/$(DIST).tar.gz.sha256
 
-# The tarball as a user gets it: a prefix with spaces, the C example built with pkg-config alone and run.
+# The tarball as a user gets it: a prefix with spaces, the C example built with pkg-config alone and run
+# (a prefix without them where pkg-config leaves spaces unescaped: pkgconf before 1.8, RHEL 8's 1.4.2).
 check-dist: dist
-	rm -rf "target/dist env" && mkdir -p "target/dist env" && cd "target/dist env" && tar -xzf ../dist/$(DIST).tar.gz
+	rm -rf "target/dist env" target/distenv && mkdir -p "target/dist env" && cd "target/dist env" && tar -xzf ../dist/$(DIST).tar.gz
 	@if ! command -v pkg-config > /dev/null; then echo "no pkg-config here: the tarball not checked"; exit 0; fi; \
-	 CC="$(CC)" PKG_CONFIG_PATH="$(CURDIR)/target/dist env/$(DIST)/lib/pkgconfig" \
+	 prefix="$(CURDIR)/target/dist env"; \
+	 if PKG_CONFIG_PATH="$$prefix/$(DIST)/lib/pkgconfig" pkg-config --cflags $(NAME) | grep -qF "$$prefix"; then \
+	   echo "pkg-config $$(pkg-config --version) does not escape spaces (pkgconf before 1.8): the tarball checked under target/distenv"; \
+	   mv "target/dist env" target/distenv && prefix="$(CURDIR)/target/distenv"; fi; \
+	 CC="$(CC)" PKG_CONFIG_PATH="$$prefix/$(DIST)/lib/pkgconfig" \
 	 python3 -c 'import os, shlex, subprocess, sys; flags = shlex.split(subprocess.check_output(["pkg-config", "--cflags", "--libs", sys.argv[1]], text=True)); subprocess.run(shlex.split(os.environ["CC"]) + ["-std=c99", "-o", "target/dist-example", sys.argv[2], *flags], check=True)' "$(NAME)" "$(WHEEL_EXAMPLE)" && \
 	 ./target/dist-example $(WHEEL_EXAMPLE_ARGS) > target/dist-example.out 2>&1 && ! grep -q "did not load" target/dist-example.out && \
 	 echo "the C example builds and runs against the unpacked $(DIST) with pkg-config alone"
