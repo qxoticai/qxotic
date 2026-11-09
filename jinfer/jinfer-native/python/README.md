@@ -147,12 +147,27 @@ Errors are `jinfer.JinferError` subclasses: `InvalidArgument` (also a `ValueErro
 
 The wheel is the C library too: `jinfer.h`, `toknroll.h`, `libjinfer` and a pkg-config file live in the installed package, and the package says where.
 
-```sh
-cc chat.c $(jinfer-config --cflags) $(jinfer-config --libs)         # the include flag, the library and an rpath into the venv
-PKG_CONFIG_PATH=$(jinfer-config --pkgconfigdir) pkg-config --cflags --libs jinfer
+On Linux and macOS, compile with Python's standard library, preserving each output line as one compiler argument:
+
+```python
+import subprocess
+
+flags = subprocess.check_output(
+    ["jinfer-config", "--cflags", "--libs"], text=True,
+).splitlines()
+subprocess.run(["cc", "chat.c", *flags], check=True)
 ```
 
 `jinfer-config` is the wheel's console script, in the venv's `bin`, with `--cflags`, `--libs`, `--pkgconfigdir` and `--version`, as `numpy-config` and `python3-config` have them.
+Compiler arguments are unquoted, one per line; keep spaces within each line rather than splitting on whitespace.
+
+For pkg-config, point it at the installed package:
+
+```sh
+PKG_CONFIG_PATH="$(jinfer-config --pkgconfigdir)" pkg-config --cflags --libs jinfer
+```
+
+pkg-config emits shell-escaped flags; in a Python build script, parse that output with `shlex.split()` rather than `splitlines()`.
 
 On Windows the flags are `cl`'s, `/I` and `/LIBPATH` with `jinfer.lib`, one per line, and `jinfer.dll` sits beside the import library.
 The C API is [`jinfer.h`](https://github.com/qxoticai/qxotic/blob/main/jinfer/jinfer-native/include/jinfer.h); nothing else is a tool here, `jbang jinfer@qxoticai` is.

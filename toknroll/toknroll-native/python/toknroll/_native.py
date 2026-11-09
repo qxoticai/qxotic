@@ -113,16 +113,19 @@ def library() -> C.CDLL:
 
 def config(name: str, argv: list[str] | None = None) -> int:
     """<name>-config, the C world's own convention (python3-config, numpy-config, pybind11-config): where this
-    install's headers and library are, in the platform compiler's flags, one per line.
+    install's headers and library are, one complete compiler argument per line, without shell quoting.
+    Preserve each line as one argument, including any spaces in a path:
 
-        cc tokenize.c $(toknroll-config --cflags) $(toknroll-config --libs)
-        PKG_CONFIG_PATH=$(toknroll-config --pkgconfigdir) pkg-config --cflags --libs toknroll
+        import subprocess
+        flags = subprocess.check_output(["toknroll-config", "--cflags", "--libs"], text=True).splitlines()
+        subprocess.run(["cc", "tokenize.c", *flags], check=True)
 
     Nothing else: the library is the API, jbang <name>@qxoticai the tool."""
     import argparse
     import importlib
 
-    parser = argparse.ArgumentParser(prog=f"{name}-config", description=f"where this install's C headers and lib{name} are")
+    parser = argparse.ArgumentParser(prog=f"{name}-config", description=f"where this install's C headers and lib{name} are",
+                                     epilog="Compiler flags are one argument per line, without shell quoting; preserve spaces within each line.")
     parser.add_argument("--version", action="store_true", help="the package's version, the library's too")
     parser.add_argument("--cflags", action="store_true", help="the include flag")
     parser.add_argument("--libs", action="store_true", help="the link flags")
@@ -140,7 +143,7 @@ def config(name: str, argv: list[str] | None = None) -> int:
     if args.cflags:
         print(f"/I{include}" if windows else f"-I{include}")
     if args.libs:
-        print(f"/LIBPATH:{libdir}\n{name}.lib" if windows else f"{library} -Wl,-rpath,{libdir}")
+        print(f"/LIBPATH:{libdir}\n{name}.lib" if windows else f"{library}\n-Wl,-rpath,{libdir}")
     if args.pkgconfigdir:
         print(libdir / "pkgconfig")
     return 0

@@ -117,10 +117,13 @@ check-wheel: wheel
 	rm -rf target/wheelenv && python3 -m venv target/wheelenv && target/wheelenv/bin/pip install -q target/wheel/*.whl $(WHEEL_DEPS)
 	cd target && $(WHEEL_TEST)
 	@python3 -m zipfile -l target/wheel/*.whl | grep -q LICENSE && python3 -m zipfile -l target/wheel/*.whl | grep -q NOTICE && echo "the wheel carries the license and the notice"
-	@cflags=$$(target/wheelenv/bin/$(NAME)-config --cflags) && libs=$$(target/wheelenv/bin/$(NAME)-config --libs) && \
-	 $(CC) -std=c99 -o target/wheel-example $(WHEEL_EXAMPLE) $$cflags $$libs && ./target/wheel-example $(WHEEL_EXAMPLE_ARGS) > /dev/null && \
-	 echo "the C example builds and runs against the installed wheel: $(NAME)-config --cflags --libs"
-	@PKG_CONFIG_PATH=$$(target/wheelenv/bin/$(NAME)-config --pkgconfigdir) pkg-config --exists $(NAME) && echo "pkg-config finds $(NAME) there" || echo "no pkg-config here: the .pc file not checked"
+	@CC="$(CC)" python3 -c 'import os, shlex, subprocess, sys; flags = subprocess.check_output([sys.argv[1], "--cflags", "--libs"], text=True).splitlines(); subprocess.run(shlex.split(os.environ["CC"]) + ["-std=c99", "-o", "target/wheel-example", sys.argv[2], *flags], check=True)' \
+	 "$(abspath target/wheelenv/bin/$(NAME)-config)" "$(WHEEL_EXAMPLE)"
+	./target/wheel-example $(WHEEL_EXAMPLE_ARGS) > /dev/null
+	@echo "the C example builds and runs against the installed wheel: $(NAME)-config --cflags --libs"
+	@if command -v pkg-config > /dev/null; then \
+	 pc=$$(target/wheelenv/bin/$(NAME)-config --pkgconfigdir) && PKG_CONFIG_PATH="$$pc" pkg-config --exists $(NAME); \
+	 else echo "no pkg-config here: the .pc file not checked"; fi
 
 # What a release carries per platform, for C and anyone without Python (the wheel is its own delivery): a
 # prefix tree, include/, lib/ with the library under its soname, the linker's name linked to it, the static
@@ -138,12 +141,12 @@ dist: $(LIB)
 	cd target/dist && rm -f $(DIST).tar.gz && tar -czf $(DIST).tar.gz $(DIST) && sha256sum $(DIST).tar.gz > $(DIST).tar.gz.sha256   # a tarball: the Unix form, symlinks and modes kept; Windows' is a zip
 	@ls -la target/dist/$(DIST).tar.gz && cat target/dist/$(DIST).tar.gz.sha256
 
-# The tarball as a user gets it: unpacked to a prefix of its own, the C example built with pkg-config alone and run.
+# The tarball as a user gets it: a prefix with spaces, the C example built with pkg-config alone and run.
 check-dist: dist
-	rm -rf target/distenv && mkdir -p target/distenv && cd target/distenv && tar -xzf ../dist/$(DIST).tar.gz
-	@PKG_CONFIG_PATH=$(abspath target/distenv/$(DIST)/lib/pkgconfig) pkg-config --cflags --libs $(NAME) > /dev/null 2>&1 || { echo "no pkg-config here: the tarball not checked"; exit 0; }; \
-	 PKG_CONFIG_PATH=$(abspath target/distenv/$(DIST)/lib/pkgconfig); export PKG_CONFIG_PATH; \
-	 $(CC) -std=c99 -o target/dist-example $(WHEEL_EXAMPLE) $$(pkg-config --cflags --libs $(NAME)) && \
+	rm -rf "target/dist env" && mkdir -p "target/dist env" && cd "target/dist env" && tar -xzf ../dist/$(DIST).tar.gz
+	@if ! command -v pkg-config > /dev/null; then echo "no pkg-config here: the tarball not checked"; exit 0; fi; \
+	 CC="$(CC)" PKG_CONFIG_PATH="$(CURDIR)/target/dist env/$(DIST)/lib/pkgconfig" \
+	 python3 -c 'import os, shlex, subprocess, sys; flags = shlex.split(subprocess.check_output(["pkg-config", "--cflags", "--libs", sys.argv[1]], text=True)); subprocess.run(shlex.split(os.environ["CC"]) + ["-std=c99", "-o", "target/dist-example", sys.argv[2], *flags], check=True)' "$(NAME)" "$(WHEEL_EXAMPLE)" && \
 	 ./target/dist-example $(WHEEL_EXAMPLE_ARGS) > target/dist-example.out 2>&1 && ! grep -q "did not load" target/dist-example.out && \
 	 echo "the C example builds and runs against the unpacked $(DIST) with pkg-config alone"
 

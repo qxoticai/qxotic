@@ -1,7 +1,10 @@
 """toknroll-config: the flags a C build needs, pointing into this install."""
 import os
+import shlex
+import shutil
 import subprocess
 import sys
+import tempfile
 import unittest
 from pathlib import Path
 
@@ -9,9 +12,9 @@ import toknroll
 from toknroll._native import locate
 
 
-def flags(*args: str) -> list[str]:
+def flags(*args: str, env=None) -> list[str]:
     code = f"from toknroll._config import main; import sys; sys.argv[1:] = {list(args)!r}; raise SystemExit(main())"
-    run = subprocess.run([sys.executable, "-c", code], capture_output=True, text=True, timeout=60)
+    run = subprocess.run([sys.executable, "-c", code], capture_output=True, text=True, timeout=60, env=env)
     assert run.returncode == 0, run.stderr
     return run.stdout.splitlines()
 
@@ -34,7 +37,7 @@ class ConfigTest(unittest.TestCase):
         if sys.platform == "win32":
             self.assertEqual(lines, [f"/LIBPATH:{libdir}", "toknroll.lib"])
         else:
-            self.assertEqual(lines, [f"{library} -Wl,-rpath,{libdir}"])
+            self.assertEqual(lines, [str(library), f"-Wl,-rpath,{libdir}"])
         (pkgconfigdir,) = flags("--pkgconfigdir")
         self.assertEqual(Path(pkgconfigdir), libdir / "pkgconfig")
         if os.environ.get("TOKNROLL_INSTALLED"):
@@ -52,3 +55,35 @@ class ConfigTest(unittest.TestCase):
         script = Path(sys.executable).parent / ("toknroll-config.exe" if sys.platform == "win32" else "toknroll-config")
         run = subprocess.run([str(script), "--version"], capture_output=True, text=True, timeout=60)
         self.assertEqual(run.stdout.strip(), toknroll.__version__, run.stderr)
+
+    @unittest.skipUnless(os.environ.get("TOKNROLL_INSTALLED") and os.name != "nt", "installed POSIX wheel and C compiler")
+    def test_c_consumer_under_a_path_with_spaces(self):
+        from support import tiny_gguf
+
+        example = Path(__file__).resolve().parents[2] / "examples/c/tokenize.c"
+        with tempfile.TemporaryDirectory(prefix="toknroll consumer ") as directory:
+            root = Path(directory)
+            shutil.copytree(Path(toknroll.__file__).resolve().parent, root / "toknroll")
+            env = dict(os.environ, PYTHONPATH=str(root))
+            for name in ("TOKNROLL_LIBRARY", "LD_LIBRARY_PATH", "DYLD_LIBRARY_PATH", "DYLD_FALLBACK_LIBRARY_PATH"):
+                env.pop(name, None)
+            fixture = tiny_gguf(root / "tiny.gguf")
+            executable = root / "tokenize"
+            compiler = shlex.split(os.environ.get("CC", "cc"))
+            for route in ("config", "pkg-config"):
+                with self.subTest(route=route):
+                    if route == "config":
+                        arguments = flags("--cflags", "--libs", env=env)
+                    else:
+                        if not shutil.which("pkg-config"):
+                            self.skipTest("pkg-config not installed")
+                        (env["PKG_CONFIG_PATH"],) = flags("--pkgconfigdir", env=env)
+                        arguments = shlex.split(subprocess.check_output(
+                            ["pkg-config", "--cflags", "--libs", "toknroll"], env=env, text=True, timeout=60))
+                    built = subprocess.run(compiler + ["-std=c99", str(example), "-o", str(executable), *arguments],
+                                           env=env, capture_output=True, text=True, timeout=60)
+                    self.assertEqual(built.returncode, 0, built.stderr)
+                    run = subprocess.run([str(executable), fixture, "hello"], env=env,
+                                         capture_output=True, text=True, timeout=60)
+                    self.assertEqual(run.returncode, 0, run.stderr)
+                    self.assertIn("\nhello\n", run.stdout)

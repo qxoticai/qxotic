@@ -129,12 +129,27 @@ With progress off, `TOKNROLL_LOG=info` logs each download instead, a start and a
 
 The wheel is the C library too: `toknroll.h`, `libtoknroll` and a pkg-config file live in the installed package, and the package says where.
 
-```sh
-cc tokenize.c $(toknroll-config --cflags) $(toknroll-config --libs)         # the include flag, the library and an rpath into the venv
-PKG_CONFIG_PATH=$(toknroll-config --pkgconfigdir) pkg-config --cflags --libs toknroll
+On Linux and macOS, compile with Python's standard library, preserving each output line as one compiler argument:
+
+```python
+import subprocess
+
+flags = subprocess.check_output(
+    ["toknroll-config", "--cflags", "--libs"], text=True,
+).splitlines()
+subprocess.run(["cc", "tokenize.c", *flags], check=True)
 ```
 
 `toknroll-config` is the wheel's console script, in the venv's `bin`, with `--cflags`, `--libs`, `--pkgconfigdir` and `--version`, as `numpy-config` and `python3-config` have them.
+Compiler arguments are unquoted, one per line; keep spaces within each line rather than splitting on whitespace.
+
+For pkg-config, point it at the installed package:
+
+```sh
+PKG_CONFIG_PATH="$(toknroll-config --pkgconfigdir)" pkg-config --cflags --libs toknroll
+```
+
+pkg-config emits shell-escaped flags; in a Python build script, parse that output with `shlex.split()` rather than `splitlines()`.
 
 On Windows the flags are `cl`'s, `/I` and `/LIBPATH` with `toknroll.lib`, one per line, and `toknroll.dll` sits beside the import library.
 The C API is [`toknroll.h`](https://github.com/qxoticai/qxotic/blob/main/toknroll/toknroll-native/include/toknroll.h); nothing else is a tool here, `jbang toknroll@qxoticai` is.
