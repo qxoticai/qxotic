@@ -1,14 +1,16 @@
 # toknroll
 
-**Token-perfect LLM tokenization for Python. One wheel, no dependencies.**
+**Token-perfect LLM tokenization for Python: the model's own tokens, faster, with no dependencies.**
 
 [![PyPI](https://img.shields.io/pypi/v/toknroll)](https://pypi.org/project/toknroll/)
 [![Python](https://img.shields.io/pypi/pyversions/toknroll)](https://pypi.org/project/toknroll/)
 [![License](https://img.shields.io/badge/license-Apache%202.0-green)](https://github.com/qxoticai/qxotic/blob/main/LICENSE)
 [![Platforms](https://img.shields.io/badge/platforms-Linux%20%7C%20macOS%20%7C%20Windows-lightgrey)](#requirements)
 
-`toknroll` is [Tok'n'Roll](https://github.com/qxoticai/qxotic/tree/main/toknroll) for Python: the same ids as each model's own tokenizer, from a `tokenizer.json`, a GGUF file, a tiktoken checkout or a hub reference, through `libtoknroll`, a shared library with a C API that the wheel carries.
-No Python ML stack behind it, nothing to compile, nothing else to install.
+`toknroll` reproduces each model's own tokenizer, id for id, from Hugging Face `tokenizer.json`, GGUF and tiktoken files, on disk or straight from the Hugging Face Hub.
+One 6 MB wheel, no ML stack, and faster than Hugging Face `tokenizers` and tiktoken on every model in [the benchmark](https://github.com/qxoticai/qxotic/tree/main/toknroll/toknroll-native/python/benchmarks):
+
+![Encoding speed on six models: toknroll ahead of Hugging Face tokenizers 1.0 rc4 and 0.23.3 and of tiktoken](https://raw.githubusercontent.com/qxoticai/qxotic/main/toknroll/toknroll-native/python/benchmarks/encode.png)
 
 ```sh
 pip install toknroll
@@ -17,164 +19,118 @@ pip install toknroll
 ```python
 import toknroll
 
-tokenizer = toknroll.load("Qwen/Qwen3-0.6B")             # the repository's tokenizer.json, fetched once, never the weights
-ids = tokenizer.encode("Hello, world!")                  # array('i', [9707, 11, 1879, 0])
-tokenizer.decode(ids)                                    # 'Hello, world!'
-tokenizer.count_tokens("Hello, world!")                  # 4: the budget, without the list
-tokenizer.encode_batch(["Hello", "world"])               # one call, the texts spread over every core
-tokenizer.encode("<|im_end|>", specials=True)            # a special token spelled in the text stays whole
-tokenizer.decode_bytes(ids)                              # the tokens' bytes, even half a character
-tokenizer.vocabulary_size, tokenizer.token(0), tokenizer.id("<|im_end|>")
+tokenizer = toknroll.load("Qwen/Qwen3-0.6B")    # fetched once, never the weights
+ids = tokenizer.encode("Hello, world!")          # array('i', [9707, 11, 1879, 0])
+tokenizer.decode(ids)                            # 'Hello, world!'
+tokenizer.count_tokens("Hello, world!")          # 4
+tokenizer.encode_batch(["Hello", "world"])       # spread over every core
+tokenizer.encode("<|im_end|>", specials=True)    # array('i', [151645])
+tokenizer.vocabulary_size, tokenizer.token(0)    # (151669, '!')
 ```
 
 ## Why toknroll
 
-- **Token-perfect, and verified.** Byte-exact parity with HF `tokenizers`, tiktoken and llama.cpp, tested on the tokenizers of 18 model vendors: OpenAI, Google, Alibaba, Liquid AI, Moonshot AI, DeepSeek, Mistral AI, IBM, Meta, NVIDIA, Z.ai, MiniMax, Xiaomi, Poolside, JetBrains and more, the [full list](https://github.com/qxoticai/qxotic/blob/main/toknroll/README.md#tested-implementations) with the [known divergences](https://github.com/qxoticai/qxotic/blob/main/toknroll/README.md#known-divergences).
-  A tokenizer it cannot reproduce exactly is refused at load, with the reason, never loaded approximately.
-- **One loader for every file the models ship.** A `tokenizer.json` or its folder, a GGUF read for its header only, a tiktoken checkout, and any of them by hub reference, Hugging Face or ModelScope, metadata fetched and cached, weights never.
-  No other package reads all three formats.
-- **Fast, and out of the GIL.** Over 100 MB/s of new text on one core for the byte-level BPE families (Qwen, Llama, GPT-4o, Mistral), tens for the SentencePiece ones (Gemma), `encode_batch` over every core, every call releasing the GIL; ids come back as an `array('i')`, four bytes each, that numpy and torch read without a copy.
-- **Nothing to carry.** A 6 MB wheel with the library inside, no `torch`, no `transformers`, no `huggingface_hub`; a model's tokenizer in a 20 MB container image, and about 90-330 MB of RSS once loaded (gpt2 to Gemma 4), up to 130 MB more while a large text encodes.
-- **Honest about its scope.** Raw text in, ids out, as tiktoken's `encode_ordinary`: no BOS, no EOS, no padding, no truncation, no offsets.
-  Those belong to the chat template and the model, and leaving them out is what keeps the ids exact.
-- **The same engine everywhere.** Tok'n'Roll is a Java library, `libtoknroll` is its native build, and [`toknroll.h`](https://github.com/qxoticai/qxotic/blob/main/toknroll/toknroll-native/include/toknroll.h) is thirteen functions any language calls; [jinfer](https://pypi.org/project/jinfer/) serves its models' tokenizers through this very class.
+- **Token-perfect.** The same ids as each model's own tokenizer, byte for byte, verified by parity tests against Hugging Face `tokenizers`, llama.cpp and tiktoken; the few [known divergences](https://github.com/qxoticai/qxotic/blob/main/toknroll/README.md#known-divergences) are listed.
+- **Fast.** 125-195 MB/s of new text on one core for Qwen, Llama, gpt-oss and DeepSeek, and 1.5-2 times Hugging Face on SentencePiece models such as Gemma and Mistral; `encode_batch` uses every core, and every call releases the GIL.
+- **Reads what models ship.** A `tokenizer.json` or its folder, a GGUF file (its header only, never the weights) or a tiktoken checkout, from disk or by reference to a Hugging Face or ModelScope repository, fetched once and cached.
+- **Popular models, tested; others may just work.** Parity is tested on the tokenizers of 18 vendors' models, Qwen, Llama, Gemma 4, gpt-oss, DeepSeek, Mistral, Granite, Kimi and [more](https://github.com/qxoticai/qxotic/blob/main/toknroll/README.md#tested-implementations).
+  Another BPE tokenizer built from the same parts usually loads as it is; one toknroll cannot reproduce exactly is refused at load, with the reason, never approximated.
+- **Nothing else to install.** No `torch`, no `transformers`, no compiler: the engine is compiled ahead of time with GraalVM Native Image into a plain shared library, so no JVM either.
+- **Plain Python.** Ids come back as an `array('i')` that numpy and torch read without a copy; errors are typed; a tokenizer pickles, so `multiprocessing` just works.
 
 | | toknroll | HF `tokenizers` | tiktoken | llama.cpp bindings |
 |---|---|---|---|---|
 | `tokenizer.json` | yes | yes | no | no |
-| GGUF | yes, the header only | no | no | yes, with the whole model loaded |
+| GGUF | yes, the header only | no | no | yes, the whole model loaded |
 | tiktoken files | yes | no | yes | no |
-| Hub references | yes, metadata only | with `huggingface_hub` | OpenAI's own downloads | with `huggingface_hub`, the whole model |
-| Parity with the other two references | tested | its own format | its own format | its own format |
-| Extra packages | none | `huggingface-hub`, `numpy` | `regex`, `requests` | builds llama.cpp at install, or a per-backend wheel index |
+| Hub references | built in, metadata only | with `huggingface-hub` | OpenAI's encodings only | with `huggingface-hub`, the whole model |
+| Extra packages | none | `huggingface-hub` | `regex`, `requests` | `numpy`, `jinja2`, `diskcache`, and a llama.cpp build |
 
 ## Requirements
 
 - Python 3.10 or later, and no other package.
-- The wheel carries the library: Linux x86-64 and aarch64 with glibc 2.28 or later, macOS 14 or later on Apple silicon, Windows 10 or later on x86-64.
-  On x86-64 the library is built for x86-64-v3, a CPU with AVX2.
-- `curl` on the PATH, for hub sources only; a local file needs nothing.
+- Linux x86-64 and aarch64 with glibc 2.28 or later, macOS 14 or later on Apple silicon, Windows 10 or later on x86-64: the wheel carries the library.
+- On x86-64, a CPU with AVX2 (Intel Haswell, AMD Excavator or later); an older CPU, or a virtual machine that hides AVX2, is refused at load, naming what it lacks.
+- `curl` on the PATH, for Hub sources only; a local file needs nothing.
+- Memory: about 90-330 MB of RSS once loaded (gpt2 to Gemma 4), up to 130 MB more while a large text encodes.
 
-## The API
+## Usage
 
 | You want | Call |
 |---|---|
-| ids | `encode(text)`, an `array('i')`: four bytes an id, nothing boxed, `numpy.frombuffer(ids, dtype=numpy.int32)` without a copy; `specials=True` keeps spelled special tokens whole |
-| text | `decode(ids)`: a writable, contiguous int32 buffer (`array('i')`, numpy) read in place, anything else copied once; `decode_bytes(ids)` for the raw bytes |
-| a token budget | `count_tokens(text)`, no list built |
-| many texts | `encode_batch(texts)`: one call, the library spreads the texts over the cores; a batch too small to share runs on the calling thread |
-| the vocabulary | `vocabulary_size`, `token(id)`, `id(token)`, `token_flags(id)` (a `TokenFlags` mask: `NORMAL`, `CONTROL`, `USER_DEFINED`, `BYTE`, ...), `None` when absent |
-| text without the specials | `decode(i for i in ids if not tokenizer.token_flags(i) & SPECIAL)` with `SPECIAL = TokenFlags.CONTROL \| TokenFlags.USER_DEFINED \| TokenFlags.UNKNOWN`: the special kinds only, a `BYTE` token is part of a character |
+| ids | `encode(text)`, an `array('i')`; `specials=True` keeps special tokens spelled in the text whole |
+| text | `decode(ids)`, or `decode_bytes(ids)` for the exact bytes |
+| a token count | `count_tokens(text)`, without building the list |
+| many texts | `encode_batch(texts)`, spread over every core |
+| the vocabulary | `vocabulary_size`, `token(id)`, `id(token)`, `token_flags(id)`, `None` when absent |
+| text without special tokens | `decode(i for i in ids if not tokenizer.token_flags(i) & SPECIAL)`, with `SPECIAL = TokenFlags.CONTROL \| TokenFlags.USER_DEFINED \| TokenFlags.UNKNOWN` |
+| numpy | `numpy.frombuffer(ids, dtype=numpy.int32)`, no copy; `decode` reads a writable, contiguous int32 array in place |
 | another process | a `Tokenizer` pickles as its `source`, so `multiprocessing` and `concurrent.futures` just work |
-| the runtime | `toknroll.configure("-Dtoknroll.gguf.pre.my-model=alias:qwen2", "-XX:MaxHeapSize=512m", "-XX:ActiveProcessorCount=4")` once, before first use: a GGUF pre-tokenizer name, a heap cap, a cap on the threads `encode_batch` spreads over |
+| runtime options | `toknroll.configure("-XX:MaxHeapSize=512m", "-XX:ActiveProcessorCount=4")`, once, before first use: a heap cap, the cores `encode_batch` uses |
 
-A `Tokenizer` comes from `toknroll.load` only; it is closed by `close()`, a `with` block or garbage collection, and `source` says what it was loaded from.
-It never changes, so it may be shared between threads, `close` being the one call to make when no other thread is using it; every call releases the GIL.
-A tokenizer's first encode builds and checks its fast encoder, once: about 10-60 ms for the byte-level BPE families (gpt2 12 ms, Qwen3 55 ms), after which a short text takes microseconds.
+A `Tokenizer` comes from `toknroll.load` only, and `source` says what it was loaded from.
+It never changes, so threads may share it; `close()`, a `with` block or garbage collection frees it, once no other thread is using it.
+Its first encode builds and checks its fast encoder, once: about 10-60 ms, after which a short text takes microseconds.
 
 ## Sources
 
 | Source | Example |
 |---|---|
-| a `tokenizer.json`, or the directory holding one | `toknroll.load("./my-model/")` |
+| a `tokenizer.json`, or the folder holding one | `toknroll.load("./my-model/")` |
 | a GGUF file | `toknroll.load("model-Q8_0.gguf")`, the tokenizer read from its header |
-| a tiktoken checkout | `toknroll.load("./Kimi-K3/")`: a folder holding `tiktoken.model` and the `tokenizer_config.json` with its regex, local or on a hub |
-| a hub repository | `toknroll.load("Qwen/Qwen3-0.6B")`: its `tokenizer.json`; `modelscope.cn/Qwen/Qwen3-0.6B` for ModelScope, `@rev` pins a revision |
-| a GGUF on a hub | `toknroll.load("LiquidAI/LFM2.5-350M-GGUF:Q8_0")` or `.../LFM2.5-350M-Q8_0.gguf`: the header only, never the weights |
-| a file in a repository | `toknroll.load("org/repo/tokenizers/v2")`: a folder's `tokenizer.json`, or the file a path names |
+| a tiktoken checkout | `toknroll.load("./Kimi-K3/")`: `tiktoken.model` and the `tokenizer_config.json` beside it |
+| a Hub repository | `toknroll.load("Qwen/Qwen3-0.6B")`; `modelscope.cn/Qwen/Qwen3-0.6B` for ModelScope, `@rev` for a revision |
+| a GGUF on the Hub | `toknroll.load("LiquidAI/LFM2.5-350M-GGUF:Q8_0")`: the header only, never the weights |
+| a file in a repository | `toknroll.load("org/repo/tokenizers/v2")`: a folder's `tokenizer.json`, or the file the path names |
 
-A hub source is `[host/]owner/repo[@rev][/path][:quant]`: a bare word is a local path, never a repository, and `@rev` comes before the file path, `owner/repo@main/model-Q8_0.gguf`.
-A pasted URL is refused with the spelling to use instead.
-BPE tokenizers only, the families the [main README](https://github.com/qxoticai/qxotic/blob/main/toknroll/README.md) lists and others built from the same components: a `tokenizer.json` that uses a component outside that set is refused at load, as `Unsupported` naming the field, never loaded approximately.
-The main README has the table of common models that do not load, and why.
-A `tokenizer.json` is read as it is: a token that only `tokenizer_config.json` adds is not a token here, as it is not one for HF `tokenizers`; most repositories write their added tokens into both files.
+A Hub source is `[host/]owner/repo[@rev][/path][:quant]`; a bare word is a local path, and a pasted URL is refused with the spelling to use.
+A `tokenizer.json` is read as it is: a token only `tokenizer_config.json` adds is not a token here, as it is not for HF `tokenizers`.
+A `tokenizer.json` that uses a component toknroll lacks (WordPiece, Unigram, some normalizers) is refused as `Unsupported`, naming the field; the main README has [the common models that do not load](https://github.com/qxoticai/qxotic/blob/main/toknroll/README.md#tested-implementations), and why.
 
-## What encode and decode do
+## Encode and decode
 
-`encode` takes raw text, as tiktoken's `encode_ordinary` does: no BOS, no EOS, no template, those belong to the chat template that writes the prompt.
-`specials=True` keeps every special token spelled in the text whole, the `CONTROL`, `USER_DEFINED` and `UNKNOWN` tokens, `<think>` among them on the models that add it; by default they are text.
-`decode` spells every id, special tokens included, as tiktoken does, where HF's `decode` skips them by default; the recipe in the table above drops them.
-A token holding part of a character decodes per `errors=`, `"replace"` by default as in tiktoken.
-`decode(encode(text))` is the text after the model's own normalization, NFC where its `tokenizer.json` says so, spaces through `▁` in a SentencePiece model, exactly as the reference tokenizer does; `decode_bytes` gives the bytes.
-A token's spelling is its source's: `▁<` from a `tokenizer.json` as HF spells it, ` <` from a GGUF as llama.cpp does, the same ids and text either way; an added token is spelled as the text that matches it, so one whose content is `▁▁` reads as two spaces.
+- `encode` takes raw text, as tiktoken's `encode_ordinary` does: no BOS, no EOS, no template, which belong to the chat template that writes the prompt.
+- `specials=True` keeps every special token spelled in the text whole, `<think>` among them on the models that add it; by default they are text.
+- `decode` spells every id, special tokens included, as tiktoken does; a token holding part of a character decodes per `errors=`, `"replace"` by default.
+- `decode(encode(text))` is the text after the model's own normalization, NFC where its `tokenizer.json` says so; `decode_bytes` gives the exact bytes.
 
 ## Errors
 
-Errors are `toknroll.ToknrollError` subclasses, each with `.code`:
-
 | Error | Also a | When |
 |---|---|---|
-| `InvalidArgument` | `ValueError` | a malformed reference or file, an id no token has, an unknown option |
-| `NotFound` | `FileNotFoundError` | a missing file, repository or revision, or one not cached while offline |
-| `Unsupported` | `ValueError` | a valid tokenizer toknroll does not implement, the field named |
+| `toknroll.InvalidArgument` | `ValueError` | a malformed reference or file, an id no token has, an unknown option |
+| `toknroll.NotFound` | `FileNotFoundError` | a missing file, repository or revision, or one not cached while offline |
+| `toknroll.Unsupported` | `ValueError` | a valid tokenizer toknroll does not implement, the field named |
 
-An id past int32 is an `OverflowError` and a non-int a `TypeError`, as in HF `tokenizers` and tiktoken; a negative id is an `OverflowError` in `token` and `token_flags`, an `InvalidArgument` in `decode`.
-A wrong argument type is a `TypeError` naming the call.
+Each is a `toknroll.ToknrollError` with a `.code`; an id past int32 is an `OverflowError`, and a wrong argument type a `TypeError` naming the call.
 
-## Cache, offline, options
+## Cache, offline and logging
 
-Remote metadata is fetched with `curl` and cached where `toknroll.configure("-Dtoknroll.cache.root=/srv/cache")` says, else `TOKNROLL_CACHE_ROOT`, else in jinfer's store, the platform cache directory under `jinfer`.
-The HF hub cache (`HF_HUB_CACHE`, `HF_HOME`) is read too, so a file `transformers` fetched serves here; with the default cache root, a file fetched here is published there as well, so `transformers` finds it.
-`-Dtoknroll.offline=true` serves the cache and never touches the network; `false`, `0`, `off`, `no` and an empty value mean online, and anything else offline, so a misspelled true never means online.
-`toknroll.configure` takes the runtime's options once, before the library's first use; a later call is refused.
-`TOKNROLL_OPTIONS` in the environment holds the same options, applied after `configure`'s so they override them: the program sets its options, whoever runs it has the last word.
-It is split on whitespace, with no quoting and no `~`: a value holding a space goes through `configure`.
-
-## Logging
-
-The library's log lines go to `logging.getLogger("toknroll")`, as many as `TOKNROLL_LOG` lets through: `off`, `error`, `warn` (the default), `info` (downloads) or `debug`.
-Python's logging then decides what shows; it shows warnings and errors until the application configures it.
-A download shows its progress on stderr, toknroll's live board on a terminal and a line at each tenth elsewhere; `TOKNROLL_PROGRESS=off`, or `-Dtoknroll.progress=off` through `configure`, turns it off entirely.
-With progress off, `TOKNROLL_LOG=info` logs each download instead, a start and a done record, shown once the application logs at INFO, `logging.basicConfig(level=logging.INFO)` for one; `TOKNROLL_LOG=off` silences the library.
+- Fetched files are cached under `-Dtoknroll.cache.root=<dir>` or `TOKNROLL_CACHE_ROOT`, else in the store toknroll shares with jinfer: `~/.cache/jinfer` on Linux, `~/Library/Caches/jinfer` on macOS, `%LOCALAPPDATA%\jinfer` on Windows.
+- The Hugging Face cache (`HF_HUB_CACHE`, `HF_HOME`) is read in place, and with the default cache root a file fetched here is published there too, so `transformers` finds it.
+- `TOKNROLL_OPTIONS="-Dtoknroll.offline=true"` serves the cache only; the same options go through `toknroll.configure`, and the variable wins.
+- Log lines go to `logging.getLogger("toknroll")`, as many as `TOKNROLL_LOG` lets through: `off`, `error`, `warn` (the default), `info` or `debug`.
+- A download shows its progress on stderr; `TOKNROLL_PROGRESS=off` hides it.
 
 ## From C
 
-The wheel is the C library too: `toknroll.h`, `libtoknroll` and a pkg-config file live in the installed package, and the package says where.
-
-On Linux and macOS, compile with Python's standard library, preserving each output line as one compiler argument:
-
-```python
-import subprocess
-
-flags = subprocess.check_output(
-    ["toknroll-config", "--cflags", "--libs"], text=True,
-).splitlines()
-subprocess.run(["cc", "tokenize.c", *flags], check=True)
-```
-
-`toknroll-config` is the wheel's console script, in the venv's `bin`, with `--cflags`, `--libs`, `--pkgconfigdir` and `--version`, as `numpy-config` and `python3-config` have them.
-Compiler arguments are unquoted, one per line; keep spaces within each line rather than splitting on whitespace.
-
-For pkg-config, point it at the installed package:
-
-```sh
-PKG_CONFIG_PATH="$(toknroll-config --pkgconfigdir)" pkg-config --cflags --libs toknroll
-```
-
-pkg-config emits shell-escaped flags; in a Python build script, parse that output with `shlex.split()` rather than `splitlines()`.
-pkgconf before 1.8, such as RHEL 8's 1.4.2 and Ubuntu 20.04's 1.6.3, leaves spaces in the package's path unescaped: under a path with spaces, use `toknroll-config` there.
-
-On Windows the flags are `cl`'s, `/I` and `/LIBPATH` with `toknroll.lib`, one per line, and `toknroll.dll` sits beside the import library.
-The C API is [`toknroll.h`](https://github.com/qxoticai/qxotic/blob/main/toknroll/toknroll-native/include/toknroll.h); nothing else is a tool here, `jbang toknroll@qxoticai` is.
+The wheel is the C library too: `toknroll.h`, `libtoknroll` and a pkg-config file live in the installed package.
+`toknroll-config --cflags --libs` prints the compiler flags, one argument per line, and `--pkgconfigdir` the directory for `PKG_CONFIG_PATH`.
+The [libtoknroll README](https://github.com/qxoticai/qxotic/tree/main/toknroll/toknroll-native) covers Windows, static linking and the thirteen functions of [`toknroll.h`](https://github.com/qxoticai/qxotic/blob/main/toknroll/toknroll-native/include/toknroll.h).
 
 ## With jinfer
 
-[jinfer](https://pypi.org/project/jinfer/)'s `model.tokenizer` is this class, served by libjinfer, which carries its own toknroll; the jinfer wheel pins the exact toknroll it embeds, and the class checks the library's version when it binds.
-`toknroll.configure` and `TOKNROLL_OPTIONS` configure libtoknroll only: a model's tokenizer takes the same `-Dtoknroll.*` options through `jinfer.configure` and `JINFER_OPTIONS`.
-Both wheels in one process are two runtimes that never interact, in any order.
-
-## From a checkout
-
-`make python` in `toknroll/toknroll-native` stages the freshly built library into the package, then `pip install python/`.
-`TOKNROLL_LIBRARY=/path/to/libtoknroll.so` points the package at any build, and at nothing else: a path that does not exist is an error, never a fallback.
+[jinfer](https://pypi.org/project/jinfer/)'s `model.tokenizer` is this same class, served by the toknroll inside libjinfer and configured through `jinfer.configure`.
+Both wheels can share a process; their libraries never interact.
 
 ## Links
 
-- [Tok'n'Roll](https://github.com/qxoticai/qxotic/tree/main/toknroll): the Java library, the parity tests, the tested models and the known divergences.
-- [libtoknroll](https://github.com/qxoticai/qxotic/tree/main/toknroll/toknroll-native): the shared library, its C API [`toknroll.h`](https://github.com/qxoticai/qxotic/blob/main/toknroll/toknroll-native/include/toknroll.h) and this package.
-- [Documentation](https://qxotic.ai/toknroll), and [issues](https://github.com/qxoticai/qxotic/issues).
+- [Tok'n'Roll](https://github.com/qxoticai/qxotic/tree/main/toknroll): the library, its parity tests, the tested models and the known divergences.
+- [libtoknroll](https://github.com/qxoticai/qxotic/tree/main/toknroll/toknroll-native): the shared library and its C API.
+- [The benchmark](https://github.com/qxoticai/qxotic/tree/main/toknroll/toknroll-native/python/benchmarks) and the [issue tracker](https://github.com/qxoticai/qxotic/issues).
 
 ## License
 
 Apache 2.0, by [Quixotic AI](https://qxotic.ai), for the package and the library's own code.
-The library in the wheel is built with Oracle GraalVM and carries its Native Image runtime under the [GraalVM Free Terms and Conditions](https://www.oracle.com/downloads/licenses/graal-free-license.html), spelled out in the wheel's NOTICE: use it as you like, commercially too; a product sold for a fee that bundles a copy of it is not covered by those terms, and takes a build with GraalVM CE, see the [libtoknroll README](https://github.com/qxoticai/qxotic/tree/main/toknroll/toknroll-native#license).
+The library in the wheel is built with Oracle GraalVM and carries its Native Image runtime under the [GraalVM Free Terms and Conditions](https://www.oracle.com/downloads/licenses/graal-free-license.html), spelled out in the wheel's NOTICE.
+Use it as you like, commercially too; a product sold for a fee that bundles a copy of it is not covered by those terms, and takes a build with GraalVM CE, see the [libtoknroll README](https://github.com/qxoticai/qxotic/tree/main/toknroll/toknroll-native#license).

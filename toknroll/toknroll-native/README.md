@@ -26,6 +26,7 @@ x86-64 means x86-64-v3, a CPU with AVX2.
 
 - The release tarball, `libtoknroll-<version>-<platform>.tar.gz` (a zip on Windows), an asset of the release on GitHub, built here by `make dist`: a prefix tree, `include/toknroll.h`, `lib/` with the shared library under its soname, the linker's name linked to it, the static archive and `lib/pkgconfig/toknroll.pc`, this README, the license and the [notice](NOTICE). Unpacked into `/usr/local` it is an installed library pkg-config finds with no setup; elsewhere, `PKG_CONFIG_PATH=<prefix>/lib/pkgconfig`. On Windows the DLL sits in `bin\` and the import library in `lib\`.
 - `pip install toknroll`: the [wheel](https://pypi.org/project/toknroll/) carries the shared library, `toknroll.h` and a pkg-config file in the installed package, and `toknroll-config --cflags --libs`, its console script, says where (`--pkgconfigdir` for pkg-config), so a C build in a virtual environment needs nothing else.
+  Keep each line `toknroll-config` prints as one argument, spaces included; pkg-config's output is shell-escaped (`shlex.split()` in Python), except under pkgconf before 1.8 (RHEL 8, Ubuntu 20.04), which leaves spaces in the path unescaped, so use `toknroll-config` there.
 - Or build it, see below.
 
 ## From C
@@ -90,6 +91,7 @@ make publish-dist TAG=<tag> # the tarball and its checksum as assets of that Git
 ```
 
 On Windows, `.\build.ps1` in this directory has the same targets.
+`pip install python/` after `make python` installs the package from the checkout, and `TOKNROLL_LIBRARY=/path/to/libtoknroll.so` points an installed package at any build, and at nothing else: a path that does not exist is an error, never a fallback.
 The C suite downloads one tokenizer from the hub for its progress scenarios, so `make check` needs the network, as the Python suite does.
 This machine's wheels from a clean export of a ref, and the upload to PyPI, are `make wheels` and `make publish-wheels` at the repository root (`wheels.ps1` on Windows; [RELEASING.md](../../RELEASING.md)).
 
