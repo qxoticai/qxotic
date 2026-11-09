@@ -83,15 +83,21 @@ final class Errors {
      */
     private static final int LIMIT = 1024; // ponytail: a fixed bound
 
-    static int set(Throwable t) {
-        String message = t.getMessage();
-        // the runtime's own words name -Xmx, a flag it does not take here: the knob is the image's
-        if (t instanceof OutOfMemoryError)
-            message =
-                    "out of memory: the runtime's heap is full; raise it with"
-                            + " -XX:MaxHeapSize=<size> through configure or "
+    /**
+     * Out of memory, in words made when Errors initializes, at the first call: a full heap leaves
+     * nothing to build them with, and a second OutOfMemoryError out of an entry point aborts the
+     * process. The runtime's own words name -Xmx, a flag it does not take here.
+     */
+    private static final byte[] OUT_OF_MEMORY =
+            ("out of memory: the runtime's heap is full; raise it with -XX:MaxHeapSize=<size>"
+                            + " through configure or "
                             + Log.optionsVariable()
-                            + " (a vocabulary of 262k tokens needs about 256 MB)";
+                            + " (a vocabulary of 262k tokens needs about 256 MB)")
+                    .getBytes(StandardCharsets.UTF_8);
+
+    static int set(Throwable t) {
+        if (t instanceof OutOfMemoryError) return outOfMemory();
+        String message = t.getMessage();
         // a file the system refused, in the library's words, not java.nio's class names
         if (t.getCause() instanceof FileSystemException f && f.toString().equals(message)) t = f;
         if (t instanceof FileSystemException f) message = plain(f);
@@ -113,6 +119,17 @@ final class Errors {
         // If allocation failed, reads return static fallback text with the original error code.
         last.code = code;
         return code;
+    }
+
+    /** An OutOfMemoryError, recorded without allocating: the words copied into the C buffer. */
+    private static int outOfMemory() {
+        CCharPointer buffer = messageBuffer(1);
+        if (buffer.isNonNull()) {
+            for (int i = 0; i < OUT_OF_MEMORY.length; i++) buffer.write(i, OUT_OF_MEMORY[i]);
+            buffer.write(OUT_OF_MEMORY.length, (byte) 0);
+        }
+        LAST.get().code = ERROR;
+        return ERROR;
     }
 
     /** A file the system refused, in its own words: java.nio leaves the reason out of some. */

@@ -114,14 +114,21 @@ final class Workers {
         while (listed.get() < THREADS - 1) Thread.yield();
     }
 
-    /** A worker's life: wait in C, then work on whatever jobs are queued. */
+    /**
+     * A worker's life: wait in C, then work on whatever jobs are queued. A job keeps its tasks'
+     * failures; anything else, a heap too full to take a step, is dropped: a worker that died of it
+     * would abort the process.
+     */
     private static void loop(PointerBase self) {
         long seen = 0;
         for (; ; ) {
-            seen = await(self, seen);
-            for (Job job; (job = JOBS.peek()) != null; ) {
-                job.work();
-                JOBS.remove(job);
+            try {
+                seen = await(self, seen);
+                for (Job job; (job = JOBS.peek()) != null; ) {
+                    job.work();
+                    JOBS.remove(job);
+                }
+            } catch (Throwable dropped) { // ponytail: no caller to tell, and no task lost
             }
         }
     }

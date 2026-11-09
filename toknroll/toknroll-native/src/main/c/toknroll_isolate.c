@@ -425,7 +425,7 @@ static void start(void) {
         else if (rc == 23) cpu_too_old();
         /* 801 and 802: the address space the runtime reserves for the heap it may grow to, 32 GiB of
          * virtual memory, never committed, exceeds what this process may have: ulimit -v alone counts it */
-        else if (rc == 801 || rc == 802) failed("the runtime could not be started (error %d): it could not reserve the address space for its heap, virtual memory and not RAM, more than this process may have; raise the limit (ulimit -v), or reserve less with -XX:ReservedAddressSpaceSize=<size>, the heap's ceiling, through configure or %s; a new process is needed", rc, STR(TOKNROLL_OPTIONS_ENV));
+        else if (rc == 801 || rc == 802) failed("the runtime could not be started (error %d): it could not reserve the address space for its heap, about 34 GB of virtual memory and not RAM, more than this process may have; raise its virtual memory limit (ulimit -v); a new process is needed", rc);
         else failed("the runtime could not be started (error %d), a new process is needed", rc);
         return;
     }

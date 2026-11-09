@@ -1421,13 +1421,13 @@ static toknroll_tokenizer* cached(const char* ref) {
 #ifdef __linux__
 #include <sys/resource.h>
 /* under a virtual memory limit below the address space the runtime reserves for its heap, the start fails in
- * words, whole: what it reserved, and the two ways out (the limit, or -XX:ReservedAddressSpaceSize); the limit is this
+ * words, whole: what it reserved, and the way out, a higher limit; the limit is this
  * process's own, set before the first call (macOS does not enforce RLIMIT_AS; Windows has none) */
 static void address_space_too_small(void) {
     struct rlimit limit = {8ULL << 30, 8ULL << 30};
     if (setrlimit(RLIMIT_AS, &limit) != 0) skip("setrlimit: %s", strerror(errno));
     CHECK_NULL_ERROR(toknroll_tokenizer_load(tiny_json()), TOKNROLL_ERROR, LE, "could not reserve the address space");
-    CHECK_HAS(LE(NULL), "-XX:ReservedAddressSpaceSize=<size>");
+    CHECK_HAS(LE(NULL), "raise its virtual memory limit (ulimit -v)");
     CHECK_HAS(LE(NULL), "; a new process is needed");   /* the message is whole, not cut */
 }
 #endif
@@ -1447,6 +1447,31 @@ static void heap_too_small(void) {
     toknroll_tokenizer* tiny = toknroll_tokenizer_load(tiny_json());   /* the process is still usable; `small` is a Windows macro */
     CHECK(tiny != NULL);
     toknroll_tokenizer_free(tiny);
+}
+
+/* a heap too small for a batch: the call fails naming the knob, never aborting the process, and the tokenizer
+ * goes on working; on too few cores to run out, there is nothing to test */
+static void batch_out_of_heap(void) {
+    const char* options[] = {"-Dtoknroll.offline=true", "-XX:MaxHeapSize=192m"};
+    CHECK_EQ(toknroll_configure(options, 2), TOKNROLL_OK);
+    toknroll_tokenizer* t = cached(QWEN);
+    enum { TEXTS = 64, LENGTH = 256 * 1024 };
+    static char texts[TEXTS * LENGTH];
+    static int64_t at[TEXTS + 1];
+    for (int i = 0; i < TEXTS * LENGTH; i++) texts[i] = "hello world "[i % 12];
+    for (int i = 0; i <= TEXTS; i++) at[i] = (int64_t) i * LENGTH;
+    int32_t out[1], offsets[TEXTS + 1];
+    int32_t rc = toknroll_encode_batch(t, texts, at, TEXTS, 0, out, 1, offsets);   /* a count, or the error */
+    if (rc >= 0) { toknroll_tokenizer_free(t); skip("the batch fit in a 192 MB heap on this machine's cores"); }
+    int32_t code = 0;
+    const char* message = LE(&code);
+    CHECK_EQ(rc, TOKNROLL_ERROR);
+    CHECK_EQ(code, TOKNROLL_ERROR);
+    CHECK_HAS(message, "out of memory");
+    CHECK_HAS(message, "-XX:MaxHeapSize");
+    int32_t ids[8];
+    CHECK_EQ(toknroll_encode(t, "Hello, world!", 13, 0, ids, 8), 4);   /* the process, and the tokenizer, go on */
+    toknroll_tokenizer_free(t);
 }
 
 static void hub_reference(void) {
@@ -1982,6 +2007,7 @@ static const scenario scenarios[] = {
     {"address_space_too_small", address_space_too_small, NULL},
 #endif
     {"heap_too_small", heap_too_small, NULL},
+    {"batch_out_of_heap", batch_out_of_heap, NULL},
     PROGRESS_SCENARIOS
     {"every_special_token", every_special_token, NULL},
     {"gguf_reference", gguf_reference, NULL},
