@@ -300,7 +300,10 @@ class SourcesTest {
     void aFolderWithoutATokenizerJsonIsNotFound() {
         Errors.Failure e = assertThrows(Errors.Failure.class, () -> Sources.load(disk.toString()));
         assertEquals(Errors.ENOTFOUND, e.code);
-        assertTrue(e.getMessage().contains("holds no tokenizer.json"), e.getMessage());
+        // "is a folder" says what the path is, even when it is named tokenizer.json
+        assertTrue(
+                e.getMessage().contains("is a folder that holds no tokenizer.json"),
+                e.getMessage());
     }
 
     @Test

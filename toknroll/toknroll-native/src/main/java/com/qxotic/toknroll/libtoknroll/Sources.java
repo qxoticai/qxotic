@@ -57,10 +57,12 @@ final class Sources {
                 return read(at.path());
             } catch (RuntimeException e) {
                 // a hub file the cache holds is never refetched over a bad copy: the reader's error
-                // says which file, and this says what to do
-                boolean failure = e instanceof Errors.Failure;
+                // says which file, and this says what to do; a valid file toknroll does not
+                // implement
+                // is no bad copy, and stays Unsupported, the caller's cue to fall back
                 if (!ModelStore.isRef(source)
-                        || (failure && ((Errors.Failure) e).code != Errors.EINVAL)) throw e;
+                        || (e instanceof Errors.Failure f && f.code != Errors.EINVAL)
+                        || Errors.code(e) == Errors.EUNSUPPORTED) throw e;
                 throw Errors.invalid(
                         e.getMessage() + "; the cache's copy: delete it to fetch it again");
             }
@@ -71,7 +73,8 @@ final class Sources {
             throw new Errors.Failure(Errors.ERROR, at.path() + ": permission denied");
         if (!Files.isRegularFile(at.path().resolve("tokenizer.json"))
                 && !Files.isRegularFile(at.path().resolve("tiktoken.model")))
-            throw Errors.notFound(at.path() + " holds no tokenizer.json nor tiktoken.model");
+            throw Errors.notFound(
+                    at.path() + " is a folder that holds no tokenizer.json nor tiktoken.model");
         return HuggingFaceTokenizerLoader.fromLocal(at.path());
     }
 

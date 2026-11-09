@@ -67,6 +67,13 @@ class HubTest(unittest.TestCase):
             self.assertNotEqual(bad.returncode, 0)
             self.assertIn("the cache's copy: delete it to fetch it again", bad.stderr)
 
+    def test_an_unsupported_tokenizer_by_reference_is_unsupported_as_on_disk(self):
+        """The fallback signal holds for a hub reference, the cached copy being good: no hint to delete it."""
+        with self.assertRaises(toknroll.Unsupported) as e:
+            toknroll.load("google-bert/bert-base-uncased")   # WordPiece: BPE only, by design
+        self.assertIn("WordPiece", str(e.exception))
+        self.assertNotIn("cache's copy", str(e.exception))
+
     def test_a_refs_revision_is_refused_in_words(self):
         with self.assertRaises(toknroll.InvalidArgument) as e:
             toknroll.load(HUB_JSON + "@refs/pr/1/tokenizer.json")
