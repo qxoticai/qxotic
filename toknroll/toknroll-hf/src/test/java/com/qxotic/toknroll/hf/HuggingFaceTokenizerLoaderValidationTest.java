@@ -161,7 +161,25 @@ class HuggingFaceTokenizerLoaderValidationTest {
                         UnsupportedTokenizerException.class,
                         () -> HuggingFaceTokenizerLoader.fromLocal(file));
         assertTrue(
-                refused.getMessage().contains("tokenizer.json:model.type"), refused.getMessage());
+                refused.getMessage().contains("tokenizer.json:model.type: WordPiece, untyped"),
+                refused.getMessage());
+    }
+
+    /** T5's file names no type either; its vocabulary is a scored list: a Unigram model. */
+    @Test
+    void aModelWithoutTypeAndAScoredVocabularyIsUnigram() throws Exception {
+        Path file =
+                Files.writeString(
+                        tempDir.resolve("tokenizer.json"),
+                        "{\"version\":\"1.0\",\"model\":{\"unk_id\":0,\"vocab\":[[\"<unk>\",0.0],"
+                                + "[\"▁hello\",-1.5]]},\"added_tokens\":[]}");
+        UnsupportedTokenizerException refused =
+                assertThrows(
+                        UnsupportedTokenizerException.class,
+                        () -> HuggingFaceTokenizerLoader.fromLocal(file));
+        assertTrue(
+                refused.getMessage().contains("tokenizer.json:model.type: Unigram, untyped"),
+                refused.getMessage());
     }
 
     /** A well-formed option that would make another tokenizer is refused, never read as absent. */

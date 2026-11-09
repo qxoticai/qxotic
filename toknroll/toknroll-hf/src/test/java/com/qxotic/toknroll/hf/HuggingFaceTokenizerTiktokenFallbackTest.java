@@ -116,7 +116,7 @@ class HuggingFaceTokenizerTiktokenFallbackTest {
                                         "main",
                                         false));
         assertTrue(
-                error.getMessage().contains("added_tokens_decoder.rstrip: <|end|>"),
+                error.getMessage().contains("added_tokens_decoder.rstrip: true, for <|end|>"),
                 error.getMessage());
     }
 

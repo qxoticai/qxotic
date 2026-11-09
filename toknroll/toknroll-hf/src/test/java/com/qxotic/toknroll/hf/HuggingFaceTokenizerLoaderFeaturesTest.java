@@ -158,7 +158,7 @@ class HuggingFaceTokenizerLoaderFeaturesTest {
                             IllegalArgumentException.class,
                             () -> HuggingFaceTokenizerLoader.fromLocal(tokenizerJson));
             assertTrue(
-                    error.getMessage().contains("added_tokens." + flag + ": <|end|>"),
+                    error.getMessage().contains("added_tokens." + flag + ": true, for <|end|>"),
                     error.getMessage());
         }
     }

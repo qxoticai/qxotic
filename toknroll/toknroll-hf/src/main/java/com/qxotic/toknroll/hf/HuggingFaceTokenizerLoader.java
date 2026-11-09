@@ -231,11 +231,16 @@ public final class HuggingFaceTokenizerLoader {
         Map<String, Object> root = parseObject(tokenizerJson);
         Map<String, Object> model = asObject(root.get("model"), "tokenizer.json:model");
         // Files written before tokenizers tagged its models carry no type: merges mean BPE (gpt2),
-        // none means WordPiece or Unigram (bert): a valid file either way
+        // none means Unigram (t5, a scored vocabulary list) or WordPiece (bert), as Hugging Face
+        // reads them: a valid file either way, refused by that name
         String modelType =
                 model.get("type") != null
                         ? asString(model.get("type"), "tokenizer.json:model.type")
-                        : model.containsKey("merges") ? "BPE" : "absent, and no merges";
+                        : model.containsKey("merges")
+                                ? "BPE"
+                                : model.get("vocab") instanceof List
+                                        ? "Unigram, untyped"
+                                        : "WordPiece, untyped";
         if (!"BPE".equals(modelType)) {
             throw unsupported("tokenizer.json:model.type", modelType, "BPE");
         }
@@ -474,7 +479,7 @@ public final class HuggingFaceTokenizerLoader {
             Map<?, ?> token, String content, String where, Normalizer normalizer) {
         for (String flag : new String[] {"lstrip", "rstrip", "single_word"}) {
             if (Boolean.TRUE.equals(token.get(flag))) {
-                throw unsupported(where + "." + flag, content, "false");
+                throw unsupported(where + "." + flag, "true, for " + content, "false");
             }
         }
         if (Boolean.TRUE.equals(token.get("normalized"))
