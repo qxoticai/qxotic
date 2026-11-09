@@ -4,7 +4,7 @@
 
 <p align="center">
   <a href="https://openjdk.org/projects/jdk/25/"><img src="https://img.shields.io/badge/Java-25%2B-007396?logo=java&logoColor=white" alt="Java 25+"></a>
-  <a href="../LICENSE"><img src="https://img.shields.io/badge/License-Apache%202.0-green.svg?logo=apache" alt="License: Apache 2.0"></a>
+  <a href="../../LICENSE"><img src="https://img.shields.io/badge/License-Apache%202.0-green.svg?logo=apache" alt="License: Apache 2.0"></a>
   <a href="https://www.graalvm.org/latest/reference-manual/native-image/"><img src="https://img.shields.io/badge/GraalVM-Native_Image-F29111?labelColor=00758F" alt="GraalVM Native Image"></a>
 </p>
 
@@ -95,6 +95,13 @@ The [translation table](https://qxotic.ai/jinfer#the-same-knob-at-each-face) map
 
 ## Add the provider
 
+These examples target jinfer **0.4.0**.
+For an unreleased checkout, first install the artifacts locally from the repository root:
+
+```bash
+mvn -pl jinfer/jinfer-bom,jinfer/jinfer-spring-ai-spring-boot-starter,jinfer/jinfer-gemma-embedding2 -am install -DskipTests
+```
+
 Use the Spring Boot parent or BOM for Spring Boot itself.
 With the Spring Boot parent, set `<java.version>25</java.version>`.
 Import the Spring AI and jinfer BOMs, then add the starter and model providers:
@@ -112,7 +119,7 @@ Import the Spring AI and jinfer BOMs, then add the starter and model providers:
     <dependency>
       <groupId>com.qxotic</groupId>
       <artifactId>jinfer-bom</artifactId>
-      <version>0.3.1</version>
+      <version>0.4.0</version>
       <type>pom</type>
       <scope>import</scope>
     </dependency>
@@ -134,7 +141,7 @@ Import the Spring AI and jinfer BOMs, then add the starter and model providers:
 `jinfer-models-all` includes the providers used by the examples below, not model weights.
 Only the models you load are downloaded.
 The BOMs manage versions; they do not add dependencies.
-Without them, pin the versions `jinfer-bom` 0.3.1 lists on each jinfer dependency and `2.1.0-RC2` on each Spring AI one.
+Without them, pin the versions `jinfer-bom` 0.4.0 lists on each jinfer dependency and `2.1.0-RC2` on each Spring AI one.
 
 Optional runtime backends are `jam-native` (hand-tuned SIMD) and `jam-vector` (Panama Vector API):
 
@@ -162,7 +169,7 @@ For scripts that use the core Spring AI provider without Spring Boot:
 //JAVA 25
 //JAVAC_OPTIONS -parameters
 //RUNTIME_OPTIONS --add-modules jdk.incubator.vector --enable-native-access=ALL-UNNAMED
-//DEPS com.qxotic:jinfer-bom:0.3.1@pom
+//DEPS com.qxotic:jinfer-bom:0.4.0@pom
 //DEPS com.qxotic:jinfer-spring-ai com.qxotic:jinfer-models-all
 //DEPS org.springframework.ai:spring-ai-client-chat:2.1.0-RC2
 //DEPS org.springframework.ai:spring-ai-rag:2.1.0-RC2
@@ -336,6 +343,118 @@ There is no voice or language option: LFM3-Omni's spoken chat replies come in it
 
 ## Embeddings and reranking
 
+### EmbeddingGemma 2 text
+
+An embedding-only application needs `jinfer-spring-ai` and the Gemma provider below; it can omit `spring-ai-client-chat` and replace `jinfer-models-all` with this provider.
+Their versions come from `jinfer-bom:0.4.0`.
+Keep the starter instead of `jinfer-spring-ai` when Spring Boot manages the model.
+
+```xml
+<dependency>
+  <groupId>com.qxotic</groupId>
+  <artifactId>jinfer-gemma-embedding2</artifactId>
+</dependency>
+```
+
+In a Maven project with these dependencies, save this as `GemmaText.java` in the project directory.
+It takes the local path to `embeddinggemma-2-Q8_0.gguf` as its argument.
+The checkpoint is available in [unsloth/embeddinggemma-2-GGUF](https://huggingface.co/unsloth/embeddinggemma-2-GGUF).
+Text-only inference does not need the projector.
+
+```java
+import com.qxotic.jinfer.spring.ai.JinferEmbeddingModel;
+import org.springframework.ai.document.Document;
+import java.nio.file.Path;
+
+public class GemmaText {
+    public static void main(String[] args) {
+        try (var embeddings = JinferEmbeddingModel.builder()
+                .modelPath(Path.of(args[0]))
+                .contextCapacity(8192)
+                .dimensions(256)
+                .build()) {
+            float[] document = embeddings.embed(new Document("A tabby cat sitting on a windowsill."));
+            float[] query = embeddings.embed("a photo of a cat");
+            System.out.printf("Document: %d, query: %d%n", document.length, query.length);
+        }
+    }
+}
+```
+
+Run it with Java 25's source-file launcher (POSIX shell), replacing the model path:
+
+```bash
+mvn dependency:build-classpath -Dmdep.outputFile=classpath.txt
+java --add-modules jdk.incubator.vector --enable-native-access=ALL-UNNAMED \
+  --class-path "$(cat classpath.txt)" GemmaText.java /path/to/embeddinggemma-2-Q8_0.gguf
+```
+
+`embed(Document)` and document batches apply document framing; `embed(String)` applies query framing.
+String-list batches, `embedForResponse`, and `call(EmbeddingRequest)` stay raw: format batched queries explicitly with `GemmaEmbedding2.searchQuery(text)`.
+For titles and other tasks, use the [Gemma helpers](../jinfer-gemma-embedding2/README.md) through a raw request, without passing the formatted text back through a query/document-framing overload.
+
+Vector stores call `add` and `similaritySearch` without options, and some size their table from `dimensions()`.
+`dimensions(256)` sets the default width and makes `dimensions()` report 256; request `EmbeddingOptions.dimensions` still wins.
+Gemma's [model card](https://huggingface.co/google/embeddinggemma-2) lists widths of 768, 512, 256, and 128, and warns that 128 substantially reduces multimodal quality.
+The adapter also accepts intermediate widths, which are not listed in the model card.
+Returned shortened vectors are L2-normalized.
+The builder's default, `dimensions(0)`, keeps the native width; unsupported widths are refused at build time.
+Qwen3-Embedding accepts widths from 32 through its native width, while fixed-width models such as LFM2.5 refuse custom dimensions.
+Keep the checkpoint, quantization, output width, and query/document framing consistent when building and searching an index.
+
+`contextCapacity(8192)` selects Gemma's documented shared context, including task framing, boundary tokens, and any media positions.
+Each input must fit; Spring's batching tokenizer is not Gemma's tokenizer, and packing several inputs does not split an oversized document.
+Keep manually built adapters in try-with-resources, as above; Spring closes managed model beans at shutdown.
+
+### EmbeddingGemma 2 media
+
+Save this as `GemmaMedia.java` in the same project directory.
+It takes three local paths: the model GGUF, `mmproj-BF16.gguf` from the same repository, and your PNG image.
+The dependency set is the same as for text; the `media` companion enables image, audio, and video inputs.
+
+```java
+import com.qxotic.jinfer.spring.ai.JinferEmbeddingModel;
+import org.springframework.ai.content.Media;
+import org.springframework.ai.document.Document;
+import org.springframework.util.MimeTypeUtils;
+import java.nio.file.Path;
+
+public class GemmaMedia {
+    public static void main(String[] args) {
+        try (var embeddings = JinferEmbeddingModel.builder()
+                .modelPath(Path.of(args[0]))
+                .companionPath("media", Path.of(args[1]))
+                .contextCapacity(8192)
+                .dimensions(256)
+                .build()) {
+            float[] photo = embeddings.embed(Document.builder()
+                    .media(new Media(MimeTypeUtils.IMAGE_PNG, Path.of(args[2]).toUri()))
+                    .build());
+            System.out.println("Image: " + photo.length);
+        }
+    }
+}
+```
+
+Using the classpath generated above, run it with your model, projector, and image paths:
+
+```bash
+java --add-modules jdk.incubator.vector --enable-native-access=ALL-UNNAMED \
+  --class-path "$(cat classpath.txt)" GemmaMedia.java \
+  /path/to/embeddinggemma-2-Q8_0.gguf /path/to/mmproj-BF16.gguf /path/to/photo.png
+```
+
+The image vector shares the embedding space used by text queries.
+As the model card says, media embeds without a prompt; text documents keep theirs.
+Spring AI's vector stores still refuse non-text documents at `add`, so media vectors come from the `EmbeddingModel` directly.
+
+For a starter-managed embedding model, select `spring.ai.model.embedding=jinfer`.
+Set `model`, `context-capacity=8192`, and `dimensions=256` under `spring.ai.jinfer.embedding`.
+For media, set `spring.ai.jinfer.embedding.companions.media` to the projector path.
+
+### Reranking
+
+The Qwen embedding/reranking example below needs `jinfer-qwen3:0.4.0`, or the `jinfer-models-all` dependency from the installation section.
 When using reranking without the Spring Boot starter, add the RAG API.
 Its version comes from the Spring AI BOM:
 
@@ -370,24 +489,6 @@ try (var embeddings = JinferEmbeddingModel.builder()
 
 The example embeds a query and reranks two supplied documents.
 In a RAG application, pass the documents returned by your retriever to the reranker.
-
-Matryoshka-trained models honor `EmbeddingOptions.dimensions`: Qwen3-Embedding from 32 up to its own width, EmbeddingGemma 2 from 128 to 768.
-Vector stores call `add` and `similaritySearch` without options, and some size their table from `dimensions()`.
-To store shorter vectors, set the width on the model with `dimensions(256)` on the builder or `spring.ai.jinfer.embedding.dimensions=256` in the starter.
-Every call that names no width then embeds at 256, and `dimensions()` reports it.
-`0`, the default, is the model's own width; a width the model cannot produce is refused at startup.
-
-EmbeddingGemma 2 also embeds media documents (image, audio or video) once its projector is attached, with `companion("media", ...)` on the builder or `spring.ai.jinfer.embedding.companions.media` in the starter:
-
-```java
-float[] photo = embeddings.embed(Document.builder()
-        .media(new Media(MimeTypeUtils.IMAGE_PNG, Path.of("photo.png").toUri()))
-        .build());
-```
-
-The vector lands in the space text queries search.
-As the model card says, media embeds without a prompt; text documents keep theirs.
-Spring AI's vector stores still refuse non-text documents at `add`, so media vectors come from the `EmbeddingModel` directly.
 
 ## Prompt caching
 

@@ -8,16 +8,23 @@ sidebar_position: 3
 
 ## Installation
 
+These examples target jinfer **0.4.0**, Spring AI **2.1.0-RC2**, and Java **25**; the starter targets Spring Boot **4.2.0-RC2**.
+For an unreleased checkout, first install the artifacts locally from the repository root:
+
+```bash
+mvn -pl jinfer/jinfer-bom,jinfer/jinfer-spring-ai-spring-boot-starter,jinfer/jinfer-gemma-embedding2 -am install -DskipTests
+```
+
 ```xml
 <dependency>
   <groupId>com.qxotic</groupId>
   <artifactId>jinfer-spring-ai</artifactId>
-  <version>0.3.1</version>
+  <version>0.4.0</version>
 </dependency>
 <dependency>
   <groupId>com.qxotic</groupId>
   <artifactId>jinfer-lfm2</artifactId>
-  <version>0.3.1</version>
+  <version>0.4.0</version>
 </dependency>
 ```
 
@@ -120,54 +127,129 @@ The catalog is model-identity checked. An edited prompt reuses only its matching
 
 ## Embeddings and reranking
 
-```java
-EmbeddingModel embeddings = JinferEmbeddingModel.builder()
-        .model("Qwen/Qwen3-Embedding-0.6B-GGUF:Q8_0")
-        .contextCapacity(8192)
-        .build();
+### EmbeddingGemma 2 text
 
-float[] vector = embeddings.embed("search query");
+Alongside `jinfer-spring-ai`, add the Gemma provider below instead of `jinfer-lfm2` for an embedding-only application.
+Applications already using `jinfer-models-all` have this provider.
 
-DocumentPostProcessor reranker = JinferDocumentPostProcessor.builder()
-        .modelPath(Path.of("reranker.gguf"))
-        .contextCapacity(2048)
-        .topK(5)
-        .build();
+```xml
+<dependency>
+  <groupId>com.qxotic</groupId>
+  <artifactId>jinfer-gemma-embedding2</artifactId>
+  <version>0.4.0</version>
+</dependency>
 ```
 
-The reranker needs the Spring AI RAG API, which `jinfer-spring-ai` declares as optional.
-The starter brings it in; without the starter, add it at the same Spring AI version, for example by importing `spring-ai-bom`:
+In a Maven project with these dependencies, save this as `GemmaText.java` in the project directory.
+It takes the local path to `embeddinggemma-2-Q8_0.gguf` as its argument.
+The checkpoint is available in [unsloth/embeddinggemma-2-GGUF](https://huggingface.co/unsloth/embeddinggemma-2-GGUF).
+Text-only inference does not need the projector.
+
+```java
+import com.qxotic.jinfer.spring.ai.JinferEmbeddingModel;
+import org.springframework.ai.document.Document;
+import java.nio.file.Path;
+
+public class GemmaText {
+    public static void main(String[] args) {
+        try (var embeddings = JinferEmbeddingModel.builder()
+                .modelPath(Path.of(args[0]))
+                .contextCapacity(8192)
+                .dimensions(256)
+                .build()) {
+            float[] document = embeddings.embed(new Document("A tabby cat sitting on a windowsill."));
+            float[] query = embeddings.embed("a photo of a cat");
+            System.out.printf("Document: %d, query: %d%n", document.length, query.length);
+        }
+    }
+}
+```
+
+Run it with Java 25's source-file launcher (POSIX shell), replacing the model path:
+
+```bash
+mvn dependency:build-classpath -Dmdep.outputFile=classpath.txt
+java --add-modules jdk.incubator.vector --enable-native-access=ALL-UNNAMED \
+  --class-path "$(cat classpath.txt)" GemmaText.java /path/to/embeddinggemma-2-Q8_0.gguf
+```
+
+`embed(Document)` and document batches apply document framing; `embed(String)` applies query framing.
+String-list batches, `embedForResponse`, and `call(EmbeddingRequest)` stay raw: format batched queries explicitly with `GemmaEmbedding2.searchQuery(text)`.
+For titles and other tasks, use the [Gemma helpers](https://github.com/qxoticai/qxotic/blob/main/jinfer/jinfer-gemma-embedding2/README.md) through a raw request, without passing the formatted text back through a query/document-framing overload.
+
+Vector stores call `add` and `similaritySearch` without options, and some size their table from `dimensions()`.
+`dimensions(256)` sets the default width and makes `dimensions()` report 256; request `EmbeddingOptions.dimensions` still wins.
+Gemma's [model card](https://huggingface.co/google/embeddinggemma-2) lists widths of 768, 512, 256, and 128, and warns that 128 substantially reduces multimodal quality.
+The adapter also accepts intermediate widths, which are not listed in the model card.
+Returned shortened vectors are L2-normalized.
+The builder's default, `dimensions(0)`, keeps the native width; unsupported widths are refused at build time.
+Qwen3-Embedding accepts widths from 32 through its native width, while fixed-width models such as LFM2.5 refuse custom dimensions.
+Keep the checkpoint, quantization, output width, and query/document framing consistent when building and searching an index.
+
+`contextCapacity(8192)` selects Gemma's documented shared context, including task framing, boundary tokens, and any media positions.
+Each input must fit; Spring's batching tokenizer is not Gemma's tokenizer, and packing several inputs does not split an oversized document.
+Keep manually built adapters in try-with-resources, as above; Spring closes managed model beans at shutdown.
+
+### EmbeddingGemma 2 media
+
+Save this as `GemmaMedia.java` in the same project directory.
+It takes three local paths: the model GGUF, `mmproj-BF16.gguf` from the same repository, and your PNG image.
+The dependency set is the same as for text; the `media` companion enables image, audio, and video inputs.
+
+```java
+import com.qxotic.jinfer.spring.ai.JinferEmbeddingModel;
+import org.springframework.ai.content.Media;
+import org.springframework.ai.document.Document;
+import org.springframework.util.MimeTypeUtils;
+import java.nio.file.Path;
+
+public class GemmaMedia {
+    public static void main(String[] args) {
+        try (var embeddings = JinferEmbeddingModel.builder()
+                .modelPath(Path.of(args[0]))
+                .companionPath("media", Path.of(args[1]))
+                .contextCapacity(8192)
+                .dimensions(256)
+                .build()) {
+            float[] photo = embeddings.embed(Document.builder()
+                    .media(new Media(MimeTypeUtils.IMAGE_PNG, Path.of(args[2]).toUri()))
+                    .build());
+            System.out.println("Image: " + photo.length);
+        }
+    }
+}
+```
+
+Using the classpath generated above, run it with your model, projector, and image paths:
+
+```bash
+java --add-modules jdk.incubator.vector --enable-native-access=ALL-UNNAMED \
+  --class-path "$(cat classpath.txt)" GemmaMedia.java \
+  /path/to/embeddinggemma-2-Q8_0.gguf /path/to/mmproj-BF16.gguf /path/to/photo.png
+```
+
+The image vector shares the embedding space used by text queries.
+As the model card says, media embeds without a prompt; text documents keep theirs.
+Spring AI's vector stores still refuse non-text documents at `add`, so media vectors come from the `EmbeddingModel` directly.
+
+For a starter-managed embedding model, select `spring.ai.model.embedding=jinfer`.
+Set `model`, `context-capacity=8192`, and `dimensions=256` under `spring.ai.jinfer.embedding`.
+For media, set `spring.ai.jinfer.embedding.companions.media` to the projector path.
+
+### Reranking
+
+Reranking needs a separate model provider, such as `jinfer-qwen3:0.4.0` for Qwen3-Reranker, and the Spring AI RAG API.
+The starter brings in the RAG API; without it, add:
 
 ```xml
 <dependency>
   <groupId>org.springframework.ai</groupId>
   <artifactId>spring-ai-rag</artifactId>
+  <version>2.1.0-RC2</version>
 </dependency>
 ```
 
-Embedding requests are packed into ragged batches.
-`EmbeddingOptions.dimensions` requests a supported Matryoshka width (Qwen3-Embedding: 32 up to its own, EmbeddingGemma 2: 128 to 768); fixed-width models accept only their native width.
-Typed query/document entry points apply retrieval framing; `call(EmbeddingRequest)` stays raw.
-
-Vector stores call `add` and `similaritySearch` without options, and some size their table from `dimensions()`.
-To store shorter vectors, set the width on the model: `dimensions(256)` on the builder, or `spring.ai.jinfer.embedding.dimensions=256` in the starter.
-Every call that names no width then embeds at 256, `dimensions()` reports it, and observations record it.
-`EmbeddingOptions.dimensions` on a call still wins; `0`, the default, is the model's own width, and a width the model cannot produce is refused at startup.
-
-EmbeddingGemma 2 also embeds media documents (image, audio or video) once its projector is attached, with `companion("media", ...)` on the builder or `spring.ai.jinfer.embedding.companions.media` in the starter:
-
-```java
-float[] photo = embeddings.embed(Document.builder()
-        .media(new Media(MimeTypeUtils.IMAGE_PNG, Path.of("photo.png").toUri()))
-        .build());
-```
-
-The vector lands in the space text queries search.
-As the model card says, media embeds without a prompt; text documents keep theirs.
-Spring AI's vector stores still refuse non-text documents at `add`, so media vectors come from the `EmbeddingModel` directly.
-
-Queries and documents cover search, the one task Spring AI has a word for.
-EmbeddingGemma 2's other tasks (question answering, fact checking, code retrieval, classification, clustering, sentence similarity) are jinfer calls on the model's own module: see [jinfer-gemma-embedding2](../../jinfer/jinfer-gemma-embedding2/README.md).
+See the [scoped reranking example](https://github.com/qxoticai/qxotic/blob/main/jinfer/jinfer-spring-ai/README.md#reranking).
 
 ## Spring Boot
 

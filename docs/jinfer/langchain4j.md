@@ -10,16 +10,23 @@ Ports use jinfer's hand-written, oracle-validated chat-template codecs; unported
 
 ## Installation
 
+These examples target jinfer **0.4.0**, LangChain4j **1.23.0**, and Java **25**.
+For an unreleased checkout, first install the artifacts locally from the repository root:
+
+```bash
+mvn -pl jinfer/jinfer-bom,jinfer/jinfer-langchain4j,jinfer/jinfer-gemma-embedding2 -am install -DskipTests
+```
+
 ```xml
 <dependency>
   <groupId>com.qxotic</groupId>
   <artifactId>jinfer-langchain4j</artifactId>
-  <version>0.3.1</version>
+  <version>0.4.0</version>
 </dependency>
 <dependency>
   <groupId>com.qxotic</groupId>
   <artifactId>jinfer-lfm2</artifactId>
-  <version>0.3.1</version>
+  <version>0.4.0</version>
 </dependency>
 ```
 
@@ -216,66 +223,140 @@ Runnable version: `LocalAgentIT`.
 
 ## Embeddings
 
-`JinferEmbeddingModel` runs an embedding GGUF (Qwen3-Embedding, LFM2.5-Embedding) in-process, so vectors, store, and chat stay in one JVM.
-
+`JinferEmbeddingModel` runs embedding GGUFs in-process, including EmbeddingGemma 2, Qwen3-Embedding, and LFM2.5-Embedding.
 Segments are packed into context-sized ragged batches: one forward pass embeds many segments.
 
-```java
-EmbeddingModel embeddings = JinferEmbeddingModel.builder()
-        .model("Qwen/Qwen3-Embedding-0.6B-GGUF:Q8_0")
-        .contextCapacity(8192)          // packing upper bound; 0 = the default, -1 = the model's maximum
-        .build();
+### EmbeddingGemma 2 text
+
+Alongside `jinfer-langchain4j`, add the Gemma provider below instead of `jinfer-lfm2` for an embedding-only application.
+Applications already using `jinfer-models-all` have this provider.
+
+```xml
+<dependency>
+  <groupId>com.qxotic</groupId>
+  <artifactId>jinfer-gemma-embedding2</artifactId>
+  <version>0.4.0</version>
+</dependency>
 ```
 
-Qwen3-Embedding and EmbeddingGemma 2 are Matryoshka-trained.
-`dimensions` selects any width from 32 (Qwen3) or 128 (EmbeddingGemma 2) through the native width, and the returned prefix is L2-normalized.
-Fixed-width models such as LFM2.5 reject `dimensions` instead of slicing vectors.
+In a Maven project with these dependencies, save this as `GemmaText.java` in the project directory.
+It takes the local path to `embeddinggemma-2-Q8_0.gguf` as its argument.
+The checkpoint is available in [unsloth/embeddinggemma-2-GGUF](https://huggingface.co/unsloth/embeddinggemma-2-GGUF).
+Text-only inference does not need the projector.
 
-`dimensions(256)` on the builder sets the width for every call that names none, and `dimension()` reports it.
-A store sized from the model, the ingestor and the retriever then all work at that width without naming it.
-A request's own `dimensions` still wins; `0`, the default, is the model's own width, and a width the model cannot produce is refused at build.
+```java
+import com.qxotic.jinfer.langchain4j.JinferEmbeddingModel;
+import dev.langchain4j.model.embedding.request.EmbeddingInputType;
+import dev.langchain4j.model.embedding.request.EmbeddingRequest;
+import java.nio.file.Path;
 
-Retrieval-tuned embedders use query/document framing (LFM2.5's `query: `/`document: ` pair, Qwen3's instructed query). Embedding bare text degrades retrieval. Set `EmbeddingInputType`:
+public class GemmaText {
+    public static void main(String[] args) {
+        try (var embeddings = JinferEmbeddingModel.builder()
+                .modelPath(Path.of(args[0]))
+                .contextCapacity(8192)
+                .dimensions(256)
+                .build()) {
+            var document = embeddings.embed(EmbeddingRequest.builder()
+                    .input("A tabby cat sitting on a windowsill.")
+                    .inputType(EmbeddingInputType.DOCUMENT)
+                    .build()).embeddings().getFirst();
+            var query = embeddings.embed(EmbeddingRequest.builder()
+                    .input("a photo of a cat")
+                    .inputType(EmbeddingInputType.QUERY)
+                    .build()).embeddings().getFirst();
+            System.out.printf("Document: %d, query: %d%n",
+                    document.vector().length, query.vector().length);
+        }
+    }
+}
+```
+
+Run it with Java 25's source-file launcher (POSIX shell), replacing the model path:
+
+```bash
+mvn dependency:build-classpath -Dmdep.outputFile=classpath.txt
+java --add-modules jdk.incubator.vector --enable-native-access=ALL-UNNAMED \
+  --class-path "$(cat classpath.txt)" GemmaText.java /path/to/embeddinggemma-2-Q8_0.gguf
+```
+
+`dimensions(256)` sets the default width and makes `dimension()` report 256; a request's own `dimensions` still wins.
+Gemma's [model card](https://huggingface.co/google/embeddinggemma-2) lists widths of 768, 512, 256, and 128, and warns that 128 substantially reduces multimodal quality.
+The adapter also accepts intermediate widths, which are not listed in the model card.
+Returned shortened vectors are L2-normalized.
+The builder's default, `dimensions(0)`, keeps the native width; unsupported widths are refused at build time.
+Qwen3-Embedding accepts widths from 32 through its native width, while fixed-width models such as LFM2.5 refuse custom dimensions.
+Keep the checkpoint, quantization, output width, and query/document framing consistent when building and searching an index.
+
+`contextCapacity(8192)` selects Gemma's documented shared context, including task framing, boundary tokens, and any media positions.
+Each input must fit; packing several inputs does not split an oversized document.
+Keep the concrete adapter in try-with-resources, as above, so its state and owned weights are closed.
+
+For an existing `store`, create the ingestor and retriever inside that same try block and use them before it closes.
+This higher-level wiring also needs `dev.langchain4j:langchain4j:1.23.0`:
 
 ```java
 EmbeddingStoreIngestor.builder()
         .embeddingModel(embeddings)
         .embeddingStore(store)
-        .embeddingInputType(EmbeddingInputType.DOCUMENT)   // document framing
+        .embeddingInputType(EmbeddingInputType.DOCUMENT)
         .build();
 
 EmbeddingStoreContentRetriever.builder()
         .embeddingModel(embeddings)
         .embeddingStore(store)
-        .embeddingInputType(EmbeddingInputType.QUERY)      // query framing
+        .embeddingInputType(EmbeddingInputType.QUERY)
         .build();
 ```
 
-EmbeddingGemma 2 also embeds images, audio and video once its projector is attached as the `media` companion:
+### EmbeddingGemma 2 media
+
+Save this as `GemmaMedia.java` in the same project directory.
+It takes three local paths: the model GGUF, `mmproj-BF16.gguf` from the same repository, and your PNG image.
+The dependency set is the same as for text; the `media` companion enables image, audio, and video inputs.
 
 ```java
-EmbeddingModel embeddings = JinferEmbeddingModel.builder()
-        .model("unsloth/embeddinggemma-2-GGUF:Q8_0")
-        .companion("media", "unsloth/embeddinggemma-2-GGUF/mmproj-BF16.gguf")
-        .build();
+import com.qxotic.jinfer.langchain4j.JinferEmbeddingModel;
+import dev.langchain4j.data.message.ImageContent;
+import dev.langchain4j.model.embedding.request.EmbeddingRequest;
+import java.nio.file.Path;
 
-Embedding photo = embeddings.embed(EmbeddingRequest.builder()
-        .input(ImageContent.from(Path.of("photo.png").toUri()))
-        .build()).embeddings().getFirst();
+public class GemmaMedia {
+    public static void main(String[] args) {
+        try (var embeddings = JinferEmbeddingModel.builder()
+                .modelPath(Path.of(args[0]))
+                .companionPath("media", Path.of(args[1]))
+                .contextCapacity(8192)
+                .dimensions(256)
+                .build()) {
+            var photo = embeddings.embed(EmbeddingRequest.builder()
+                    .input(ImageContent.from(Path.of(args[2]).toUri()))
+                    .build()).embeddings().getFirst();
+            System.out.println("Image: " + photo.vector().length);
+        }
+    }
+}
 ```
 
-The vector lands in the space text queries search.
+Using the classpath generated above, run it with your model, projector, and image paths:
+
+```bash
+java --add-modules jdk.incubator.vector --enable-native-access=ALL-UNNAMED \
+  --class-path "$(cat classpath.txt)" GemmaMedia.java \
+  /path/to/embeddinggemma-2-Q8_0.gguf /path/to/mmproj-BF16.gguf /path/to/photo.png
+```
+
+The image vector shares the embedding space used by text queries.
 As the model card says, media embeds without a prompt, so the input type changes nothing for an input that carries media.
 Text and media parts in one `EmbeddingInput` embed as one vector, in order.
 Without the projector, `supportedContentTypes()` is text only and LangChain4j refuses media before decoding it.
 With a listener registered, LangChain4j (1.21 to 1.23) refuses an input that is media alone ("text cannot be null or blank", [langchain4j#6784](https://github.com/langchain4j/langchain4j/issues/6784)).
 Adding a text part avoids the error, but the text then becomes part of the vector.
 
-Plain `embed`/`embedAll` embeds raw text; a one-time stderr note points at the knobs when the model is prefix-trained.
+Plain `embed(String)`/`embedAll` embeds raw text; a one-time SLF4J warning points at the role options when the model is prefix-trained and a logging provider is installed.
 
 The input types cover search, the one task LangChain4j has a word for.
-EmbeddingGemma 2's other tasks (question answering, fact checking, code retrieval, classification, clustering, sentence similarity) are jinfer calls on the model's own module: see [jinfer-gemma-embedding2](../../jinfer/jinfer-gemma-embedding2/README.md).
-A store whose text was ingested with input type `DOCUMENT` already serves them: those documents are framed as the tasks expect.
+For titles and other tasks, format text with the [Gemma helpers](https://github.com/qxoticai/qxotic/blob/main/jinfer/jinfer-gemma-embedding2/README.md) and pass it through a raw call without also selecting QUERY/DOCUMENT, which would add a second prefix.
 
 ## Reranking
 

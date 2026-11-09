@@ -7,5 +7,6 @@
     "ignoreDeprecations": "6.0",
     "strict": true
   },
+  "include": ["docusaurus.config.ts", "docs/**/*"],
   "exclude": [".docusaurus", "**/build*", "**/target", "node_modules"]
 }
