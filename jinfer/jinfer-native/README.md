@@ -25,6 +25,7 @@ The models are jinfer's ports, the [Python README](python/README.md#models) list
 
 - The release tarball, `libjinfer-<version>-<platform>.tar.gz` (a zip on Windows), an asset of the release on GitHub, built here by `make dist`: a prefix tree, `include/` with both headers, `lib/` with the shared library under its soname, the linker's name linked to it and `lib/pkgconfig/jinfer.pc`, this README, the license and the [notice](NOTICE). Unpacked into `/usr/local` it is an installed library pkg-config finds with no setup; elsewhere, `PKG_CONFIG_PATH=<prefix>/lib/pkgconfig`. On Windows the DLL sits in `bin\` and the import library in `lib\`.
 - `pip install jinfer`: the [wheel](https://pypi.org/project/jinfer/) carries the shared library, both headers and a pkg-config file in the installed package, and `jinfer-config --cflags --libs`, its console script, says where (`--pkgconfigdir` for pkg-config), so a C build in a virtual environment needs nothing else.
+  Keep each line `jinfer-config` prints as one argument, spaces included; pkg-config's output is shell-escaped (`shlex.split()` in Python), except under pkgconf before 1.8 (RHEL 8, Ubuntu 20.04), which leaves spaces in the path unescaped, so use `jinfer-config` there.
 - Or build it, see below.
 
 ## From C
@@ -89,6 +90,7 @@ make publish-dist TAG=<tag> # the tarball and its checksum as assets of that Git
 
 `make libjinfer` from the repository root does the same.
 On Windows, `.\build.ps1` in this directory has the same targets.
+`pip install python/` after `make python` installs the package from the checkout, and `JINFER_LIBRARY=/path/to/libjinfer.so` points an installed package at any build.
 The checks need the models they name cached, `make cache-models` at the root fetches them, and the network for the C suites' progress scenarios.
 This machine's wheels from a clean export of a ref, and the upload to PyPI, are `make wheels` and `make publish-wheels` at the repository root (`wheels.ps1` on Windows; [RELEASING.md](../../RELEASING.md)).
 

@@ -5,7 +5,7 @@ build-backend = "setuptools.build_meta"
 [project]
 name = "jinfer"
 version = "0.4.0"
-description = "Local AI inference: chat, vision, audio, embeddings, reranking, speech, transcription. One shared library, no server, no Python ML stack."
+description = "Local AI inference for Python: chat, vision, audio, embeddings, speech and transcription in one wheel, no server, no ML stack."
 readme = "README.md"
 requires-python = ">=3.10"
 license = "Apache-2.0"
@@ -33,7 +33,7 @@ dependencies = ["toknroll==0.4.0"]   # the toknroll inside libjinfer, exactly: i
 
 [project.urls]
 Homepage = "https://qxotic.ai"
-Documentation = "https://qxotic.ai/jinfer"
+Documentation = "https://github.com/qxoticai/qxotic/tree/main/jinfer"
 Source = "https://github.com/qxoticai/qxotic"
 Issues = "https://github.com/qxoticai/qxotic/issues"
 
