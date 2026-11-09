@@ -63,6 +63,62 @@ public final class GemmaEmbedding2
                 Multimodal {
     static final String ARCHITECTURE = "gemma-embedding2";
 
+    // The model card's task prompts (config_sentence_transformers.json), applied to text only:
+    // images, audio and video take none. Its other prompt names are aliases of these strings.
+    static final String SEARCH_QUERY = "task: search result | query: ";
+    static final String DOCUMENT = "title: none | text: ";
+
+    /** A search query: pair with {@link #document}. The card's {@code SearchQuery}. */
+    public static String searchQuery(String text) {
+        return SEARCH_QUERY + Objects.requireNonNull(text, "text");
+    }
+
+    /** A question to answer from documents: pair with {@link #document}. */
+    public static String question(String text) {
+        return "task: question answering | query: " + Objects.requireNonNull(text, "text");
+    }
+
+    /**
+     * A claim to find evidence for: pair with {@link #document}. The card's {@code FactChecking}.
+     */
+    public static String claim(String text) {
+        return "task: fact checking | query: " + Objects.requireNonNull(text, "text");
+    }
+
+    /** A description of the code to find: pair with {@link #document}, titled by its filename. */
+    public static String codeQuery(String text) {
+        return "task: code retrieval | query: " + Objects.requireNonNull(text, "text");
+    }
+
+    /**
+     * A document for any retrieval query: {@code title: {title} | text: {text}}, the title {@code
+     * none} when null or blank, as the card says.
+     */
+    public static String document(String title, String text) {
+        Objects.requireNonNull(text, "text");
+        return title == null || title.isBlank()
+                ? DOCUMENT + text
+                : "title: " + title + " | text: " + text;
+    }
+
+    /** A text to classify, or a label to classify against: frame every text compared this way. */
+    public static String classification(String text) {
+        return "task: classification | query: " + Objects.requireNonNull(text, "text");
+    }
+
+    /** A text to cluster: frame every text clustered this way. */
+    public static String clustering(String text) {
+        return "task: clustering | query: " + Objects.requireNonNull(text, "text");
+    }
+
+    /**
+     * A text to compare for meaning: frame both sides this way. The card's {@code
+     * SentenceSimilarity}.
+     */
+    public static String similarity(String text) {
+        return "task: sentence similarity | query: " + Objects.requireNonNull(text, "text");
+    }
+
     private final Configuration configuration;
     private final Tokenizer tokenizer;
     private final Weights weights;

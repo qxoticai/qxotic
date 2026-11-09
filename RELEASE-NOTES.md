@@ -4,6 +4,8 @@
 
 - **EmbeddingGemma 2.** Google EmbeddingGemma 2 (`jinfer-gemma-embedding2`, architecture `gemma-embedding2`) embeds text into 768 dimensions (Matryoshka down to 128), and images, audio and video through its mmproj with `GemmaEmbedding2.withMedia` and `embed`.
   It matches Google's official pipeline (sentence-transformers over `google/embeddinggemma-2`) for every task prompt on the model card, and for images, audio and video: cosine above 0.99999 with F32 weights.
+  `GemmaEmbedding2` frames text for the card's seven tasks: `searchQuery`, `question`, `claim` and `codeQuery` against `document(title, text)`, and `classification`, `clustering` and `similarity`; images, audio and video take no prompt.
+  The LangChain4j and Spring AI integrations keep to search, the one task their frameworks name.
   `VideoCodec.every(video, step, maxFrames)` samples a video the way the reference does (one frame a second, at most 32).
 - **Media embeddings over HTTP.** `jinfer server` attaches an embedder's projector with `--with media=<mmproj>`, and `/v1/embeddings` then takes inputs that are arrays of content parts (`text`, `image_url`, `input_audio`, `video_url`, as in chat), each embedded as one vector; `/v1/models` lists the modalities served.
   In the library, `Models.loadEmbedder(path, arena, companions, tokenizer)` attaches companions and `LoadedEmbedder.embed(state, parts, dimension, consumer)` embeds one interleaved input (`EmbeddingModel.embed` underneath).

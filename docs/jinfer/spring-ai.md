@@ -166,6 +166,9 @@ The vector lands in the space text queries search.
 As the model card says, media embeds without a prompt; text documents keep theirs.
 Spring AI's vector stores still refuse non-text documents at `add`, so media vectors come from the `EmbeddingModel` directly.
 
+Queries and documents cover search, the one task Spring AI has a word for.
+EmbeddingGemma 2's other tasks (question answering, fact checking, code retrieval, classification, clustering, sentence similarity) are jinfer calls on the model's own module: see [jinfer-gemma-embedding2](../../jinfer/jinfer-gemma-embedding2/README.md).
+
 ## Spring Boot
 
 Use `jinfer-spring-ai-spring-boot-starter`:

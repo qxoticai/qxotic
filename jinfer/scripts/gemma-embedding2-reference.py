@@ -3,7 +3,8 @@
 
   f32 <in.gguf> <out.gguf>     rewrite an mmproj with every tensor in F32 (BF16/F16 widen exactly;
                                the text model goes through llama-quantize --allow-requantize ... F32)
-  ref <model> <out-dir>        write cases.tsv, <case>.emb and <case>.proj from the official pipeline:
+  ref <model> <out-dir>        write cases.tsv, <case>.emb and <case>.proj from the official pipeline,
+                               and prompts.tsv with <case>.emb and <case>.ids for the task prompts:
                                sentence-transformers (>= 6.1) over google/embeddinggemma-2 (a hub id
                                or a local snapshot) in float32 on CPU
 
@@ -140,6 +141,37 @@ def ref(model_id, out):
                     rows = a.pooler_output[a.attention_mask]
                 write(os.path.join(out, name + '.proj'), rows.numpy())
             print(name, len(embedding))
+        prompts(st, long_text, out)
+
+
+def prompts(st, long_text, out):
+    """prompts.tsv (case, card prompt name, title, escaped text), <case>.emb and <case>.ids: the
+    official pipeline applying the card's own prompt (prompt_name), or for a titled document the
+    card's manual format, so jinfer's GemmaEmbedding2 task methods are held to the config."""
+    import numpy as np
+    texts = {
+        'plain': 'How tall is the Eiffel Tower?',
+        'edges': ' A leading space,\na newline and a | bar.',
+        'scripts': '東京タワーの高さは？ Сколько лет Эйфелевой башне? ¿Qué altura tiene?',
+    }
+    cases = [(f'{name}_{k}', name, '', text) for name in st.prompts
+             if name in ('SearchQuery', 'QuestionAnswering', 'FactChecking', 'CodeRetrieval',
+                         'Classification', 'Clustering', 'SentenceSimilarity', 'Document')
+             for k, text in texts.items()]
+    cases += [('QuestionAnswering_long', 'QuestionAnswering', '', long_text),
+              ('Document_long', 'Document', '', long_text),
+              ('Document_titled', 'Document', 'Eiffel | Tower', 'The tower is 330 metres tall.'),
+              ('Document_code', 'Document', 'GgufReader.java', 'static Header read(FileChannel c) {}')]
+    escape = lambda s: s.replace('\\', '\\\\').replace('\n', '\\n').replace('\t', '\\t')
+    with open(os.path.join(out, 'prompts.tsv'), 'w') as f:
+        for case, name, title, text in cases:
+            f.write(f'{case}\t{name}\t{title}\t{escape(text)}\n')
+            framed = f'title: {title} | text: {text}' if title else st.prompts[name] + text
+            embedding = (st.encode([framed]) if title else st.encode([text], prompt_name=name))[0]
+            ids = st.tokenize([framed])['input_ids'][0].numpy().astype('<i4')
+            np.asarray(embedding, dtype='<f4').tofile(os.path.join(out, case + '.emb'))
+            ids.tofile(os.path.join(out, case + '.ids'))
+            print(case, len(ids))
 
 
 if __name__ == '__main__':

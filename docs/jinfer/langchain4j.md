@@ -273,6 +273,10 @@ Adding a text part avoids the error, but the text then becomes part of the vecto
 
 Plain `embed`/`embedAll` embeds raw text; a one-time stderr note points at the knobs when the model is prefix-trained.
 
+The input types cover search, the one task LangChain4j has a word for.
+EmbeddingGemma 2's other tasks (question answering, fact checking, code retrieval, classification, clustering, sentence similarity) are jinfer calls on the model's own module: see [jinfer-gemma-embedding2](../../jinfer/jinfer-gemma-embedding2/README.md).
+A store whose text was ingested with input type `DOCUMENT` already serves them: those documents are framed as the tasks expect.
+
 ## Reranking
 
 `JinferScoringModel` runs a reranker GGUF (Qwen3-Reranker, LFM2 ColBERT) as a `ScoringModel` for `ReRankingContentAggregator`.

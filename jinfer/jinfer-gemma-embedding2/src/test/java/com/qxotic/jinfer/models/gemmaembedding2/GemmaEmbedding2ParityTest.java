@@ -1,5 +1,6 @@
 package com.qxotic.jinfer.models.gemmaembedding2;
 
+import static org.junit.jupiter.api.Assertions.assertArrayEquals;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.junit.jupiter.api.Assumptions.assumeTrue;
@@ -33,7 +34,9 @@ import org.junit.jupiter.api.Test;
  * cases, {@code <name>.proj} (i32 rows, i32 width, f32 rows). The reference runs in float32, so run
  * this against F32 weights ({@code -Djinfer.gemmaEmbedding2.model}/{@code .mmproj}) to isolate the
  * port from quantization noise; with quantized weights relax the cosine gates ({@code .textCosine},
- * {@code .cosine}) to 0.999.
+ * {@code .cosine}) to 0.999. {@code prompts.tsv} (name, the card's prompt name, title, escaped
+ * text) holds the task methods to the official prompts: each case's tokens ({@code <name>.ids},
+ * little-endian i32) exactly, and its vector at the text gate.
  */
 @Tag("integration")
 final class GemmaEmbedding2ParityTest {
@@ -76,6 +79,73 @@ final class GemmaEmbedding2ParityTest {
                 }
             }
         }
+    }
+
+    /**
+     * Every task method against the official pipeline applying the card's own prompt ({@code
+     * prompt_name}), or for a titled document the card's manual format: the same tokens, exactly,
+     * and the same vector.
+     */
+    @Test
+    void taskPromptsMatchTheReference() throws IOException {
+        String dir = System.getProperty("jinfer.gemmaEmbedding2.reference");
+        assumeTrue(dir != null, "no reference: -Djinfer.gemmaEmbedding2.reference");
+        Path reference = Path.of(dir);
+        double textCosine = gate("textCosine", "0.999999");
+        try (Arena arena = Arena.ofShared()) {
+            GemmaEmbedding2 model = GemmaEmbedding2.loadModel(path("model", MODEL_REF), arena);
+            try (GemmaEmbedding2.State state = model.newState(8_192, 512)) {
+                for (String line : Files.readAllLines(reference.resolve("prompts.tsv"))) {
+                    String[] cell = line.split("\t", -1);
+                    String name = cell[0], title = cell[2], text = unescape(cell[3]);
+                    String framed =
+                            switch (cell[1]) {
+                                case "SearchQuery" -> GemmaEmbedding2.searchQuery(text);
+                                case "QuestionAnswering" -> GemmaEmbedding2.question(text);
+                                case "FactChecking" -> GemmaEmbedding2.claim(text);
+                                case "CodeRetrieval" -> GemmaEmbedding2.codeQuery(text);
+                                case "Classification" -> GemmaEmbedding2.classification(text);
+                                case "Clustering" -> GemmaEmbedding2.clustering(text);
+                                case "SentenceSimilarity" -> GemmaEmbedding2.similarity(text);
+                                case "Document" -> GemmaEmbedding2.document(title, text);
+                                default -> throw new AssertionError("prompt " + cell[1]);
+                            };
+                    int[] tokens = model.tokenizer().encode(framed).toArray();
+                    int[] actualIds = new int[tokens.length + 2];
+                    actualIds[0] = model.bos;
+                    System.arraycopy(tokens, 0, actualIds, 1, tokens.length);
+                    actualIds[actualIds.length - 1] = model.eos;
+                    assertArrayEquals(ints(reference.resolve(name + ".ids")), actualIds, name);
+
+                    float[] expected = floats(reference.resolve(name + ".emb"), 0);
+                    double cosine = cosine(expected, embed(model, state, List.of(framed)));
+                    System.out.printf(
+                            "%-26s %4d tokens, cosine=%.9f%n", name, actualIds.length, cosine);
+                    assertTrue(cosine > textCosine, name + " cosine " + cosine);
+                }
+            }
+        }
+    }
+
+    private static String unescape(String escaped) {
+        StringBuilder out = new StringBuilder(escaped.length());
+        for (int i = 0; i < escaped.length(); i++) {
+            char c = escaped.charAt(i);
+            if (c != '\\') {
+                out.append(c);
+                continue;
+            }
+            char next = escaped.charAt(++i);
+            out.append(next == 'n' ? '\n' : next == 't' ? '\t' : next);
+        }
+        return out.toString();
+    }
+
+    private static int[] ints(Path file) throws IOException {
+        ByteBuffer bytes = ByteBuffer.wrap(Files.readAllBytes(file)).order(ByteOrder.LITTLE_ENDIAN);
+        int[] values = new int[bytes.remaining() / Integer.BYTES];
+        bytes.asIntBuffer().get(values);
+        return values;
     }
 
     /** The medium's projector rows against the reference's: same count, every row aligned. */

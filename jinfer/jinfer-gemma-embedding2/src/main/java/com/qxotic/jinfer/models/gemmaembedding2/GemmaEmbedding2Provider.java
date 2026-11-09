@@ -64,7 +64,7 @@ public final class GemmaEmbedding2Provider implements ModelProvider {
                 model.configuration().embeddingLengthOut(),
                 128,
                 path.getFileName().toString(),
-                "task: search result | query: ",
-                "title: none | text: ");
+                GemmaEmbedding2.SEARCH_QUERY,
+                GemmaEmbedding2.DOCUMENT);
     }
 }
