@@ -58,7 +58,8 @@ A bit the library does not define is refused with `EINVAL`, so it stays free to 
 
 A function returns its result.
 A count, index or position is a non-negative `int32_t`, a byte size a non-negative `int64_t`, and a negative value is an error.
-A negative count, length or capacity passed in is `EINVAL`, and so is one past what the library can hold (a Java array's 2 GiB): a limit is a check, never a narrower type.
+A negative count, length or capacity passed in is `EINVAL`, and so is a length past what the library can hold (a Java array's 2 GiB): a limit is a check, never a narrower type.
+A capacity only bounds what is written, so a larger one is room the result does not use.
 A constructor returns the handle, or NULL on failure.
 Only a function with nothing to return (`_free`, `_cancel`) returns `void`; a bad handle shows in `last_error`.
 
