@@ -163,8 +163,8 @@ rarely the right answer:
 <img width="1425" height="451" alt="Multi-threaded decode benchmark" src="https://github.com/user-attachments/assets/753543f6-146e-454e-94d7-8221b2f7a736" />
 
 To reproduce them: `make toknroll-fixtures` fetches the enwik corpora explicitly, never as a side
-effect, then the drivers in `toknroll-benchmarks` write to `bench-output/` under the shared cache
-root. Details in the [documentation](https://qxotic.ai/toknroll).
+effect, then the drivers in [`toknroll-benchmarks`](toknroll-benchmarks/) write to `bench-output/`
+under the shared cache root.
 
 Part of [Quixotic](../README.md), an open stack for local AI on the JVM.
 
