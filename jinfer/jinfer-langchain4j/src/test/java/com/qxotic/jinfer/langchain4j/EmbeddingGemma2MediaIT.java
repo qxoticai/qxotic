@@ -32,10 +32,14 @@ import java.util.Arrays;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
+import java.util.stream.Stream;
 import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.Arguments;
+import org.junit.jupiter.params.provider.MethodSource;
 
 /**
  * EmbeddingGemma 2 with its projector attached as {@code companion("media", ...)}: image, audio and
@@ -165,29 +169,47 @@ class EmbeddingGemma2MediaIT {
         }
     }
 
-    @Test
-    void aMixedBatchEqualsItsInputsOneByOne() {
+    @ParameterizedTest
+    @MethodSource("mixedBatchCases")
+    void aMixedBatchEqualsItsInputsOneByOne(EmbeddingInputType type, Content media) {
         List<EmbeddingInput> inputs =
                 List.of(
-                        EmbeddingInput.from("A tabby cat looking at the camera."),
-                        EmbeddingInput.from(
-                                TextContent.from("A photo of dice:"), ImageContent.from(dice)),
-                        EmbeddingInput.from(AudioContent.from(speech)));
+                        EmbeddingInput.from("Hello\nworld"),
+                        EmbeddingInput.from(TextContent.from("Hello"), TextContent.from("world")),
+                        EmbeddingInput.from(media),
+                        EmbeddingInput.from(TextContent.from("Describe this:"), media));
         EmbeddingResponse batch =
-                model.embed(
-                        EmbeddingRequest.builder()
-                                .inputs(inputs)
-                                .inputType(EmbeddingInputType.DOCUMENT)
-                                .build());
-        assertEquals(3, batch.embeddings().size());
+                model.embed(EmbeddingRequest.builder().inputs(inputs).inputType(type).build());
+        assertEquals(inputs.size(), batch.embeddings().size());
+        int tokens = 0;
         for (int i = 0; i < inputs.size(); i++) {
-            float[] alone =
-                    embed(
-                            EmbeddingInputType.DOCUMENT,
-                            inputs.get(i).contents().toArray(Content[]::new));
-            assertTrue(cosine(batch.embeddings().get(i).vector(), alone) > 0.99999, "input " + i);
+            EmbeddingResponse alone =
+                    model.embed(
+                            EmbeddingRequest.builder()
+                                    .input(inputs.get(i))
+                                    .inputType(type)
+                                    .build());
+            assertTrue(
+                    cosine(
+                                    batch.embeddings().get(i).vector(),
+                                    alone.embeddings().getFirst().vector())
+                            > 0.99999,
+                    "input " + i);
+            tokens += alone.metadata().tokenUsage().inputTokenCount();
         }
-        assertTrue(batch.metadata().tokenUsage().inputTokenCount() > 280, "media rows count");
+        assertTrue(
+                cosine(batch.embeddings().get(0).vector(), batch.embeddings().get(1).vector())
+                        > 0.99999,
+                "multipart text keeps LangChain4j's newline joining");
+        assertEquals(tokens, batch.metadata().tokenUsage().inputTokenCount());
+    }
+
+    static Stream<Arguments> mixedBatchCases() {
+        return Stream.of(EmbeddingInputType.QUERY, EmbeddingInputType.DOCUMENT, null)
+                .flatMap(
+                        type ->
+                                Stream.of(ImageContent.from(cat), AudioContent.from(speech))
+                                        .map(media -> Arguments.of(type, media)));
     }
 
     /** An input over the context is refused up front, naming the positions it needs. */

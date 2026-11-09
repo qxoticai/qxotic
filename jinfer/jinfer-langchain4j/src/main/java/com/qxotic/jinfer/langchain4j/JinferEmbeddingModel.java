@@ -305,15 +305,18 @@ public final class JinferEmbeddingModel implements EmbeddingModel, AutoCloseable
     }
 
     /**
-     * One vector per input, its parts in order: texts as written, media decoded before the lock.
-     * The prefix frames the text-only inputs alone.
+     * Text-only inputs use the same joined text and prefix as the all-text path. Inputs carrying
+     * media keep their parts in order, unframed, with media decoded before the lock.
      */
     private Response<List<Embedding>> embedParts(
             List<EmbeddingInput> inputs, String prefix, int outputDimension) {
         List<List<Object>> decoded = new ArrayList<>(inputs.size());
         for (EmbeddingInput input : inputs) {
+            if (textOnly(input)) {
+                decoded.add(List.of(prefix + input.text()));
+                continue;
+            }
             List<Object> parts = new ArrayList<>();
-            if (!prefix.isEmpty() && textOnly(input)) parts.add(prefix);
             for (var content : input.contents()) {
                 parts.add(
                         content instanceof TextContent t
