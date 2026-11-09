@@ -174,11 +174,11 @@ final class Hub {
     }
 
     /**
-     * The commit this ref's revision names, or null when it cannot be learned - and null only
-     * DOWNGRADES a download to the flat layout, never fails it. The hub layout keys snapshots by
-     * commit, so joining it starts here; a ref already pinned to a commit needs no request.
+     * The commit this ref's revision names, or null when the repository's refs do not name it - and
+     * null only DOWNGRADES a download to the flat layout. The hub layout keys snapshots by commit,
+     * so joining it starts here; a ref already pinned to a commit needs no request.
      */
-    static String commit(ModelRef ref, RepositorySource source) {
+    static String commit(ModelRef ref, RepositorySource source) throws IOException {
         String revision = ref.revisionOrDefault();
         return isCommit(revision) ? revision : source.commitFor(ref);
     }

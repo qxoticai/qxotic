@@ -3,6 +3,7 @@ package com.qxotic.jinfer.hub;
 import static org.junit.jupiter.api.Assertions.assertArrayEquals;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNull;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import com.qxotic.fetch.Transport;
@@ -136,6 +137,39 @@ class RateLimitTest {
                     seconds >= 1.0 && seconds < 10, "waited within the budget: " + seconds + " s");
             assertTrue(
                     hits.get() >= 2 && hits.get() <= 4, "asked again a few times: " + hits.get());
+        } finally {
+            server.stop(0);
+        }
+    }
+
+    /**
+     * A load's first request learns the commit; its rate limit, given up on, fails the load rather
+     * than reading as "commit unknown" and being waited out a second time by the listing.
+     */
+    @Test
+    void aRateLimitOnTheCommitLookupFailsTheLoad() throws IOException {
+        HttpServer server = HttpServer.create(new InetSocketAddress("127.0.0.1", 0), 0);
+        AtomicInteger hits = new AtomicInteger();
+        server.createContext(
+                "/",
+                exchange -> {
+                    hits.incrementAndGet();
+                    exchange.getResponseHeaders().add("Retry-After", "86400"); // past any budget
+                    exchange.sendResponseHeaders(429, -1);
+                    exchange.close();
+                });
+        server.start();
+        try {
+            RepositorySource hf =
+                    new RepositorySource(
+                            ModelRef.Host.HF,
+                            URI.create("http://127.0.0.1:" + server.getAddress().getPort()));
+            Fetch.HttpStatusException e =
+                    assertThrows(
+                            Fetch.HttpStatusException.class,
+                            () -> hf.commitFor(ModelRef.parse("owner/repo")));
+            assertEquals(429, e.status);
+            assertEquals(1, hits.get(), "a wait past the budget is not waited");
         } finally {
             server.stop(0);
         }

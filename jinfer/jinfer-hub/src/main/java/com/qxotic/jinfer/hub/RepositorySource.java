@@ -93,31 +93,29 @@ class RepositorySource implements ModelSource {
     }
 
     /**
-     * The commit this ref's revision names, or null when it cannot be learned. The hub layout keys
-     * snapshots by commit, so joining it starts here; a ref already pinned to a commit needs no
-     * request. HuggingFace only - ModelScope has no shared cache layout to join.
+     * The commit this ref's revision names, or null when the repository's refs do not name it. The
+     * hub layout keys snapshots by commit, so joining it starts here; a ref already pinned to a
+     * commit needs no request. HuggingFace only - ModelScope has no shared cache layout to join. A
+     * failed request fails the load, as the listing after it would: a rate limit waited out here is
+     * not waited out again there.
      */
-    String commitFor(ModelRef ref) {
+    String commitFor(ModelRef ref) throws IOException {
         if (host != ModelRef.Host.HF) {
             return null;
         }
-        try {
-            Map<String, Object> body =
-                    Json.parseMap(get(ref, base + "/api/models/" + ref.repoId() + "/refs"));
-            for (String kind : new String[] {"branches", "tags"}) {
-                for (Object entry : Json.queryList(body, kind).orElse(List.of())) {
-                    if (entry instanceof Map<?, ?> map
-                            && ref.revisionOrDefault().equals(map.get("name"))
-                            && map.get("targetCommit") instanceof String commit
-                            && Hub.isCommit(commit)) {
-                        return commit;
-                    }
+        Map<String, Object> body =
+                Json.parseMap(get(ref, base + "/api/models/" + ref.repoId() + "/refs"));
+        for (String kind : new String[] {"branches", "tags"}) {
+            for (Object entry : Json.queryList(body, kind).orElse(List.of())) {
+                if (entry instanceof Map<?, ?> map
+                        && ref.revisionOrDefault().equals(map.get("name"))
+                        && map.get("targetCommit") instanceof String commit
+                        && Hub.isCommit(commit)) {
+                    return commit;
                 }
             }
-            return null;
-        } catch (IOException unreachable) {
-            return null;
         }
+        return null;
     }
 
     /**

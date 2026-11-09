@@ -1095,30 +1095,39 @@ final class Fetch {
                             .plusMillis(
                                     ThreadLocalRandom.current()
                                             .nextLong(250, 1_250)); // spread the workers
+            String host = sent.uri().getHost();
+            String limited = host + " is rate limiting this address (HTTP " + status + ")";
             if (Duration.ofNanos(waitedNanos).plus(wait).compareTo(budget) > 0) {
+                if (backoff == 0) { // a wait past the budget at once: say why none was waited
+                    LOG.log(
+                            System.Logger.Level.WARNING,
+                            limited
+                                    + " and asks to wait "
+                                    + Math.max(1, (asked != null ? asked : wait).toSeconds())
+                                    + " s, longer than this request waits ("
+                                    + minutes(budget)
+                                    + ")");
+                }
                 return response;
             }
             response.close();
-            String host = sent.uri().getHost();
+            // One warning a request, the first wait, naming how long it may go on: the later waits
+            // are that warning coming true, at DEBUG. A warning, not progress: the host's log
+            // hears it whatever shows on stderr.
             if (RateLimit.hold(host, wait)) {
-                // a warning, not progress: the host's log hears it whatever shows on stderr
-                LOG.log(
-                        System.Logger.Level.WARNING,
-                        host
-                                + " is rate limiting this address (HTTP "
-                                + status
-                                + "): waiting "
-                                + Math.max(1, wait.toSeconds())
-                                + " s before asking again");
-                announce(
-                        host
-                                + " is rate limiting this address (HTTP "
-                                + status
-                                + ") - waiting "
+                String message =
+                        limited
+                                + ": waiting "
                                 + Math.max(1, wait.toSeconds())
                                 + " s"
                                 + (asked != null ? ", as it asked" : "")
-                                + ", then resuming");
+                                + ", then asking again, for up to "
+                                + minutes(budget)
+                                + " in all";
+                LOG.log(
+                        backoff == 0 ? System.Logger.Level.WARNING : System.Logger.Level.DEBUG,
+                        message);
+                if (backoff == 0) announce(message);
             }
             try {
                 waitedNanos += RateLimit.awaitClear(host);
@@ -1127,6 +1136,11 @@ final class Fetch {
                 throw new IOException("interrupted while waiting out a rate limit on " + uri, e);
             }
         }
+    }
+
+    /** A rate-limit budget as the warnings say it: "1 min", "30 min". */
+    private static String minutes(Duration budget) {
+        return Math.max(1, budget.toMinutes()) + " min";
     }
 
     /** A response and the URI that answered it, after the redirects. */
