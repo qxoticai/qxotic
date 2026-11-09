@@ -252,6 +252,63 @@ class RetrievalServerTest {
     }
 
     @Test
+    void emptyEmbeddingStringsAreRefusedBeforeAnyInference() throws Exception {
+        FakeEmbedder embedder = new FakeEmbedder();
+        serve(RetrievalServer.start(embedder, MODEL, ServerConfig.local(0)));
+        String[][] cases = {
+            {"{\"input\":\"\"}", "input must not be empty"},
+            {"{\"input\":[\"\",\"valid\"]}", "input[0] must not be empty"},
+            {"{\"input\":[\"valid\",\"\"]}", "input[1] must not be empty"},
+            {
+                "{\"input\":[\"valid\",[{\"type\":\"text\",\"text\":\"part\"}],\"\"]}",
+                "input[2] must not be empty"
+            }
+        };
+        for (String[] test : cases) {
+            refused("/v1/embeddings", test[0], "input", test[1]);
+            assertTrue(embedder.calls.isEmpty(), "a refused request computes nothing: " + test[0]);
+        }
+        HttpResponse<String> valid = post("/v1/embeddings", "{\"input\":\"valid\"}");
+        assertEquals(200, valid.statusCode(), valid.body());
+        assertEquals(List.of(List.of("valid")), embedder.calls);
+    }
+
+    @Test
+    void embeddingWhitespaceIsPassedThroughUnchanged() throws Exception {
+        FakeEmbedder embedder = new FakeEmbedder();
+        serve(RetrievalServer.start(embedder, MODEL, ServerConfig.local(0)));
+        HttpResponse<String> scalar = post("/v1/embeddings", "{\"input\":\" \\t\\n\"}");
+        assertEquals(200, scalar.statusCode(), scalar.body());
+        HttpResponse<String> batch =
+                post("/v1/embeddings", "{\"input\":[\" \",\"\\n\",\" padded \"]}");
+        assertEquals(200, batch.statusCode(), batch.body());
+        assertEquals(List.of(List.of(" \t\n"), List.of(" ", "\n", " padded ")), embedder.calls);
+    }
+
+    @Test
+    void mediaInputsCanOmitTextOrContainAnEmptyTextPart() throws Exception {
+        FakeEmbedder embedder = new FakeEmbedder();
+        embedder.modalities = List.of("text", "image");
+        serve(RetrievalServer.start(embedder, MODEL, ServerConfig.local(0)));
+        String image = "{\"type\":\"image_url\",\"image_url\":{\"url\":\"" + PIXEL + "\"}}";
+        HttpResponse<String> response =
+                post(
+                        "/v1/embeddings",
+                        "{\"input\":[["
+                                + image
+                                + "],[{\"type\":\"text\",\"text\":\"\"},"
+                                + image
+                                + "]]}");
+        assertEquals(200, response.statusCode(), response.body());
+        assertEquals(2, embedder.calls.size());
+        assertEquals(1, embedder.calls.get(0).size());
+        assertTrue(embedder.calls.get(0).get(0) instanceof Media.Image);
+        assertEquals(2, embedder.calls.get(1).size());
+        assertEquals("", embedder.calls.get(1).get(0));
+        assertTrue(embedder.calls.get(1).get(1) instanceof Media.Image);
+    }
+
+    @Test
     void malformedEmbeddingRequestsAreRefusedNamingTheField() throws Exception {
         FakeEmbedder embedder = new FakeEmbedder();
         serve(RetrievalServer.start(embedder, MODEL, ServerConfig.local(0)));

@@ -251,8 +251,19 @@ public final class RetrievalServer {
                         + " content-part arrays; token ids are not supported");
         List<?> items = input instanceof String text ? List.of(text) : (List<?>) input;
         List<Object> inputs = new ArrayList<>(items.size());
-        for (Object item : items)
-            inputs.add(item instanceof String text ? text : parts((List<?>) item, embedder));
+        for (int i = 0; i < items.size(); i++) {
+            Object item = items.get(i);
+            if (item instanceof String text) {
+                if (text.isEmpty()) {
+                    String location = input instanceof String ? "input" : "input[" + i + "]";
+                    throw new Values.InvalidParam(
+                            "input", "Invalid argument: " + location + " must not be empty");
+                }
+                inputs.add(text);
+            } else {
+                inputs.add(parts((List<?>) item, embedder));
+            }
+        }
         String format = Values.stringValue(request.get("encoding_format"), "float");
         Validation.requireParam(
                 format.equals("float") || format.equals("base64"),
