@@ -41,6 +41,7 @@ import org.springframework.ai.embedding.observation.DefaultEmbeddingModelObserva
 import org.springframework.ai.embedding.observation.EmbeddingModelObservationContext;
 import org.springframework.ai.embedding.observation.EmbeddingModelObservationConvention;
 import org.springframework.ai.embedding.observation.EmbeddingModelObservationDocumentation;
+import org.springframework.util.Assert;
 
 /**
  * Spring AI {@link EmbeddingModel} backed by jinfer: in-process CPU embeddings over a local GGUF
@@ -253,6 +254,7 @@ public final class JinferEmbeddingModel implements EmbeddingModel, AutoCloseable
      */
     @Override
     public float[] embed(String text) {
+        Assert.notNull(text, "Text must not be null");
         return embedOne(loaded.queryPrefix() + text);
     }
 

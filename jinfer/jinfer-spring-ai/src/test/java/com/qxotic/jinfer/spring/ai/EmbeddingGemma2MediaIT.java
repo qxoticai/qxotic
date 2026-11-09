@@ -70,6 +70,14 @@ class EmbeddingGemma2MediaIT {
         assertTrue(cosine(query, model.embed(speech)) > cosine(query, model.embed(chirp)));
     }
 
+    @Test
+    void aNullQueryIsRefusedRatherThanEmbeddedAsText() {
+        IllegalArgumentException failure =
+                assertThrows(IllegalArgumentException.class, () -> model.embed((String) null));
+        assertEquals("Text must not be null", failure.getMessage());
+        assertEquals(model.dimensions(), model.embed("null").length);
+    }
+
     /**
      * The model card: "Prefixes apply to text only. Pass images, video, and audio without any
      * prefix." A media document embeds exactly as the core embedder embeds the media bare, alone
