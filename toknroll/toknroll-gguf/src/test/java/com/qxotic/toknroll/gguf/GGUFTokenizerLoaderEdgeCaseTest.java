@@ -1,8 +1,10 @@
 package com.qxotic.toknroll.gguf;
 
+import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 
+import com.qxotic.format.gguf.Builder;
 import com.qxotic.toknroll.IntSequence;
 import com.qxotic.toknroll.Splitter;
 import com.qxotic.toknroll.TokenizationModel;
@@ -30,6 +32,39 @@ class GGUFTokenizerLoaderEdgeCaseTest {
         Path dir = tempDir.resolve("mydir");
         Files.createDirectories(dir);
         assertThrows(IllegalArgumentException.class, () -> loader.fromLocal(dir));
+    }
+
+    /** A GGUF of another kind says what it is, from its architecture, not which key it lacks. */
+    @Test
+    void aGgufWithoutATokenizerSaysWhatItIs() {
+        GGUFTokenizerLoader loader = GGUFTokenizerLoader.createBuilderWithBuiltins().build();
+        assertEquals(
+                "this GGUF holds no tokenizer (no tokenizer.ggml.model)",
+                assertThrows(
+                                IllegalArgumentException.class,
+                                () -> loader.fromGGUF(Builder.newBuilder().build()))
+                        .getMessage());
+        assertEquals(
+                "this kokoro GGUF holds no tokenizer (no tokenizer.ggml.model)",
+                assertThrows(
+                                IllegalArgumentException.class,
+                                () ->
+                                        loader.fromGGUF(
+                                                Builder.newBuilder()
+                                                        .putString("general.architecture", "kokoro")
+                                                        .build()))
+                        .getMessage());
+        assertEquals(
+                "this clip GGUF, a vision projector, holds no tokenizer (no tokenizer.ggml.model):"
+                        + " its model's GGUF does",
+                assertThrows(
+                                IllegalArgumentException.class,
+                                () ->
+                                        loader.fromGGUF(
+                                                Builder.newBuilder()
+                                                        .putString("general.architecture", "clip")
+                                                        .build()))
+                        .getMessage());
     }
 
     @Test

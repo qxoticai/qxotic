@@ -13,12 +13,25 @@ final class GGUFMetadataKeys {
 
     private GGUFMetadataKeys() {}
 
-    static String requireKey(GGUF gguf, String key) {
-        String value = key(gguf, key);
-        if (value == null) {
-            throw new IllegalArgumentException("GGUF metadata key missing: " + key);
+    /**
+     * The tokenizer model, which every GGUF holding a tokenizer names. A GGUF without one is
+     * another kind of file - a speech model, a vision projector - and says which in its
+     * architecture.
+     */
+    static String requireModel(GGUF gguf) {
+        String model = key(gguf, MODEL);
+        if (model == null) {
+            String architecture = key(gguf, "general.architecture");
+            boolean projector = "clip".equals(architecture);
+            throw new IllegalArgumentException(
+                    (architecture == null ? "this GGUF" : "this " + architecture + " GGUF")
+                            + (projector ? ", a vision projector," : "")
+                            + " holds no tokenizer (no "
+                            + MODEL
+                            + ")"
+                            + (projector ? ": its model's GGUF does" : ""));
         }
-        return value;
+        return model;
     }
 
     static String key(GGUF gguf, String key) {

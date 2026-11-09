@@ -503,7 +503,7 @@ public final class GGUFTokenizerLoader {
      * @throws IllegalArgumentException if the GGUF model key is unsupported
      */
     public Tokenizer fromGGUF(GGUF gguf) {
-        String modelKey = GGUFMetadataKeys.requireKey(gguf, GGUFMetadataKeys.MODEL);
+        String modelKey = GGUFMetadataKeys.requireModel(gguf);
         String preKey = resolvePreTokenizerKey(gguf, modelKey);
         String normalizerKey = resolveNormalizerKey(gguf, modelKey);
 
