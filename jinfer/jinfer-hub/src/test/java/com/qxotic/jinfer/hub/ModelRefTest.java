@@ -39,6 +39,18 @@ class ModelRefTest {
     }
 
     @Test
+    void aQuantBeforeThePathIsMisplacedNotAComponent() {
+        var failure =
+                assertThrows(
+                        IllegalArgumentException.class,
+                        () -> ModelRef.parse("ibm-granite/granite-4.2-8b-GGUF:Q6_K/x.gguf"));
+        assertEquals(
+                "repository 'granite-4.2-8b-GGUF:Q6_K' holds a ':': a :quant comes once, last:"
+                        + " owner/repo[/path]:quant",
+                failure.getMessage());
+    }
+
+    @Test
     void thePathIsTheLocation() {
         ModelRef file = ModelRef.parse("hf.co/unsloth/gemma-4-E2B-it-GGUF/mmproj-F32.gguf");
         assertEquals("mmproj-F32.gguf", file.path());

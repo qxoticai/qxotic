@@ -336,6 +336,13 @@ public record ModelRef(
      */
     private static void component(String value, String what, String refused) {
         require(value != null && !value.isBlank(), "empty " + what);
+        // a ref's one ':' is its quant's, last: any other is misplaced, not a bad name
+        require(
+                value.indexOf(':') < 0,
+                what
+                        + " '"
+                        + value
+                        + "' holds a ':': a :quant comes once, last: owner/repo[/path]:quant");
         require(
                 value.indexOf('/') < 0
                         && value.indexOf('\\') < 0

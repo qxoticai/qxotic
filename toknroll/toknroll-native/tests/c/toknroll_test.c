@@ -574,7 +574,8 @@ static void load_references(void) {
     /* which is: a missing file, no host */
     CHECK_NULL_ERROR(toknroll_tokenizer_load("./example.com/owner/repo"), TOKNROLL_ENOTFOUND, LE, "does not exist");
     CHECK_NULL_ERROR(toknroll_tokenizer_load("owner/repo/x-Q8_0.gguf:Q8_0"), TOKNROLL_EINVAL, LE, "already names a file");
-    CHECK_NULL_ERROR(toknroll_tokenizer_load("owner/repo:Q8_0:Q4_0"), TOKNROLL_EINVAL, LE, "single path component");
+    CHECK_NULL_ERROR(toknroll_tokenizer_load("owner/repo:Q8_0:Q4_0"), TOKNROLL_EINVAL, LE, "a :quant comes once, last");
+    CHECK_NULL_ERROR(toknroll_tokenizer_load("owner/repo:Q8_0/x.gguf"), TOKNROLL_EINVAL, LE, "repository 'repo:Q8_0' holds a ':'");
     CHECK_NULL_ERROR(toknroll_tokenizer_load("hf.co/owner"), TOKNROLL_EINVAL, LE, "owner/repo");
     CHECK_NULL_ERROR(toknroll_tokenizer_load("hf.co/owner/../repo"), TOKNROLL_EINVAL, LE, "");
     CHECK_NULL_ERROR(toknroll_tokenizer_load("a b/c"), TOKNROLL_EINVAL, LE, "no hub name has");
