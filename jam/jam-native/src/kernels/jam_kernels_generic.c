@@ -9,6 +9,7 @@
 #include "jam_mxfp4.h"
 #include "jam_nvfp4.h"
 #include "jam_q1_0.h"
+#include "jam_lowbit.h"
 #include "jam_kquant.h"
 #include "jam_fp16.h"   /* jam_half2float, jam_half_at (software fp16->fp32 at baseline flags) */
 #if defined(__aarch64__)
@@ -195,6 +196,31 @@ void jam_mm_q1_0_f32_generic(void* arg, int rb, int re, int tid) {
         const uint8_t* wr = (const uint8_t*) (W + (size_t) i * wrow);
         for (int j = 0; j < n; ++j)
             C[(size_t) j*ldc + i] = jam_q1_0_dot_f32(wr, nblk, A + (size_t) j * ldb);
+    }
+}
+
+/* Q2_0, PQ2_0, PTQ1_0 (J->wt): each row decodes to its codes once, then an exact float dot per column. */
+void jam_mm_lowbit_f32_generic(void* arg, int rb, int re, int tid) {
+    (void) tid;
+    const jam_q8_job* J = (const jam_q8_job*) arg;
+    const float* A = (const float*) J->b;
+    float* C = (float*) J->c;
+    const int ldc = J->ldc, ldb = J->ldb, n = J->n, k = J->k, qk = jam_lowbit_qk(J->wt);
+    const size_t wrow = (size_t)(J->lda / qk) * jam_lowbit_bytes(J->wt);   /* row stride honors lda (ldw) */
+    int8_t* codes = jam_lowbit_scratch((size_t) k + sizeof(float) * (size_t) (k / 32));
+    float* d32 = (float*) (codes + k);
+    for (int i = rb; i < re; ++i) {
+        jam_lowbit_row(J->wt, (const uint8_t*) J->a + (size_t) i * wrow, k / qk, codes, d32);
+        for (int j = 0; j < n; ++j) {
+            const float* x = A + (size_t) j * ldb;
+            float acc = 0.0f;
+            for (int b = 0; b < k / 32; b++) {
+                float s = 0.0f;
+                for (int e = 0; e < 32; e++) s += (float) codes[b * 32 + e] * x[b * 32 + e];
+                acc += d32[b] * s;
+            }
+            C[(size_t) j*ldc + i] = acc;
+        }
     }
 }
 

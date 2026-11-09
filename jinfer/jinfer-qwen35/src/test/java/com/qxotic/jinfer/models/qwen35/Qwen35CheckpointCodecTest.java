@@ -27,7 +27,7 @@ final class Qwen35CheckpointCodecTest {
             MemorySegment actual = arena.allocate(codec.byteSize(5), 64);
             MemorySegment expected = arena.allocate(codec.byteSize(5), 64);
             Qwen35.State state =
-                    new Qwen35.State(config, 8, 4, MemoryAllocators.ofArena(arena), false);
+                    new Qwen35.State(config, 8, 4, MemoryAllocators.ofArena(arena), false, false);
 
             codec.restore(state, 0, 2, first);
             codec.restore(state, 2, 5, second);
@@ -60,7 +60,7 @@ final class Qwen35CheckpointCodecTest {
         Qwen35CheckpointCodec codec = new Qwen35CheckpointCodec(config());
         try (Arena arena = Arena.ofShared()) {
             Qwen35.State state =
-                    new Qwen35.State(config(), 8, 4, MemoryAllocators.ofArena(arena), false);
+                    new Qwen35.State(config(), 8, 4, MemoryAllocators.ofArena(arena), false, false);
             MemorySegment block = arena.allocate(codec.byteSize(2), 64);
             assertThrows(IllegalArgumentException.class, () -> codec.restore(state, -1, 1, block));
             assertThrows(IllegalArgumentException.class, () -> codec.restore(state, 0, 9, block));
@@ -80,7 +80,7 @@ final class Qwen35CheckpointCodecTest {
 
         try (Arena arena = Arena.ofShared()) {
             Qwen35.State state =
-                    new Qwen35.State(config, 8, 4, MemoryAllocators.ofArena(arena), false);
+                    new Qwen35.State(config, 8, 4, MemoryAllocators.ofArena(arena), false, false);
             MemorySegment expected = patterned(arena, codec.byteSize(2), 37);
             codec.restore(state, 0, 2, expected);
             state.resumeAt(2);

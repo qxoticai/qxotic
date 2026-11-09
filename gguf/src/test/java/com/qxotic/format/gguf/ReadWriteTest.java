@@ -559,7 +559,7 @@ public class ReadWriteTest extends GGUFTest {
             for (long d : shape) {
                 writeLong(out, d);
             }
-            writeInt(out, type.ordinal());
+            writeInt(out, type.getId());
             writeLong(out, offset);
             return out.toByteArray();
         } catch (IOException e) {

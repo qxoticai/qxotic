@@ -26,6 +26,9 @@ class DataTypeBlockShapeTest {
         DataType.MXFP4,
         DataType.NVFP4,
         DataType.Q1_0,
+        DataType.Q2_0,
+        DataType.PQ2_0,
+        DataType.PTQ1_0,
         DataType.TQ1_0,
         DataType.TQ2_0
     };

@@ -274,11 +274,38 @@ public enum GGMLType {
      * Layout: [{d: fp16, qs: uint8[16]}]. 1-bit sign quantization: fp16 scale + 128 sign bits
      * (LSB-first within each byte); element = bit set ? +d : -d. 1.125 bpw.
      */
-    Q1_0(18, 128);
+    Q1_0(18, 128),
+
+    /**
+     * Layout: [{d: fp16, qs: uint8[16]}]. 2-bit quantization: fp16 scale + 64 2-bit codes
+     * (LSB-first within each byte); element = (code - 1) * d, so codes 0..3 are -1, 0, +1, +2. 2.25
+     * bpw.
+     */
+    Q2_0(18, 64),
+
+    // ============================================================
+    // PrismML types (ids reserved by the PrismML llama.cpp fork, not by upstream GGML)
+    // ============================================================
+
+    /**
+     * Layout: [{d: fp16, qs: uint8[32]}]. {@link #Q2_0}'s codes at a 128-element block: fp16 scale
+     * + 128 2-bit codes (LSB-first within each byte); element = (code - 1) * d. 2.125 bpw.
+     */
+    PQ2_0(142, 34, 128),
+
+    /**
+     * Layout: [{qs: uint8[24], qh: uint8[2], d: fp16}]. {@link #TQ1_0}'s base-3 packing at a
+     * 128-element block: 120 ternary elements packed 5 per byte in qs, 8 packed 4 per byte in qh,
+     * and one fp16 scale. 1.75 bpw.
+     */
+    PTQ1_0(143, 28, 128);
 
     // ============================================================
     // Fields
     // ============================================================
+
+    /** The {@code ggml_type} value: the ordinal, except for the PrismML types. */
+    private final int id;
 
     /** Size in bytes for all elements in a block. */
     private final int blockByteSize;
@@ -291,6 +318,11 @@ public enum GGMLType {
     // ============================================================
 
     GGMLType(int blockByteSize, int elementsPerBlock) {
+        this(-1, blockByteSize, elementsPerBlock);
+    }
+
+    GGMLType(int id, int blockByteSize, int elementsPerBlock) {
+        this.id = id < 0 ? ordinal() : id;
         if (blockByteSize == 0 && elementsPerBlock == 0) {
             this.blockByteSize = 0;
             this.elementsPerBlock = 0;
@@ -311,16 +343,22 @@ public enum GGMLType {
         this.elementsPerBlock = elementsPerBlock;
     }
 
-    /** Cache of enum values to avoid creating new arrays on each call to {@link #values()}. */
-    private static final GGMLType[] VALUES = values();
+    /** The types by id; ids no type claims stay null. */
+    private static final GGMLType[] BY_ID;
+
+    static {
+        GGMLType[] values = values();
+        BY_ID = new GGMLType[values[values.length - 1].id + 1];
+        for (GGMLType type : values) BY_ID[type.id] = type;
+    }
 
     // ============================================================
     // Public API
     // ============================================================
 
-    /** Returns the GGML type ID (equivalent to ordinal in the {@code ggml_type} enum). */
+    /** Returns the GGML type ID: its value in the {@code ggml_type} enum. */
     public int getId() {
-        return ordinal();
+        return id;
     }
 
     /** Returns the size in bytes for all elements in a block. */
@@ -379,10 +417,10 @@ public enum GGMLType {
      * @throws IllegalArgumentException if the ID is unknown
      */
     public static GGMLType fromId(int id) {
-        if (id < 0 || id >= VALUES.length) {
+        if (id < 0 || id >= BY_ID.length || BY_ID[id] == null) {
             throw new IllegalArgumentException("Unknown GGML type ID: " + id);
         }
-        return VALUES[id];
+        return BY_ID[id];
     }
 
     /**

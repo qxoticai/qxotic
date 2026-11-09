@@ -17,7 +17,7 @@
     <maven.deploy.skip>false</maven.deploy.skip>
     <!-- One selection shared by the scalar and both vector-width runs. -->
     <kernel.numeric.tests>**/*ContractTest.java,**/*AccuracyTest.java,**/*MatMul*Test.java,
-      **/KQuantFloorDotTest.java,**/TernaryQuantTest.java,**/MoeTest.java,
+      **/QuantFloorDotTest.java,**/TernaryQuantTest.java,**/MoeTest.java,
       **/ConvolutionsTest.java,**/GatedDeltaNetTest.java,**/Mamba2Test.java,
       **/*OpsTest.java,**/KimiDeltaAttentionTest.java,**/KernelSelectionTest.java</kernel.numeric.tests>
   </properties>
@@ -133,7 +133,7 @@
               <reportsDirectory>${project.build.directory}/surefire-reports/vector-fast</reportsDirectory>
               <includes>
                 <include>**/*MatMul*Test.java</include>
-                <include>**/KQuantFloorDotTest.java</include>
+                <include>**/QuantFloorDotTest.java</include>
                 <include>**/GatedDeltaNetTest.java</include>
                 <include>**/Mamba2Test.java</include>
                 <include>**/KernelSelectionTest.java</include>
@@ -151,7 +151,7 @@
               <reportsDirectory>${project.build.directory}/surefire-reports/vector-slow</reportsDirectory>
               <includes>
                 <include>**/*MatMul*Test.java</include>
-                <include>**/KQuantFloorDotTest.java</include>
+                <include>**/QuantFloorDotTest.java</include>
                 <include>**/GatedDeltaNetTest.java</include>
                 <include>**/Mamba2Test.java</include>
                 <include>**/KernelSelectionTest.java</include>

@@ -153,7 +153,7 @@ final class WriterImpl {
     @SuppressWarnings("EnumOrdinal")
     private void writeGGMLType(WritableByteChannel byteChannel, GGMLType ggmlType)
             throws IOException {
-        writeInt(byteChannel, ggmlType.ordinal());
+        writeInt(byteChannel, ggmlType.getId());
     }
 
     private void writeHeader(WritableByteChannel byteChannel) throws IOException {

@@ -121,6 +121,9 @@ public final class VectorJAM implements JAM {
                 case MXFP4 -> Mxfp4Kernel.gemm(ws, g, ab, g, ob, lda, ldr, n, m, k, 0L, scratch);
                 case NVFP4 -> Nvfp4Kernel.gemm(ws, g, ab, g, ob, lda, ldr, n, m, k, 0L, scratch);
                 case Q1_0 -> Q1Kernel.gemm(ws, g, ab, g, ob, lda, ldr, n, m, k, 0L, scratch);
+                case Q2_0 -> Q2Kernel.gemm(64, ws, g, ab, g, ob, lda, ldr, n, m, k, 0L, scratch);
+                case PQ2_0 -> Q2Kernel.gemm(128, ws, g, ab, g, ob, lda, ldr, n, m, k, 0L, scratch);
+                case PTQ1_0 -> Ptq1Kernel.gemm(ws, g, ab, g, ob, lda, ldr, n, m, k, 0L, scratch);
                 default -> {
                     return EUNSUPPORTED;
                 }

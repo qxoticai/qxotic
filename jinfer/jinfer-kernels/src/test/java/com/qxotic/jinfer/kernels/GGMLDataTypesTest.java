@@ -26,6 +26,9 @@ class GGMLDataTypesTest {
             GGMLType.MXFP4,
             GGMLType.NVFP4,
             GGMLType.Q1_0,
+            GGMLType.Q2_0,
+            GGMLType.PQ2_0,
+            GGMLType.PTQ1_0,
             GGMLType.TQ1_0,
             GGMLType.TQ2_0
         };

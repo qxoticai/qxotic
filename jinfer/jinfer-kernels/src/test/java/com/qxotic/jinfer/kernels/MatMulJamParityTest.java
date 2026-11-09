@@ -27,8 +27,9 @@ import org.junit.jupiter.api.Test;
  * flaky in forked JVMs) ARE on the classpath, so {@code MatMul.mm}'s prefill rungs - and the
  * k-quant decode rungs via the C2 {@code slowDot} exception - actually fire. The routed result must
  * match {@code MatMul.mmFloor} (the no-jam x floor) within dot tolerance. For dtypes whose decode
- * stays on the floor (dense, Q4_0, MXFP4, NVFP4, Q1_0 - see {@code bytePackedDot}) the gemv arm is
- * floor-vs-floor by construction; the gemm arm is the real jam check.
+ * stays on the floor (dense, Q4_0, MXFP4, NVFP4, and the 1- and 2-bit quants - see {@code
+ * bytePackedDot}) the gemv arm is floor-vs-floor by construction; the gemm arm is the real jam
+ * check.
  */
 class MatMulJamParityTest {
 
@@ -143,7 +144,10 @@ class MatMulJamParityTest {
                     GGMLType.Q5_K,
                     GGMLType.Q6_K,
                     GGMLType.NVFP4,
-                    GGMLType.Q1_0
+                    GGMLType.Q1_0,
+                    GGMLType.Q2_0,
+                    GGMLType.PQ2_0,
+                    GGMLType.PTQ1_0
                 }) {
             long elems = (long) m * k;
             MemorySegment w = Oracles.blockQuant(arena, type, elems, type.ordinal() + 3L);

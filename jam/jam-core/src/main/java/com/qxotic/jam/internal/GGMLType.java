@@ -24,7 +24,10 @@ public enum GGMLType {
     Q6_K(14, 256, 210),
     MXFP4(39, 32, 17),
     NVFP4(40, 64, 36),
-    Q1_0(41, 128, 18);
+    Q1_0(41, 128, 18),
+    Q2_0(42, 64, 18),
+    PQ2_0(142, 128, 34), // the PrismML fork's ids
+    PTQ1_0(143, 128, 28);
 
     private final int code;
     private final int elementsPerBlock;
@@ -69,7 +72,7 @@ public enum GGMLType {
     }
 
     private static final GGMLType[] BY_CODE =
-            new GGMLType[42]; // codes 0..41 (Q1_0); gaps stay null
+            new GGMLType[144]; // codes 0..143 (PTQ1_0); gaps stay null
 
     static {
         for (GGMLType type : values()) BY_CODE[type.code] = type;

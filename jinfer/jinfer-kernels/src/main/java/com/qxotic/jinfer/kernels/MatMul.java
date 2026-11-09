@@ -46,9 +46,10 @@ import jdk.incubator.vector.VectorOperators;
  * <p>Contract: activations {@code a} and result {@code c} are dense FP32; weights {@code w} are
  * dense, dtype dispatched ({@code FP32}, {@code FP16}, {@code BF16} element-strided; every jota
  * block dtype - {@code Q8_0}, {@code MXFP4}, {@code Q4_0}, {@code Q4_1}, {@code Q5_0}, {@code
- * Q5_1}, {@code Q4_K}, {@code Q5_K}, {@code Q6_K}, {@code NVFP4}, {@code Q1_0}, {@code TQ1_0},
- * {@code TQ2_0} - via block geometry). Offsets/strides are in ELEMENTS (weights: quant elements,
- * block-aligned) and must be block-aligned.
+ * Q5_1}, {@code Q4_K}, {@code Q5_K}, {@code Q6_K}, {@code NVFP4}, {@code Q1_0}, {@code Q2_0},
+ * {@code PQ2_0}, {@code PTQ1_0}, {@code TQ1_0}, {@code TQ2_0} - via block geometry).
+ * Offsets/strides are in ELEMENTS (weights: quant elements, block-aligned) and must be
+ * block-aligned.
  *
  * <p>Computes {@code C = W · Aᵀ}: for output row {@code s} and weight row {@code row}, {@code
  * C[s*cStride + cOff + row] = dot(W[row], A[s])}.
@@ -58,16 +59,17 @@ import jdk.incubator.vector.VectorOperators;
  * slowDot} k-quant exception ({@code Q4_K}/{@code Q5_K}/{@code Q6_K} on a JIT that doesn't
  * intrinsify the Vector API - those decode through jam) and the no-Vector-API case (every decode
  * jams). Quantized decode ({@code Q4_0}/{@code Q8_0}/{@code MXFP4}/{@code Q4_K}/{@code Q5_K}/{@code
- * Q6_K}) uses native JAM's int8 gemv on AArch64 always (one activation requant feeds NEON SDOT),
- * and the integer quants on x86 when the pool is narrow enough that decode is compute-bound rather
- * than DRAM-bound (see {@code nativeDecode}); {@code -Djinfer.q4.nativeDecode}/{@code
- * jinfer.q8.nativeDecode}/{@code jinfer.mxfp4.nativeDecode}/{@code jinfer.kq.nativeDecode} force
- * either way. <b>Prefill</b> ({@code n > 1}, compute-bound) tries native jam, then Vector-API jam,
- * then pure-Java jam-scalar (its autovectorized gemm outruns the floor's dots several times over),
- * then the floor - jam is only offered a call when the dtype has a kernel AND k and the weight
- * offset are block-aligned ({@code Dispatch.f32io} collapses to {@code !inPlace}: {@code a}/{@code
- * c} are FP32 by construction). A runtime decline (EBUSY, older libjam) falls to the next rung. A
- * backend can be switched off with {@code -Djam.<id>.disabled=true} ({@code native}, {@code
+ * Q6_K}, and the low-bit codes formats Q2_0/PQ2_0/PTQ1_0) uses native JAM's int8 gemv on AArch64
+ * always (one activation requant feeds NEON SDOT), and the integer quants on x86 when the pool is
+ * narrow enough that decode is compute-bound rather than DRAM-bound (see {@code nativeDecode});
+ * {@code -Djinfer.q4.nativeDecode}/{@code jinfer.q8.nativeDecode}/{@code
+ * jinfer.mxfp4.nativeDecode}/{@code jinfer.kq.nativeDecode}/{@code jinfer.lowbit.nativeDecode}
+ * force either way. <b>Prefill</b> ({@code n > 1}, compute-bound) tries native jam, then Vector-API
+ * jam, then pure-Java jam-scalar (its autovectorized gemm outruns the floor's dots several times
+ * over), then the floor - jam is only offered a call when the dtype has a kernel AND k and the
+ * weight offset are block-aligned ({@code Dispatch.f32io} collapses to {@code !inPlace}: {@code
+ * a}/{@code c} are FP32 by construction). A runtime decline (EBUSY, older libjam) falls to the next
+ * rung. A backend can be switched off with {@code -Djam.<id>.disabled=true} ({@code native}, {@code
  * vector}, {@code scalar}). With no jam backend enabled or on the classpath the path is
  * bit-identical to the floor.
  */
@@ -92,6 +94,12 @@ public final class MatMul {
             Boolean.parseBoolean(
                     System.getProperty("jinfer.mxfp4.nativeDecode", Boolean.toString(ARM)));
     private static final boolean NATIVE_KQ_DECODE = nativeDecode("jinfer.kq.nativeDecode", 8);
+    // the low-bit codes formats (Q2_0, PQ2_0, PTQ1_0): AArch64 only - their Java dots run 8x behind
+    // native's NEON decode + SDOT there (M3 Pro, Bonsai 2 4B Q2_0 tg128: 3.5 t/s), and on x86 the
+    // Java dots are memory-bound already
+    private static final boolean NATIVE_LOWBIT_DECODE =
+            Boolean.parseBoolean(
+                    System.getProperty("jinfer.lowbit.nativeDecode", Boolean.toString(ARM)));
 
     private static boolean nativeDecode(String property, int narrowPool) {
         String set = System.getProperty(property);
@@ -120,6 +128,9 @@ public final class MatMul {
     private static final int NVFP4_BYTES = 36; // 4 ue4m3 scales + 32 packed nibbles
     private static final int Q1_0_BLOCK = 128; // elements per block
     private static final int Q1_0_BYTES = 18; // f16 scale + 16 sign bytes
+    private static final int PTQ1_0_BLOCK = 128;
+    private static final int PTQ1_0_BYTES = 28; // qs[24] base-3, qh[2], then the f16 scale
+    private static final int PTQ1_0_QH = 24, PTQ1_0_D = 26;
     private static final int TQ_BLOCK = 256;
     private static final int TQ1_0_BYTES = 54; // 48 base-3 bytes + 4 tail bytes + f16 scale
     private static final int TQ2_0_BYTES = 66; // 64 packed 2-bit bytes + f16 scale
@@ -326,6 +337,10 @@ public final class MatMul {
         boolean nativeQ8Decode = NATIVE_Q8_DECODE && dt == DataType.Q8_0 && NATIVE != null;
         boolean nativeMxfp4Decode = NATIVE_MXFP4_DECODE && dt == DataType.MXFP4 && NATIVE != null;
         boolean nativeKqDecode = NATIVE_KQ_DECODE && bytePackedDot(dt) && NATIVE != null;
+        boolean nativeLowbitDecode =
+                NATIVE_LOWBIT_DECODE
+                        && (dt == DataType.Q2_0 || dt == DataType.PQ2_0 || dt == DataType.PTQ1_0)
+                        && NATIVE != null;
         boolean jamDecode =
                 n == 1
                         && (!USE_VECTOR_API
@@ -333,7 +348,8 @@ public final class MatMul {
                                 || nativeQ4Decode
                                 || nativeQ8Decode
                                 || nativeMxfp4Decode
-                                || nativeKqDecode);
+                                || nativeKqDecode
+                                || nativeLowbitDecode);
         if ((n > 1 || jamDecode) && !inPlace && jamApplies(dt, k, wOff)) {
             if (NATIVE != null
                     && NATIVE.mm(
@@ -520,6 +536,9 @@ public final class MatMul {
         if (weightType == DataType.Q6_K) return dotQ6K(w, wByte, x, xByte, k);
         if (weightType == DataType.NVFP4) return dotNvfp4(w, wByte, x, xByte, k, slot);
         if (weightType == DataType.Q1_0) return dotQ1_0(w, wByte, x, xByte, k);
+        if (weightType == DataType.Q2_0) return dotQ2(w, wByte, x, xByte, k, 64);
+        if (weightType == DataType.PQ2_0) return dotQ2(w, wByte, x, xByte, k, 128);
+        if (weightType == DataType.PTQ1_0) return dotPtq1_0(w, wByte, x, xByte, k);
         if (weightType == DataType.TQ1_0) return dotTernary(w, wByte, x, xByte, k, true, slot);
         if (weightType == DataType.TQ2_0) return dotTernary(w, wByte, x, xByte, k, false, slot);
         throw new UnsupportedOperationException("dot weight dtype " + weightType);
@@ -1044,6 +1063,39 @@ public final class MatMul {
         return ((bits >> (within % 8)) & 1) != 0 ? scale : -scale;
     }
 
+    /** Q2_0 (qk 64) and PQ2_0 (qk 128): f16 d then 2-bit codes LSB-first; (code - 1) * d. */
+    static float getQ2(MemorySegment w, long wByte, long i, int qk) {
+        long bo = wByte + i / qk * (2 + qk / 4);
+        int within = (int) (i % qk);
+        int bits = Byte.toUnsignedInt(readByte(w, bo + 2 + within / 4));
+        return (((bits >> (2 * (within % 4))) & 3) - 1) * readFloat16(w, bo);
+    }
+
+    /**
+     * PTQ1_0: TQ1_0's base-3 packing at 128 elements - stages of 16 and 8 qs bytes (5 trits) and 2
+     * qh bytes (4 trits), element n * c + m = trit n of byte m; scale last.
+     */
+    static float getPtq1_0(MemorySegment w, long wByte, long i) {
+        long bo = wByte + i / PTQ1_0_BLOCK * PTQ1_0_BYTES;
+        int within = (int) (i % PTQ1_0_BLOCK);
+        int at, c;
+        if (within < 80) {
+            at = 0;
+            c = 16;
+        } else if (within < 120) {
+            at = 16;
+            c = 8;
+            within -= 80;
+        } else {
+            at = PTQ1_0_QH;
+            c = 2;
+            within -= 120;
+        }
+        int b = Byte.toUnsignedInt(readByte(w, bo + at + within % c));
+        int q = (b * POW3[within / c]) & 0xff;
+        return (((q * 3) >>> 8) - 1) * readFloat16(w, bo + PTQ1_0_D);
+    }
+
     static float getTq1_0(MemorySegment w, long wByte, long i) {
         long bo = wByte + i / TQ_BLOCK * TQ1_0_BYTES;
         int within = (int) (i % TQ_BLOCK);
@@ -1085,6 +1137,9 @@ public final class MatMul {
         if (dt == DataType.Q6_K) return getQ6K(w, wByte, i);
         if (dt == DataType.NVFP4) return getNvfp4(w, wByte, i);
         if (dt == DataType.Q1_0) return getQ1_0(w, wByte, i);
+        if (dt == DataType.Q2_0) return getQ2(w, wByte, i, 64);
+        if (dt == DataType.PQ2_0) return getQ2(w, wByte, i, 128);
+        if (dt == DataType.PTQ1_0) return getPtq1_0(w, wByte, i);
         if (dt == DataType.TQ1_0) return getTq1_0(w, wByte, i);
         if (dt == DataType.TQ2_0) return getTq2_0(w, wByte, i);
         throw new UnsupportedOperationException("scalar decode " + dt);
@@ -1840,6 +1895,116 @@ public final class MatMul {
         return result;
     }
 
+    // ------------------------------------------------------------------
+    // Q2_0/PQ2_0·F32 dot - per lane group the 2-bit codes shift out of one broadcast int and
+    // become (code - 1) floats; sums accumulate unscaled and fold in the block scale once via fma.
+    // ------------------------------------------------------------------
+
+    private static final IntVector LANE_SHIFT2 =
+            USE_VECTOR_API ? IntVector.zero(I_SPECIES).addIndex(2) : null;
+
+    private static float dotQ2(
+            MemorySegment w, long wByte, MemorySegment x, long xByte, int k, int qk) {
+        DataType dt = qk == 64 ? DataType.Q2_0 : DataType.PQ2_0;
+        if (!USE_VECTOR_API) return scalarDotLegacy(w, wByte, x, xByte, k, dt);
+        final int lanes = F_SPECIES.length(), bytes = 2 + qk / 4;
+        int upperBound = k / qk * qk;
+        FloatVector acc = FloatVector.zero(F_SPECIES);
+        long b0 = wByte;
+        int j = 0;
+        for (; j < upperBound; j += qk, b0 += bytes) {
+            FloatVector sum = FloatVector.zero(F_SPECIES);
+            for (int g = 0; g < qk; g += lanes) {
+                FloatVector q =
+                        (FloatVector)
+                                IntVector.broadcast(
+                                                I_SPECIES,
+                                                (int)
+                                                        (readLong(w, b0 + 2 + g / 32 * 8)
+                                                                >>> (2 * g % 64)))
+                                        .lanewise(VectorOperators.LSHR, LANE_SHIFT2)
+                                        .and(3)
+                                        .sub(1)
+                                        .convert(VectorOperators.I2F, 0);
+                sum = q.fma(floatsAt(x, xByte + 4L * (j + g)), sum);
+            }
+            acc = sum.fma(FloatVector.broadcast(F_SPECIES, readFloat16(w, b0)), acc);
+        }
+        float result = acc.reduceLanes(VectorOperators.ADD);
+        if (j < k) result += scalarDotLegacy(w, b0, x, xByte + 4L * j, k - j, dt);
+        return result;
+    }
+
+    // ------------------------------------------------------------------
+    // PTQ1_0·F32 dot - two in-bounds 16-byte loads per block: bytes 0..15 (the 16-byte stage) and
+    // bytes 12..27 (lanes 4..11: the 8-byte stage, the rest zeroed by STAGE8). Each widens to int
+    // lanes a vector at a time; trit n is ((b * 3^n) & 255) * 3 >>> 8, all in int lanes (x86 has no
+    // byte multiply, and byte-lane compares fall off the intrinsics). qh's 8 elements stay scalar.
+    // ------------------------------------------------------------------
+
+    private static final float[] STAGE8 = {0, 0, 0, 0, 1, 1, 1, 1, 1, 1, 1, 1, 0, 0, 0, 0};
+
+    private static float dotPtq1_0(
+            MemorySegment w, long wByte, MemorySegment x, long xByte, int k) {
+        if (!USE_VECTOR_API) return scalarDotLegacy(w, wByte, x, xByte, k, DataType.PTQ1_0);
+        final int lanes = F_SPECIES.length();
+        FloatVector acc = FloatVector.zero(F_SPECIES);
+        float tail = 0f;
+        for (int i = 0; i < k; i += PTQ1_0_BLOCK) {
+            long bo = wByte + (long) i / PTQ1_0_BLOCK * PTQ1_0_BYTES, xb = xByte + 4L * i;
+            ByteVector lo =
+                    ByteVector.fromMemorySegment(
+                            ByteVector.SPECIES_128, w, bo, ByteOrder.LITTLE_ENDIAN);
+            ByteVector hi =
+                    ByteVector.fromMemorySegment(
+                            ByteVector.SPECIES_128, w, bo + 12, ByteOrder.LITTLE_ENDIAN);
+            FloatVector sum = tritsPart(lo, hi, 0, x, xb, FloatVector.zero(F_SPECIES));
+            if (lanes < 16) sum = tritsPart(lo, hi, 1, x, xb, sum);
+            if (lanes < 8) {
+                sum = tritsPart(lo, hi, 2, x, xb, sum);
+                sum = tritsPart(lo, hi, 3, x, xb, sum);
+            }
+            float d = readFloat16(w, bo + PTQ1_0_D), qh = 0f;
+            for (int h = 0; h < 2; h++) {
+                int b = Byte.toUnsignedInt(readByte(w, bo + PTQ1_0_QH + h));
+                for (int n = 0, pow = 1; n < 4; n++, pow *= 3)
+                    qh +=
+                            ((((b * pow & 0xff) * 3) >>> 8) - 1)
+                                    * readFloat(x, xb + 4L * (120 + n * 2 + h));
+            }
+            acc = sum.fma(FloatVector.broadcast(F_SPECIES, d), acc);
+            tail += qh * d;
+        }
+        return acc.reduceLanes(VectorOperators.ADD) + tail;
+    }
+
+    /** One lane-width part of both loads, all 5 trits: sum += codes · x. */
+    @AlwaysInline("hot Vector API leaf: an escaping FloatVector is materialized per call")
+    private static FloatVector tritsPart(
+            ByteVector lo, ByteVector hi, int part, MemorySegment x, long xb, FloatVector sum) {
+        int at = part * F_SPECIES.length();
+        IntVector bl = ((IntVector) lo.castShape(I_SPECIES, part)).and(0xff);
+        IntVector bh = ((IntVector) hi.castShape(I_SPECIES, part)).and(0xff);
+        FloatVector stage8 = FloatVector.fromArray(F_SPECIES, STAGE8, at);
+        for (int n = 0, pow = 1; n < 5; n++, pow *= 3) {
+            sum = trit(bl, pow).fma(floatsAt(x, xb + 4L * (n * 16 + at)), sum);
+            sum = trit(bh, pow).mul(stage8).fma(floatsAt(x, xb + 4L * (76 + n * 8 + at)), sum);
+        }
+        return sum;
+    }
+
+    /** Trit n of every byte lane, as -1, 0 or +1, for {@code pow} = 3^n. */
+    @AlwaysInline("hot Vector API leaf: an escaping FloatVector is materialized per call")
+    private static FloatVector trit(IntVector bytes, int pow) {
+        return (FloatVector)
+                bytes.mul(pow)
+                        .and(0xff)
+                        .mul(3)
+                        .lanewise(VectorOperators.LSHR, 8)
+                        .sub(1)
+                        .convert(VectorOperators.I2F, 0);
+    }
+
     private static final float[][] TQ_SCRATCH = new float[Parallel.threads()][TQ_BLOCK];
 
     private static float dotTernary(
@@ -2058,6 +2223,9 @@ public final class MatMul {
                 && dt != DataType.MXFP4
                 && dt != DataType.NVFP4
                 && dt != DataType.Q1_0
+                && dt != DataType.Q2_0
+                && dt != DataType.PQ2_0
+                && dt != DataType.PTQ1_0
                 && dt != DataType.FP32
                 && dt != DataType.FP16
                 && dt != DataType.BF16) return false;
@@ -2091,6 +2259,9 @@ public final class MatMul {
         if (dt == DataType.MXFP4) return JAM.MXFP4;
         if (dt == DataType.NVFP4) return JAM.NVFP4;
         if (dt == DataType.Q1_0) return JAM.Q1_0;
+        if (dt == DataType.Q2_0) return JAM.Q2_0;
+        if (dt == DataType.PQ2_0) return JAM.PQ2_0;
+        if (dt == DataType.PTQ1_0) return JAM.PTQ1_0;
         if (dt == DataType.FP32) return JAM.F32;
         if (dt == DataType.FP16) return JAM.F16;
         if (dt == DataType.BF16) return JAM.BF16;

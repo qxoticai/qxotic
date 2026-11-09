@@ -25,7 +25,7 @@ public final class DecodeBench {
                         ? args
                         : new String[] {
                             "F32", "F16", "BF16", "Q8_0", "Q4_0", "Q4_K", "Q5_K", "Q6_K", "MXFP4",
-                            "NVFP4", "Q1_0"
+                            "NVFP4", "Q1_0", "Q2_0", "PQ2_0", "PTQ1_0"
                         };
         for (String name : names) {
             GGMLType t = GGMLType.valueOf(name);

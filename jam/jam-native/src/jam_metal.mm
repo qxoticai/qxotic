@@ -752,7 +752,7 @@ static void jam_metal_encode_mm(id<MTLComputeCommandEncoder> encoder,
     }
 }
 
-extern "C" jam_status jam_metal_mm(jam_metal* m, const void* a, jam_dtype at, int lda,
+extern "C" jam_status jam_metal_mm(jam_metal* m, const void* a, int at, int lda,
                                    const void* b, jam_dtype bt, int ldb,
                                    void* c, jam_dtype ct, int ldc,
                                    int M, int N, int K) {

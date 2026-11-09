@@ -62,3 +62,36 @@ static inline void jam_i8mm_store_2x2(float* c, int ldc, int row, int col, float
 #undef JAM_TILE2_NAME
 #undef JAM_MM_NAME
 
+
+/* The low-bit codes formats (jam_lowbit.h: Q2_0, PQ2_0, PTQ1_0) on I8MM. Prefill decodes each 4-row
+ * group once into Q8_0 blocks - the codes are small ints and the source's fp16 scale carries over bit
+ * for bit, so the conversion is exact - and runs the Q8_0 SMMLA tile on them. Decode (n == 1) keeps
+ * the SDOT kernel, as Q8_0 itself does on I8MM. */
+#include "jam_lowbit.h"
+void jam_mm_lowbit_dotprod(void* job, int rb, int re, int tid);   /* every I8MM CPU has DOTPROD */
+void jam_mm_lowbit_i8mm(void* arg, int rb, int re, int tid) {
+    const jam_q8_job* J = (const jam_q8_job*) arg;
+    if (J->n == 1) { jam_mm_lowbit_dotprod(arg, rb, re, tid); return; }
+    const int k = J->k, nb32 = k / 32, qk = jam_lowbit_qk(J->wt), bytes = jam_lowbit_bytes(J->wt);
+    const size_t wrow = (size_t) (J->lda / qk) * bytes;
+    jam_q8_blk* q8 = (jam_q8_blk*) jam_lowbit_scratch(4 * (size_t) nb32 * sizeof(jam_q8_blk));
+    jam_q8_job group = *J;
+    group.a = q8; group.lda = k;
+    for (int r = rb; r < re; r += 4) {
+        const int nr = re - r < 4 ? re - r : 4;
+        for (int t = 0; t < nr; ++t) {
+            const uint8_t* w = (const uint8_t*) J->a + (size_t) (r + t) * wrow;
+            for (int b = 0; b < k / qk; b++, w += bytes) {
+                int8_t codes[128];
+                uint16_t d;
+                memcpy(&d, J->wt == JAM_PTQ1_0 ? w + JAM_PTQ1_0_D : w, 2);
+                if (J->wt == JAM_PTQ1_0) jam_ptq1_0_codes(w, codes);
+                else                     jam_q2_codes(w, qk, codes);
+                jam_q8_blk* o = q8 + (size_t) t * nb32 + (size_t) b * (qk / 32);
+                for (int s = 0; s < qk / 32; s++) { o[s].d = d; memcpy(o[s].qs, codes + 32 * s, 32); }
+            }
+        }
+        group.c = (float*) J->c + r;                   /* C is token-major: rows r.. are columns r.. */
+        jam_mm_q8_0_i8mm_4x4(&group, 0, nr, tid);
+    }
+}

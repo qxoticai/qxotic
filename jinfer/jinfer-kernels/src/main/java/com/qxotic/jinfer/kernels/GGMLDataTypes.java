@@ -21,6 +21,9 @@ final class GGMLDataTypes {
         new Pair(GGMLType.MXFP4, DataType.MXFP4),
         new Pair(GGMLType.NVFP4, DataType.NVFP4),
         new Pair(GGMLType.Q1_0, DataType.Q1_0),
+        new Pair(GGMLType.Q2_0, DataType.Q2_0),
+        new Pair(GGMLType.PQ2_0, DataType.PQ2_0),
+        new Pair(GGMLType.PTQ1_0, DataType.PTQ1_0),
         new Pair(GGMLType.TQ1_0, DataType.TQ1_0),
         new Pair(GGMLType.TQ2_0, DataType.TQ2_0)
     };

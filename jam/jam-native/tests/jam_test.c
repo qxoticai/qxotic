@@ -17,10 +17,11 @@ static int g_fail = 0, g_checks = 0;
 /* Per-dtype precision tracker: the pass/fail tolerance is a loose floor, so we ALSO record the actual worst
  * abs/rel error vs the nearest reference (max over every context + size). Reported at the end so a precision
  * regression - a kernel that drifts but stays under the gate - shows up as the number creeping. */
-static struct { const char* nm; double maxrel, maxabs; } g_prec[24];
+static struct { const char* nm; double maxrel, maxabs; } g_prec[64];
 static int g_prec_n = 0;
 static void track_prec(const char* nm, double abserr, double ref) {
     int i; for (i = 0; i < g_prec_n; i++) if (!strcmp(g_prec[i].nm, nm)) break;
+    if (i == (int) (sizeof g_prec / sizeof *g_prec)) { fprintf(stderr, "g_prec full at %s\n", nm); abort(); }
     if (i == g_prec_n) { g_prec[i].nm = nm; g_prec[i].maxrel = g_prec[i].maxabs = 0; ++g_prec_n; }
     if (abserr > g_prec[i].maxabs) g_prec[i].maxabs = abserr;
     /* rel only for outputs of meaningful magnitude - near-zero refs (catastrophic cancellation) make rel
@@ -233,6 +234,45 @@ static void suite_q1_0(int m, int n, int k) {     /* k a multiple of 128; GGML b
     free(W);free(A);free(C);free(RE);free(RR);free(RB);free(WQ);
 }
 
+/* The low-bit codes formats: Q2_0 (k%64), PQ2_0 and PTQ1_0 (k%128). */
+static void* lowbit_quant(int dt, const float* W, int m, int k) {
+    return dt == JAM_PTQ1_0 ? jam_ref_quant_ptq1_0(W, m, k) : jam_ref_quant_q2(W, m, k, dt == JAM_Q2_0 ? 64 : 128);
+}
+static void suite_lowbit(int dt, const char* name, int m, int n, int k) {
+    const int qk = dt == JAM_Q2_0 ? 64 : 128, bytes = dt == JAM_Q2_0 ? 18 : dt == JAM_PQ2_0 ? 34 : 28, nblk = k/qk;
+    float* W = malloc(4*(size_t)m*k); float* A = malloc(4*(size_t)n*k); float* C = malloc(4*(size_t)m*n);
+    double* RE = malloc(8*(size_t)m*n); double* RR = malloc(8*(size_t)m*n);
+    jam_ref_fill(W,(size_t)m*k,13); jam_ref_fill(A,(size_t)n*k,14);
+    uint8_t* WQ = lowbit_quant(dt, W, m, k);
+    int* code = malloc(sizeof(int)*(size_t)m*k); float* d = malloc(4*(size_t)m*nblk);
+    for (int i=0;i<m;i++) for (int bb=0;bb<nblk;bb++) {   /* the reference decode, per block */
+        const uint8_t* blk = WQ + ((size_t)i*nblk + bb)*bytes;
+        int* cb = code + (size_t)i*k + (size_t)bb*qk;
+        if (dt == JAM_PTQ1_0) jam_ref_ptq1_0_codes(blk, cb);
+        else for (int e=0;e<qk;e++) cb[e] = ((blk[2 + e/4] >> (2*(e%4))) & 3) - 1;
+        uint16_t h; memcpy(&h, dt == JAM_PTQ1_0 ? blk + 26 : blk, 2); d[(size_t)i*nblk + bb] = jam_ref_h2f(h);
+    }
+    /* RE - exact float; RR - the int8 path (per-32 int8 acts), which the VNNI band computes exactly too */
+    for (int i=0;i<m;i++) for (int j=0;j<n;j++) {
+        double se=0, sr=0;
+        for (int blk32=0; blk32<k/32; blk32++) {
+            const float* aa = A + (size_t)j*k + (size_t)blk32*32;
+            float amax=0; for (int e=0;e<32;e++){ float v=fabsf(aa[e]); if(v>amax)amax=v; }
+            float dA=amax/127.f, id=dA>0?1.f/dA:0.f, dw = d[(size_t)i*nblk + blk32*32/qk];
+            for (int e=0;e<32;e++) {
+                float wv = (float)code[(size_t)i*k + (size_t)blk32*32 + e] * dw;
+                se += (double)wv*aa[e];
+                int q=(int)lrintf(aa[e]*id); if(q>127)q=127; else if(q<-128)q=-128;
+                sr += (double)wv*((float)q*dA);
+            }
+        }
+        RE[(size_t)i*n+j]=se; RR[(size_t)i*n+j]=sr;
+    }
+    const double* refs[] = { RE, RR };
+    check_all_ctxs(WQ, dt, name, A, C, m, n, k, refs, 2, 1e-2, 1e-3);
+    free(W);free(A);free(C);free(RE);free(RR);free(WQ);free(code);free(d);
+}
+
 typedef uint8_t* (*kq_build)(int, int, unsigned, float*, float*);
 static void suite_kquant(kq_build build, int dtype, const char* name, int m, int n, int k) {  /* k%256 */
     float* Wdq = malloc(4*(size_t)m*k); float* Wmin = malloc(4*(size_t)m*k);
@@ -332,6 +372,9 @@ static void* build_weight(int dtype, int m, int k, int* be, int* bb) {
         case JAM_MXFP4: *be=32; *bb=(int)sizeof(jam_ref_mxfp4_blk); WQ=jam_ref_quant_mxfp4(W,m,k); break;
         case JAM_NVFP4: *be=64; *bb=(int)sizeof(jam_ref_nvfp4_blk); WQ=jam_ref_quant_nvfp4(W,m,k); break;
         case JAM_Q1_0:  *be=128; *bb=(int)sizeof(jam_ref_q1_0_blk); WQ=jam_ref_quant_q1_0(W,m,k);  break;
+        case JAM_Q2_0:   *be=64;  *bb=18; WQ=lowbit_quant(dtype,W,m,k); break;
+        case JAM_PQ2_0:  *be=128; *bb=34; WQ=lowbit_quant(dtype,W,m,k); break;
+        case JAM_PTQ1_0: *be=128; *bb=28; WQ=lowbit_quant(dtype,W,m,k); break;
         default: {   /* GGUF block builders: Q4_K/Q5_K/Q6_K (k%256, 256-elem) and Q4_0 (k%32) */
             float* dq=malloc(4llu*(size_t)m*k); float* mn=malloc(4llu*(size_t)m*k);
             if      (dtype==JAM_Q4_K) { *be=256; *bb=144; WQ=jam_ref_make_q4k(m,k,7,dq,mn); }
@@ -994,6 +1037,15 @@ int main(void) {
                    {7,16,5120},{16,512,5120},{33,64,5120},{49,512,128},{2,9,384},{31,8,1280},{104,7,512}};
                    /* band shapes: k=5120 (Bonsai), n=16/64/512, m tails 1..15 (scalar-tail + partial bands) */
     for (unsigned s=0;s<sizeof Q1/sizeof*Q1;++s) suite_q1_0(Q1[s][0],Q1[s][1],Q1[s][2]);   /* Q1_0 GGML (k%128) */
+    int Q2[][3] = {{1,1,64},{4,4,128},{7,5,64},{5,7,192},{13,9,256},{64,64,256},{100,99,128},{257,33,64},{129,127,512},
+                   {512,512,512},{7,16,2560},{16,512,2560},{33,64,9216},{49,512,64},{31,8,1280},{104,7,512}};
+                   /* band shapes: k=2560/9216 (Bonsai 2 4B), n=16/64/512, m tails, a ragged last 256-stretch */
+    for (unsigned s=0;s<sizeof Q2/sizeof*Q2;++s) {
+        suite_lowbit(JAM_Q2_0, "Q2_0", Q2[s][0],Q2[s][1],Q2[s][2]);                    /* k%64 */
+        if (Q2[s][2] % 128) continue;                                                  /* k%128 */
+        suite_lowbit(JAM_PQ2_0,  "PQ2_0",  Q2[s][0],Q2[s][1],Q2[s][2]);
+        suite_lowbit(JAM_PTQ1_0, "PTQ1_0", Q2[s][0],Q2[s][1],Q2[s][2]);
+    }
     int KQ[][3] = {{16,8,256},{32,16,512},{64,33,256},{17,5,256},{128,64,768},{257,40,256},
                    {64,1,512},{4,1,256},{36,5,256},{36,16,256}};
                    /* k%256, n</>=8, m tail, n==1 (packed decode gemvs). The 17/257-row shapes
@@ -1023,6 +1075,9 @@ int main(void) {
         suite_layout(JAM_MXFP4, "MXFP4", 37, nn, 64);
         suite_layout(JAM_NVFP4, "NVFP4", 37, nn, 128);
         suite_layout(JAM_Q1_0,  "Q1_0",  37, nn, 128);
+        suite_layout(JAM_Q2_0,  "Q2_0",  37, nn, 128);
+        suite_layout(JAM_PQ2_0, "PQ2_0", 37, nn, 256);
+        suite_layout(JAM_PTQ1_0,"PTQ1_0",37, nn, 256);
         suite_layout(JAM_Q4_K,  "Q4_K",  37, nn, 256);
         suite_layout(JAM_Q5_K,  "Q5_K",  37, nn, 256);
         suite_layout(JAM_Q6_K,  "Q6_K",  37, nn, 256);
@@ -1085,7 +1140,7 @@ int main(void) {
         /* K-quant Metal MMA: same half tier; the error is judged vs the half-staged reference
          * (g_metal_half_ref), so these bound only the accumulation-order noise on top of it. */
         {"Q4_Kh",2e-2,1e-2}, {"Q5_Kh",2e-2,1e-2}, {"Q6_Kh",2e-2,1e-2},
-        {"MXFP4",5e-4,5e-5}, {"NVFP4",5e-4,5e-5}, {"Q1_0",5e-3,5e-5},
+        {"MXFP4",5e-4,5e-5}, {"NVFP4",5e-4,5e-5}, {"Q1_0",5e-3,5e-5}, {"Q2_0",5e-3,5e-5}, {"PQ2_0",5e-3,5e-5}, {"PTQ1_0",5e-3,5e-5},
         {"Q4_K",4e-3,1.5e-3}, {"Q5_K",5e-3,2e-3}, {"Q6_K",6e-3,1.5e-3}, {"Q4_0",5e-4,5e-5}, {"Q5_0",5e-4,5e-5},
         /* packed layouts: identical values, identical numeric tier */
         {"Q4_Kp",4e-3,1.5e-3}, {"Q5_Kp",5e-3,2e-3}, {"Q6_Kp",6e-3,1.5e-3}, {"Q4_0p",5e-4,5e-5},

@@ -79,7 +79,7 @@ java --enable-native-access=com.qxotic.jam.libjam,com.qxotic.jam.vector \
 
 The scalar provider requires no launch flags.
 
-Quantizations: `Q1_0`, `Q4_0`, `Q5_0`, `Q8_0`, `Q4_K`, `Q5_K`, `Q6_K`, `MXFP4`, `NVFP4`, plus dense `F32`/`F16`/`BF16`. Activations and result are always `F32`. Operands must be **native** segments, not heap arrays.
+Quantizations: `Q1_0`, `Q2_0`, `PQ2_0`, `PTQ1_0`, `Q4_0`, `Q5_0`, `Q8_0`, `Q4_K`, `Q5_K`, `Q6_K`, `MXFP4`, `NVFP4`, plus dense `F32`/`F16`/`BF16`. Activations and result are always `F32`. Operands must be **native** segments, not heap arrays.
 
 ## Backends
 

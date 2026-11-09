@@ -99,6 +99,9 @@ public interface DataType {
     DataType MXFP4 = blockType("mxfp4", 32, 17);
     DataType NVFP4 = blockType("nvfp4", 64, 36);
     DataType Q1_0 = blockType("q1_0", 128, 18);
+    DataType Q2_0 = blockType("q2_0", 64, 18);
+    DataType PQ2_0 = blockType("pq2_0", 128, 34);
+    DataType PTQ1_0 = blockType("ptq1_0", 128, 28);
     DataType TQ1_0 = blockType("tq1_0", 256, 54);
     DataType TQ2_0 = blockType("tq2_0", 256, 66);
 

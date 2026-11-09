@@ -32,6 +32,9 @@ class MatMulJamTagTest {
             {DataType.MXFP4, JAM.MXFP4},
             {DataType.NVFP4, JAM.NVFP4},
             {DataType.Q1_0, JAM.Q1_0},
+            {DataType.Q2_0, JAM.Q2_0},
+            {DataType.PQ2_0, JAM.PQ2_0},
+            {DataType.PTQ1_0, JAM.PTQ1_0},
         };
     }
 

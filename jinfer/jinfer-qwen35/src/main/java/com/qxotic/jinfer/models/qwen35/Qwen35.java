@@ -61,20 +61,23 @@ public final class Qwen35
     private final Tokenizer tokenizer;
     private final Weights weights;
     private final MediaProjector<Media.Image> vision;
+    private final Hadamard hadamard; // null unless the checkpoint folds a rotation into its weights
 
     Qwen35(Configuration configuration, Tokenizer tokenizer, Weights weights) {
-        this(configuration, tokenizer, weights, null);
+        this(configuration, tokenizer, weights, null, null);
     }
 
     private Qwen35(
             Configuration configuration,
             Tokenizer tokenizer,
             Weights weights,
-            MediaProjector<Media.Image> vision) {
+            MediaProjector<Media.Image> vision,
+            Hadamard hadamard) {
         this.configuration = configuration;
         this.tokenizer = tokenizer;
         this.weights = weights;
         this.vision = vision;
+        this.hadamard = hadamard;
     }
 
     @Override
@@ -123,7 +126,7 @@ public final class Qwen35
             Qwen35Vision tower =
                     Qwen35Vision.loadModel(
                             mmprojPath, gguf, ModelLoader.loadTensors(channel, gguf, arena));
-            return new Qwen35(configuration, tokenizer, weights, tower);
+            return new Qwen35(configuration, tokenizer, weights, tower, hadamard);
         }
     }
 
@@ -135,14 +138,16 @@ public final class Qwen35
     @Override
     public State newState(
             int contextCapacity, int batchCapacity, MemoryArena<MemorySegment> arena) {
-        return new State(configuration, contextCapacity, batchCapacity, arena, false);
+        return new State(
+                configuration, contextCapacity, batchCapacity, arena, false, hadamard != null);
     }
 
     @Override
     public State newState(int contextCapacity, int batchCapacity) {
         MemoryArena<MemorySegment> arena = Arenas.newCrossThreadMemoryArena();
         try {
-            return new State(configuration, contextCapacity, batchCapacity, arena, true);
+            return new State(
+                    configuration, contextCapacity, batchCapacity, arena, true, hadamard != null);
         } catch (RuntimeException | Error failure) {
             Arenas.close(arena);
             throw failure;
@@ -240,6 +245,7 @@ public final class Qwen35
         Views.checkAlive(weights.tokenEmbedding, "tokenEmbedding");
         Convert.gatherToF32(
                 weights.tokenEmbedding, tokens, 0, rows, state.residual, 0, c.embeddingLength);
+        if (hadamard != null) hadamard.inverse(state.residual, rows, c.embeddingLength);
         if (c.hasMtp()) {
             Convert.gatherToF32(
                     weights.nextn.tokenEmbedding,
@@ -396,12 +402,19 @@ public final class Qwen35
         MatMul.gemv(nextn.outputWeight, state.normed, state.logits);
     }
 
+    /** The input a projection reads: {@code x} itself, or its rotation for a folded checkpoint. */
+    private MemoryView<MemorySegment> folded(
+            State s, MemoryView<MemorySegment> x, int rows, int width) {
+        return hadamard == null ? x : hadamard.forward(x, s.rotated, rows, width);
+    }
+
     private void attention(State s, int layer, int startPos, int rows) {
         Configuration c = configuration;
         int dim = c.embeddingLength, qDim = c.queryDim(), kvDim = c.kvDim();
-        MatMul.gemm(weights.attnQ[layer], s.normed, s.packedQ, rows);
-        MatMul.gemm(weights.attnK[layer], s.normed, s.k, rows);
-        MatMul.gemm(weights.attnV[layer], s.normed, s.v, rows);
+        MemoryView<MemorySegment> x = folded(s, s.normed, rows, dim);
+        MatMul.gemm(weights.attnQ[layer], x, s.packedQ, rows);
+        MatMul.gemm(weights.attnK[layer], x, s.k, rows);
+        MatMul.gemm(weights.attnV[layer], x, s.v, rows);
         GatedDeltaNet.unpackAttentionQGate(
                 s.packedQ, s.q, s.attentionGate, rows, c.numberOfHeads, c.headSize);
         Parallel.forLoop(
@@ -418,8 +431,7 @@ public final class Qwen35
                                 c.headSize,
                                 c.rmsNormEps);
                         if (weights.rope != null)
-                            RoPE.applyInterleaved(
-                                    s.q, off, row, s.ropeCos, s.ropeSin, weights.ropeHalf);
+                            RoPE.applyNeox(s.q, off, row, s.ropeCos, s.ropeSin, weights.ropeHalf);
                     }
                     for (int h = 0; h < c.numberOfKeyValueHeads; h++) {
                         long off = (long) row * kvDim + (long) h * c.headSize;
@@ -432,8 +444,7 @@ public final class Qwen35
                                 c.headSize,
                                 c.rmsNormEps);
                         if (weights.rope != null)
-                            RoPE.applyInterleaved(
-                                    s.k, off, row, s.ropeCos, s.ropeSin, weights.ropeHalf);
+                            RoPE.applyNeox(s.k, off, row, s.ropeCos, s.ropeSin, weights.ropeHalf);
                     }
                 });
         long cacheOffset = (long) startPos * kvDim;
@@ -452,15 +463,17 @@ public final class Qwen35
                 qDim,
                 c.numberOfHeads / c.numberOfKeyValueHeads);
         GatedDeltaNet.sigmoidMultiply(s.attentionOut, s.attentionGate, rows, qDim);
-        MatMul.gemm(weights.attnOutput[layer], s.attentionOut, s.branch, rows);
+        MatMul.gemm(
+                weights.attnOutput[layer], folded(s, s.attentionOut, rows, qDim), s.branch, rows);
     }
 
     private void delta(State s, int layer, int rows) {
         Configuration c = configuration;
         int dim = c.embeddingLength, inner = c.ssmInnerSize, heads = c.ssmTimeStepRank;
         int headDim = c.headVDim(), channels = c.convChannels();
-        MatMul.gemm(weights.attnQkv[layer], s.normed, s.ssmQkv, rows);
-        MatMul.gemm(weights.attnGate[layer], s.normed, s.z, rows);
+        MemoryView<MemorySegment> x = folded(s, s.normed, rows, dim);
+        MatMul.gemm(weights.attnQkv[layer], x, s.ssmQkv, rows);
+        MatMul.gemm(weights.attnGate[layer], x, s.z, rows);
         MatMul.gemm(weights.ssmAlpha[layer], s.normed, s.alpha, rows);
         MatMul.gemm(weights.ssmBeta[layer], s.normed, s.betaProjection, rows);
         Convolutions.causalDepthwiseSilu(
@@ -515,15 +528,20 @@ public final class Qwen35
                 heads,
                 headDim,
                 c.rmsNormEps);
-        MatMul.gemm(weights.ssmOut[layer], s.ssmTmp, s.branch, rows);
+        MemoryView<MemorySegment> out =
+                hadamard == null
+                        ? s.ssmTmp
+                        : hadamard.forwardDeltaOut(s.ssmTmp, s.rotated, rows, inner);
+        MatMul.gemm(weights.ssmOut[layer], out, s.branch, rows);
     }
 
     private void denseFfn(State s, int layer, int rows) {
         Configuration c = configuration;
-        MatMul.gemm(weights.ffnGate[layer], s.normed, s.hidden, rows);
-        MatMul.gemm(weights.ffnUp[layer], s.normed, s.hidden2, rows);
+        MemoryView<MemorySegment> x = folded(s, s.normed, rows, c.embeddingLength);
+        MatMul.gemm(weights.ffnGate[layer], x, s.hidden, rows);
+        MatMul.gemm(weights.ffnUp[layer], x, s.hidden2, rows);
         Activations.siluMultiplyRows(s.hidden, s.hidden2, rows, c.hiddenDim);
-        MatMul.gemm(weights.ffnDown[layer], s.hidden, s.branch, rows);
+        MatMul.gemm(weights.ffnDown[layer], folded(s, s.hidden, rows, c.hiddenDim), s.branch, rows);
     }
 
     private void moe(State s, int layer, int rows) {
@@ -603,7 +621,7 @@ public final class Qwen35
                     dim,
                     configuration.rmsNormEps);
         }
-        MatMul.gemv(weights.outputWeight, state.normed, state.logits);
+        MatMul.gemv(weights.outputWeight, folded(state, state.normed, 1, dim), state.logits);
         return state.logits;
     }
 
@@ -624,7 +642,8 @@ public final class Qwen35
                         dim,
                         configuration.rmsNormEps);
         }
-        MatMul.gemm(weights.outputWeight, state.normed, destination, rows);
+        MatMul.gemm(
+                weights.outputWeight, folded(state, state.normed, rows, dim), destination, rows);
         Reference.reachabilityFence(state);
     }
 
@@ -780,6 +799,7 @@ public final class Qwen35
         final MemoryView<MemorySegment> z, alpha, betaProjection, ssmGate, ssmBeta;
         final MemoryView<MemorySegment> ssmOutput, ssmTmp, ssmSk, ssmDelta;
         final MemoryView<MemorySegment> hidden, hidden2;
+        final MemoryView<MemorySegment> rotated; // folded checkpoints: a projection's input
         final MemoryView<MemorySegment>[] keyCache, valueCache, convState, recurrentState;
         final MemoryView<MemorySegment> moeRouter, moeGather, moeDown;
         // Per-expert gate/up at EXACTLY expertFeedForwardLength wide: the silu-multiply between
@@ -803,7 +823,8 @@ public final class Qwen35
                 int contextCapacity,
                 int batchCapacity,
                 MemoryArena<MemorySegment> arena,
-                boolean ownsArena) {
+                boolean ownsArena,
+                boolean rotates) {
             super(contextCapacity, batchCapacity, arena, ownsArena);
             if (contextCapacity > c.maxContextLength)
                 throw new IllegalArgumentException(
@@ -846,6 +867,8 @@ public final class Qwen35
             int denseHidden = c.isMoE() ? 1 : c.hiddenDim;
             hidden = Views.allocateF32(memoryArena(), b, denseHidden);
             hidden2 = Views.allocateF32(memoryArena(), b, denseHidden);
+            int widest = Math.max(Math.max(dim, qd), Math.max(c.ssmInnerSize, denseHidden));
+            rotated = rotates ? Views.allocateF32(memoryArena(), b, widest) : null;
             keyCache = new MemoryView[c.storedLayers()];
             valueCache = new MemoryView[c.storedLayers()];
             convState = new MemoryView[c.storedLayers()];
@@ -924,7 +947,8 @@ public final class Qwen35
         Configuration config = readConfiguration(gguf, tokenizer.vocabulary().size());
         Map<String, MemoryView<MemorySegment>> tensors =
                 ModelLoader.loadTensors(channel, gguf, arena);
-        return new Qwen35(config, tokenizer, loadWeights(tensors, config));
+        Hadamard hadamard = Hadamard.read(gguf, config, tensors.keySet());
+        return new Qwen35(config, tokenizer, loadWeights(tensors, config), null, hadamard);
     }
 
     static Configuration readConfiguration(GGUF gguf, int vocabularySize) {

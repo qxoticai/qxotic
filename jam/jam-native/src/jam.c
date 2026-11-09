@@ -7,6 +7,7 @@
 #include "kernels/jam_mxfp4.h"
 #include "kernels/jam_nvfp4.h"
 #include "kernels/jam_q1_0.h"
+#include "kernels/jam_lowbit.h"
 #include "jam_kquant.h"
 
 #include <stdarg.h>
@@ -225,6 +226,7 @@ static const char* type_name(jam_dtype t) {
         case JAM_Q4_0: return "q4_0";   case JAM_Q5_0: return "q5_0";   case JAM_Q8_0: return "q8_0";
         case JAM_Q4_K: return "q4_k";   case JAM_Q5_K: return "q5_k";   case JAM_Q6_K: return "q6_k";
         case JAM_MXFP4: return "mxfp4"; case JAM_NVFP4: return "nvfp4"; case JAM_Q1_0: return "q1_0";
+        case JAM_Q2_0: return "q2_0";   case JAM_PQ2_0: return "pq2_0"; case JAM_PTQ1_0: return "ptq1_0";
         default: return "unknown";
     }
 }
@@ -238,8 +240,8 @@ static int block_of(jam_dtype t) {
     switch (t) {
         case JAM_F32: case JAM_F16: case JAM_BF16: return 1;
         case JAM_Q4_0: case JAM_Q5_0: case JAM_Q8_0: case JAM_MXFP4: return 32;
-        case JAM_NVFP4: return 64;
-        case JAM_Q1_0: return 128;
+        case JAM_NVFP4: case JAM_Q2_0: return 64;
+        case JAM_Q1_0: case JAM_PQ2_0: case JAM_PTQ1_0: return 128;
         case JAM_Q4_K: case JAM_Q5_K: case JAM_Q6_K: return 256;
         default: return 0;
     }
@@ -372,6 +374,7 @@ jam_context* jam_context_new(const jam_context_options* options) {
     c->q5_0_kernel  = NULL; c->q5_0_decode_kernel = NULL;
     c->q1_0_kernel  = NULL;   /* NULL -> the float floor */
     c->q1_0_floor   = jam_mm_q1_0_f32_generic;
+    c->lowbit_kernel = NULL;  /* NULL -> the float floor */
 #ifdef JAM_HAVE_SSE3
     if (cpu >= JAM_ISA_SSE3) { c->q8_kernel = jam_mm_q8_0_sse3;   /* pre-AVX2 floor; higher tiers override below */
         c->mxfp4_kernel = jam_mm_mxfp4_sse3; c->q4_0_kernel = jam_mm_q4_0_sse3; c->q5_0_kernel = jam_mm_q5_0_sse3;
@@ -391,7 +394,7 @@ jam_context* jam_context_new(const jam_context_options* options) {
         c->q4_0_kernel = jam_mm_q4_0_avx2; c->q5_0_kernel = jam_mm_q5_0_avx2;
         /* K-quants keep the SSE3 int8 kernels (run_quant supplies the per-32 requant) */
         c->nvfp4_kernel = jam_mm_nvfp4_avx2;
-        c->q1_0_kernel = jam_mm_q1_0_avx2;
+        c->q1_0_kernel = jam_mm_q1_0_avx2; c->lowbit_kernel = jam_mm_lowbit_avx2;
         c->dense_f16_kernel = jam_mm_f16_avx2; c->dense_bf16_kernel = jam_mm_bf16_avx2;
         c->dense_f32_kernel = jam_mm_f32d_avx2; }
 #endif
@@ -437,7 +440,7 @@ jam_context* jam_context_new(const jam_context_options* options) {
                                 c->kq[JAM_KQ_Q4K] = jam_mm_q4k_neon;
                                 c->kq[JAM_KQ_Q5K] = jam_mm_q5k_neon; c->kq[JAM_KQ_Q6K] = jam_mm_q6k_neon;
                                 c->nvfp4_kernel = jam_mm_nvfp4_neon;
-                                c->q1_0_kernel = jam_mm_q1_0_neon; }
+                                c->q1_0_kernel = jam_mm_q1_0_neon; c->lowbit_kernel = jam_mm_lowbit_neon; }
 #endif
 #ifdef JAM_HAVE_DOTPROD
     if (cpu >= JAM_ISA_DOTPROD) { c->q8_kernel = jam_mm_q8_0_dotprod;   /* i8mm cores inherit these (sdot) */
@@ -454,7 +457,7 @@ jam_context* jam_context_new(const jam_context_options* options) {
         c->dense_f16_kernel = jam_mm_f16_neon;   /* widen + FMA; the TU needs dotprod anyway */
         c->dense_bf16_kernel = jam_mm_bf16_neon;
         c->nvfp4_kernel = jam_mm_nvfp4_dotprod;
-        c->q1_0_kernel = jam_mm_q1_0_dotprod;
+        c->q1_0_kernel = jam_mm_q1_0_dotprod; c->lowbit_kernel = jam_mm_lowbit_dotprod;
         c->band4[JAM_Q8_0] = jam_q8_0_band4_dotprod;   c->band4[JAM_Q4_0] = jam_q4_0_band4_dotprod;
         c->band4[JAM_Q5_0] = jam_q5_0_band4_dotprod;   c->band4[JAM_MXFP4] = jam_mxfp4_band4_dotprod;
         c->band4[JAM_NVFP4] = jam_nvfp4_band4_dotprod; c->band4[JAM_Q1_0] = jam_q1_0_band4_dotprod;
@@ -464,7 +467,8 @@ jam_context* jam_context_new(const jam_context_options* options) {
 #ifdef JAM_HAVE_I8MM
     if (cpu >= JAM_ISA_I8MM) { c->q8_kernel = jam_mm_q8_0_i8mm_4x4;
                                c->q4_0_kernel = jam_mm_q4_0_i8mm_4x4;
-                               c->q5_0_kernel = jam_mm_q5_0_i8mm_4x4; }   /* the bands stay SDOT's (see the .inc) */
+                               c->q5_0_kernel = jam_mm_q5_0_i8mm_4x4;
+                               c->lowbit_kernel = jam_mm_lowbit_i8mm; }   /* the bands stay SDOT's (see the .inc) */
 #endif
 
     /* Non-ARM ladders use their normal Q8_0/Q4_0 kernels for both shapes. ARM overrides these so an
@@ -970,6 +974,19 @@ static jam_status jam_mm_run(jam_context* ctx,
         jam_q8_job q = { .a = w, .lda = ldw, .b = a, .ldb = lda, .c = c, .ldc = ldc, .n = n, .k = k, .nb = k / 32, .m = m };
         if (try_band4_neon(ctx, &q, wt)) return JAM_OK;
         return run_quant(ctx, &q, m, ctx->q1_0_kernel, ctx->q1_0_floor);
+    }
+
+    /* The low-bit codes formats (jam_lowbit.h) @ F32 -> F32: Q2_0 (64-elem blocks) and the PrismML
+     * fork's PQ2_0 and PTQ1_0 (128-elem). A block spans 2 or 4 per-32 activation requant blocks. */
+    if ((wt == JAM_Q2_0 || wt == JAM_PQ2_0 || wt == JAM_PTQ1_0) && at == JAM_F32 && ct == JAM_F32) {
+#ifdef JAM_HAVE_AVX512
+        jam_job_fn band = wt == JAM_Q2_0 ? jam_q2_0_band32_avx512
+                         : wt == JAM_PQ2_0 ? jam_pq2_0_band32_avx512 : jam_ptq1_0_band32_avx512;
+        if (try_band32(ctx, w, (int64_t)(ldw / jam_lowbit_qk(wt)) * jam_lowbit_bytes(wt), a, lda, c, ldc,
+                       m, n, k, jam_band32_quant32_avx512, band)) return JAM_OK;
+#endif
+        jam_q8_job q = { .a = w, .lda = ldw, .b = a, .ldb = lda, .c = c, .ldc = ldc, .n = n, .k = k, .nb = k / 32, .m = m, .wt = wt };
+        return run_quant(ctx, &q, m, ctx->lowbit_kernel, jam_mm_lowbit_f32_generic);
     }
 
     /* The 32-element block quants @ F32 activation -> F32. */

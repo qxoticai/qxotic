@@ -46,7 +46,7 @@ AI on the JVM, just a Maven dependency away.
 | [Kokoro](https://huggingface.co/hexgrad/Kokoro-82M) | speech synthesis | `jinfer-kokoro` |
 | [NVIDIA Parakeet](https://huggingface.co/nvidia/parakeet-tdt-0.6b-v3) | speech recognition | `jinfer-parakeet` |
 
-Supported quantizations: `Q4_0`, `Q4_1`, `Q5_0`, `Q5_1`, `Q4_K`, `Q5_K`, `Q6_K`, `Q8_0`, `MXFP4`, `NVFP4`, `Q1_0`, `TQ1_0`, `TQ2_0` and the dense `F32`, `F16`, `BF16`.  
+Supported quantizations: `Q4_0`, `Q4_1`, `Q5_0`, `Q5_1`, `Q4_K`, `Q5_K`, `Q6_K`, `Q8_0`, `MXFP4`, `NVFP4`, `Q1_0`, `Q2_0`, `PQ2_0`, `PTQ1_0`, `TQ1_0`, `TQ2_0` and the dense `F32`, `F16`, `BF16`.  
 Jinfer recommends `Q8_0` for its balance of quality and performance.
 
 ## Run the demos

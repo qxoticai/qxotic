@@ -11,11 +11,12 @@ import java.lang.foreign.ValueLayout;
 import org.junit.jupiter.api.Test;
 
 /**
- * The Java floor's k-quant decode dots (n == 1) against the per-element decoders, summed in double.
- * Runs at whatever Vector API width this JVM has; the pom's vector-128, vector-256 and scalar
- * executions cover the other lane counts, so every slice/part mapping of the dots is exercised.
+ * The Java floor's byte-unpacking decode dots (n == 1) - the k-quants and the low-bit codes formats
+ * - against the per-element decoders, summed in double. Runs at whatever Vector API width this JVM
+ * has; the pom's vector-128, vector-256 and scalar executions cover the other lane counts, so every
+ * slice/part mapping of the dots is exercised.
  */
-class KQuantFloorDotTest {
+class QuantFloorDotTest {
 
     @Test
     void q4k() {
@@ -30,6 +31,21 @@ class KQuantFloorDotTest {
     @Test
     void q6k() {
         check(GGMLType.Q6_K);
+    }
+
+    @Test
+    void q2_0() {
+        check(GGMLType.Q2_0);
+    }
+
+    @Test
+    void pq2_0() {
+        check(GGMLType.PQ2_0);
+    }
+
+    @Test
+    void ptq1_0() {
+        check(GGMLType.PTQ1_0);
     }
 
     private static void check(GGMLType type) {

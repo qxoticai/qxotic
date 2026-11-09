@@ -43,6 +43,9 @@ final class Decode {
             case MXFP4 -> mxfp4(stage(w, src, count), count, out, at);
             case NVFP4 -> nvfp4(stage(w, src, count), count, out, at);
             case Q1_0 -> q1_0(stage(w, src, count), count, out, at);
+            case Q2_0 -> q2(stage(w, src, count), count, out, at, 64);
+            case PQ2_0 -> q2(stage(w, src, count), count, out, at, 128);
+            case PTQ1_0 -> ptq1_0(stage(w, src, count), count, out, at);
         }
         Arrays.fill(out, at + count, at + pad, 0f);
     }
@@ -218,6 +221,40 @@ final class Decode {
                 for (int i = 0; i < 8; i++) out[to + i] = (((bits >> i) & 1) * 2 - 1) * d;
             }
         }
+    }
+
+    /**
+     * Q2_0 (qk 64, 18 B) and PQ2_0 (qk 128, 34 B): f16 d, 2-bit codes LSB-first; v = (code - 1) *
+     * d.
+     */
+    static void q2(byte[] q, int count, float[] out, int at, int qk) {
+        for (int o = at, p = 0, end = at + count; o < end; o += qk, p += 2 + qk / 4) {
+            float d = f16(q, p);
+            for (int e = 0; e < qk / 4; e++) {
+                int bits = q[p + 2 + e], to = o + 4 * e;
+                for (int i = 0; i < 4; i++) out[to + i] = (((bits >> 2 * i) & 3) - 1) * d;
+            }
+        }
+    }
+
+    /**
+     * Block (28 B, 128 elements): qs[24] base-3 (5 trits a byte, stages of 16 and 8 bytes), qh[2]
+     * (4 trits a byte), f16 d. Element n * c + m of a stage of c bytes is trit n of byte m, the
+     * trit {@code ((b * 3^n) & 255) * 3 >> 8}; v = (trit - 1) * d.
+     */
+    static void ptq1_0(byte[] q, int count, float[] out, int at) {
+        for (int o = at, p = 0, end = at + count; o < end; o += 128, p += 28) {
+            float d = f16(q, p + 26);
+            trits(q, p, 16, 5, d, out, o);
+            trits(q, p + 16, 8, 5, d, out, o + 80);
+            trits(q, p + 24, 2, 4, d, out, o + 120);
+        }
+    }
+
+    private static void trits(byte[] q, int p, int c, int digits, float d, float[] out, int o) {
+        for (int n = 0, pow = 1; n < digits; n++, pow *= 3)
+            for (int m = 0; m < c; m++)
+                out[o + n * c + m] = ((((q[p + m] & 0xFF) * pow & 0xFF) * 3 >> 8) - 1) * d;
     }
 
     /** Little-endian f16 at {@code p}. */

@@ -63,6 +63,9 @@ static double wbytes_per_val(int at) {
         case JAM_MXFP4: return 17.0 / 32.0;    /* 0.5313 */
         case JAM_NVFP4: return 36.0 / 64.0;    /* 0.5625 */
         case JAM_Q1_0:  return 18.0 / 128.0;   /* 0.1406 */
+        case JAM_Q2_0:  return 18.0 / 64.0;    /* 0.2813 */
+        case JAM_PQ2_0: return 34.0 / 128.0;   /* 0.2656 */
+        case JAM_PTQ1_0: return 28.0 / 128.0;  /* 0.2188 */
         case JAM_F16: case JAM_BF16: return 2.0;
         default:       return 4.0;             /* F32 */
     }
@@ -130,11 +133,14 @@ int main(int argc, char** argv) {
     void* Wmx = (K % 32 == 0 && BW_WANT("MXFP4")) ? jam_ref_quant_mxfp4(Wf, M, K) : NULL;
     void* Wnv = (K % 64 == 0 && BW_WANT("NVFP4")) ? jam_ref_quant_nvfp4(Wf, M, K) : NULL;
     void* Wq1 = (K % 128 == 0 && BW_WANT("Q1_0")) ? jam_ref_quant_q1_0(Wf, M, K) : NULL;
+    void* Wq2 = (K % 64 == 0 && BW_WANT("Q2_0")) ? jam_ref_quant_q2(Wf, M, K, 64) : NULL;
+    void* Wpq2 = (K % 128 == 0 && BW_WANT("PQ2_0")) ? jam_ref_quant_q2(Wf, M, K, 128) : NULL;
+    void* Wpt1 = (K % 128 == 0 && BW_WANT("PTQ1_0")) ? jam_ref_quant_ptq1_0(Wf, M, K) : NULL;
     struct { int at; const void* W; const char* nm; } QS[] = {
         { JAM_F32, Wf, "F32" }, { JAM_F16, Wf16, "F16" }, { JAM_BF16, Wbf16, "BF16" }, { JAM_Q8_0, Wq, "Q8_0" }, { JAM_Q4_0, Wq40, "Q4_0" },
         { JAM_Q5_0, Wq50, "Q5_0" },
         { JAM_Q4_K, Wq4k, "Q4_K" }, { JAM_Q5_K, Wq5k, "Q5_K" }, { JAM_Q6_K, Wq6k, "Q6_K" },
-        { JAM_MXFP4, Wmx, "MXFP4" }, { JAM_NVFP4, Wnv, "NVFP4" }, { JAM_Q1_0, Wq1, "Q1_0" },
+        { JAM_MXFP4, Wmx, "MXFP4" }, { JAM_NVFP4, Wnv, "NVFP4" }, { JAM_Q1_0, Wq1, "Q1_0" }, { JAM_Q2_0, Wq2, "Q2_0" }, { JAM_PQ2_0, Wpq2, "PQ2_0" }, { JAM_PTQ1_0, Wpt1, "PTQ1_0" },
     };
 
     printf("jam bench  m=%d n=%d k=%d  threads=%s%s  (scrub %dMB/call)\n",
@@ -159,6 +165,6 @@ int main(int argc, char** argv) {
         jam_context_free(c);
     }
     free(Wf); free(B); free(C); free(Wf16); free(Wbf16); free(Wq); free(Wq40); free(Wq50);
-    free(Wq4k); free(Wq5k); free(Wq6k); free(Wmx); free(Wnv); free(Wq1); free(g_scrub);
+    free(Wq4k); free(Wq5k); free(Wq6k); free(Wmx); free(Wnv); free(Wq1); free(Wq2); free(Wpq2); free(Wpt1); free(g_scrub);
     return 0;
 }

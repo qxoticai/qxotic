@@ -86,6 +86,12 @@ class VectorKernelTest {
                 g.run(w, a, aBase, o, oBase, aStride, oStride, n, m, k, wOff, s);
     }
 
+    /** {@link Q2Kernel} at block length {@code qk}: 64 (Q2_0) or 128 (PQ2_0). */
+    private static BandGemm q2(int qk) {
+        return (w, a, aBase, o, oBase, aStride, oStride, n, m, k, wOff, s) ->
+                Q2Kernel.gemm(qk, w, a, aBase, o, oBase, aStride, oStride, n, m, k, wOff, s);
+    }
+
     @Test
     void q8_0() {
         eachShape("Q8_0", JAM.Q8_0, withScratch(Q8Kernel::gemm));
@@ -129,6 +135,21 @@ class VectorKernelTest {
     @Test
     void q1_0() {
         eachShape("Q1_0", JAM.Q1_0, withScratch(Q1Kernel::gemm));
+    }
+
+    @Test
+    void q2_0() {
+        eachShape("Q2_0", JAM.Q2_0, withScratch(q2(64)));
+    }
+
+    @Test
+    void pq2_0() {
+        eachShape("PQ2_0", JAM.PQ2_0, withScratch(q2(128)));
+    }
+
+    @Test
+    void ptq1_0() {
+        eachShape("PTQ1_0", JAM.PTQ1_0, withScratch(Ptq1Kernel::gemm));
     }
 
     /**

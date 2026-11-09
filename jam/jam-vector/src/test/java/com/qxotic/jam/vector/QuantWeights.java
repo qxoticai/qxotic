@@ -49,6 +49,9 @@ final class QuantWeights {
             case JAM.MXFP4 -> mxfp4(m, k, a, rng);
             case JAM.NVFP4 -> nvfp4(m, k, a, rng);
             case JAM.Q1_0 -> q1_0(m, k, a, rng);
+            case JAM.Q2_0 -> q2(JAM.Q2_0, 64, m, k, a, rng);
+            case JAM.PQ2_0 -> q2(JAM.PQ2_0, 128, m, k, a, rng);
+            case JAM.PTQ1_0 -> ptq1_0(m, k, a, rng);
             default -> throw new IllegalArgumentException("no encoder for dtype tag " + tag);
         };
     }
@@ -149,6 +152,61 @@ final class QuantWeights {
                 }
             }
         return new Weight(JAM.Q1_0, s, v);
+    }
+
+    private static Weight q2(
+            int tag, int qk, int m, int k, Arena a, Random rng) { // f16 d, random 2-bit codes
+        int nb = k / qk, bytes = 2 + qk / 4;
+        float[] v = new float[m * k];
+        MemorySegment s = a.allocate((long) m * nb * bytes, 64);
+        for (int r = 0; r < m; r++)
+            for (int b = 0; b < nb; b++) {
+                long blk = (long) (r * nb + b) * bytes;
+                short dBits = (short) (0x3800 | (rng.nextInt() & 0x3FF));
+                s.set(JAVA_SHORT_UNALIGNED, blk, dBits);
+                float d = Float.float16ToFloat(dBits);
+                for (int e = 0; e < qk / 4; e++) {
+                    int bits = rng.nextInt(256);
+                    s.set(JAVA_BYTE, blk + 2 + e, (byte) bits);
+                    for (int c = 0; c < 4; c++)
+                        v[r * k + b * qk + e * 4 + c] = (((bits >> 2 * c) & 3) - 1) * d;
+                }
+            }
+        return new Weight(tag, s, v);
+    }
+
+    /**
+     * PTQ1_0 packed as the PrismML fork's quantize_row_ptq1_0_ref packs it: per stage of c bytes,
+     * byte m holds elements m, m + c, ... most significant trit first, then scaled by 256/243
+     * (rounded up); qh's 4 trits are shifted up one place first. f16 d last.
+     */
+    private static Weight ptq1_0(int m, int k, Arena a, Random rng) {
+        int nb = k / 128;
+        float[] v = new float[m * k];
+        MemorySegment s = a.allocate((long) m * nb * 28, 64);
+        for (int r = 0; r < m; r++)
+            for (int b = 0; b < nb; b++) {
+                long blk = (long) (r * nb + b) * 28;
+                short dBits = (short) (0x3800 | (rng.nextInt() & 0x3FF));
+                float d = Float.float16ToFloat(dBits);
+                int[] t = new int[128];
+                for (int e = 0; e < 128; e++) {
+                    t[e] = rng.nextInt(3);
+                    v[r * k + b * 128 + e] = (t[e] - 1) * d;
+                }
+                int[][] stages = {
+                    {0, 16, 5, 0}, {16, 8, 5, 80}, {24, 2, 4, 120}
+                }; // byte, c, trits, elem
+                for (int[] st : stages)
+                    for (int j = 0; j < st[1]; j++) {
+                        int q = 0;
+                        for (int n = 0; n < st[2]; n++) q = q * 3 + t[st[3] + j + n * st[1]];
+                        if (st[2] == 4) q *= 3;
+                        s.set(JAVA_BYTE, blk + st[0] + j, (byte) ((q * 256 + 242) / 243));
+                    }
+                s.set(JAVA_SHORT_UNALIGNED, blk + 26, dBits);
+            }
+        return new Weight(JAM.PTQ1_0, s, v);
     }
 
     private static Weight q4_0(

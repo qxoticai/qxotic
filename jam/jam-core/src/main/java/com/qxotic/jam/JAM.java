@@ -175,7 +175,10 @@ public interface JAM {
             Q6_K = 14,
             MXFP4 = 39,
             NVFP4 = 40,
-            Q1_0 = 41;
+            Q1_0 = 41,
+            Q2_0 = 42,
+            PQ2_0 = 142,
+            PTQ1_0 = 143;
 
     /**
      * Weight-dtype flag for {@link #mm}: the W bytes hold the backend's packed in-memory layout of

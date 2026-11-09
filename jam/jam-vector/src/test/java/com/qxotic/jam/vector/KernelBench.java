@@ -52,6 +52,12 @@ final class KernelBench {
                 g.run(w, a, aBase, o, oBase, aStride, oStride, n, m, k, wOff, s);
     }
 
+    /** {@link Q2Kernel} at block length {@code qk}: 64 (Q2_0) or 128 (PQ2_0). */
+    private static VectorKernelTestBand q2(int qk) {
+        return (w, a, aBase, o, oBase, aStride, oStride, n, m, k, wOff, s) ->
+                Q2Kernel.gemm(qk, w, a, aBase, o, oBase, aStride, oStride, n, m, k, wOff, s);
+    }
+
     @FunctionalInterface
     interface VectorKernelTestBand {
         void run(
@@ -113,6 +119,9 @@ final class KernelBench {
         cases.add(new Case("MXFP4", JAM.MXFP4, withScratch(Mxfp4Kernel::gemm)));
         cases.add(new Case("NVFP4", JAM.NVFP4, withScratch(Nvfp4Kernel::gemm)));
         cases.add(new Case("Q1_0", JAM.Q1_0, withScratch(Q1Kernel::gemm)));
+        cases.add(new Case("Q2_0", JAM.Q2_0, withScratch(q2(64))));
+        cases.add(new Case("PQ2_0", JAM.PQ2_0, withScratch(q2(128))));
+        cases.add(new Case("PTQ1_0", JAM.PTQ1_0, withScratch(Ptq1Kernel::gemm)));
 
         Arena arena = Arena.ofShared();
         Random rng = new Random(7);

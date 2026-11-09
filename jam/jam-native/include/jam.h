@@ -68,12 +68,13 @@ extern "C" {
 #define JAM_EBUSY        (-6)   /* another jam_mm is running on this context */
 #define JAM_ENOMEM       (-7)
 
-/* operand types: the values of GGML's ggml_type */
+/* operand types: the values of GGML's ggml_type; PQ2_0 and PTQ1_0 are the PrismML fork's */
 enum {
     JAM_F32 = 0, JAM_F16 = 1, JAM_BF16 = 30,
     JAM_Q4_0 = 2, JAM_Q5_0 = 6, JAM_Q8_0 = 8,
     JAM_Q4_K = 12, JAM_Q5_K = 13, JAM_Q6_K = 14,
-    JAM_MXFP4 = 39, JAM_NVFP4 = 40, JAM_Q1_0 = 41
+    JAM_MXFP4 = 39, JAM_NVFP4 = 40, JAM_Q1_0 = 41, JAM_Q2_0 = 42,
+    JAM_PQ2_0 = 142, JAM_PTQ1_0 = 143
 };
 
 /* kernel levels, ordered within each architecture */

@@ -84,6 +84,7 @@ struct jam_context {
     jam_job_fn       nvfp4_kernel;   /* best NVFP4 matmul; NULL -> generic (float). Same int8 pipeline. */
     jam_job_fn       q1_0_kernel;    /* best Q1_0 (1-bit sign) matmul; NULL -> q1_0_floor (float). Int8 pipeline. */
     jam_job_fn       q1_0_floor;     /* Q1_0 float floor (generic, or the SSE3 tile with the same results) */
+    jam_job_fn       lowbit_kernel;  /* best Q2_0/PQ2_0/PTQ1_0 matmul; NULL -> the generic float floor. Int8 pipeline. */
     jam_job_fn       q4_0_kernel;    /* best Q4_0 matmul; NULL -> generic. Same int8 pipeline. */
     jam_job_fn       q5_0_kernel;    /* best Q5_0 matmul; NULL -> generic. Same int8 pipeline. */
     jam_job_fn       q5_0_decode_kernel; /* Q5_0 n==1 override (ARM keeps SDOT where I8MM tiles prefill) */
@@ -191,6 +192,7 @@ typedef struct {
                                  * (the API permits ldc > m, so ldc must not be reused as the row count) */
     jam_repack* repack;         /* [ctx->threads] per-worker scratch, the ARM bands' repacked rows (else NULL) */
     _Atomic int next_tile;      /* the ARM bands claim their row tiles here, not from their range */
+    jam_dtype wt;               /* the low-bit kernels: Q2_0, PQ2_0 or PTQ1_0 (see jam_lowbit.h) */
 } jam_q8_job;
 
 void jam_mm_q8_0_f32_generic(void* job, int row_begin, int row_end, int tid);  /* portable floor */
@@ -199,6 +201,7 @@ void jam_mm_nvfp4_f32_generic(void* job, int row_begin, int row_end, int tid); /
 void jam_mm_q1_0_f32_generic(void* job, int row_begin, int row_end, int tid);  /* portable floor (Q1_0) */
 void jam_mm_q4_0_f32_generic(void* job, int row_begin, int row_end, int tid);  /* portable floor (q8_job) */
 void jam_mm_q5_0_f32_generic(void* job, int row_begin, int row_end, int tid);  /* portable floor (q8_job) */
+void jam_mm_lowbit_f32_generic(void* job, int row_begin, int row_end, int tid); /* portable floor (Q2_0/PQ2_0/PTQ1_0) */
 void jam_mm_q4k_f32_generic(void* job, int row_begin, int row_end, int tid);   /* portable floor (q8_job) */
 void jam_mm_q5k_f32_generic(void* job, int row_begin, int row_end, int tid);   /* portable floor (q8_job) */
 void jam_mm_q6k_f32_generic(void* job, int row_begin, int row_end, int tid);   /* portable floor (q8_job) */
@@ -236,6 +239,9 @@ void jam_q4_0_band32_avx512(void* job, int t0, int t1, int tid);
 void jam_q5_0_band32_avx512(void* job, int t0, int t1, int tid);
 void jam_mxfp4_band32_avx512(void* job, int t0, int t1, int tid);
 void jam_q1_0_band32_avx512(void* job, int t0, int t1, int tid);
+void jam_q2_0_band32_avx512(void* job, int t0, int t1, int tid);
+void jam_pq2_0_band32_avx512(void* job, int t0, int t1, int tid);
+void jam_ptq1_0_band32_avx512(void* job, int t0, int t1, int tid);
 /* K-quant rows against one s8 column, no repack (jam_kernels_kquant_avx512.c): decode and n < 8. */
 void jam_mm_q4k_avx512vnni(void* job, int rb, int re, int tid);
 void jam_mm_q5k_avx512vnni(void* job, int rb, int re, int tid);
@@ -265,6 +271,7 @@ void jam_mm_q4_0_avx2(void* job, int a_begin, int a_end, int tid);         /* ma
 void jam_mm_q5_0_avx2(void* job, int a_begin, int a_end, int tid);         /* maddubs + nibble|qh-16 decode */
 void jam_mm_nvfp4_avx2(void* job, int rb, int re, int tid);                /* NVFP4: FP4 LUT + per-16 E4M3 */
 void jam_mm_q1_0_avx2(void* job, int rb, int re, int tid);                 /* Q1_0: sign-mask xor-negate maddubs */
+void jam_mm_lowbit_avx2(void* job, int rb, int re, int tid);               /* Q2_0/PQ2_0/PTQ1_0: row to codes, sign-trick maddubs */
 #endif
 #ifdef JAM_HAVE_AVXVNNI
 void jam_mm_mxfp4_avxvnni(void* job, int a_begin, int a_end, int tid);     /* vpdpbusd + FP4 decode */
@@ -315,6 +322,7 @@ void jam_mm_q5k_neon(void* job, int rb, int re, int tid);
 void jam_mm_q6k_neon(void* job, int rb, int re, int tid);
 void jam_mm_nvfp4_neon(void* job, int rb, int re, int tid);               /* NVFP4: FP4 LUT + per-16 E4M3 */
 void jam_mm_q1_0_neon(void* job, int rb, int re, int tid);                /* Q1_0: b2b sign expand, vmull dot */
+void jam_mm_lowbit_neon(void* job, int rb, int re, int tid);              /* Q2_0/PQ2_0/PTQ1_0: row to codes, vmull dot */
 #endif
 #ifdef JAM_HAVE_DOTPROD
 void jam_mm_q8_0_dotprod(void* job, int a_begin, int a_end, int tid);      /* vdotq_s32 (sdot) */
@@ -340,6 +348,7 @@ void jam_mm_f16_neon(void* job, int rb, int re, int tid);                  /* F1
 void jam_mm_bf16_neon(void* job, int rb, int re, int tid);
 void jam_mm_nvfp4_dotprod(void* job, int rb, int re, int tid);            /* NVFP4 sdot */
 void jam_mm_q1_0_dotprod(void* job, int rb, int re, int tid);             /* Q1_0 sdot */
+void jam_mm_lowbit_dotprod(void* job, int rb, int re, int tid);           /* Q2_0/PQ2_0/PTQ1_0 sdot */
 void jam_mm_mxfp4_dotprod(void* job, int rb, int re, int tid);
 void jam_mm_q4k_dotprod(void* job, int rb, int re, int tid);              /* K-quant sdot */
 void jam_mm_q5k_dotprod(void* job, int rb, int re, int tid);
@@ -358,6 +367,7 @@ void jam_q6k_band4_dotprod(void* job, int rb, int re, int tid);
 void jam_mm_q8_0_i8mm_4x4(void* job, int rb, int re, int tid);             /* direct-layout 4x4 (smmla) */
 void jam_mm_q4_0_i8mm_4x4(void* job, int rb, int re, int tid);             /* nibble decode + 4x4 */
 void jam_mm_q5_0_i8mm_4x4(void* job, int rb, int re, int tid);             /* nibble|qh decode + 4x4 */
+void jam_mm_lowbit_i8mm(void* job, int rb, int re, int tid);               /* low-bit -> Q8_0 per 4 rows + 4x4 */
 #endif
 
 /* ---- Metal GPU backend (Apple aarch64, chosen by JAM_ISA_AUTO). A different executor, not a CPU

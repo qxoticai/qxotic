@@ -124,6 +124,82 @@ static inline void* jam_ref_quant_q1_0(const float* X, int rows, int k) {
     return o;
 }
 
+/* ---- the low-bit codes formats: Q2_0 (64-elem, 18 B), PQ2_0 (128-elem, 34 B), PTQ1_0 (128-elem, 28 B).
+ * Q2_0/PQ2_0 mirror quantize_row_q2_0_ref with d = amax / 2 instead of amax, so every code 0..3
+ * (-1..+2) occurs. PTQ1_0 and the PTQ1_0 decode below are the PrismML fork's quantize_row_ptq1_0_ref
+ * and dequantize_row_ptq1_0, ported line for line. */
+static inline void* jam_ref_quant_q2(const float* X, int rows, int k, int qk) {
+    int nblk = k / qk, bytes = 2 + qk / 4;
+    uint8_t* o = (uint8_t*) calloc((size_t) rows * nblk, (size_t) bytes);
+    for (int i = 0; i < rows; ++i) for (int bb = 0; bb < nblk; ++bb) {
+        uint8_t* p = o + ((size_t) i * nblk + bb) * bytes;
+        const float* x = X + (size_t) i * k + (size_t) bb * qk;
+        float amax = 0.0f;
+        for (int j = 0; j < qk; ++j) if (fabsf(x[j]) > amax) amax = fabsf(x[j]);
+        float d = amax / 2.0f, id = d > 0.0f ? 1.0f / d : 0.0f;
+        uint16_t h = jam_ref_f2h(d); memcpy(p, &h, 2);
+        for (int j = 0; j < qk; ++j) {
+            int q = (int) roundf(x[j] * id) + 1;
+            q = q < 0 ? 0 : q > 3 ? 3 : q;
+            p[2 + j / 4] |= (uint8_t) (q << 2 * (j % 4));
+        }
+    }
+    return o;
+}
+
+static const size_t jam_ref_ptq1_0_stages[3] = { 32, 16, 8 };
+
+static inline void* jam_ref_quant_ptq1_0(const float* X, int rows, int k) {
+    int nb = k / 128;
+    uint8_t* o = (uint8_t*) calloc((size_t) rows * nb, 28);
+    for (int i = 0; i < rows; ++i) {
+        const float* x = X + (size_t) i * k;
+        for (int b = 0; b < nb; ++b) {
+            uint8_t* qs = o + ((size_t) i * nb + b) * 28; uint8_t* qh = qs + 24;
+            float amax = 0.0f;
+            for (int j = 0; j < 128; j++) amax = fmaxf(amax, fabsf(x[j]));
+            const float d = amax, id = d ? 1.0f / d : 0.0f;
+            uint16_t h = jam_ref_f2h(d); memcpy(qs + 26, &h, 2);
+            size_t j = 0;
+            for (size_t s = 0; s < 3; ++s) {
+                const size_t c = jam_ref_ptq1_0_stages[s];
+                for (; j + c <= 24; j += c) {
+                    for (size_t m = 0; m < c; ++m) {
+                        uint8_t q = 0;
+                        for (size_t n = 0; n < 5; ++n) { int xi = (int) lroundf(x[m + n * c] * id) + 1; q *= 3; q += xi; }
+                        q = ((uint16_t) q * 256 + (243 - 1)) / 243;
+                        qs[j + m] = q;
+                    }
+                    x += 5 * c;
+                }
+            }
+            for (size_t hh = 0; hh < 2; ++hh) {
+                uint8_t q = 0;
+                for (size_t m = 0; m < 4; ++m) { int xi = (int) lroundf(x[hh + m * 2] * id) + 1; q *= 3; q += xi; }
+                q *= 3;
+                q = ((uint16_t) q * 256 + (243 - 1)) / 243;
+                qh[hh] = q;
+            }
+            x += 8;
+        }
+    }
+    return o;
+}
+
+/* One block's 128 PTQ1_0 codes (trit - 1), as dequantize_row_ptq1_0 walks them. */
+static inline void jam_ref_ptq1_0_codes(const uint8_t* blk, int* out) {
+    const uint8_t pow3[6] = { 1, 3, 9, 27, 81, 243 };
+    size_t j = 0;
+    for (size_t s = 0; s < 3; ++s) {
+        const size_t c = jam_ref_ptq1_0_stages[s];
+        for (; j + c <= 24; j += c)
+            for (size_t n = 0; n < 5; ++n)
+                for (size_t m = 0; m < c; ++m) { uint8_t q = blk[j + m] * pow3[n]; *out++ = (((uint16_t) q * 3) >> 8) - 1; }
+    }
+    for (size_t n = 0; n < 4; ++n)
+        for (size_t hh = 0; hh < 2; ++hh) { uint8_t q = blk[24 + hh] * pow3[n]; *out++ = (((uint16_t) q * 3) >> 8) - 1; }
+}
+
 /* ---- NVFP4 (NVIDIA FP4) - GGUF block_nvfp4 { uint8_t d[4] (UE4M3 per-16); uint8_t qs[32] } = 36 bytes,
  * 64 elements. value = kvalues_mxfp4[nibble] · ue4m3(d[s]); no global scale. Mirrors ggml's quant/dequant. */
 typedef struct { uint8_t d[4]; uint8_t qs[32]; } jam_ref_nvfp4_blk;

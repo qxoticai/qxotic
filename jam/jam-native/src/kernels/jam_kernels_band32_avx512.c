@@ -1,6 +1,6 @@
 /* The 32x4 VNNI band: every quantized prefill (n >= JAM_VNNI_MIN_SEQ) on AVX-512-VNNI.
  *
- * One tile, eight formats. A band is 32 weight rows, repacked per call into two 16-row groups whose
+ * One tile, eleven formats. A band is 32 weight rows, repacked per call into two 16-row groups whose
  * vpdpbusd lanes are the rows. The tile sweeps 4 activation columns at a time and every activation
  * broadcast feeds both groups: one broadcast per two dots.
  *
@@ -41,6 +41,7 @@
 #include "jam_mxfp4.h"
 #include "jam_q1_0.h"
 #include <float.h>
+#include "jam_lowbit.h"
 #include <immintrin.h>
 #include <stdatomic.h>
 #include <stdint.h>
@@ -56,7 +57,7 @@ _Static_assert(DMIN_OFF + 64 == JAM_BAND32_BLOB, "blob layout");
 typedef enum {
     KIND_K32,   /* Q4_K, Q5_K: 8 sub-blocks of 32, integer scales and mins */
     KIND_K16,   /* Q6_K: 16 sub-blocks of 16, integer scales */
-    KIND_F32    /* Q8_0, Q4_0, Q5_0, MXFP4, Q1_0: 8 blocks of 32, float scales */
+    KIND_F32    /* Q8_0, Q4_0, Q5_0, MXFP4, Q1_0 and the low-bit codes: 8 blocks of 32, float scales */
 } band_kind;
 
 #define INLINE static inline __attribute__((always_inline))
@@ -258,6 +259,30 @@ DECODER(decode_q1_0) {
         const __m256i set = _mm256_movm_epi8((__mmask32) jam_load32(blk + 2 + (b32 & 3) * 4));
         const __m256i clear = _mm256_xor_si256(set, _mm256_set1_epi8(-1));
         put(codes + b * 32, _mm256_or_si256(clear, _mm256_set1_epi8(1)));   /* bit set: +1, clear: -1 */
+    }
+}
+
+INLINE void q2_codes(const uint8_t* w, int sb, int nbs, uint8_t* codes, void* scales, const int qk) {
+    for (int b = 0; b < nbs; b++) {                /* a qk-element block spans qk / 32 32-blocks */
+        const int b32 = sb * 8 + b;
+        const uint8_t* blk = w + (size_t) (b32 / (qk / 32)) * (2 + qk / 4);
+        ((float*) scales)[b] = jam_half_at(blk);
+        put(codes + b * 32, jam_q2_codes32(blk + 2 + (b32 % (qk / 32)) * 8));
+    }
+}
+DECODER(decode_q2_0)  { (void) d; (void) dmin; q2_codes(w, sb, nbs, codes, scales, JAM_Q2_0_QK); }
+DECODER(decode_pq2_0) { (void) d; (void) dmin; q2_codes(w, sb, nbs, codes, scales, JAM_PQ2_0_QK); }
+
+DECODER(decode_ptq1_0) {
+    (void) d; (void) dmin;
+    for (int b = 0; b < nbs; b += 4) {             /* a 128-element block: its codes once, 4 32-blocks */
+        const uint8_t* blk = w + (size_t) ((sb * 8 + b) / 4) * JAM_PTQ1_0_BYTES;
+        ALIGN64 int8_t block[JAM_PTQ1_0_QK];
+        jam_ptq1_0_codes(blk, block);
+        for (int s = 0; s < 4; s++) {
+            ((float*) scales)[b + s] = jam_half_at(blk + JAM_PTQ1_0_D);
+            put(codes + (b + s) * 32, _mm256_load_si256((const __m256i*) (block + s * 32)));
+        }
     }
 }
 
@@ -483,3 +508,6 @@ BAND(jam_q4_0_band32_avx512,  KIND_F32, decode_q4_0,  8 * JAM_Q4_0_BYTES)
 BAND(jam_q5_0_band32_avx512,  KIND_F32, decode_q5_0,  8 * JAM_Q5_0_BYTES)
 BAND(jam_mxfp4_band32_avx512, KIND_F32, decode_mxfp4, 8 * JAM_MXFP4_BYTES)
 BAND(jam_q1_0_band32_avx512,  KIND_F32, decode_q1_0,  2 * JAM_Q1_0_BYTES)
+BAND(jam_q2_0_band32_avx512,  KIND_F32, decode_q2_0,  4 * JAM_Q2_0_BYTES)
+BAND(jam_pq2_0_band32_avx512, KIND_F32, decode_pq2_0, 2 * JAM_PQ2_0_BYTES)
+BAND(jam_ptq1_0_band32_avx512, KIND_F32, decode_ptq1_0, 2 * JAM_PTQ1_0_BYTES)

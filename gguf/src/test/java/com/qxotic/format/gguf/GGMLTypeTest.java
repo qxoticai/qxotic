@@ -108,8 +108,18 @@ public class GGMLTypeTest {
         assertEquals(GGMLType.F16, GGMLType.fromId(1));
         assertEquals(GGMLType.Q4_0, GGMLType.fromId(2));
 
+        assertEquals(GGMLType.Q2_0, GGMLType.fromId(42));
+        assertEquals(GGMLType.PQ2_0, GGMLType.fromId(142));
+        assertEquals(GGMLType.PTQ1_0, GGMLType.fromId(143));
+
         assertThrows(IllegalArgumentException.class, () -> GGMLType.fromId(-1));
+        assertThrows(IllegalArgumentException.class, () -> GGMLType.fromId(43)); // unclaimed gap
         assertThrows(IllegalArgumentException.class, () -> GGMLType.fromId(1000));
+    }
+
+    @Test
+    public void everyTypeRoundTripsThroughItsId() {
+        for (GGMLType type : GGMLType.values()) assertEquals(type, GGMLType.fromId(type.getId()));
     }
 
     @Test
@@ -126,6 +136,8 @@ public class GGMLTypeTest {
         assertEquals(0, GGMLType.F32.getId());
         assertEquals(1, GGMLType.F16.getId());
         assertEquals(2, GGMLType.Q4_0.getId());
+        assertEquals(142, GGMLType.PQ2_0.getId());
+        assertEquals(143, GGMLType.PTQ1_0.getId());
     }
 
     @Test

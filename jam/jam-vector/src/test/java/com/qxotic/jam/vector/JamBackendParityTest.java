@@ -16,14 +16,16 @@ import java.lang.foreign.SymbolLookup;
 import java.lang.foreign.ValueLayout;
 import java.lang.invoke.MethodHandle;
 import java.lang.reflect.Method;
-import java.util.Arrays;
 import java.util.Locale;
 import java.util.Random;
+import java.util.stream.IntStream;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Assertions;
 import org.junit.jupiter.api.Assumptions;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.ValueSource;
 
 /**
  * Cross-backend parity for the JAM matmul backends, driven through the raw {@link JAM} segment
@@ -69,44 +71,69 @@ class JamBackendParityTest {
 
     /** Dtypes with a VectorJAM register-tiled / band gemm (the rest decline on VectorJAM). */
     private static final int[] TILEABLE = {
-        JAM.Q8_0, JAM.Q4_0, JAM.Q5_0, JAM.Q4_K, JAM.Q5_K, JAM.Q6_K, JAM.MXFP4, JAM.NVFP4, JAM.Q1_0
+        JAM.Q8_0,
+        JAM.Q4_0,
+        JAM.Q5_0,
+        JAM.Q4_K,
+        JAM.Q5_K,
+        JAM.Q6_K,
+        JAM.MXFP4,
+        JAM.NVFP4,
+        JAM.Q1_0,
+        JAM.Q2_0,
+        JAM.PQ2_0,
+        JAM.PTQ1_0
     };
 
     /**
      * All JAM weight dtypes (tileable + the dense floats handled only by the dot floor / native).
      */
     private static final int[] ALL = {
-        JAM.Q8_0, JAM.Q4_0, JAM.Q5_0, JAM.Q4_K, JAM.Q5_K, JAM.Q6_K, JAM.MXFP4, JAM.NVFP4, JAM.Q1_0,
-        JAM.F16, JAM.BF16, JAM.F32
+        JAM.Q8_0,
+        JAM.Q4_0,
+        JAM.Q5_0,
+        JAM.Q4_K,
+        JAM.Q5_K,
+        JAM.Q6_K,
+        JAM.MXFP4,
+        JAM.NVFP4,
+        JAM.Q1_0,
+        JAM.Q2_0,
+        JAM.PQ2_0,
+        JAM.PTQ1_0,
+        JAM.F16,
+        JAM.BF16,
+        JAM.F32
     };
 
     /**
-     * The dtypes the native backend runs. Q1_0 requires a libjam with the jam_mm_q1_0 kernels, so
-     * it joins the sweep via a one-shot capability probe: a stale library declines it with
-     * EUNSUPPORTED and the sweeps leave it to the VectorJAM tile (exactly what Dispatch does).
+     * The dtypes the native backend runs. the low-bit quants need a libjam with their kernels, so
+     * they join the sweep via a one-shot capability probe: a stale library declines them with
+     * EUNSUPPORTED and the sweeps leave them to the VectorJAM tile (exactly what Dispatch does).
      */
     private static final int[] NATIVE_ALL = nativeTypes();
 
     private static int[] nativeTypes() {
-        int[] base = {
-            JAM.Q8_0, JAM.Q4_0, JAM.Q5_0, JAM.Q4_K, JAM.Q5_K, JAM.Q6_K, JAM.MXFP4, JAM.NVFP4,
-            JAM.F16, JAM.BF16, JAM.F32
-        };
-        if (NATIVE == null || q1_0ProbeStatus() == JAM.EUNSUPPORTED) return base;
-        int[] all = Arrays.copyOf(base, base.length + 1);
-        all[base.length] = JAM.Q1_0;
-        return all;
+        IntStream base =
+                IntStream.of(
+                        JAM.Q8_0, JAM.Q4_0, JAM.Q5_0, JAM.Q4_K, JAM.Q5_K, JAM.Q6_K, JAM.MXFP4,
+                        JAM.NVFP4, JAM.F16, JAM.BF16, JAM.F32);
+        if (NATIVE == null) return base.toArray();
+        IntStream probed =
+                IntStream.of(JAM.Q1_0, JAM.Q2_0, JAM.PQ2_0, JAM.PTQ1_0)
+                        .filter(t -> probeStatus(t) != JAM.EUNSUPPORTED);
+        return IntStream.concat(base, probed).toArray();
     }
 
-    /** One tiny probe mm's status: does the loaded libjam carry the jam_mm_q1_0 kernels? */
-    private static int q1_0ProbeStatus() {
+    /** One tiny probe mm's status: does the loaded libjam carry kernels for {@code tag}? */
+    private static int probeStatus(int tag) {
         try (Arena ar = Arena.ofConfined()) {
             Random rng = new Random(SEED);
-            QuantWeights.Weight w = QuantWeights.encode(JAM.Q1_0, 8, 128, ar, rng);
+            QuantWeights.Weight w = QuantWeights.encode(tag, 8, 128, ar, rng);
             MemorySegment a = ar.allocate(2 * 128 * 4L, 64);
             MemorySegment r = ar.allocate(2 * 8 * 4L, 64);
             return NATIVE.mm(
-                    w.seg(), 0L, JAM.Q1_0, 128, a, 0L, JAM.F32, 128, r, 0L, JAM.F32, 8, 8, 2, 128);
+                    w.seg(), 0L, tag, 128, a, 0L, JAM.F32, 128, r, 0L, JAM.F32, 8, 8, 2, 128);
         }
     }
 
@@ -858,18 +885,19 @@ class JamBackendParityTest {
     }
 
     /**
-     * The native-backend Q1_0 contract: a libjam carrying the jam_mm_q1_0 kernels accepts the call
+     * The native-backend low-bit quant contract: a libjam carrying their kernels accepts the call
      * (JAM.OK - full parity is covered by the NATIVE_ALL sweeps); a stale library must decline with
      * EUNSUPPORTED, never crash or corrupt (Dispatch then falls to the VectorJAM tile).
      */
-    @Test
-    void nativeRunsQ1_0() {
+    @ParameterizedTest
+    @ValueSource(ints = {JAM.Q1_0, JAM.Q2_0, JAM.PQ2_0, JAM.PTQ1_0})
+    void nativeRunsTheLowBitQuants(int tag) {
         Assumptions.assumeTrue(NATIVE != null, "libjam not loaded");
-        int st = q1_0ProbeStatus();
+        int st = probeStatus(tag);
         Assumptions.assumeTrue(
                 st != JAM.EUNSUPPORTED,
-                "stale libjam without jam_mm_q1_0: decline is the contract");
-        Assertions.assertEquals(JAM.OK, st, "jam-native q1_0 must run");
+                "stale libjam without " + name(tag) + ": decline is the contract");
+        Assertions.assertEquals(JAM.OK, st, "jam-native " + name(tag) + " must run");
     }
 
     // ---- helpers ----
@@ -892,6 +920,9 @@ class JamBackendParityTest {
             case JAM.MXFP4 -> "MXFP4";
             case JAM.NVFP4 -> "NVFP4";
             case JAM.Q1_0 -> "Q1_0";
+            case JAM.Q2_0 -> "Q2_0";
+            case JAM.PQ2_0 -> "PQ2_0";
+            case JAM.PTQ1_0 -> "PTQ1_0";
             default -> "tag" + tag;
         };
     }
