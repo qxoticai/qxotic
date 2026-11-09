@@ -173,9 +173,12 @@ public final class Native {
             return ids;
         }
 
-        /** After a call: a builder past KEPT goes, so a long text leaves no array behind. */
-        void trim() {
-            if (ids.size() > KEPT) ids = null;
+        /** Discards a builder holding more than KEPT tokens and the view that keeps it alive. */
+        void discardLargeTokenBuffer() {
+            if (ids != null && ids.size() > KEPT) {
+                ids = null;
+                view = null;
+            }
         }
     }
 
@@ -341,7 +344,7 @@ public final class Native {
             encodeUtf8(loaded.tokenizer(), matcher, utf8, 0, n, ids);
             int count = ids.size();
             write(buffers.view, 0, out.rawValue(), Math.min(count, tokenCapacity));
-            buffers.trim();
+            buffers.discardLargeTokenBuffer();
             return count;
         } catch (Throwable t) {
             return Errors.set(t);
