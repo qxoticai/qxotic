@@ -336,6 +336,25 @@ PORT_PRINTF(1, 2) static void failed(const char* format, ...) {
     no_runtime();
 }
 
+/* Error 23 in words: on x86-64, the x86-64-v3 features this CPU lacks as the process sees it, where the compiler
+ * can ask (GCC, clang). A virtual machine shows its own CPU model, and QEMU's default has no AVX2. */
+static void cpu_too_old(void) {
+#if defined(__x86_64__) || defined(_M_X64)
+    char lacks[32] = "";
+#if defined(__GNUC__)
+    __builtin_cpu_init();
+    if (!__builtin_cpu_supports("avx2")) strcat(lacks, ", avx2");
+    if (!__builtin_cpu_supports("fma")) strcat(lacks, ", fma");
+    if (!__builtin_cpu_supports("bmi2")) strcat(lacks, ", bmi2");
+#endif
+    failed("the runtime could not be started (error 23): the library needs an x86-64-v3 CPU, with AVX2, FMA and BMI2, %s%s; "
+           "in a virtual machine, pass the host's CPU through (QEMU: -cpu host)",
+           *lacks ? "and this one has no " : "which this one is not", *lacks ? lacks + 2 : "");
+#else
+    failed("the runtime could not be started (error 23): this CPU lacks instructions the library was built for");
+#endif
+}
+
 static void out_of_memory(void) { failed("the runtime could not be started: out of memory, a new process is needed"); }
 
 static void start(void) {
@@ -402,6 +421,8 @@ static void start(void) {
         const char* source = STR(TOKNROLL_OPTIONS_ENV);
         if (configured_by) source = from_env ? "configure or the environment" : configured_by;
         if (rc == 22) failed("the runtime could not be started: an option from %s was rejected, see stderr for which; a new process is needed", source);
+        /* 23: CPU_FEATURE_CHECK_FAILED, the runtime's check that this CPU has what the image was built for */
+        else if (rc == 23) cpu_too_old();
         /* 801 and 802: the address space the runtime reserves for the heap it may grow to, 32 GiB of
          * virtual memory, never committed, exceeds what this process may have: ulimit -v alone counts it */
         else if (rc == 801 || rc == 802) failed("the runtime could not be started (error %d): it could not reserve the address space for its heap, virtual memory and not RAM, more than this process may have; raise the limit (ulimit -v), or reserve less with -XX:ReservedAddressSpaceSize=<size>, the heap's ceiling, through configure or %s; a new process is needed", rc, STR(TOKNROLL_OPTIONS_ENV));

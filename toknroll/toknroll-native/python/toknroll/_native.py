@@ -99,12 +99,24 @@ def log_callback(name: str):
     return _callbacks[name]
 
 
+def open_library(path) -> C.CDLL:
+    """ctypes.CDLL, with glibc's refusal of a CPU below the library's x86-64 level (2.33 and later check it before
+    any of our code runs) given the requirement; the runtime says the same itself under an older glibc."""
+    try:
+        return C.CDLL(str(path))
+    except OSError as e:
+        if "ISA level" not in str(e):
+            raise
+        raise OSError(f"{e}: the library needs an x86-64-v3 CPU, with AVX2, FMA and BMI2; in a virtual machine, "
+                      "pass the host's CPU through (QEMU: -cpu host)") from None
+
+
 @functools.cache
 def library() -> C.CDLL:
     """libtoknroll, loaded on first use so that importing the package loads nothing. Its log lines go to
     logging.getLogger("toknroll"), as many as TOKNROLL_LOG lets through; libjinfer's, toknroll's face
     included, are jinfer's to route."""
-    lib = bind(C.CDLL(str(locate("toknroll"))))
+    lib = bind(open_library(locate("toknroll")))
     # before any other call, so it holds; EINVAL only for a library some other loader in the process
     # started first, whose lines then go where that one said
     lib.toknroll_log_set(log_callback("toknroll"), None)
