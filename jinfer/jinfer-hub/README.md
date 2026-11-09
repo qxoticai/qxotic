@@ -182,6 +182,6 @@ first, then pass its local path.
 
 ## See also
 
-- [Models from a hub](https://qxotic.ai/jinfer#models-from-a-hub): how the framework builders accept refs and
+- [Models from a hub](https://github.com/qxoticai/qxotic/blob/main/docs/jinfer/index.md#models-from-a-hub): how the framework builders accept refs and
   companions
 - [CLI guide](../jinfer-cli/README.md): commands and examples

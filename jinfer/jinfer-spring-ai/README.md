@@ -91,7 +91,7 @@ Add companions under `spring.ai.jinfer.chat.companions`, keyed by capability suc
 `spring.ai.jinfer.chat.output-modalities=text,audio` lets a model with a voice answer in speech, see [Spoken replies](#spoken-replies).
 An embedder takes its projector the same way, as `spring.ai.jinfer.embedding.companions.media`.
 
-The [translation table](https://qxotic.ai/jinfer#the-same-knob-at-each-face) maps settings between Spring AI, LangChain4j, the CLI and the server.
+The [translation table](https://github.com/qxoticai/qxotic/blob/main/docs/jinfer/index.md#the-same-knob-at-each-face) maps settings between Spring AI, LangChain4j, the CLI and the server.
 
 ## Add the provider
 
