@@ -103,10 +103,21 @@ final class Errors {
         return new String(utf8, 0, end, StandardCharsets.UTF_8) + "…";
     }
 
+    /**
+     * Out of memory, in words made when Errors initializes, at the first call: a full heap leaves
+     * nothing to build them with, and a second OutOfMemoryError out of an entry point aborts the
+     * process. The runtime's own words name -Xmx, a flag it does not take here.
+     */
+    private static final byte[] OUT_OF_MEMORY =
+            ("out of memory: the runtime's heap is full; raise it with -XX:MaxHeapSize=<size>"
+                            + " through configure or JINFER_OPTIONS")
+                    .getBytes(StandardCharsets.UTF_8);
+
     static int set(Throwable t) {
         if (t instanceof java.io.UncheckedIOException u && u.getCause() != null) t = u.getCause();
         // a -Djinfer.* value a flags class refused: its own message is the one to report
         if (t instanceof ExceptionInInitializerError e && e.getCause() != null) t = e.getCause();
+        if (t instanceof OutOfMemoryError) return outOfMemory();
         String message = t.getMessage();
         if (t instanceof FileSystemException f) message = plain(f); // not java.nio's class names
         else if (message == null || message.isBlank() || t instanceof NullPointerException) {
@@ -128,6 +139,17 @@ final class Errors {
         // If allocation failed, reads return static fallback text with the original error code.
         last.code = code;
         return code;
+    }
+
+    /** An OutOfMemoryError, recorded without allocating: the words copied into the C buffer. */
+    private static int outOfMemory() {
+        CCharPointer buffer = messageBuffer(1);
+        if (buffer.isNonNull()) {
+            for (int i = 0; i < OUT_OF_MEMORY.length; i++) buffer.write(i, OUT_OF_MEMORY[i]);
+            buffer.write(OUT_OF_MEMORY.length, (byte) 0);
+        }
+        LAST.get().code = ERROR;
+        return ERROR;
     }
 
     static int lastCode() {

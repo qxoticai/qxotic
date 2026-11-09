@@ -1007,6 +1007,24 @@ static void fork_refused(void) {
 }
 #endif
 
+/* a heap too small for the model: out of memory names the knob, recorded without allocating on the full heap,
+ * and the library goes on */
+static void heap_too_small(void) {
+    const char* options[] = {"-Djinfer.offline=true", "-XX:MaxHeapSize=16m"};   /* configure is once: both at once */
+    CHECK_EQ(jinfer_configure(options, 2), JINFER_OK);
+    jinfer_model* m = jinfer_model_load(LM, NULL);
+    if (m) { jinfer_model_free(m); FAIL_AT("%s loaded in a 16 MB heap: lower the test's heap", LM); return; }
+    int32_t code = 0;
+    const char* message = LE(&code);
+    if (code == JINFER_ENOTFOUND) skip("%s is not cached (%s)", LM, message);
+    CHECK_EQ(code, JINFER_ERROR);
+    CHECK_HAS(message, "out of memory");
+    CHECK_HAS(message, "-XX:MaxHeapSize");
+    CHECK(jinfer_model_load("/no/such/model.gguf", NULL) == NULL);   /* the library still answers, in words */
+    LE(&code);
+    CHECK_EQ(code, JINFER_ENOTFOUND);
+}
+
 static const scenario scenarios[] = {
     {"version", version, NULL},
     {"configure", configure, NULL},
@@ -1014,6 +1032,7 @@ static const scenario scenarios[] = {
     {"last_error_before_start", last_error_before_start, NULL},
     {"error_channels", error_channels, NULL},
     {"configure_rejected", configure_rejected, NULL},
+    {"heap_too_small", heap_too_small, NULL},
     {"options_from_the_environment", options_from_the_environment, "JINFER_OPTIONS=-Djinfer.threads=3"},
     {"log_set_once", log_set_once, NULL},
     {"log_set_through_toknroll", log_set_through_toknroll, NULL},
