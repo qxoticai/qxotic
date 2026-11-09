@@ -91,6 +91,32 @@ static PORT_THREAD_LOCAL int32_t early_code;
 static char start_error[1024];          /* why there is no runtime, for every later call to say again */
 static int32_t start_code;
 
+/* The runtime APIs' error text: allocated only on a thread's first error, reused, freed at thread exit.
+ * Independent of isolate startup: the PGO training program calls the Java entry points directly too. */
+static port_once_t error_once = PORT_ONCE_INIT;
+static port_tls_t error_keys[2];   /* toknroll, jinfer */
+static int error_keys_ready;
+
+static void error_keys_init(void) {
+    if (port_tls_create(&error_keys[0], free) != 0) return;
+    if (port_tls_create(&error_keys[1], free) != 0) { port_tls_delete(error_keys[0]); return; }
+    error_keys_ready = 1;
+}
+
+static const char* error_buffer(int api, int32_t allocate) {
+    static const char unavailable[] = "Error message unavailable: out of memory";
+    port_once(&error_once, error_keys_init);
+    char* buffer = error_keys_ready ? port_tls_get(error_keys[api]) : NULL;
+    if (!buffer && allocate && error_keys_ready) {
+        buffer = malloc(1025);   /* Errors.LIMIT UTF-8 bytes and the terminating NUL */
+        if (buffer && port_tls_set(error_keys[api], buffer) != 0) { free(buffer); buffer = NULL; }
+    }
+    return buffer ? buffer : allocate ? NULL : unavailable;
+}
+
+const char* toknroll__error_buffer(int32_t allocate) { return error_buffer(0, allocate); }
+const char* jinfer__error_buffer(int32_t allocate) { return error_buffer(1, allocate); }
+
 /* What toknroll_log_set or jinfer_log_set gave, before the runtime starts; start hands it to Log.java. */
 static toknroll__log_fn log_fn;
 static void* log_user_data;

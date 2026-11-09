@@ -117,6 +117,15 @@ static void last_error_before_start(void) {
     CHECK_ERROR(jinfer_model_property(NULL, JINFER_PROPERTY_VOCAB_SIZE), JINFER_EINVAL, LE, "model is NULL");
 }
 
+static void error_channels(void) {
+    CHECK_ERROR(toknroll_vocabulary_size(NULL), TOKNROLL_EINVAL, toknroll_last_error, "tokenizer is NULL");
+    CHECK_STR(jinfer_model_info(NULL), "");   /* returning an empty result must preserve the error */
+    CHECK_ERROR(JINFER_EINVAL, JINFER_EINVAL, LE, "model is NULL");
+    CHECK_ERROR(TOKNROLL_EINVAL, TOKNROLL_EINVAL, toknroll_last_error, "tokenizer is NULL");
+    CHECK_ERROR(toknroll_decode(NULL, NULL, 0, 0, NULL, 0, NULL), TOKNROLL_EINVAL, toknroll_last_error, "tokenizer is NULL");
+    CHECK_ERROR(JINFER_EINVAL, JINFER_EINVAL, LE, "model is NULL");
+}
+
 static void configure_through_toknroll(void) {
     const char* one[] = {"-Djinfer.offline=true"};
     CHECK_EQ(toknroll_configure(one, 1), TOKNROLL_OK);
@@ -1003,6 +1012,7 @@ static const scenario scenarios[] = {
     {"configure", configure, NULL},
     {"configure_through_toknroll", configure_through_toknroll, NULL},
     {"last_error_before_start", last_error_before_start, NULL},
+    {"error_channels", error_channels, NULL},
     {"configure_rejected", configure_rejected, NULL},
     {"options_from_the_environment", options_from_the_environment, "JINFER_OPTIONS=-Djinfer.threads=3"},
     {"log_set_once", log_set_once, NULL},

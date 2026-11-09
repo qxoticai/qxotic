@@ -86,7 +86,8 @@ The message behind the last result is per thread:
 const char* prefix_last_error(int32_t* code);   /* "" and OK after a success; *code unless NULL */
 ```
 
-Every call sets it, except `_last_error` itself, `_free(NULL)` and the functions that cannot fail (`_version`, an options struct's `_init`): a success clears it, and the string stays valid until the thread's next call into the library.
+Every call sets it, except `_last_error` itself, `_free(NULL)` and the functions that cannot fail (`_version`, an options struct's `_init`): a success clears it, and the string stays valid until the thread's next call into the library or the thread exits.
+If their native message buffer cannot be allocated, libtoknroll and libjinfer preserve the error code and return the static message `Error message unavailable: out of memory`.
 A library never reports through `errno`, never calls `abort` or `exit`, and writes to stderr only what Configuration lists.
 No Java or C++ exception crosses the boundary: each entry point catches everything and returns a code.
 

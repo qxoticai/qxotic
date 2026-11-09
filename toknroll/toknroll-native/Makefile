@@ -65,10 +65,11 @@ target/tokenize-static: examples/c/tokenize.c include/toknroll.h $(STATIC)
 TEST_DEPS = tests/c/toknroll_test.c tests/c/test.h tests/c/fixtures.h tests/c/progress.h include/toknroll.h
 CFLAGS_TEST = -std=c99 -Wall -Wextra -Wpedantic -Werror -Iinclude
 LINK_TEST = -L target -ltoknroll -Wl,-rpath,$(abspath target) -lpthread $(if $(filter Linux,$(shell uname -s)),-lutil)   # forkpty
+STATIC_TEST_FLAGS = $(if $(filter linux,$(OS)),-DTEST_MALLOC_WRAP -Xlinker --wrap=malloc)
 target/toknroll_test: $(TEST_DEPS) $(LIB)
 	$(CC) $(CFLAGS_TEST) -o $@ $< $(LINK_TEST)
 target/toknroll_test-static: $(TEST_DEPS) $(STATIC)
-	$(CC) $(CFLAGS_TEST) -DTOKNROLL_STATIC -o $@ $< $(STATIC) $(SYSLIBS)
+	$(CC) $(CFLAGS_TEST) -DTOKNROLL_STATIC $(STATIC_TEST_FLAGS) -o $@ $< $(STATIC) $(SYSLIBS)
 target/header_test: tests/c/header_test.cpp include/toknroll.h $(LIB)
 	$(CXX) -std=c++11 -Wall -Wextra -Wpedantic -Werror -Iinclude -o $@ $< $(LINK_TEST)
 
@@ -97,11 +98,13 @@ check: check-version check-exports check-c target/tokenize check-static check-le
 # nothing the library allocates is lost, not even once at start: valgrind finds a block nothing points to.
 # ponytail: x86-64 only. valgrind runs no AVX-512, so a QUICK build on an AVX-512 machine (x86-64-v4) is skipped,
 # and on aarch64 it reports the image's own frame setup as writes below the stack pointer, thousands of times.
-check-leaks: target/tokenize
+check-leaks: target/tokenize target/toknroll_test
 	@if ! command -v valgrind > /dev/null; then echo "no valgrind: leaks not checked"; \
 	elif [ "$$(uname -m)" != x86_64 ]; then echo "valgrind misreads an image on $$(uname -m): leaks not checked"; \
 	elif readelf -n $(LIB) | grep -q 'x86-64-v4'; then echo "an x86-64-v4 build valgrind cannot run: leaks not checked"; \
-	else valgrind -q --leak-check=full --errors-for-leak-kinds=definite --error-exitcode=1 \
-	    ./target/tokenize $(SOURCE) "Hello, Tok'n'Roll!" > /dev/null && echo "no block definitely lost"; fi
+	else valgrind -q --leak-check=full --show-leak-kinds=definite --errors-for-leak-kinds=definite --error-exitcode=1 \
+	    ./target/tokenize $(SOURCE) "Hello, Tok'n'Roll!" > /dev/null && \
+	    valgrind -q --leak-check=full --show-leak-kinds=definite --errors-for-leak-kinds=definite --error-exitcode=1 \
+	    ./target/toknroll_test last_error_per_thread && echo "no block definitely lost, including error storage at thread exit"; fi
 
 .PHONY: libtoknroll pgo-profile check check-c check-static check-leaks

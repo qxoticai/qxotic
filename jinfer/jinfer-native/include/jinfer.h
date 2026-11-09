@@ -2,7 +2,7 @@
  *
  *   Errors     A function returns its result; a negative value is a JINFER_E* code, NULL for a
  *              pointer. jinfer_last_error has the message and the code, per thread, until the
- *              thread's next jinfer call (reading it changes nothing); after a success, "" and
+ *              thread's next jinfer call or exit (reading it changes nothing); after a success, "" and
  *              JINFER_OK. Every call sets it but jinfer_version, jinfer_model_options_init,
  *              jinfer_last_error and a _free of NULL.
  *   Buffers    (out, float_capacity) follows snprintf: at most that many floats are written and the

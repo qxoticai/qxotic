@@ -2,7 +2,7 @@
  *
  *   Errors     A function returns its result; a negative value is a TOKNROLL_E* code, NULL for a
  *              pointer. toknroll_last_error has the message and the code, per thread, until the
- *              thread's next toknroll call (reading it changes nothing); after a success, "" and
+ *              thread's next toknroll call or exit (reading it changes nothing); after a success, "" and
  *              TOKNROLL_OK. Every call sets it but toknroll_version, toknroll_last_error and a free of NULL.
  *              A goroutine or a Java virtual thread may change OS thread between two calls, so it
  *              reads the message pinned to the thread that failed (runtime.LockOSThread) or goes by
@@ -19,7 +19,7 @@
  *   Ownership  What you pass is borrowed for the call; no buffer is kept. A tokenizer is yours until
  *              toknroll_tokenizer_free, which accepts NULL. A string returned to you is the
  *              library's: toknroll_version's for good, toknroll_last_error's until the calling
- *              thread's next toknroll call.
+ *              thread's next toknroll call or exit.
  *   Threads    Any thread may call, and a tokenizer may be shared between threads: it never changes.
  *              toknroll_tokenizer_free is the exception: not during another call on the same tokenizer.
  *   Fork       Best effort, not a guarantee. A child keeps the tokenizers it inherited and may go on

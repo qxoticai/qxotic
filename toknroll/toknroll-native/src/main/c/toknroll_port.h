@@ -23,7 +23,8 @@ static inline BOOL CALLBACK port_call_once(PINIT_ONCE once, PVOID fn, PVOID* con
 static inline void port_once(port_once_t* once, void (*fn)(void)) { InitOnceExecuteOnce(once, port_call_once, &fn, NULL); }
 static inline int port_tls_create(port_tls_t* key, void (*destructor)(void*)) { return (*key = FlsAlloc((PFLS_CALLBACK_FUNCTION) destructor)) == FLS_OUT_OF_INDEXES; }
 #define port_tls_get(key) FlsGetValue(key)
-#define port_tls_set(key, value) FlsSetValue(key, value)
+static inline int port_tls_set(port_tls_t key, void* value) { return FlsSetValue(key, value) ? 0 : -1; }
+#define port_tls_delete(key) FlsFree(key)
 #define port_strdup _strdup
 #define PORT_THREAD_LOCAL __declspec(thread)
 #define port_load(flag) InterlockedCompareExchange((flag), 0, 0)   /* flag: a long* */
@@ -38,6 +39,7 @@ typedef pthread_key_t port_tls_t;
 #define port_tls_create pthread_key_create
 #define port_tls_get pthread_getspecific
 #define port_tls_set pthread_setspecific
+#define port_tls_delete pthread_key_delete
 #define port_strdup strdup
 #define port_load(flag) __atomic_load_n((flag), __ATOMIC_SEQ_CST)
 #define port_store(flag, value) __atomic_store_n((flag), (value), __ATOMIC_SEQ_CST)

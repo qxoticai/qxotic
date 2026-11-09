@@ -5,13 +5,15 @@ import java.nio.charset.StandardCharsets;
 import java.nio.file.AccessDeniedException;
 import java.nio.file.FileSystemException;
 import java.nio.file.NoSuchFileException;
+import org.graalvm.nativeimage.c.function.CFunction;
 import org.graalvm.nativeimage.c.type.CCharPointer;
 import org.graalvm.nativeimage.c.type.CTypeConversion;
 import org.graalvm.nativeimage.c.type.CTypeConversion.CCharPointerHolder;
+import org.graalvm.word.WordFactory;
 
 /**
- * The calling thread's last error, as the header promises: valid until its next jinfer call, which
- * clears it by succeeding.
+ * The calling thread's last error, valid until its next jinfer call or thread exit. A successful
+ * call clears it.
  */
 final class Errors {
     private static final System.Logger LOG = System.getLogger("jinfer.native");
@@ -43,13 +45,15 @@ final class Errors {
         return new Failure(EUNSUPPORTED, message);
     }
 
-    /** A thread's last failure; its message stays allocated, unread, once a call succeeds. */
+    /** The thread's last result code; message storage belongs to native TLS. */
     private static final class Last {
         int code = OK;
-        CCharPointerHolder message;
     }
 
     private static final ThreadLocal<Last> LAST = ThreadLocal.withInitial(Last::new);
+
+    @CFunction("jinfer__error_buffer")
+    private static native CCharPointer messageBuffer(int allocate);
 
     /** Every entry point starts here, so that a call that succeeds leaves no error behind. */
     static void clear() {
@@ -117,8 +121,11 @@ final class Errors {
         LOG.log(System.Logger.Level.DEBUG, "a call failed", t);
         int code = code(t);
         Last last = LAST.get();
-        if (last.message != null) last.message.close();
-        last.message = CTypeConversion.toCString(message);
+        CCharPointer buffer = messageBuffer(1);
+        if (buffer.isNonNull())
+            CTypeConversion.toCString(
+                    message, StandardCharsets.UTF_8, buffer, WordFactory.unsigned(LIMIT + 1));
+        // If allocation failed, reads return static fallback text with the original error code.
         last.code = code;
         return code;
     }
@@ -129,7 +136,7 @@ final class Errors {
 
     static CCharPointer last() {
         Last last = LAST.get();
-        return last.code != OK ? last.message.get() : empty();
+        return last.code != OK ? messageBuffer(0) : empty();
     }
 
     /** "", what a function that returns a string returns when it has none: never NULL. */

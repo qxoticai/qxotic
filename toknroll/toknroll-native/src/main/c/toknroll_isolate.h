@@ -23,6 +23,11 @@ int32_t toknroll__log(toknroll__log_fn fn, void* user_data, const char* who,
                       void (*error_set)(graal_thread*, int32_t, const char*));
 /* toknroll_last_error and jinfer_last_error: the thread's own early failure, else the runtime's record */
 const char* toknroll__last_error_of(int32_t* code, const char* (*runtime)(graal_thread*, int32_t*));
+/* Each API's message storage, 1024 UTF-8 bytes plus NUL. allocate != 0 creates it on first error,
+ * or returns NULL on failure; allocate == 0 only reads, returning static fallback text if absent.
+ * Buffers are freed by native TLS at thread exit, independently of the runtime's attachment. */
+const char* toknroll__error_buffer(int32_t allocate);
+const char* jinfer__error_buffer(int32_t allocate);
 /* configure for the public function `who`; error_set reports through that API's own last error */
 int32_t toknroll__configure(const char* const* options, int32_t count, const char* who,
                             void (*error_set)(graal_thread*, int32_t, const char*));

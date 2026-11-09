@@ -44,6 +44,33 @@ static toknroll_tokenizer* tiny(void) {
 
 static int same_ids(const int32_t* a, const int32_t* b, int n) { return !memcmp(a, b, (size_t) n * sizeof *a); }
 
+#ifdef TEST_MALLOC_WRAP
+/* Linux static test: fail only the native error buffer allocation, after the runtime has started. */
+static int fail_error_buffer;
+void* __real_malloc(size_t size);
+void* __wrap_malloc(size_t size) {
+    if (size == 1025 && __atomic_load_n(&fail_error_buffer, __ATOMIC_RELAXED)) return NULL;
+    return __real_malloc(size);
+}
+
+static void error_buffer_allocation_failure(void) {
+    toknroll_tokenizer* t = tiny();
+    __atomic_store_n(&fail_error_buffer, 1, __ATOMIC_RELAXED);
+    CHECK_ERROR(toknroll_token(t, -1, NULL, 0), TOKNROLL_ENOTFOUND, LE, "Error message unavailable: out of memory");
+    __atomic_store_n(&fail_error_buffer, 0, __ATOMIC_RELAXED);
+    /* Reading must not retry allocation and replace the fallback with an unwritten buffer. */
+    CHECK_ERROR(TOKNROLL_ENOTFOUND, TOKNROLL_ENOTFOUND, LE, "Error message unavailable: out of memory");
+    CHECK_EQ(toknroll_vocabulary_size(t), VOCAB_JSON);
+    CHECK_CLEAR(LE);
+    CHECK_ERROR(toknroll_token(t, -2, NULL, 0), TOKNROLL_ENOTFOUND, LE, "no token with id -2");
+    /* Once allocated, later errors reuse the buffer even when another allocation would fail. */
+    __atomic_store_n(&fail_error_buffer, 1, __ATOMIC_RELAXED);
+    CHECK_ERROR(toknroll_token(t, -3, NULL, 0), TOKNROLL_ENOTFOUND, LE, "no token with id -3");
+    __atomic_store_n(&fail_error_buffer, 0, __ATOMIC_RELAXED);
+    toknroll_tokenizer_free(t);
+}
+#endif
+
 /* ---- version, last error, and what never starts the runtime ---- */
 
 static void version(void) {
@@ -120,6 +147,23 @@ static void last_error_per_thread(void) {
     CHECK_HAS(box.own, "no token with id -5");
     CHECK_HAS(LE(NULL), "count must not be negative");   /* this thread's own, untouched */
     toknroll_tokenizer_free(box.t);
+}
+
+static void leaving_error(void* p) {
+    toknroll_tokenizer* t = p;
+    char spelling[900];
+    memset(spelling, '?', sizeof spelling);
+    CHECK_ERROR(toknroll_id(t, spelling, sizeof spelling), TOKNROLL_ENOTFOUND, LE, "no token");
+    CHECK(strlen(LE(NULL)) >= sizeof spelling);
+}
+
+/* A small heap survives repeated thread exit: the final error must not keep a Java array pinned. */
+static void error_thread_churn(void) {
+    toknroll_tokenizer* t = tiny();
+    for (int i = 0; i < 6000; i++) thread_join(thread_run(leaving_error, t));
+    CHECK_EQ(toknroll_vocabulary_size(t), VOCAB_JSON);
+    CHECK_CLEAR(LE);
+    toknroll_tokenizer_free(t);
 }
 
 /* vocabulary_size is one past the largest id; an id below it no token has is no token anywhere */
@@ -685,6 +729,14 @@ static void encode_specials(void) {
 /* a failure reads as one line of at most 1 KB, in the library's words: an input echoed whole, a
  * Java class name or GraalVM's "Stack trace is imprecise" placeholder is a regression */
 static void error_messages(void) {
+    toknroll_tokenizer* t = tiny();
+    char utf8[2000];
+    for (int i = 0; i < 2000; i += 2) { utf8[i] = (char) 0xC3; utf8[i + 1] = (char) 0xA9; }
+    CHECK_ERROR(toknroll_id(t, utf8, sizeof utf8), TOKNROLL_ENOTFOUND, LE, "no token");
+    const char* message = LE(NULL);
+    CHECK_EQ(strlen(message), 1023);   /* ten-byte prefix, whole two-byte characters, three-byte ellipsis */
+    if (strlen(message) == 1023) CHECK_STR(message + 1020, "\xE2\x80\xA6");
+    toknroll_tokenizer_free(t);
     enum { BIG = 200000 };
     char* big = (char*) malloc(BIG);
     memset(big, '[', BIG);
@@ -1863,6 +1915,10 @@ static const scenario scenarios[] = {
     {"last_error_per_call", last_error_per_call, NULL},
     {"last_error_before_start", last_error_before_start, NULL},
     {"last_error_per_thread", last_error_per_thread, NULL},
+    {"error_thread_churn", error_thread_churn, OPTIONS_VAR "=-XX:MaxHeapSize=32m -XX:ActiveProcessorCount=2"},
+#ifdef TEST_MALLOC_WRAP
+    {"error_buffer_allocation_failure", error_buffer_allocation_failure, NULL},
+#endif
     {"vocabulary_with_a_gap", vocabulary_with_a_gap, NULL},
     {"configure_arguments", configure_arguments, NULL},
     {"configure_after_a_call", configure_after_a_call, NULL},

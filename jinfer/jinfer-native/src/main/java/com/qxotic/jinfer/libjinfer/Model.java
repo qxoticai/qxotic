@@ -75,7 +75,8 @@ final class Model {
     final LoadedReranker<?> reranker; // RERANKING
     final SpeechSynthesisModel<?, ?, ?> speech; // SPEECH
     final TranscriptionModel<?, ?, ?> transcription; // TRANSCRIPTION
-    // tokens of context each state holds (JINFER_PROPERTY_CONTEXT_CAPACITY), 0 for the stateless kinds
+    // tokens of context each state holds (JINFER_PROPERTY_CONTEXT_CAPACITY), 0 for the stateless
+    // kinds
     final int capacity;
     private final Arena arena; // owned by the non-language kinds
     private final Map<String, Object> header;

@@ -6,13 +6,15 @@ import java.nio.charset.StandardCharsets;
 import java.nio.file.AccessDeniedException;
 import java.nio.file.FileSystemException;
 import java.nio.file.NoSuchFileException;
+import org.graalvm.nativeimage.c.function.CFunction;
 import org.graalvm.nativeimage.c.type.CCharPointer;
 import org.graalvm.nativeimage.c.type.CTypeConversion;
 import org.graalvm.nativeimage.c.type.CTypeConversion.CCharPointerHolder;
+import org.graalvm.word.WordFactory;
 
 /**
- * The calling thread's last error, as the header promises: valid until its next toknroll call,
- * which clears it by succeeding.
+ * The calling thread's last error, valid until its next toknroll call or thread exit. A successful
+ * call clears it.
  */
 final class Errors {
     static final int OK = 0, ERROR = -1, EINVAL = -2, ENOTFOUND = -3, EUNSUPPORTED = -4;
@@ -35,13 +37,15 @@ final class Errors {
         return new Failure(ENOTFOUND, message);
     }
 
-    /** A thread's last failure; its message stays allocated, unread, once a call succeeds. */
+    /** The thread's last result code; message storage belongs to native TLS. */
     private static final class Last {
         int code = OK;
-        CCharPointerHolder message;
     }
 
     private static final ThreadLocal<Last> LAST = ThreadLocal.withInitial(Last::new);
+
+    @CFunction("toknroll__error_buffer")
+    private static native CCharPointer messageBuffer(int allocate);
 
     /**
      * "" after a success: made once, on first use, as a holder class initializes. Not in Errors'
@@ -102,10 +106,11 @@ final class Errors {
         message = bounded(Log.oneLine(message)); // a caller logs it as it comes: one line, bounded
         int code = code(t);
         Last last = LAST.get();
-        if (last.message != null) last.message.close();
-        // ponytail: a thread's last message outlives it, at most LIMIT bytes per thread that
-        // failed; freeing it at thread exit would take a hook from the C side's detach
-        last.message = CTypeConversion.toCString(message);
+        CCharPointer buffer = messageBuffer(1);
+        if (buffer.isNonNull())
+            CTypeConversion.toCString(
+                    message, StandardCharsets.UTF_8, buffer, WordFactory.unsigned(LIMIT + 1));
+        // If allocation failed, reads return static fallback text with the original error code.
         last.code = code;
         return code;
     }
@@ -133,7 +138,7 @@ final class Errors {
 
     static CCharPointer last() {
         Last last = LAST.get();
-        return last.code != OK ? last.message.get() : None.EMPTY.get();
+        return last.code != OK ? messageBuffer(0) : None.EMPTY.get();
     }
 
     private Errors() {}
