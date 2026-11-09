@@ -1,12 +1,16 @@
 package com.qxotic.jinfer.spring.ai.autoconfigure;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.mockito.Mockito.mock;
 
 import com.qxotic.jinfer.spring.ai.JinferEmbeddingModel;
 import org.junit.jupiter.api.Test;
+import org.springframework.ai.embedding.EmbeddingModel;
 import org.springframework.boot.autoconfigure.AutoConfigurations;
 import org.springframework.boot.context.properties.EnableConfigurationProperties;
 import org.springframework.boot.test.context.runner.ApplicationContextRunner;
+import org.springframework.context.annotation.Bean;
+import org.springframework.context.annotation.Configuration;
 
 /** Context behavior, no model needed: selection, required properties, property binding. */
 class JinferEmbeddingAutoConfigurationTest {
@@ -59,6 +63,34 @@ class JinferEmbeddingAutoConfigurationTest {
                         context -> {
                             assertThat(context).hasNotFailed();
                             assertThat(context).doesNotHaveBean(JinferEmbeddingModel.class);
+                        });
+    }
+
+    @Test
+    void backsOffForAnInterfaceReturningUserBeanWithoutModelProperties() {
+        runner.withUserConfiguration(UserEmbeddingConfiguration.class)
+                .withPropertyValues("spring.ai.model.embedding=jinfer")
+                .run(
+                        context -> {
+                            assertThat(context).hasNotFailed();
+                            assertThat(context).hasSingleBean(EmbeddingModel.class);
+                            assertThat(context).doesNotHaveBean("jinferEmbeddingModel");
+                            assertThat(context.getBean(EmbeddingModel.class))
+                                    .isSameAs(context.getBean("userEmbeddingModel"));
+                        });
+    }
+
+    @Test
+    void backsOffForAConcreteUserBeanWithoutModelProperties() {
+        JinferEmbeddingModel custom = mock(JinferEmbeddingModel.class);
+        runner.withBean("userEmbeddingModel", JinferEmbeddingModel.class, () -> custom)
+                .withPropertyValues("spring.ai.model.embedding=jinfer")
+                .run(
+                        context -> {
+                            assertThat(context).hasNotFailed();
+                            assertThat(context).hasSingleBean(EmbeddingModel.class);
+                            assertThat(context).doesNotHaveBean("jinferEmbeddingModel");
+                            assertThat(context.getBean(EmbeddingModel.class)).isSameAs(custom);
                         });
     }
 
@@ -150,4 +182,12 @@ class JinferEmbeddingAutoConfigurationTest {
 
     @EnableConfigurationProperties(JinferEmbeddingProperties.class)
     static class PropsOnly {}
+
+    @Configuration(proxyBeanMethods = false)
+    static class UserEmbeddingConfiguration {
+        @Bean
+        EmbeddingModel userEmbeddingModel() {
+            return mock(JinferEmbeddingModel.class);
+        }
+    }
 }

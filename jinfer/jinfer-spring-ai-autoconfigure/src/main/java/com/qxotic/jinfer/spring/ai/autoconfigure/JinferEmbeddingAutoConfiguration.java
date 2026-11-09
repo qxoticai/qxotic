@@ -4,6 +4,7 @@ import com.qxotic.jinfer.hub.ModelStore;
 import com.qxotic.jinfer.spring.ai.JinferEmbeddingModel;
 import io.micrometer.observation.ObservationRegistry;
 import java.nio.file.Path;
+import org.springframework.ai.embedding.EmbeddingModel;
 import org.springframework.ai.embedding.observation.EmbeddingModelObservationConvention;
 import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.boot.autoconfigure.AutoConfiguration;
@@ -15,9 +16,9 @@ import org.springframework.context.annotation.Bean;
 import org.springframework.util.StringUtils;
 
 /**
- * Wires one {@link JinferEmbeddingModel} bean from {@code spring.ai.jinfer.embedding.*}. Unlike
- * chat (the starter's default capability), embedding requires explicit selection - a chat-only app
- * must not be forced to point at an embedding GGUF.
+ * Wires a {@link JinferEmbeddingModel} from {@code spring.ai.jinfer.embedding.*} when no {@link
+ * EmbeddingModel} bean is supplied. Unlike chat (the starter's default capability), embedding
+ * requires explicit selection - a chat-only app must not be forced to point at an embedding GGUF.
  */
 @AutoConfiguration
 @ConditionalOnClass(JinferEmbeddingModel.class)
@@ -26,7 +27,7 @@ import org.springframework.util.StringUtils;
 public class JinferEmbeddingAutoConfiguration {
 
     @Bean
-    @ConditionalOnMissingBean
+    @ConditionalOnMissingBean(EmbeddingModel.class)
     public JinferEmbeddingModel jinferEmbeddingModel(
             JinferEmbeddingProperties properties,
             ObjectProvider<ObservationRegistry> observationRegistry,
