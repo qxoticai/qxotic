@@ -93,7 +93,8 @@ public final class TranscriptionServer {
                 servedModel,
                 List.of("audio"),
                 () -> JsonCodec.object("model", servedModel, "sample_rate", model.sampleRate()),
-                this::exposition);
+                this::exposition,
+                compute::getQueueLength);
         transport.work("/v1/audio/transcriptions", this::handleTranscription);
         return new Running(
                 transport.start(

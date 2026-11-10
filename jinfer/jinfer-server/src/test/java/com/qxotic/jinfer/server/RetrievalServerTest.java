@@ -11,11 +11,15 @@ import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
 import java.nio.ByteBuffer;
 import java.nio.ByteOrder;
+import java.time.Duration;
 import java.util.ArrayList;
 import java.util.Base64;
 import java.util.Collections;
 import java.util.List;
 import java.util.Map;
+import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.TimeUnit;
 import java.util.function.Consumer;
 import java.util.function.DoubleConsumer;
 import org.junit.jupiter.api.AfterEach;
@@ -30,7 +34,7 @@ class RetrievalServerTest {
     private String base;
 
     /** One vector per text: {@code [length, 0.5, 1.5, ...]}, as wide as asked; a token a word. */
-    static final class FakeEmbedder implements RetrievalServer.Embedder {
+    static class FakeEmbedder implements RetrievalServer.Embedder {
         final List<List<?>> calls = new ArrayList<>();
         final List<Integer> textOffsets = new ArrayList<>();
         List<String> modalities = List.of("text");
@@ -147,8 +151,25 @@ class RetrievalServerTest {
 
     private HttpResponse<String> get(String path) throws Exception {
         return client.send(
-                HttpRequest.newBuilder(URI.create(base + path)).GET().build(),
+                HttpRequest.newBuilder(URI.create(base + path))
+                        .timeout(Duration.ofSeconds(5))
+                        .GET()
+                        .build(),
                 HttpResponse.BodyHandlers.ofString());
+    }
+
+    private void awaitHealth(boolean busy, long queued) throws Exception {
+        Map<String, Object> expected = Map.of("status", "ok", "busy", busy, "queued", queued);
+        long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(5);
+        Map<String, Object> actual;
+        do {
+            HttpResponse<String> response = get("/health");
+            assertEquals(200, response.statusCode(), response.body());
+            actual = json(response);
+            if (expected.equals(actual)) return;
+            Thread.sleep(50);
+        } while (System.nanoTime() < deadline);
+        assertEquals(expected, actual);
     }
 
     @SuppressWarnings("unchecked")
@@ -520,6 +541,58 @@ class RetrievalServerTest {
         assertTrue(tooLong.body().contains("document 1 frames to 99 tokens"), tooLong.body());
         assertTrue(tooLong.body().contains("\"param\":\"documents\""), tooLong.body());
         assertFalse(tooLong.body().contains("contextCapacity"), tooLong.body());
+    }
+
+    @Test
+    void healthReportsRequestsWaitingForComputeEvenWhenAdmissionsAreFull() throws Exception {
+        CountDownLatch entered = new CountDownLatch(1);
+        CountDownLatch release = new CountDownLatch(1);
+        FakeEmbedder embedder =
+                new FakeEmbedder() {
+                    @Override
+                    public int embedAll(
+                            List<String> texts,
+                            int dimension,
+                            int firstInputIndex,
+                            Consumer<float[]> sink) {
+                        entered.countDown();
+                        try {
+                            assertTrue(
+                                    release.await(15, TimeUnit.SECONDS),
+                                    "compute was not released");
+                        } catch (InterruptedException e) {
+                            Thread.currentThread().interrupt();
+                            throw new IllegalStateException(e);
+                        }
+                        return super.embedAll(texts, dimension, firstInputIndex, sink);
+                    }
+                };
+        ServerConfig config = ServerConfig.local(0);
+        serve(
+                RetrievalServer.start(
+                        embedder, MODEL, config.withLimits(config.limits().withThreads(2))));
+        awaitHealth(false, 0);
+        HttpRequest request =
+                HttpRequest.newBuilder(URI.create(base + "/v1/embeddings"))
+                        .timeout(Duration.ofSeconds(15))
+                        .POST(HttpRequest.BodyPublishers.ofString("{\"input\":\"valid\"}"))
+                        .build();
+        CompletableFuture<HttpResponse<String>> first =
+                client.sendAsync(request, HttpResponse.BodyHandlers.ofString());
+        CompletableFuture<HttpResponse<String>> second;
+        try {
+            assertTrue(entered.await(5, TimeUnit.SECONDS), "first request never reached compute");
+            awaitHealth(true, 0);
+            second = client.sendAsync(request, HttpResponse.BodyHandlers.ofString());
+            awaitHealth(true, 1);
+            assertFalse(first.isDone());
+            assertFalse(second.isDone());
+        } finally {
+            release.countDown();
+        }
+        assertEquals(200, first.get(5, TimeUnit.SECONDS).statusCode());
+        assertEquals(200, second.get(5, TimeUnit.SECONDS).statusCode());
+        awaitHealth(false, 0);
     }
 
     @Test

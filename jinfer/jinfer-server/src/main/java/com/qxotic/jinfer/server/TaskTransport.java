@@ -10,6 +10,7 @@ import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.Semaphore;
+import java.util.function.IntSupplier;
 import java.util.function.Supplier;
 
 /**
@@ -42,13 +43,16 @@ final class TaskTransport {
     /**
      * The probes. Never gated: a probe runs no model work, and a load balancer or a scrape needs it
      * most in exactly the saturated state the gate reports. {@code /health} carries no key, as the
-     * language server's does; {@code props} and {@code metrics} are built per request.
+     * language server's does; {@code props} and {@code metrics} are built per request. {@code
+     * queued} estimates requests waiting for the compute lock; {@code busy} includes all admitted
+     * work.
      */
     void probes(
             String servedModel,
             List<String> modalities,
             Supplier<Map<String, Object>> props,
-            Supplier<String> metrics) {
+            Supplier<String> metrics,
+            IntSupplier queued) {
         Map<String, Object> modelCard =
                 JsonCodec.object(
                         "id",
@@ -70,7 +74,12 @@ final class TaskTransport {
                                 exchange,
                                 200,
                                 JsonCodec.object(
-                                        "status", "ok", "busy", inFlight() > 0, "queued", 0)));
+                                        "status",
+                                        "ok",
+                                        "busy",
+                                        inFlight() > 0,
+                                        "queued",
+                                        queued.getAsInt())));
         probe("/props", config.access(), exchange -> Http.sendJson(exchange, 200, props.get()));
         probe(
                 "/metrics",

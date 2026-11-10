@@ -197,7 +197,8 @@ public final class RetrievalServer {
                             "gauge",
                             transport.inFlight());
                     return sb.toString();
-                });
+                },
+                compute::getQueueLength);
         transport.work(path, work);
         // the state closes after the request computing on it: the fair lock waits it out
         Runnable closing =
