@@ -127,25 +127,48 @@ public record LoadedEmbedder<S extends ContextState>(
             List<String> texts,
             int outputDimension,
             Consumer<float[]> consumer) {
+        return embedAll(state, texts, outputDimension, 0, consumer);
+    }
+
+    /**
+     * Embeds a contiguous run from a larger input list. {@code firstInputIndex} affects diagnostic
+     * numbering only; packing and output order remain local to {@code texts}. The offset must be
+     * nonnegative and the exclusive end index must fit in an {@code int}.
+     */
+    public int embedAll(
+            ContextState state,
+            List<String> texts,
+            int outputDimension,
+            int firstInputIndex,
+            Consumer<float[]> consumer) {
         Objects.requireNonNull(state, "state");
         Objects.requireNonNull(texts, "texts");
         Objects.requireNonNull(consumer, "consumer");
         requireSupportedDimension(outputDimension);
+        if (firstInputIndex < 0 || (long) firstInputIndex + texts.size() > Integer.MAX_VALUE) {
+            throw new IllegalArgumentException(
+                    "firstInputIndex "
+                            + firstInputIndex
+                            + " cannot index "
+                            + texts.size()
+                            + " texts");
+        }
 
         int contextCapacity = state.contextCapacity();
         IntSequence[] sequences = new IntSequence[texts.size()];
         int total = 0;
         for (int i = 0; i < texts.size(); i++) {
-            String text = Objects.requireNonNull(texts.get(i), "texts[" + i + "]");
+            int inputIndex = firstInputIndex + i;
+            String text = Objects.requireNonNull(texts.get(i), "texts[" + inputIndex + "]");
             IntSequence sequence =
                     IntSequence.concatAll(prefixTokens, tokenizer.encode(text), suffixTokens);
             if (sequence.isEmpty()) {
-                throw new IllegalArgumentException("text " + i + " produced no tokens");
+                throw new IllegalArgumentException("text " + inputIndex + " produced no tokens");
             }
             if (sequence.length() > contextCapacity) {
                 throw new IllegalArgumentException(
                         "text "
-                                + i
+                                + inputIndex
                                 + " is "
                                 + sequence.length()
                                 + " tokens, over the state's "

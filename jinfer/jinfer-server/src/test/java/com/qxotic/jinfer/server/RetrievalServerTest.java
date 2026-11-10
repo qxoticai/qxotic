@@ -31,6 +31,7 @@ class RetrievalServerTest {
     /** One vector per text: {@code [length, 0.5, 1.5, ...]}, as wide as asked; a token a word. */
     static final class FakeEmbedder implements RetrievalServer.Embedder {
         final List<List<?>> calls = new ArrayList<>();
+        final List<Integer> textOffsets = new ArrayList<>();
         List<String> modalities = List.of("text");
         boolean closed;
 
@@ -46,8 +47,22 @@ class RetrievalServerTest {
             return 16;
         }
 
-        public int embedAll(List<String> texts, int dimension, Consumer<float[]> sink) {
+        public int embedAll(
+                List<String> texts, int dimension, int firstInputIndex, Consumer<float[]> sink) {
             calls.add(List.copyOf(texts));
+            textOffsets.add(firstInputIndex);
+            for (int i = 0; i < texts.size(); i++) {
+                int tokens = texts.get(i).split(" ").length;
+                if (tokens > contextCapacity())
+                    throw new IllegalArgumentException(
+                            "text "
+                                    + (firstInputIndex + i)
+                                    + " is "
+                                    + tokens
+                                    + " tokens, over the state's "
+                                    + contextCapacity()
+                                    + "-token context - raise contextCapacity or chunk smaller");
+            }
             int total = 0;
             for (String text : texts) {
                 float[] vector = new float[dimension];
@@ -171,6 +186,7 @@ class RetrievalServerTest {
         assertEquals(1.0, ((Number) vector.get(0)).doubleValue());
         assertEquals(1.5, ((Number) vector.get(2)).doubleValue());
         assertEquals(List.of(List.of("a b", "c")), embedder.calls, "one batch for the request");
+        assertEquals(List.of(0), embedder.textOffsets);
     }
 
     @Test
@@ -196,6 +212,7 @@ class RetrievalServerTest {
         assertEquals("a cat:", embedder.calls.get(1).get(0));
         assertTrue(embedder.calls.get(1).get(1) instanceof Media.Image image && image.width() == 1);
         assertEquals(List.of("d"), embedder.calls.get(2));
+        assertEquals(List.of(0, 3), embedder.textOffsets);
         assertEquals(
                 List.of("text", "image", "video", "audio"),
                 ((Map<?, ?>)
@@ -249,6 +266,36 @@ class RetrievalServerTest {
         assertEquals(8, embedding(body, 0).size());
         refused("/v1/embeddings", "{\"input\":\"a\",\"dimensions\":2}", "dimensions", "[4, 8]");
         refused("/v1/embeddings", "{\"input\":\"a\",\"dimensions\":9}", "dimensions", "[4, 8]");
+    }
+
+    @Test
+    void textOverflowNamesTheOriginalIndexAcrossContentPartInputs() throws Exception {
+        FakeEmbedder embedder = new FakeEmbedder();
+        serve(RetrievalServer.start(embedder, MODEL, ServerConfig.local(0)));
+        List<?> parts = List.of(Map.of("type", "text", "text", "a part"));
+        String longText = "word ".repeat(20);
+        Object[][] cases = {
+            {longText, 0},
+            {List.of("short", longText), 1},
+            {List.of(parts, longText), 1},
+            {List.of(parts, "short", longText), 2},
+            {List.of("short", parts, "short", longText, parts), 3},
+            {List.of("short", parts, "short", parts, "short", longText), 5}
+        };
+        for (Object[] test : cases) {
+            refused(
+                    "/v1/embeddings",
+                    JsonCodec.stringify(Map.of("input", test[0])),
+                    "input",
+                    "text "
+                            + test[1]
+                            + " is 20 tokens, over the state's 16-token context; split it");
+        }
+        HttpResponse<String> valid = post("/v1/embeddings", "{\"input\":[\"a\",\"b\"]}");
+        assertEquals(200, valid.statusCode(), valid.body());
+        assertEquals(2, ((List<?>) json(valid).get("data")).size());
+        assertEquals(List.of("a", "b"), embedder.calls.getLast());
+        assertEquals(0, embedder.textOffsets.getLast());
     }
 
     @Test

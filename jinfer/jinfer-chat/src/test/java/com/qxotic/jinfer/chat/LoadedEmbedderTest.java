@@ -157,9 +157,11 @@ final class LoadedEmbedderTest {
             assertEquals(0, loaded.embedAll(state, List.of(), ignored -> {}));
             assertEquals(0, model.calls);
 
-            assertThrows(
-                    IllegalArgumentException.class,
-                    () -> loaded.embedAll(state, List.of("abcd"), ignored -> {}));
+            IllegalArgumentException failure =
+                    assertThrows(
+                            IllegalArgumentException.class,
+                            () -> loaded.embedAll(state, List.of("abcd"), ignored -> {}));
+            assertTrue(failure.getMessage().startsWith("text 0 is 5 tokens,"));
             assertThrows(
                     NullPointerException.class,
                     () -> loaded.embedAll(state, Arrays.asList("a", null), ignored -> {}));
@@ -173,6 +175,80 @@ final class LoadedEmbedderTest {
                     IllegalArgumentException.class,
                     () -> unframed.embedAll(state, List.of(""), ignored -> {}));
             assertEquals(0, model.calls);
+        }
+    }
+
+    @Test
+    void aTextRunRetainsItsOriginalIndexesInValidationErrors() {
+        ProbeModel model = new ProbeModel(4);
+        LoadedEmbedder<ProbeState> loaded = loaded(model, 4);
+        List<float[]> vectors = new ArrayList<>();
+        try (ProbeState state = model.newState(3, 3)) {
+            IllegalArgumentException tooLong =
+                    assertThrows(
+                            IllegalArgumentException.class,
+                            () -> loaded.embedAll(state, List.of("a", "abcd"), 4, 5, vectors::add));
+            assertTrue(tooLong.getMessage().startsWith("text 6 is 5 tokens,"));
+            NullPointerException missing =
+                    assertThrows(
+                            NullPointerException.class,
+                            () ->
+                                    loaded.embedAll(
+                                            state, Arrays.asList("a", null), 4, 5, vectors::add));
+            assertEquals("texts[6]", missing.getMessage());
+            LoadedEmbedder<ProbeState> unframed =
+                    loaded(model, 4, IntSequence.empty(), IntSequence.empty());
+            IllegalArgumentException empty =
+                    assertThrows(
+                            IllegalArgumentException.class,
+                            () -> unframed.embedAll(state, List.of("a", ""), 4, 5, vectors::add));
+            assertEquals("text 6 produced no tokens", empty.getMessage());
+            assertEquals(0, loaded.embedAll(state, List.of(), 4, 5, vectors::add));
+            assertEquals(0, model.calls);
+            assertTrue(vectors.isEmpty());
+        }
+    }
+
+    @Test
+    void anInvalidInputIndexRangeIsRefusedBeforeReadingTexts() {
+        ProbeModel model = new ProbeModel(4);
+        LoadedEmbedder<ProbeState> loaded = loaded(model, 4);
+        try (ProbeState state = model.newState(3, 3)) {
+            // Null would fail on access: range validation must happen first.
+            List<String> texts = Arrays.asList(null, "a");
+            for (int firstInputIndex : new int[] {-1, Integer.MAX_VALUE}) {
+                IllegalArgumentException failure =
+                        assertThrows(
+                                IllegalArgumentException.class,
+                                () ->
+                                        loaded.embedAll(
+                                                state, texts, 4, firstInputIndex, ignored -> {}));
+                assertTrue(failure.getMessage().startsWith("firstInputIndex " + firstInputIndex));
+            }
+            assertEquals(0, model.calls);
+        }
+    }
+
+    @Test
+    void theDiagnosticOffsetDoesNotChangePackingTokensOrVectors() {
+        ProbeModel model =
+                new ProbeModel(4).outputs(new float[] {1, 2, 3, 4}, new float[] {5, 6, 7, 8});
+        LoadedEmbedder<ProbeState> loaded = loaded(model, 4);
+        try (ProbeState state = model.newState(3, 3)) {
+            List<String> texts = List.of("ab", "c");
+            List<float[]> original = new ArrayList<>();
+            int tokens = loaded.embedAll(state, texts, original::add);
+            List<float[]> offset = new ArrayList<>();
+            assertEquals(
+                    tokens, loaded.embedAll(state, texts, 4, Integer.MAX_VALUE - 2, offset::add));
+            assertEquals(5, tokens);
+            assertEquals(2, offset.size());
+            assertEquals(4, model.calls, "two packed groups on each call");
+            for (int i = 0; i < 2; i++) {
+                assertArrayEquals(original.get(i), offset.get(i));
+                assertArrayEquals(model.batches.get(i), model.batches.get(i + 2));
+                assertArrayEquals(model.lengths.get(i), model.lengths.get(i + 2));
+            }
         }
     }
 

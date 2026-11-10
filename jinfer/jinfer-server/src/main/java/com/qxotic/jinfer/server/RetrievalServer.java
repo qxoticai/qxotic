@@ -40,8 +40,9 @@ public final class RetrievalServer {
 
         int contextCapacity();
 
-        /** Embeds every text in order; returns the input-token count. */
-        int embedAll(List<String> texts, int dimension, Consumer<float[]> sink);
+        /** Embeds a text run, preserving its original index in diagnostics; returns token count. */
+        int embedAll(
+                List<String> texts, int dimension, int firstInputIndex, Consumer<float[]> sink);
 
         /** What one input may hold: {@code "text"}, and the media its projector takes. */
         List<String> modalities();
@@ -316,16 +317,19 @@ public final class RetrievalServer {
             Embedder embedder, List<Object> inputs, int dimension, Consumer<float[]> sink) {
         int tokens = 0;
         List<String> texts = new ArrayList<>();
-        for (Object input : inputs) {
+        for (int i = 0; i < inputs.size(); i++) {
+            Object input = inputs.get(i);
             if (input instanceof String text) {
                 texts.add(text);
                 continue;
             }
-            if (!texts.isEmpty()) tokens += embedder.embedAll(texts, dimension, sink);
+            if (!texts.isEmpty())
+                tokens += embedder.embedAll(texts, dimension, i - texts.size(), sink);
             texts = new ArrayList<>();
             tokens += embedder.embed((List<?>) input, dimension, sink);
         }
-        if (!texts.isEmpty()) tokens += embedder.embedAll(texts, dimension, sink);
+        if (!texts.isEmpty())
+            tokens += embedder.embedAll(texts, dimension, inputs.size() - texts.size(), sink);
         return tokens;
     }
 
@@ -462,8 +466,12 @@ public final class RetrievalServer {
                 return contextCapacity;
             }
 
-            public int embedAll(List<String> texts, int dimension, Consumer<float[]> sink) {
-                return loaded.embedAll(state, texts, dimension, sink);
+            public int embedAll(
+                    List<String> texts,
+                    int dimension,
+                    int firstInputIndex,
+                    Consumer<float[]> sink) {
+                return loaded.embedAll(state, texts, dimension, firstInputIndex, sink);
             }
 
             public List<String> modalities() {
