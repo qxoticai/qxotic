@@ -13,6 +13,7 @@ import java.nio.ByteBuffer;
 import java.nio.ByteOrder;
 import java.util.ArrayList;
 import java.util.Base64;
+import java.util.Collections;
 import java.util.List;
 import java.util.Map;
 import java.util.function.Consumer;
@@ -332,6 +333,58 @@ class RetrievalServerTest {
         assertEquals(2, ((List<?>) json(valid).get("data")).size());
         assertEquals(List.of("a", "b"), embedder.calls.getLast());
         assertEquals(0, embedder.textOffsets.getLast());
+    }
+
+    @Test
+    void theEmbeddingLimitCountsInputsNotContentParts() throws Exception {
+        FakeEmbedder embedder = new FakeEmbedder();
+        serve(RetrievalServer.start(embedder, MODEL, ServerConfig.local(0)));
+        List<String> texts = Collections.nCopies(2048, "x");
+        List<Object> mixed = new ArrayList<>(texts);
+        mixed.set(
+                0,
+                List.of(Map.of("type", "text", "text", "a"), Map.of("type", "text", "text", "b")));
+        for (List<?> inputs : List.of(texts, mixed)) {
+            HttpResponse<String> response =
+                    post("/v1/embeddings", JsonCodec.stringify(Map.of("input", inputs)));
+            assertEquals(200, response.statusCode(), response.body());
+            List<?> data = (List<?>) json(response).get("data");
+            assertEquals(2048, data.size());
+            assertEquals(2047L, ((Map<?, ?>) data.getLast()).get("index"));
+        }
+        assertEquals(texts, embedder.calls.getFirst(), "plain strings still batch together");
+    }
+
+    @Test
+    void oversizedEmbeddingBatchesAreRefusedBeforeDecodingOrInference() throws Exception {
+        FakeEmbedder embedder = new FakeEmbedder();
+        embedder.modalities = List.of("text", "image");
+        serve(RetrievalServer.start(embedder, MODEL, ServerConfig.local(0)));
+        List<Object> inputs = new ArrayList<>(Collections.nCopies(2049, "x"));
+        refused(
+                "/v1/embeddings",
+                JsonCodec.stringify(Map.of("input", inputs)),
+                "input",
+                "at most 2048 items; split the batch");
+        assertTrue(embedder.calls.isEmpty());
+        // This image cannot decode: the item-count error must take precedence.
+        inputs.set(
+                0,
+                List.of(
+                        Map.of(
+                                "type",
+                                "image_url",
+                                "image_url",
+                                Map.of("url", "data:image/png;base64,not-base64"))));
+        refused(
+                "/v1/embeddings",
+                JsonCodec.stringify(Map.of("input", inputs)),
+                "input",
+                "at most 2048 items; split the batch");
+        assertTrue(embedder.calls.isEmpty());
+        HttpResponse<String> valid = post("/v1/embeddings", "{\"input\":\"valid\"}");
+        assertEquals(200, valid.statusCode(), valid.body());
+        assertEquals(List.of(List.of("valid")), embedder.calls);
     }
 
     @Test

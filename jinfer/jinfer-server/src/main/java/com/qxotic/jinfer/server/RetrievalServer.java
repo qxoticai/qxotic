@@ -31,6 +31,8 @@ import java.util.function.IntSupplier;
  */
 public final class RetrievalServer {
 
+    private static final int MAX_EMBEDDING_INPUTS = 2048;
+
     /** What the transport needs from an embedding model; a test fakes it. */
     interface Embedder {
         int dimension();
@@ -251,6 +253,12 @@ public final class RetrievalServer {
                 "Invalid argument: input must be a string or a non-empty array of strings and"
                         + " content-part arrays; token ids are not supported");
         List<?> items = input instanceof String text ? List.of(text) : (List<?>) input;
+        Validation.requireParam(
+                items.size() <= MAX_EMBEDDING_INPUTS,
+                "input",
+                "Invalid argument: input accepts at most "
+                        + MAX_EMBEDDING_INPUTS
+                        + " items; split the batch");
         List<Object> inputs = new ArrayList<>(items.size());
         for (int i = 0; i < items.size(); i++) {
             Object item = items.get(i);

@@ -214,7 +214,8 @@ curl -sS http://127.0.0.1:8080/v1/embeddings \
   -d '{"input":["The cat sat on the mat.","A kitten rests on a rug."],"dimensions":256}'
 ```
 
-`/v1/embeddings` takes OpenAI's request, so the official clients work unchanged, `base64` encoding included.
+`/v1/embeddings` accepts a non-empty string or a batch of at most 2048 inputs, with `float` or `base64` output; token-ID inputs are not supported.
+Each top-level string or content-part array counts as one input; larger batches return HTTP 400 and must be split across requests.
 `dimensions` shortens a Matryoshka-trained model's vectors (Qwen3-Embedding: 32 to 1024, EmbeddingGemma 2: 128 to 768) and is refused on a fixed-width one (LFM2.5-Embedding).
 Text is embedded as sent, so a retrieval prefix from the model card (LFM2.5-Embedding's `query: `) is the client's to add.
 An input longer than the context is refused with its index, and the rest are packed into as few forward passes as the context allows.
