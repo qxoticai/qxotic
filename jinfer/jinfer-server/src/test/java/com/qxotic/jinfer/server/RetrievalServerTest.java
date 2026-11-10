@@ -33,6 +33,7 @@ class RetrievalServerTest {
         final List<List<?>> calls = new ArrayList<>();
         final List<Integer> textOffsets = new ArrayList<>();
         List<String> modalities = List.of("text");
+        volatile RuntimeException failure;
         boolean closed;
 
         public int dimension() {
@@ -49,6 +50,7 @@ class RetrievalServerTest {
 
         public int embedAll(
                 List<String> texts, int dimension, int firstInputIndex, Consumer<float[]> sink) {
+            if (failure != null) throw failure;
             calls.add(List.copyOf(texts));
             textOffsets.add(firstInputIndex);
             for (int i = 0; i < texts.size(); i++) {
@@ -80,6 +82,7 @@ class RetrievalServerTest {
 
         /** One vector per input: {@code [parts, ...]}; a token a part. */
         public int embed(List<?> parts, int dimension, Consumer<float[]> sink) {
+            if (failure != null) throw failure;
             calls.add(List.copyOf(parts));
             float[] vector = new float[dimension];
             vector[0] = parts.size();
@@ -266,6 +269,39 @@ class RetrievalServerTest {
         assertEquals(8, embedding(body, 0).size());
         refused("/v1/embeddings", "{\"input\":\"a\",\"dimensions\":2}", "dimensions", "[4, 8]");
         refused("/v1/embeddings", "{\"input\":\"a\",\"dimensions\":9}", "dimensions", "[4, 8]");
+    }
+
+    @Test
+    void outputFailuresAreSanitizedServerErrorsAndDoNotPoisonRequests() throws Exception {
+        FakeEmbedder embedder = new FakeEmbedder();
+        serve(RetrievalServer.start(embedder, MODEL, ServerConfig.local(0)));
+        for (String body :
+                List.of(
+                        "{\"input\":\"valid\"}",
+                        "{\"input\":[[{\"type\":\"text\",\"text\":\"valid\"}]]}")) {
+            embedder.failure =
+                    new IllegalStateException(
+                            "invalid embedding output",
+                            new IllegalArgumentException(
+                                    "embedding: expected private backend detail"));
+            HttpResponse<String> failed = post("/v1/embeddings", body);
+            assertEquals(500, failed.statusCode(), failed.body());
+            assertEquals(
+                    JsonCodec.object(
+                            "message",
+                            "Internal server error",
+                            "type",
+                            "server_error",
+                            "param",
+                            null,
+                            "code",
+                            null),
+                    json(failed).get("error"));
+            embedder.failure = null;
+            HttpResponse<String> recovered = post("/v1/embeddings", body);
+            assertEquals(200, recovered.statusCode(), recovered.body());
+            assertEquals(1, ((List<?>) json(recovered).get("data")).size());
+        }
     }
 
     @Test

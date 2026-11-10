@@ -82,21 +82,27 @@ public record LoadedEmbedder<S extends ContextState>(
 
     /**
      * Copies one reused native embedding row to the heap. Native-width output stays bit-identical;
-     * a shorter Matryoshka prefix is L2-normalized as prescribed by the model.
+     * a shorter Matryoshka prefix is L2-normalized as prescribed by the model. Invalid model output
+     * is a state failure, not a caller argument error.
      */
     private float[] copyEmbedding(MemoryView<?> view, int outputDimension) {
-        MemoryView<MemorySegment> source = Views.castToSegmentBacked(view, "embedding");
-        Views.requireF32(source, "embedding");
-        Views.requireContiguous(source, "embedding");
-        Views.checkAlive(source, "embedding");
-        if (source.shape().size() != dimension)
-            throw new IllegalArgumentException(
-                    "embedding: expected "
-                            + dimension
-                            + " values but received "
-                            + source.shape().size());
-        float[] out = new float[outputDimension];
-        Views.copyToArray(source, 0, out, 0, outputDimension, "embedding");
+        float[] out;
+        try {
+            MemoryView<MemorySegment> source = Views.castToSegmentBacked(view, "embedding");
+            Views.requireF32(source, "embedding");
+            Views.requireContiguous(source, "embedding");
+            Views.checkAlive(source, "embedding");
+            if (source.shape().size() != dimension)
+                throw new IllegalStateException(
+                        "embedding: expected "
+                                + dimension
+                                + " values but received "
+                                + source.shape().size());
+            out = new float[outputDimension];
+            Views.copyToArray(source, 0, out, 0, outputDimension, "embedding");
+        } catch (IllegalArgumentException failure) {
+            throw new IllegalStateException("invalid embedding output", failure);
+        }
         if (outputDimension == dimension) return out;
 
         double squaredNorm = 0;

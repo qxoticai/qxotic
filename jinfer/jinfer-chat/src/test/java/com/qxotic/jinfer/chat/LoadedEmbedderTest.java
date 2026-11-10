@@ -1,8 +1,10 @@
 package com.qxotic.jinfer.chat;
 
 import static org.junit.jupiter.api.Assertions.assertArrayEquals;
+import static org.junit.jupiter.api.Assertions.assertDoesNotThrow;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertInstanceOf;
 import static org.junit.jupiter.api.Assertions.assertNotSame;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertSame;
@@ -17,6 +19,7 @@ import com.qxotic.jinfer.EmbeddingModel;
 import com.qxotic.jinfer.Views;
 import com.qxotic.jota.DataType;
 import com.qxotic.jota.Shape;
+import com.qxotic.jota.memory.Memories;
 import com.qxotic.jota.memory.MemoryArena;
 import com.qxotic.jota.memory.MemoryView;
 import com.qxotic.toknroll.IntSequence;
@@ -30,6 +33,7 @@ import java.util.List;
 import java.util.concurrent.atomic.AtomicReference;
 import java.util.function.Consumer;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.function.Executable;
 
 final class LoadedEmbedderTest {
 
@@ -117,23 +121,13 @@ final class LoadedEmbedderTest {
     }
 
     @Test
-    void zeroPrefixStaysFiniteAndInvalidViewsFailAtTheOwnedBoundary() {
+    void zeroPrefixStaysFiniteAndClosedViewsFailAtTheOwnedBoundary() {
         ProbeModel zeroModel = new ProbeModel(4).outputs(new float[] {0, 0, 1, 0});
         LoadedEmbedder<ProbeState> zero = loaded(zeroModel, 2);
         try (ProbeState state = zeroModel.newState(8, 8)) {
             List<float[]> vectors = new ArrayList<>();
             zero.embedAll(state, List.of("x"), 2, vectors::add);
             assertArrayEquals(new float[] {0, 0}, vectors.get(0));
-        }
-
-        ProbeModel invalidModel = new ProbeModel(4);
-        invalidModel.projected =
-                Views.wrap(MemorySegment.ofArray(new float[3]), DataType.FP32, Shape.flat(3));
-        LoadedEmbedder<ProbeState> invalid = loaded(invalidModel, 4);
-        try (ProbeState state = invalidModel.newState(8, 8)) {
-            assertThrows(
-                    IllegalArgumentException.class,
-                    () -> invalid.embedAll(state, List.of("x"), ignored -> {}));
         }
 
         Arena arena = Arena.ofShared();
@@ -143,9 +137,64 @@ final class LoadedEmbedderTest {
         arena.close();
         LoadedEmbedder<ProbeState> closed = loaded(closedModel, 4);
         try (ProbeState state = closedModel.newState(8, 8)) {
-            assertThrows(
-                    IllegalStateException.class,
-                    () -> closed.embedAll(state, List.of("x"), ignored -> {}));
+            IllegalStateException failure =
+                    assertThrows(
+                            IllegalStateException.class,
+                            () -> closed.embedAll(state, List.of("x"), ignored -> {}));
+            assertTrue(failure.getMessage().contains("backing memory already freed"));
+            assertNull(failure.getCause(), "an existing state failure is not wrapped again");
+        }
+    }
+
+    @Test
+    void invalidModelOutputsAreStateFailuresOnBothEmbeddingPaths() {
+        List<MemoryView<?>> invalid =
+                List.of(
+                        Views.wrap(
+                                MemorySegment.ofArray(new float[3]), DataType.FP32, Shape.flat(3)),
+                        Views.wrap(
+                                MemorySegment.ofArray(new double[4]), DataType.FP64, Shape.flat(4)),
+                        Views.wrap(
+                                        MemorySegment.ofArray(new float[4]),
+                                        DataType.FP32,
+                                        Shape.flat(2, 2))
+                                .transpose(0, 1),
+                        MemoryView.rowMajor(
+                                Memories.of(new float[4]), DataType.FP32, Shape.flat(4)));
+        for (MemoryView<?> view : invalid) {
+            ProbeModel model = new ProbeModel(4);
+            model.projected = view;
+            LoadedEmbedder<ProbeState> loaded = loaded(model, 4);
+            try (ProbeState state = model.newState(8, 8)) {
+                List<float[]> vectors = new ArrayList<>();
+                List<Executable> paths =
+                        List.of(
+                                () -> loaded.embedAll(state, List.of("x"), vectors::add),
+                                () -> loaded.embed(state, List.of("x"), 4, vectors::add));
+                for (Executable path : paths) {
+                    IllegalStateException failure = assertThrows(IllegalStateException.class, path);
+                    if (view.shape().size() != 4) {
+                        assertEquals(
+                                "embedding: expected 4 values but received 3",
+                                failure.getMessage());
+                        assertNull(failure.getCause());
+                    } else {
+                        assertEquals("invalid embedding output", failure.getMessage());
+                        assertInstanceOf(IllegalArgumentException.class, failure.getCause());
+                        assertTrue(
+                                failure.getCause().getMessage().startsWith("embedding: expected "));
+                    }
+                    assertTrue(vectors.isEmpty(), "invalid output must not reach the consumer");
+                }
+                model.projected =
+                        Views.wrap(
+                                MemorySegment.ofArray(new float[4]), DataType.FP32, Shape.flat(4));
+                for (Executable path : paths) assertDoesNotThrow(path);
+                assertEquals(
+                        2,
+                        vectors.size(),
+                        "both paths remain usable after output validation fails");
+            }
         }
     }
 
@@ -282,10 +331,10 @@ final class LoadedEmbedderTest {
                     });
             assertNull(concurrentFailure.get(), "consumer ran while the model held the state");
 
-            RuntimeException expected = new RuntimeException("consumer failed");
-            RuntimeException actual =
+            IllegalArgumentException expected = new IllegalArgumentException("consumer failed");
+            IllegalArgumentException actual =
                     assertThrows(
-                            RuntimeException.class,
+                            IllegalArgumentException.class,
                             () ->
                                     loaded.embedAll(
                                             state,
@@ -295,6 +344,21 @@ final class LoadedEmbedderTest {
                                             }));
             assertSame(expected, actual);
             loaded.embedAll(state, List.of("x"), ignored -> {});
+            model.projected =
+                    Views.wrap(MemorySegment.ofArray(new float[4]), DataType.FP32, Shape.flat(4));
+            assertSame(
+                    expected,
+                    assertThrows(
+                            IllegalArgumentException.class,
+                            () ->
+                                    loaded.embed(
+                                            state,
+                                            List.of("x"),
+                                            4,
+                                            ignored -> {
+                                                throw expected;
+                                            })));
+            loaded.embed(state, List.of("x"), 4, ignored -> {});
         }
     }
 
@@ -412,6 +476,12 @@ final class LoadedEmbedderTest {
         public void projectEmbedding(
                 ProbeState state, int outputIndex, Consumer<MemoryView<?>> consumer) {
             throw new UnsupportedOperationException();
+        }
+
+        @Override
+        public int embed(ProbeState state, List<?> parts, Consumer<MemoryView<?>> consumer) {
+            state.exclusively(() -> consumer.accept(projected));
+            return 1;
         }
 
         @Override
