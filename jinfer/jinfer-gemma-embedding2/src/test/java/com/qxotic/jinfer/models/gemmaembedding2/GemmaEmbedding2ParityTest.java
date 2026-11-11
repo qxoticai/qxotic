@@ -2,10 +2,13 @@ package com.qxotic.jinfer.models.gemmaembedding2;
 
 import static org.junit.jupiter.api.Assertions.assertArrayEquals;
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertInstanceOf;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.junit.jupiter.api.Assumptions.assumeTrue;
 
+import com.qxotic.jinfer.Batch;
 import com.qxotic.jinfer.Views;
+import com.qxotic.jinfer.chat.Models;
 import com.qxotic.jinfer.codecs.AudioCodec;
 import com.qxotic.jinfer.codecs.ImageCodec;
 import com.qxotic.jinfer.media.Media;
@@ -93,8 +96,11 @@ final class GemmaEmbedding2ParityTest {
         Path reference = Path.of(dir);
         double textCosine = gate("textCosine", "0.999999");
         try (Arena arena = Arena.ofShared()) {
-            GemmaEmbedding2 model = GemmaEmbedding2.loadModel(path("model", MODEL_REF), arena);
+            var loaded = Models.loadEmbedder(path("model", MODEL_REF), arena);
+            GemmaEmbedding2 model = assertInstanceOf(GemmaEmbedding2.class, loaded.model());
             try (GemmaEmbedding2.State state = model.newState(8_192, 512)) {
+                List<String> texts = new ArrayList<>();
+                List<float[]> references = new ArrayList<>();
                 for (String line : Files.readAllLines(reference.resolve("prompts.tsv"))) {
                     String[] cell = line.split("\t", -1);
                     String name = cell[0], title = cell[2], text = unescape(cell[3]);
@@ -108,20 +114,36 @@ final class GemmaEmbedding2ParityTest {
                                 case "Clustering" -> GemmaEmbedding2.clustering(text);
                                 case "SentenceSimilarity" -> GemmaEmbedding2.similarity(text);
                                 case "Document" -> GemmaEmbedding2.document(title, text);
+                                case "Raw" -> text;
                                 default -> throw new AssertionError("prompt " + cell[1]);
                             };
-                    int[] tokens = model.tokenizer().encode(framed).toArray();
-                    int[] actualIds = new int[tokens.length + 2];
-                    actualIds[0] = model.bos;
-                    System.arraycopy(tokens, 0, actualIds, 1, tokens.length);
-                    actualIds[actualIds.length - 1] = model.eos;
+                    int[] actualIds = loaded.textTemplate().apply(framed).toArray();
                     assertArrayEquals(ints(reference.resolve(name + ".ids")), actualIds, name);
 
+                    int split = framed.indexOf("<bos>");
+                    split = split >= 0 ? split + 3 : framed.length() / 2;
+                    List<Batch> batches = new ArrayList<>();
+                    model.template.encodeParts(
+                            List.of(framed.substring(0, split), framed.substring(split)),
+                            3,
+                            batches::add);
+                    assertArrayEquals(actualIds, Batch.tokenIds(batches), name + " split parts");
+                    assertTrue(batches.stream().allMatch(batch -> batch.count() <= 3));
+
                     float[] expected = floats(reference.resolve(name + ".emb"), 0);
+                    texts.add(framed);
+                    references.add(expected);
                     double cosine = cosine(expected, embed(model, state, List.of(framed)));
                     System.out.printf(
                             "%-26s %4d tokens, cosine=%.9f%n", name, actualIds.length, cosine);
                     assertTrue(cosine > textCosine, name + " cosine " + cosine);
+                }
+                List<float[]> packed = new ArrayList<>();
+                loaded.embedAll(state, texts, packed::add);
+                assertEquals(texts.size(), packed.size());
+                for (int i = 0; i < texts.size(); i++) {
+                    double cosine = cosine(references.get(i), packed.get(i));
+                    assertTrue(cosine > textCosine, "packed text " + i + " cosine " + cosine);
                 }
             }
         }

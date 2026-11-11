@@ -40,7 +40,7 @@ public final class GemmaEmbedding2Provider implements ModelProvider {
     }
 
     /**
-     * Every sequence is framed {@code <bos> ... <eos>} (the GGUF's add_bos/add_eos); the card's
+     * The model's template owns special-token interpretation and BOS/EOS framing; the card's
      * retrieval prefixes and Matryoshka widths down to 128; a {@code "media"} companion attaches
      * the mmproj's towers.
      */
@@ -65,6 +65,7 @@ public final class GemmaEmbedding2Provider implements ModelProvider {
                 128,
                 path.getFileName().toString(),
                 GemmaEmbedding2.SEARCH_QUERY,
-                GemmaEmbedding2.DOCUMENT);
+                GemmaEmbedding2.DOCUMENT,
+                model.template::encodeText);
     }
 }

@@ -65,6 +65,44 @@ final class LoadedEmbedderTest {
     }
 
     @Test
+    void aTextTemplateOwnsFramingWhileThePackerOwnsLengthsAndInference() {
+        ProbeModel model = new ProbeModel(4);
+        List<String> rendered = new ArrayList<>();
+        LoadedEmbedder<ProbeState> loaded =
+                new LoadedEmbedder<>(
+                        model,
+                        tokenizer(),
+                        IntSequence.of(99),
+                        IntSequence.of(100),
+                        4,
+                        4,
+                        "templated",
+                        "",
+                        "",
+                        text -> {
+                            rendered.add(text);
+                            return IntSequence.of(7, text.length(), 8);
+                        });
+        try (ProbeState state = model.newState(6, 6)) {
+            List<float[]> vectors = new ArrayList<>();
+            assertEquals(6, loaded.embedAll(state, List.of("x", "yz"), vectors::add));
+            assertEquals(List.of("x", "yz"), rendered);
+            assertEquals(1, model.calls);
+            assertEquals(2, vectors.size());
+            assertArrayEquals(new int[] {7, 1, 8, 7, 2, 8}, model.batches.getFirst());
+            assertArrayEquals(new int[] {3, 3}, model.lengths.getFirst());
+        }
+        try (ProbeState state = model.newState(2, 2)) {
+            IllegalArgumentException failure =
+                    assertThrows(
+                            IllegalArgumentException.class,
+                            () -> loaded.embedAll(state, List.of("x"), 4, 8, ignored -> {}));
+            assertTrue(failure.getMessage().startsWith("text 8 is 3 tokens,"));
+            assertEquals(1, model.calls, "rendered overflow is refused before inference");
+        }
+    }
+
+    @Test
     void dimensionsAreValuesNotOptionProvenance() {
         ProbeModel model = new ProbeModel(4).outputs(new float[] {3, 4, 12, 7});
         LoadedEmbedder<ProbeState> variable = loaded(model, 2);

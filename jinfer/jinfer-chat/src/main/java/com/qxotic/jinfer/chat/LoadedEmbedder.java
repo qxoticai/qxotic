@@ -13,6 +13,7 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.Objects;
 import java.util.function.Consumer;
+import java.util.function.Function;
 
 /**
  * An embedding port's loaded bundle - the {@link Models#loadEmbedder} counterpart of {@link
@@ -25,6 +26,11 @@ import java.util.function.Consumer;
  * a retrieval role; {@code ""} = the card prescribes none for that side). Retrieval-tuned embedders
  * are trained WITH these prefixes - LFM2.5's {@code "query: "}/{@code "document: "} pair, Qwen3's
  * instructed query - and embedding bare text instead silently degrades retrieval quality.
+ *
+ * <p>{@code textTemplate} renders one complete input sequence. The default template encodes raw
+ * text between {@code prefixTokens} and {@code suffixTokens}; a model-specific template owns all
+ * framing and special-token interpretation, so the packer never adds those tokens again. Templates
+ * must support concurrent calls and return stable token sequences.
  */
 public record LoadedEmbedder<S extends ContextState>(
         EmbeddingModel<?, ?, S> model,
@@ -35,7 +41,32 @@ public record LoadedEmbedder<S extends ContextState>(
         int minimumDimension,
         String name,
         String queryPrefix,
-        String documentPrefix) {
+        String documentPrefix,
+        Function<String, IntSequence> textTemplate) {
+
+    /** The default template: raw tokenization with fixed prefix/suffix framing. */
+    public LoadedEmbedder(
+            EmbeddingModel<?, ?, S> model,
+            Tokenizer tokenizer,
+            IntSequence prefixTokens,
+            IntSequence suffixTokens,
+            int dimension,
+            int minimumDimension,
+            String name,
+            String queryPrefix,
+            String documentPrefix) {
+        this(
+                model,
+                tokenizer,
+                prefixTokens,
+                suffixTokens,
+                dimension,
+                minimumDimension,
+                name,
+                queryPrefix,
+                documentPrefix,
+                rawTemplate(tokenizer, prefixTokens, suffixTokens));
+    }
 
     public LoadedEmbedder {
         Objects.requireNonNull(model, "model");
@@ -43,6 +74,7 @@ public record LoadedEmbedder<S extends ContextState>(
         Objects.requireNonNull(name, "name");
         Objects.requireNonNull(queryPrefix, "queryPrefix");
         Objects.requireNonNull(documentPrefix, "documentPrefix");
+        Objects.requireNonNull(textTemplate, "textTemplate");
         prefixTokens = snapshot(prefixTokens);
         suffixTokens = snapshot(suffixTokens);
         if (dimension <= 0) throw new IllegalArgumentException("dimension " + dimension);
@@ -53,6 +85,13 @@ public record LoadedEmbedder<S extends ContextState>(
 
     private static IntSequence snapshot(IntSequence tokens) {
         return IntSequence.wrap(Objects.requireNonNull(tokens, "tokens").toArray());
+    }
+
+    private static Function<String, IntSequence> rawTemplate(
+            Tokenizer tokenizer, IntSequence prefixTokens, IntSequence suffixTokens) {
+        Objects.requireNonNull(tokenizer, "tokenizer");
+        IntSequence prefix = snapshot(prefixTokens), suffix = snapshot(suffixTokens);
+        return text -> IntSequence.concatAll(prefix, tokenizer.encode(text), suffix);
     }
 
     /** Whether this model was trained to preserve quality after prefix truncation. */
@@ -167,7 +206,7 @@ public record LoadedEmbedder<S extends ContextState>(
             int inputIndex = firstInputIndex + i;
             String text = Objects.requireNonNull(texts.get(i), "texts[" + inputIndex + "]");
             IntSequence sequence =
-                    IntSequence.concatAll(prefixTokens, tokenizer.encode(text), suffixTokens);
+                    Objects.requireNonNull(textTemplate.apply(text), "text template result");
             if (sequence.isEmpty()) {
                 throw new IllegalArgumentException("text " + inputIndex + " produced no tokens");
             }

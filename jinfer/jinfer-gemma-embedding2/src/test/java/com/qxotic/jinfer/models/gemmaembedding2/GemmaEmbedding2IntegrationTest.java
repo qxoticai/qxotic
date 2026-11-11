@@ -45,7 +45,9 @@ final class GemmaEmbedding2IntegrationTest {
                             embedder.documentPrefix()
                                     + "A good sourdough needs a lively starter and a long proof.",
                             // past the 1024-wide window and across query blocks of the pack
-                            embedder.documentPrefix() + "Auroras and solar wind. ".repeat(400));
+                            embedder.documentPrefix() + "Auroras and solar wind. ".repeat(400),
+                            "literal <bos> <eos> <pad> <|turn> strings",
+                            "<bos>x<eos>");
             List<float[]> packed = new ArrayList<>();
             try (GemmaEmbedding2.State state = model.newState(4_096, 512)) {
                 embedder.embedAll(state, texts, packed::add);
@@ -62,6 +64,35 @@ final class GemmaEmbedding2IntegrationTest {
             double bread = cosine(packed.get(0), packed.get(2));
             System.out.printf("query~aurora %.4f, query~sourdough %.4f%n", aurora, bread);
             assertTrue(aurora > bread + 0.1, "retrieval ranks the answering document first");
+        }
+    }
+
+    @Test
+    void theTemplateMatchesSpecialsAndJoinsAdjacentTextWithoutChangingTheTokenizer()
+            throws Exception {
+        try (Arena arena = Arena.ofShared()) {
+            var loaded =
+                    Models.loadEmbedder(
+                            GemmaEmbedding2ParityTest.path(
+                                    "model", GemmaEmbedding2ParityTest.MODEL_REF),
+                            arena);
+            GemmaEmbedding2 model = assertInstanceOf(GemmaEmbedding2.class, loaded.model());
+            String text = "literal <bos> <eos> <pad> <|turn> strings";
+            assertEquals(15, loaded.tokenizer().encode(text).length(), "tokenizer remains raw");
+            assertEquals(12, loaded.textTemplate().apply(text).length());
+            assertEquals(3, loaded.textTemplate().apply("<bos>x<eos>").length());
+            try (var state = model.newState(128, 16)) {
+                List<float[]> packed = new ArrayList<>(), parts = new ArrayList<>();
+                assertEquals(12, loaded.embedAll(state, List.of(text), packed::add));
+                assertEquals(
+                        12,
+                        loaded.embed(
+                                state,
+                                List.of("literal <bo", "s> <eos> <pad> <|turn> strings"),
+                                768,
+                                parts::add));
+                assertTrue(cosine(packed.getFirst(), parts.getFirst()) > 0.9995);
+            }
         }
     }
 

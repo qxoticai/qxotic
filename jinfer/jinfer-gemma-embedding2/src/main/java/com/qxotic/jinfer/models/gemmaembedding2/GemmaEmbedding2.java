@@ -8,7 +8,6 @@ import com.qxotic.jinfer.ContextState;
 import com.qxotic.jinfer.EmbeddingModel;
 import com.qxotic.jinfer.Parallel;
 import com.qxotic.jinfer.Views;
-import com.qxotic.jinfer.chat.PromptWriter;
 import com.qxotic.jinfer.kernels.Activations;
 import com.qxotic.jinfer.kernels.Convert;
 import com.qxotic.jinfer.kernels.MatMul;
@@ -17,7 +16,6 @@ import com.qxotic.jinfer.kernels.Norms;
 import com.qxotic.jinfer.kernels.Ops;
 import com.qxotic.jinfer.kernels.RoPE;
 import com.qxotic.jinfer.kernels.Trace;
-import com.qxotic.jinfer.llm.SpecialTokens;
 import com.qxotic.jinfer.media.Media;
 import com.qxotic.jinfer.media.MediaProjector;
 import com.qxotic.jinfer.media.Multimodal;
@@ -124,10 +122,9 @@ public final class GemmaEmbedding2
     private final Weights weights;
     private final Gemma4.Towers towers;
 
-    /** The reference video processor's {@code max_soft_tokens}: a frame's budget (a still: 280). */
-    static final int VIDEO_FRAME_TOKENS = 140;
+    final GemmaEmbedding2Template template;
 
-    final int bos, eos; // every input is framed <bos> ... <eos>
+    final int bos, eos; // default sequence framing, applied by the template
 
     private GemmaEmbedding2(
             Configuration configuration,
@@ -135,13 +132,15 @@ public final class GemmaEmbedding2
             Weights weights,
             Gemma4.Towers towers,
             int bos,
-            int eos) {
+            int eos,
+            GemmaEmbedding2Template template) {
         this.configuration = configuration;
         this.tokenizer = tokenizer;
         this.weights = weights;
         this.towers = towers;
         this.bos = bos;
         this.eos = eos;
+        this.template = template;
     }
 
     @Override
@@ -160,18 +159,22 @@ public final class GemmaEmbedding2
 
     /** A model sharing these weights with the towers of {@code mmprojPath} attached. */
     public GemmaEmbedding2 withMedia(Path mmprojPath, Arena arena) throws IOException {
+        Gemma4.Towers media = Gemma4.loadTowers(mmprojPath, configuration.embeddingLength, arena);
         return new GemmaEmbedding2(
-                configuration,
-                tokenizer,
-                weights,
-                Gemma4.loadTowers(mmprojPath, configuration.embeddingLength, arena),
-                bos,
-                eos);
+                configuration, tokenizer, weights, media, bos, eos, template.withMedia(media));
     }
 
     @Override
     public <R extends Media> Optional<MediaProjector<R>> projector(Class<R> modality) {
         return towers.projector(modality);
+    }
+
+    /** A video is embedded as its frames, projected by the image tower; audio has its own. */
+    @Override
+    public boolean supports(Class<? extends Media> modality) {
+        return modality == Media.Video.class
+                ? towers.frames(1).isPresent()
+                : Multimodal.super.supports(modality);
     }
 
     @Override
@@ -250,11 +253,12 @@ public final class GemmaEmbedding2
      * Media.Audio}/{@link Media.Video} parts in order, framed as the reference processor frames
      * them - {@code <bos>}, the text's tokens, each medium's projected rows between {@code
      * <|image>}/{@code <image|>} (or {@code <|audio>}/{@code <audio|>}), {@code <eos>}. A video is
-     * its frames back to back, each an image block sized at {@link #VIDEO_FRAME_TOKENS}; which
-     * frames is the caller's sampling (the reference takes one a second, at most 32, see {@code
+     * its frames back to back, each an image block with a 140-token budget; which frames is the
+     * caller's sampling (the reference takes one a second, at most 32, see {@code
      * VideoCodec#every}). The state is reset first; the embedding is a state-owned view, live until
      * {@code consumer} returns. Returns the positions the input took; an input over the state's
-     * contextCapacity is refused with the positions it needs.
+     * contextCapacity is refused with the positions it needs. A leading BOS spelling disables
+     * automatic BOS/EOS, as in the reference processor.
      */
     @Override
     public int embed(State state, List<?> parts, Consumer<MemoryView<?>> consumer) {
@@ -269,40 +273,13 @@ public final class GemmaEmbedding2
                         // positions the whole input needs, as chat's does
                         int capacity = state.contextCapacity();
                         int[] needed = {0};
-                        PromptWriter out =
-                                new PromptWriter(
-                                        tokenizer,
-                                        state.batchCapacity(),
-                                        b -> {
-                                            needed[0] = Math.addExact(needed[0], b.count());
-                                            if (needed[0] <= capacity) stage(state, b);
-                                        });
-                        out.id(bos);
-                        for (Object part : parts)
-                            switch (part) {
-                                case String text -> out.text(text);
-                                case Media.Image image ->
-                                        media(
-                                                out,
-                                                image,
-                                                tower(projector(Media.Image.class), "image"));
-                                case Media.Audio audio ->
-                                        media(
-                                                out,
-                                                audio,
-                                                tower(projector(Media.Audio.class), "audio"));
-                                case Media.Video video -> {
-                                    var frames = tower(towers.frames(VIDEO_FRAME_TOKENS), "video");
-                                    for (Media.Video.Frame frame : video.frames())
-                                        media(out, frame.image(), frames);
-                                }
-                                case null, default ->
-                                        throw new IllegalArgumentException(
-                                                "parts are String or Media.Image, Media.Audio,"
-                                                        + " Media.Video, not "
-                                                        + part);
-                            }
-                        out.id(eos).finish();
+                        template.encodeParts(
+                                parts,
+                                state.batchCapacity(),
+                                b -> {
+                                    needed[0] = Math.addExact(needed[0], b.count());
+                                    if (needed[0] <= capacity) stage(state, b);
+                                });
                         if (needed[0] > capacity)
                             throw new IllegalArgumentException(
                                     "input exceeds context capacity ("
@@ -317,23 +294,6 @@ public final class GemmaEmbedding2
             Reference.reachabilityFence(this);
         }
         return positions[0];
-    }
-
-    private <R extends Media> void media(PromptWriter out, R media, MediaProjector<R> projector) {
-        boolean audio = media instanceof Media.Audio;
-        out.id(SpecialTokens.require(tokenizer, audio ? "<|audio>" : "<|image>"))
-                .media(media, null, projector, true)
-                .id(SpecialTokens.require(tokenizer, audio ? "<audio|>" : "<image|>"));
-    }
-
-    private static <R extends Media> MediaProjector<R> tower(
-            Optional<MediaProjector<R>> projector, String medium) {
-        return projector.orElseThrow(
-                () ->
-                        new UnsupportedOperationException(
-                                "no tower for "
-                                        + medium
-                                        + " input attached: load the mmproj with withMedia"));
     }
 
     /** A whole packed stream: every length positive, summing to the token count. */
@@ -784,13 +744,16 @@ public final class GemmaEmbedding2
         Configuration c = loadConfiguration(gguf, tokenizer.vocabulary().size());
         Map<String, MemoryView<MemorySegment>> tensors =
                 ModelLoader.loadTensors(channel, gguf, arena);
+        int bos = gguf.getValue(int.class, "tokenizer.ggml.bos_token_id");
+        int eos = gguf.getValue(int.class, "tokenizer.ggml.eos_token_id");
         return new GemmaEmbedding2(
                 c,
                 tokenizer,
                 loadWeights(tensors, c),
                 Gemma4.Towers.NONE,
-                gguf.getValue(int.class, "tokenizer.ggml.bos_token_id"),
-                gguf.getValue(int.class, "tokenizer.ggml.eos_token_id"));
+                bos,
+                eos,
+                new GemmaEmbedding2Template(tokenizer, bos, eos, Gemma4.Towers.NONE));
     }
 
     /** Reads what llama.cpp reads, and refuses what its graph does not implement. */

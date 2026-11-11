@@ -23,9 +23,19 @@ EmbeddingGemma 2 is trained with a short prompt in front of the text, one per ta
 
 - The four retrieval tasks share one document framing, so one index serves all of them; a null title is `none`, as the card says.
 - Images, audio and video take no prompt: embed them as they are, whatever the task.
-- Framed text goes only to `LoadedEmbedder.embed` and `embedAll`, which embed text as given; the integrations add their own search prompt.
+- Pass task-framed text through `LoadedEmbedder` or an integration route that does not add task framing; selecting a query/document role again would add a second task prefix.
 
 The strings are the card's, from `config_sentence_transformers.json`; `GemmaEmbedding2ParityTest` holds every method to the official pipeline's tokens and vectors.
+
+## Input template
+
+In `0.4.0`, Gemma's input template uses `Specials` to recognize special-token spellings such as `<bos>`, `<eos>`, and `<pad>`, matching the reference pipeline.
+Toknroll's tokenizer remains raw-text-only; special-token interpretation belongs to the template.
+The template adds BOS/EOS unless the rendered text already starts with `<bos>`, in which case the reference processor disables both automatic boundary tokens.
+This rule applies independently to each input, so batch neighbors do not change its framing.
+Adjacent text parts are joined before encoding, including a special spelling split across parts; media ends the text run.
+Packed text and content-part inputs share the same template and special-token matcher.
+Regenerate affected vectors in existing indexes when upgrading from the previous raw-text behavior.
 
 ## Examples
 

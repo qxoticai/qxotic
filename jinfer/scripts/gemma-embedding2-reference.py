@@ -93,6 +93,7 @@ def ref(model_id, out):
         'cat': ('{m}', [cat]),  # grows to the 280-token budget
         'dice': ('{m}', [dice]),
         'cat_text': ('A photo of a cat: {m} It is sitting.', [cat]),
+        'cat_specials': ('literal <bos> before {m} after <eos>', [cat]),
         'speech': ('{m}', [speech]),
         'chirp': ('{m}', [os.path.join(AUDIO, 'chirp-5s.wav')]),
         'long_audio': ('{m}', [long_audio]),  # 30 s: the reference's feature extractor cuts there
@@ -153,6 +154,9 @@ def prompts(st, long_text, out):
         'plain': 'How tall is the Eiffel Tower?',
         'edges': ' A leading space,\na newline and a | bar.',
         'scripts': '東京タワーの高さは？ Сколько лет Эйфелевой башне? ¿Qué altura tiene?',
+        'specials': 'literal <bos> <eos> <pad> <|turn> strings',
+        'adjacent': '<bos><bos><eos><pad><|turn>',
+        'incomplete': 'literal <bo and <|tur stay text',
     }
     cases = [(f'{name}_{k}', name, '', text) for name in st.prompts
              if name in ('SearchQuery', 'QuestionAnswering', 'FactChecking', 'CodeRetrieval',
@@ -161,13 +165,18 @@ def prompts(st, long_text, out):
     cases += [('QuestionAnswering_long', 'QuestionAnswering', '', long_text),
               ('Document_long', 'Document', '', long_text),
               ('Document_titled', 'Document', 'Eiffel | Tower', 'The tower is 330 metres tall.'),
-              ('Document_code', 'Document', 'GgufReader.java', 'static Header read(FileChannel c) {}')]
+              ('Document_code', 'Document', 'GgufReader.java', 'static Header read(FileChannel c) {}'),
+              ('Raw_specials', 'Raw', '', texts['specials']),
+              ('Raw_adjacent', 'Raw', '', texts['adjacent']),
+              ('Raw_incomplete', 'Raw', '', texts['incomplete']),
+              ('Raw_empty', 'Raw', '', ''),
+              ('Raw_framed', 'Raw', '', '<bos>x<eos>')]
     escape = lambda s: s.replace('\\', '\\\\').replace('\n', '\\n').replace('\t', '\\t')
     with open(os.path.join(out, 'prompts.tsv'), 'w') as f:
         for case, name, title, text in cases:
             f.write(f'{case}\t{name}\t{title}\t{escape(text)}\n')
-            framed = f'title: {title} | text: {text}' if title else st.prompts[name] + text
-            embedding = (st.encode([framed]) if title else st.encode([text], prompt_name=name))[0]
+            framed = text if name == 'Raw' else (f'title: {title} | text: {text}' if title else st.prompts[name] + text)
+            embedding = (st.encode([framed]) if title or name == 'Raw' else st.encode([text], prompt_name=name))[0]
             ids = st.tokenize([framed])['input_ids'][0].numpy().astype('<i4')
             np.asarray(embedding, dtype='<f4').tofile(os.path.join(out, case + '.emb'))
             ids.tofile(os.path.join(out, case + '.ids'))
