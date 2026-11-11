@@ -1,8 +1,6 @@
 package com.qxotic.jinfer.spring.ai.autoconfigure;
 
-import com.qxotic.jinfer.hub.ModelStore;
 import com.qxotic.jinfer.spring.ai.JinferDocumentPostProcessor;
-import java.nio.file.Path;
 import org.springframework.ai.rag.postretrieval.document.DocumentPostProcessor;
 import org.springframework.boot.autoconfigure.AutoConfiguration;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnClass;
@@ -42,15 +40,11 @@ public class JinferRerankAutoConfiguration {
         // unset keeps the builder's no-threshold default (ColBERT MaxSim sums can be negative;
         // a 0 here silently dropped them)
         if (properties.minScore() != null) builder.minScore(properties.minScore());
-        if (properties.model().contains("://")) {
-            throw new IllegalStateException(
-                    "spring.ai.jinfer.rerank.model is a URL; download it first and configure its"
-                            + " local path");
-        } else if (ModelStore.isRef(properties.model())) {
-            builder.model(properties.model());
-        } else {
-            builder.modelPath(Path.of(properties.model()));
-        }
+        Sources.model(
+                "spring.ai.jinfer.rerank.model",
+                properties.model(),
+                builder::model,
+                builder::modelPath);
         if (StringUtils.hasText(properties.instruction())) {
             builder.instruction(properties.instruction());
         }

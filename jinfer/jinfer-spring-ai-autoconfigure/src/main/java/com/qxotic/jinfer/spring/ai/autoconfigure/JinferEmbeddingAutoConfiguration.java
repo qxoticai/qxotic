@@ -1,9 +1,7 @@
 package com.qxotic.jinfer.spring.ai.autoconfigure;
 
-import com.qxotic.jinfer.hub.ModelStore;
 import com.qxotic.jinfer.spring.ai.JinferEmbeddingModel;
 import io.micrometer.observation.ObservationRegistry;
-import java.nio.file.Path;
 import org.springframework.ai.embedding.EmbeddingModel;
 import org.springframework.ai.embedding.observation.EmbeddingModelObservationConvention;
 import org.springframework.beans.factory.ObjectProvider;
@@ -41,16 +39,12 @@ public class JinferEmbeddingAutoConfiguration {
                 JinferEmbeddingModel.builder()
                         .contextCapacity(properties.contextCapacity())
                         .dimensions(properties.dimensions());
-        if (properties.model().contains("://")) {
-            throw new IllegalStateException(
-                    "spring.ai.jinfer.embedding.model is a URL; download it first and configure"
-                            + " its local path");
-        } else if (ModelStore.isRef(properties.model())) {
-            builder.model(properties.model());
-        } else {
-            builder.modelPath(Path.of(properties.model()));
-        }
-        Companions.attach(
+        Sources.model(
+                "spring.ai.jinfer.embedding.model",
+                properties.model(),
+                builder::model,
+                builder::modelPath);
+        Sources.companions(
                 "spring.ai.jinfer.embedding",
                 properties.companions(),
                 builder::companion,

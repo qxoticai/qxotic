@@ -1,8 +1,6 @@
 package com.qxotic.jinfer.spring.ai.autoconfigure;
 
-import com.qxotic.jinfer.hub.ModelStore;
 import com.qxotic.jinfer.spring.ai.JinferTranscriptionModel;
-import java.nio.file.Path;
 import org.springframework.boot.autoconfigure.AutoConfiguration;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnClass;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnMissingBean;
@@ -35,15 +33,11 @@ public class JinferTranscriptionAutoConfiguration {
                             + " (mudler/parakeet-cpp-gguf/tdt-0.6b-v3-q8_0.gguf)");
         }
         JinferTranscriptionModel.Builder builder = JinferTranscriptionModel.builder();
-        if (properties.model().contains("://")) {
-            throw new IllegalStateException(
-                    "spring.ai.jinfer.transcription.model is a URL; download it first and configure"
-                            + " its local path");
-        } else if (ModelStore.isRef(properties.model())) {
-            builder.model(properties.model());
-        } else {
-            builder.modelPath(Path.of(properties.model()));
-        }
+        Sources.model(
+                "spring.ai.jinfer.transcription.model",
+                properties.model(),
+                builder::model,
+                builder::modelPath);
         return builder.build();
     }
 }

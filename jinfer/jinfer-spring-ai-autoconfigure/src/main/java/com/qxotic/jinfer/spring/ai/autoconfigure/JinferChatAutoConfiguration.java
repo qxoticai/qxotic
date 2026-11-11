@@ -1,7 +1,6 @@
 package com.qxotic.jinfer.spring.ai.autoconfigure;
 
 import com.qxotic.jinfer.codecs.VideoSampler;
-import com.qxotic.jinfer.hub.ModelStore;
 import com.qxotic.jinfer.spring.ai.JinferChatModel;
 import io.micrometer.observation.ObservationRegistry;
 import java.nio.file.Path;
@@ -50,19 +49,15 @@ public class JinferChatAutoConfiguration {
                         .options(properties.toOptions())
                         .speculationDepth(properties.speculationDepth());
         builder.contextCapacity(properties.contextCapacity());
-        if (properties.model().contains("://")) {
-            throw new IllegalStateException(
-                    "spring.ai.jinfer.chat.model is a URL; download it first and configure its"
-                            + " local path");
-        } else if (ModelStore.isRef(properties.model())) {
-            builder.model(properties.model());
-        } else {
-            builder.modelPath(Path.of(properties.model())); // local path: the explicit door
-        }
+        Sources.model(
+                "spring.ai.jinfer.chat.model",
+                properties.model(),
+                builder::model,
+                builder::modelPath);
         observationRegistry.ifAvailable(builder::observationRegistry);
         observationConvention.ifAvailable(builder::observationConvention);
         videoSampler.ifAvailable(builder::videoSampler); // a VideoSampler bean overrides UNIFORM
-        Companions.attach(
+        Sources.companions(
                 "spring.ai.jinfer.chat",
                 properties.companions(),
                 builder::companion,

@@ -1,8 +1,6 @@
 package com.qxotic.jinfer.spring.ai.autoconfigure;
 
-import com.qxotic.jinfer.hub.ModelStore;
 import com.qxotic.jinfer.spring.ai.JinferSpeechModel;
-import java.nio.file.Path;
 import org.springframework.boot.autoconfigure.AutoConfiguration;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnClass;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnMissingBean;
@@ -45,16 +43,12 @@ public class JinferSpeechAutoConfiguration {
                             + maxInputChars);
         }
         JinferSpeechModel.Builder builder = JinferSpeechModel.builder();
-        if (properties.model().contains("://")) {
-            throw new IllegalStateException(
-                    "spring.ai.jinfer.speech.model is a URL; download it first and configure its"
-                            + " local path");
-        } else if (ModelStore.isRef(properties.model())) {
-            builder.model(properties.model());
-        } else {
-            builder.modelPath(Path.of(properties.model()));
-        }
-        Companions.attach(
+        Sources.model(
+                "spring.ai.jinfer.speech.model",
+                properties.model(),
+                builder::model,
+                builder::modelPath);
+        Sources.companions(
                 "spring.ai.jinfer.speech",
                 properties.companions(),
                 builder::companion,
