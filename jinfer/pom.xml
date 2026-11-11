@@ -44,6 +44,7 @@
     <module>jinfer-models-all</module>
     <module>jinfer-tts</module>
     <module>jinfer-chat</module>
+    <module>jinfer-decision</module>
     <module>jinfer-server</module>
     <module>jinfer-cli</module>
     <module>jinfer-bench</module>
@@ -175,6 +176,11 @@
       <dependency>
         <groupId>com.qxotic</groupId>
         <artifactId>jinfer-lfm3</artifactId>
+        <version>${jinfer.version}</version>
+      </dependency>
+      <dependency>
+        <groupId>com.qxotic</groupId>
+        <artifactId>jinfer-decision</artifactId>
         <version>${jinfer.version}</version>
       </dependency>
       <dependency>

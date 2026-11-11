@@ -126,6 +126,11 @@
       </dependency>
       <dependency>
         <groupId>com.qxotic</groupId>
+        <artifactId>jinfer-decision</artifactId>
+        <version>0.4.0</version>
+      </dependency>
+      <dependency>
+        <groupId>com.qxotic</groupId>
         <artifactId>jinfer-mellum</artifactId>
         <version>0.4.0</version>
       </dependency>
