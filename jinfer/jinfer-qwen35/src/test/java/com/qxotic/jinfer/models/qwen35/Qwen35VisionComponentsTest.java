@@ -42,6 +42,15 @@ class Qwen35VisionComponentsTest {
                 Qwen35VisionPreprocess.smartResize(4096, 4096, 32, 8, 4096));
     }
 
+    /** An edge at exactly half a cell rounds to even, as llama.cpp's nearbyint does. */
+    @Test
+    void smartResizeRoundsHalvesToEven() {
+        assertArrayEquals( // 2000/32 = 62.5 -> 62 cells, 500/32 = 15.6 -> 16
+                new int[] {1984, 512}, Qwen35VisionPreprocess.smartResize(2000, 500, 32, 8, 4096));
+        assertArrayEquals( // 1520/32 = 47.5 -> 48 cells
+                new int[] {1536, 512}, Qwen35VisionPreprocess.smartResize(1520, 500, 32, 8, 4096));
+    }
+
     @Test
     void smartResizeRejectsNonsense() {
         assertThrows(
@@ -58,6 +67,9 @@ class Qwen35VisionComponentsTest {
     /** mean = std = 0.5: the [0,1] pixel space centered to [-1,1]. */
     private static final float[] HALF = {0.5f, 0.5f, 0.5f};
 
+    /** One 8-bit step: the pixels pass through bytes, as the processor reads them. */
+    private static final float BYTE = 2f / 255;
+
     @Test
     void normalizeIsChannelFirstAndCentersPixelSpace() {
         // One RGB pixel (1x1) upsampled to 2x2: every output pixel is that same pixel, but the
@@ -71,37 +83,28 @@ class Qwen35VisionComponentsTest {
             0f, 0f, 0f, 0f, // G plane
             0.5f, 0.5f, 0.5f, 0.5f // B plane
         };
-        assertArrayEquals(expected, out, 0f);
+        assertArrayEquals(expected, out, BYTE);
 
         assertArrayEquals(
                 new float[] {1, 1, 1, 1, 1, 1, 1, 1, 3, 3, 3, 3},
                 Qwen35VisionPreprocess.normalize(
                         image, 2, 2, new float[] {0, 0, 0}, new float[] {0.25f, 0.5f, 0.25f}),
-                0f);
+                4 * BYTE);
     }
 
     @Test
-    void normalizeCenterFitsAndPadsBlackInsteadOfStretching() {
-        // 1x2 image -> 4x4 target. Scale-to-fit gives 2x4 content centered horizontally, so the
-        // left and right columns are black pad (-1 after normalization).
+    void normalizeStretchesWithoutPadding() {
+        // a 1-wide, 2-high image -> 4x4 target: stretched, as the processor does, so no pixel is
+        // black pad (-1 after normalization); the top half leans to the first pixel, the bottom to
+        // the second.
         Media.Image image = new Media.Image(new float[] {0.25f, 0.5f, 0.75f, 1f, 0f, 0f}, 2, 1, 3);
         float[] out = Qwen35VisionPreprocess.normalize(image, 4, 4, HALF, HALF);
         int plane = 16;
-        for (int y = 0; y < 4; y++) {
-            for (int c = 0; c < 3; c++) {
-                assertEquals(-1f, out[c * plane + y * 4 + 0], 0f, "left pad column");
-                assertEquals(-1f, out[c * plane + y * 4 + 3], 0f, "right pad column");
-            }
-        }
-        // Content column x=1 at y=0 samples the first source pixel only.
-        assertEquals(-0.5f, out[1], 0f);
-        assertEquals(0f, out[plane + 1], 0f);
-        assertEquals(0.5f, out[2 * plane + 1], 0f);
-    }
-
-    @Test
-    void mergedGridCountsPostMergeRows() {
-        assertArrayEquals(new int[] {15, 20}, Qwen35VisionPreprocess.mergedGrid(480, 640, 16, 2));
+        for (int y = 0; y < 4; y++)
+            for (int x = 0; x < 4; x++)
+                assertTrue(out[y * 4 + x] > -1f + BYTE, "no black pad at " + x + "," + y);
+        assertTrue(out[0] < out[12], "red rises from the first pixel to the second");
+        assertTrue(out[2 * plane] > out[2 * plane + 12], "blue falls");
     }
 
     @Test

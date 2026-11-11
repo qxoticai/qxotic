@@ -34,6 +34,7 @@ import java.util.function.Consumer;
  * major order its mrope position table implies, so the merger is a plain contiguous copy.
  */
 final class Qwen35Vision implements MediaProjector<Media.Image> {
+    private final int minTokens, maxTokens;
     private final int patchSize,
             patchVector,
             visionDim,
@@ -92,6 +93,58 @@ final class Qwen35Vision implements MediaProjector<Media.Image> {
             Linear mm0,
             Linear mm2,
             Layer[] layers) {
+        this(
+                patchSize,
+                visionDim,
+                modelDim,
+                headCount,
+                ffnDim,
+                merge,
+                positionSide,
+                normEps,
+                imageMean,
+                imageStd,
+                patch0,
+                patch1,
+                patchBias,
+                positionEmbedding,
+                postLnW,
+                postLnB,
+                mm0,
+                mm2,
+                layers,
+                Qwen35VisionPreprocess.MIN_IMAGE_TOKENS,
+                Qwen35VisionPreprocess.MAX_IMAGE_TOKENS);
+    }
+
+    /** As above, an image resized to between {@code minTokens} and {@code maxTokens} rows. */
+    Qwen35Vision(
+            int patchSize,
+            int visionDim,
+            int modelDim,
+            int headCount,
+            int ffnDim,
+            int merge,
+            int positionSide,
+            float normEps,
+            float[] imageMean,
+            float[] imageStd,
+            MemoryView<MemorySegment> patch0,
+            MemoryView<MemorySegment> patch1,
+            MemoryView<MemorySegment> patchBias,
+            MemoryView<MemorySegment> positionEmbedding,
+            MemoryView<MemorySegment> postLnW,
+            MemoryView<MemorySegment> postLnB,
+            Linear mm0,
+            Linear mm2,
+            Layer[] layers,
+            int minTokens,
+            int maxTokens) {
+        if (minTokens <= 0 || maxTokens < minTokens)
+            throw new IllegalArgumentException(
+                    "image tokens " + minTokens + ".." + maxTokens + " are not a range");
+        this.minTokens = minTokens;
+        this.maxTokens = maxTokens;
         if (patchSize <= 0
                 || visionDim <= 0
                 || modelDim <= 0
@@ -171,7 +224,11 @@ final class Qwen35Vision implements MediaProjector<Media.Image> {
     /** The image's {width, height} in merged patches; the decoder sees one row per cell. */
     private int[] mergedGrid(Media.Image image) {
         Objects.requireNonNull(image, "image");
-        return Qwen35VisionPreprocess.mergedGrid(image.width(), image.height(), patchSize, merge);
+        int cell = Math.multiplyExact(patchSize, merge);
+        int[] size =
+                Qwen35VisionPreprocess.smartResize(
+                        image.width(), image.height(), cell, minTokens, maxTokens);
+        return new int[] {size[0] / cell, size[1] / cell};
     }
 
     @Override
@@ -208,9 +265,9 @@ final class Qwen35Vision implements MediaProjector<Media.Image> {
                 + ","
                 + imageStd[2]
                 + " tokens="
-                + Qwen35VisionPreprocess.MIN_IMAGE_TOKENS
+                + minTokens
                 + ".."
-                + Qwen35VisionPreprocess.MAX_IMAGE_TOKENS;
+                + maxTokens;
     }
 
     @Override
@@ -224,8 +281,8 @@ final class Qwen35Vision implements MediaProjector<Media.Image> {
                         image.width(),
                         image.height(),
                         Math.multiplyExact(patchSize, merge),
-                        Qwen35VisionPreprocess.MIN_IMAGE_TOKENS,
-                        Qwen35VisionPreprocess.MAX_IMAGE_TOKENS);
+                        minTokens,
+                        maxTokens);
         int patchesX = size[0] / patchSize, patchesY = size[1] / patchSize;
         MemoryArena<MemorySegment> scratch = Arenas.newCrossThreadMemoryArena();
         try {
@@ -661,7 +718,23 @@ final class Qwen35Vision implements MediaProjector<Media.Image> {
                 require(tensors, "v.post_ln.bias"),
                 mm0,
                 mm2,
-                layers);
+                layers,
+                imageTokens(
+                        gguf, "min", patchSize * merge, Qwen35VisionPreprocess.MIN_IMAGE_TOKENS),
+                imageTokens(
+                        gguf, "max", patchSize * merge, Qwen35VisionPreprocess.MAX_IMAGE_TOKENS));
+    }
+
+    /**
+     * The image budget in rows: the mmproj's {@code clip.vision.image_<bound>_pixels} over a row's
+     * pixels when it states one (a decision checkpoint does), else {@code fallback}; the {@code
+     * jinfer.qwen35.imageMinTokens}/{@code imageMaxTokens} properties win over both.
+     */
+    private static int imageTokens(GGUF gguf, String bound, int cell, int fallback) {
+        String property = "jinfer.qwen35.image" + (bound.equals("min") ? "Min" : "Max") + "Tokens";
+        if (System.getProperty(property) != null) return fallback; // already the property's value
+        int pixels = gguf.getValueOrDefault(int.class, "clip.vision.image_" + bound + "_pixels", 0);
+        return pixels > 0 ? Math.max(1, pixels / (cell * cell)) : fallback;
     }
 
     private void validateLayer(Layer layer, int index) {
