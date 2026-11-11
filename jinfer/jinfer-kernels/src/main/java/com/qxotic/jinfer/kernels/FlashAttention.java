@@ -16,6 +16,7 @@ import com.qxotic.jota.memory.MemoryAllocator;
 import com.qxotic.jota.memory.MemoryView;
 import java.lang.foreign.Arena;
 import java.lang.foreign.MemorySegment;
+import java.lang.foreign.ValueLayout;
 import java.nio.ByteOrder;
 import java.util.Arrays;
 import jdk.incubator.vector.FloatVector;
@@ -179,6 +180,37 @@ public final class FlashAttention {
     // vector, or inlined into a caller that is over the native-image expansion budget, stays boxed
     // (measured 9ns vs 0.19ns per element). A memory-in, memory-out @NeverInline helper would be
     // the other correct shape.
+
+    /** A thread's row of scores on the heap, where the vector exp runs. */
+    private static final ThreadLocal<float[]> SOFTMAX_ROW =
+            ThreadLocal.withInitial(() -> new float[0]);
+
+    /**
+     * Softmax of each row of a score matrix, in place: {@code rows} rows of {@code columns} F32
+     * scores from the view's start, each first multiplied by {@code scale}. For attention computed
+     * as matrix products (scores, then this, then scores times values); the exp is the vector one
+     * of the tile kernels.
+     */
+    public static void softmaxRows(
+            MemoryView<MemorySegment> scores, int rows, int columns, float scale) {
+        MemorySegment segment = scores.memory().base();
+        long at = scores.byteOffset();
+        Parallel.forLoop(
+                rows,
+                row -> {
+                    float[] s = SOFTMAX_ROW.get();
+                    if (s.length < columns) SOFTMAX_ROW.set(s = new float[columns]);
+                    long from = at + (long) row * columns * Float.BYTES;
+                    MemorySegment.copy(segment, FLOAT_LE, from, s, 0, columns);
+                    for (int j = 0; j < columns; j++) s[j] *= scale;
+                    float inverse =
+                            (float) (1 / expRowInPlace(s, 0, columns, rowMax(s, 0, columns)));
+                    for (int j = 0; j < columns; j++) s[j] *= inverse;
+                    MemorySegment.copy(s, 0, segment, FLOAT_LE, from, columns);
+                });
+    }
+
+    private static final ValueLayout.OfFloat FLOAT_LE = ValueLayout.JAVA_FLOAT_UNALIGNED;
 
     /** Max over {@code S[base, base+n)} - the block row max feeding the online rescale. */
     static float rowMax(float[] S, int base, int n) {
@@ -1350,7 +1382,16 @@ public final class FlashAttention {
                                             ? startPos + seqLen - 1
                                             : startPos + qEnd
                                                     - 1; // bidir: every query sees all keys
-                            for (int kvStart = attStart; kvStart <= blockMaxQ; kvStart += Bc) {
+                            // a window leaves the key blocks wholly before this query block's first
+                            // row unseen: skipped, on the same block boundaries, they add exactly
+                            // the zeros they scored (a batch far longer than the window is
+                            // otherwise quadratic in its length)
+                            int firstKv = attStart;
+                            if (window > 0) {
+                                int lowest = Math.max(attStart, startPos + qStart - window + 1);
+                                firstKv = attStart + (lowest - attStart) / Bc * Bc;
+                            }
+                            for (int kvStart = firstKv; kvStart <= blockMaxQ; kvStart += Bc) {
                                 int kvEnd = Math.min(seqLen + startPos, kvStart + Bc);
                                 int BcRows = kvEnd - kvStart;
                                 if (BcRows <= 0) continue;
