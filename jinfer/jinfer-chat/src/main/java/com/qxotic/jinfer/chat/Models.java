@@ -221,6 +221,39 @@ public final class Models {
                 (provider, fc, gguf) -> provider.loadReranker(fc, gguf, path, arena, tokenizer));
     }
 
+    /**
+     * Loads a DECISION model: a checkpoint trained to answer typed questions about a state with
+     * probabilities (Liquid d1). A chat model is not one.
+     */
+    public static DecisionModel loadDecisionModel(Path path, Arena arena) throws IOException {
+        return loadDecisionModel(path, arena, Map.of());
+    }
+
+    /**
+     * As {@link #loadDecisionModel(Path, Arena)} with the model's companion files by role: {@code
+     * "media"} names the towers a model reads pictures, sound and video through.
+     */
+    public static DecisionModel loadDecisionModel(
+            Path path, Arena arena, Map<String, Path> companions) throws IOException {
+        return loadDecisionModel(path, arena, companions, null);
+    }
+
+    /**
+     * As {@link #loadDecisionModel(Path, Arena, Map)} with a caller-supplied tokenizer. Null means
+     * the GGUF's own; a supplied tokenizer must keep its token-id space.
+     */
+    public static DecisionModel loadDecisionModel(
+            Path path, Arena arena, Map<String, Path> companions, Tokenizer tokenizer)
+            throws IOException {
+        Map<String, Path> attached = Map.copyOf(companions);
+        return open(
+                path,
+                attached,
+                tokenizer,
+                (provider, fc, gguf) ->
+                        provider.loadDecisionModel(fc, gguf, path, arena, attached, tokenizer));
+    }
+
     /** Loads a SPEECH model at the port's own defaults. */
     public static SpeechSynthesisModel<?, ?, ?> loadSpeech(Path path, Arena arena)
             throws IOException {
@@ -403,6 +436,7 @@ public final class Models {
                     Map.entry("gpt-oss", "com.qxotic:jinfer-gptoss"),
                     Map.entry("laguna", "com.qxotic:jinfer-laguna"),
                     Map.entry("lfm", "com.qxotic:jinfer-lfm2"),
+                    Map.entry("lfm3", "com.qxotic:jinfer-lfm3"),
                     Map.entry("llama", "com.qxotic:jinfer-llama"),
                     Map.entry("mellum", "com.qxotic:jinfer-mellum"),
                     Map.entry("granite", "com.qxotic:jinfer-llama"),

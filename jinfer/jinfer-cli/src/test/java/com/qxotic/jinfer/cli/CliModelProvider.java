@@ -2,8 +2,12 @@ package com.qxotic.jinfer.cli;
 
 import com.qxotic.format.gguf.GGUF;
 import com.qxotic.jinfer.ContentKey;
+import com.qxotic.jinfer.ContextState;
 import com.qxotic.jinfer.SpeechSynthesisModel;
 import com.qxotic.jinfer.TranscriptionModel;
+import com.qxotic.jinfer.chat.Content;
+import com.qxotic.jinfer.chat.DecisionModel;
+import com.qxotic.jinfer.chat.DecisionModel.Question;
 import com.qxotic.jinfer.chat.LoadedEmbedder;
 import com.qxotic.jinfer.chat.LoadedModel;
 import com.qxotic.jinfer.chat.LoadedReranker;
@@ -14,6 +18,7 @@ import java.io.IOException;
 import java.lang.foreign.Arena;
 import java.nio.channels.FileChannel;
 import java.nio.file.Path;
+import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
@@ -28,13 +33,15 @@ public final class CliModelProvider implements ModelProvider {
                     "cli_test_speech",
                     "cli_test_transcription",
                     "cli_test_embedding",
-                    "cli_test_reranker");
+                    "cli_test_reranker",
+                    "cli_test_decision");
     static Arena weights;
     static Map<String, Path> attachments;
     static CliFixtures.Template template;
     static SpeakTest.Speech speech;
     static TranscribeTest.Transcriber transcription;
     static int languageLoads, speechLoads, transcriptionLoads, embedderLoads, rerankerLoads;
+    static int decisionLoads;
 
     static void reset() {
         weights = null;
@@ -43,6 +50,7 @@ public final class CliModelProvider implements ModelProvider {
         speech = null;
         transcription = null;
         languageLoads = speechLoads = transcriptionLoads = embedderLoads = rerankerLoads = 0;
+        decisionLoads = 0;
     }
 
     public Set<String> architectures() {
@@ -141,5 +149,33 @@ public final class CliModelProvider implements ModelProvider {
         record(gguf, arena, companions);
         transcription = new TranscribeTest.Transcriber();
         return transcription;
+    }
+
+    /** The decision fixture records its companions; {@code test.failure=load} fails the load. */
+    @Override
+    public DecisionModel loadDecisionModel(
+            FileChannel channel,
+            GGUF gguf,
+            Path path,
+            Arena arena,
+            Map<String, Path> companions,
+            Tokenizer tokenizer)
+            throws IOException {
+        decisionLoads++;
+        if (!gguf.getString("general.architecture").equals("cli_test_decision"))
+            return ModelProvider.super.loadDecisionModel(
+                    channel, gguf, path, arena, companions, tokenizer);
+        record(gguf, arena, companions);
+        return new DecisionModel() { // never served: a test that serves fails the load instead
+            @Override
+            public ContextState newState(int contextCapacity) {
+                throw new UnsupportedOperationException("the fixture decides nothing");
+            }
+
+            @Override
+            public float[] decide(ContextState state, List<Content> input, Question question) {
+                throw new UnsupportedOperationException("the fixture decides nothing");
+            }
+        };
     }
 }

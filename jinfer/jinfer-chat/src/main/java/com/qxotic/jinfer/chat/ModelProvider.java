@@ -147,6 +147,23 @@ public interface ModelProvider {
     }
 
     /**
+     * Loads a DECISION model ({@link Models#loadDecisionModel}): a checkpoint trained to answer
+     * typed questions with probabilities. {@code companions} holds the caller's files under the
+     * roles {@link #companionFiles()} offers, the media towers among them; {@code tokenizer} is the
+     * validated caller override, or null for the GGUF's own.
+     */
+    default DecisionModel loadDecisionModel(
+            FileChannel channel,
+            GGUF gguf,
+            Path path,
+            Arena arena,
+            Map<String, Path> companions,
+            Tokenizer tokenizer)
+            throws IOException {
+        throw notA(gguf, "a decision");
+    }
+
+    /**
      * Loads a SPEECH SYNTHESIS model ({@link Models#loadSpeech}). {@code companions} arrive already
      * validated against {@link #companionFiles()} - a voice, a pronunciation lexicon.
      */

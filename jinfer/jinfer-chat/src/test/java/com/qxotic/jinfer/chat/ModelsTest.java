@@ -65,6 +65,8 @@ class ModelsTest {
     void theLongestArtifactPrefixWins() {
         assertEquals("com.qxotic:jinfer-qwen35", Models.artifactFor("qwen35moe"));
         assertEquals("com.qxotic:jinfer-qwen35", Models.artifactFor("qwen35"));
+        assertEquals("com.qxotic:jinfer-lfm3", Models.artifactFor("lfm3"));
+        assertEquals("com.qxotic:jinfer-lfm2", Models.artifactFor("lfm2"));
         assertEquals("com.qxotic:jinfer-qwen3", Models.artifactFor("qwen3moe"));
         assertNull(Models.artifactFor("unknownarch"));
     }
