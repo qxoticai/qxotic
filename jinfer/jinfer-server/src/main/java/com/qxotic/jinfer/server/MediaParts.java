@@ -44,11 +44,13 @@ final class MediaParts {
     static List<String> modalities(Object model, boolean video) {
         List<String> modalities = new ArrayList<>(List.of("text"));
         if (model instanceof Multimodal media) {
-            if (media.projector(Media.Image.class).isPresent()) {
+            // a modality is advertised only when the model reads it: video is no projector's, and
+            // not every vision tower reads one
+            if (media.supports(Media.Image.class)) {
                 modalities.add("image");
-                if (video) modalities.add("video");
+                if (video && media.supports(Media.Video.class)) modalities.add("video");
             }
-            if (media.projector(Media.Audio.class).isPresent()) modalities.add("audio");
+            if (media.supports(Media.Audio.class)) modalities.add("audio");
         }
         return List.copyOf(modalities);
     }

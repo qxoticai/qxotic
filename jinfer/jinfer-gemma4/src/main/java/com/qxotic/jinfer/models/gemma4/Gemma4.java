@@ -100,6 +100,14 @@ public final class Gemma4
         return towers.projector(modality);
     }
 
+    /** A video is read as its frames through the vision tower; the rest through their projector. */
+    @Override
+    public boolean supports(Class<? extends Media> modality) {
+        return modality == Media.Video.class
+                ? towers.frames(1).isPresent()
+                : Multimodal.super.supports(modality);
+    }
+
     Towers towers() {
         return towers;
     }

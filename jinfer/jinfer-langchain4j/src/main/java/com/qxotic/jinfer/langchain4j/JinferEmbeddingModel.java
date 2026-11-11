@@ -139,15 +139,13 @@ public final class JinferEmbeddingModel implements EmbeddingModel, AutoCloseable
                         + dimensions);
     }
 
-    /** Text, plus what the attached projector ingests; video rides the image projector. */
+    /** Text, plus what the model reads: video is no projector's, so the model itself says. */
     private static Set<ContentType> contentTypes(Object model) {
         Set<ContentType> types = EnumSet.of(ContentType.TEXT);
         if (model instanceof Multimodal media) {
-            if (media.projector(Media.Image.class).isPresent()) {
-                types.add(ContentType.IMAGE);
-                types.add(ContentType.VIDEO);
-            }
-            if (media.projector(Media.Audio.class).isPresent()) types.add(ContentType.AUDIO);
+            if (media.supports(Media.Image.class)) types.add(ContentType.IMAGE);
+            if (media.supports(Media.Video.class)) types.add(ContentType.VIDEO);
+            if (media.supports(Media.Audio.class)) types.add(ContentType.AUDIO);
         }
         return Collections.unmodifiableSet(types);
     }
