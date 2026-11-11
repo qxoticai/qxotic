@@ -29,6 +29,26 @@ final class Lfm3UnitTest {
                 new int[] {512, 576}, Lfm3VisionPreprocess.targetSize(528, 560, 32, min, max));
     }
 
+    /**
+     * A video's frames are sized for the whole clip, as {@code Lfm3VlVideoProcessor} sizes them:
+     * the Qwen-VL video resize over 4,096 to 25,165,824 pixels for all frames, edges a multiple of
+     * 32, an edge under 32 scaled up first.
+     */
+    @Test
+    void videoFramesAreSizedForTheWholeClip() {
+        // within budget: each edge rounded to the factor
+        assertArrayEquals(new int[] {256, 192}, Lfm3VisionPreprocess.videoSize(6, 256, 192, 32));
+        // an odd count rounds its temporal pairs half to even: 5 frames are 4
+        assertArrayEquals(new int[] {256, 192}, Lfm3VisionPreprocess.videoSize(5, 256, 192, 32));
+        // 600 HD frames are over budget: scaled down, keeping the shape
+        assertArrayEquals(
+                new int[] {256, 128}, Lfm3VisionPreprocess.videoSize(600, 1920, 1080, 32));
+        // a thumbnail below the factor is scaled up to it first
+        assertArrayEquals(new int[] {64, 32}, Lfm3VisionPreprocess.videoSize(4, 20, 10, 32));
+        // under the budget's floor: scaled up to it
+        assertArrayEquals(new int[] {64, 64}, Lfm3VisionPreprocess.videoSize(2, 32, 32, 32));
+    }
+
     @Test
     void erfIsLibmsToTheLastBit() {
         // erff() of glibc at these points

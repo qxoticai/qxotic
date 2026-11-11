@@ -14,6 +14,7 @@ import com.qxotic.jinfer.kernels.MatMul;
 import com.qxotic.jinfer.kernels.ModelLoader;
 import com.qxotic.jinfer.kernels.Norms;
 import com.qxotic.jinfer.kernels.Ops;
+import com.qxotic.jinfer.kernels.Resample;
 import com.qxotic.jinfer.media.Media;
 import com.qxotic.jinfer.media.MediaProjector;
 import com.qxotic.jota.DataType;
@@ -49,6 +50,10 @@ final class Lfm3Vision implements MediaProjector<Media.Image> {
     private final boolean halfPixels;
     private final float[] mean, std, ropeInverseFrequency;
     private final MemoryView<MemorySegment> patchKernel, embeddingNorm;
+
+    /** The patchifier's two temporal slices apart, for a video's frame pairs; null without them. */
+    private final MemoryView<MemorySegment> firstKernel, secondKernel;
+
     private final MemoryView<MemorySegment> projectorNorm, projectorNormBias;
     private final MemoryView<MemorySegment> projectorUp,
             projectorUpBias,
@@ -123,17 +128,18 @@ final class Lfm3Vision implements MediaProjector<Media.Image> {
                 0,
                 dim * patchVector);
         if (tensors.containsKey("v.patch_embd.weight.1")) {
-            try (Arena temporary = Arena.ofConfined()) {
-                MemoryView<MemorySegment> second =
-                        Views.allocateF32(MemoryAllocators.ofArena(temporary), dim, patchVector);
-                Convert.copyToF32(
-                        kernel(tensors, "v.patch_embd.weight.1", patchVector),
-                        0,
-                        second,
-                        0,
-                        dim * patchVector);
-                Ops.addInPlace(patchKernel, 0, second, 0, dim * patchVector);
-            }
+            firstKernel = Views.allocateF32(MemoryAllocators.ofArena(arena), dim, patchVector);
+            secondKernel = Views.allocateF32(MemoryAllocators.ofArena(arena), dim, patchVector);
+            Convert.copyF32(patchKernel, 0, firstKernel, 0, (long) dim * patchVector);
+            Convert.copyToF32(
+                    kernel(tensors, "v.patch_embd.weight.1", patchVector),
+                    0,
+                    secondKernel,
+                    0,
+                    dim * patchVector);
+            Ops.addInPlace(patchKernel, 0, secondKernel, 0, dim * patchVector);
+        } else {
+            firstKernel = secondKernel = null;
         }
         embeddingNorm = f32(tensors, "v.embedding_norm.weight", dim);
 
@@ -277,13 +283,52 @@ final class Lfm3Vision implements MediaProjector<Media.Image> {
             MemoryArena<MemorySegment> arena,
             ObjIntConsumer<MemoryView<MemorySegment>> afterLayer) {
         int[] size = targetSize(image);
-        int[] rgb = Lfm3VisionPreprocess.resize(image, size[0], size[1]);
-        float[] pixels = Lfm3VisionPreprocess.patches(rgb, size[0], size[1], patch, mean, std);
         Scratch s = new Scratch(size[0] / patch, size[1] / patch, arena);
+        patches(image, size, s);
+        MatMul.gemm(patchKernel, s.patches, s.x, s.count);
+        return encode(s, afterLayer);
+    }
+
+    /** {@code {width, height}} of each of a video's {@code frames} frames, all of one size. */
+    int[] videoSize(int frames, Media.Image frame) {
+        return Lfm3VisionPreprocess.videoSize(frames, frame.width(), frame.height(), patch * MERGE);
+    }
+
+    /** The rows a video's pair of frames of {@code size} takes: an image's of that size. */
+    int positions(int[] size) {
+        return size[0] / (patch * MERGE) * (size[1] / (patch * MERGE));
+    }
+
+    /**
+     * The rows of two consecutive frames of a video, each resized to {@code size}: one temporal
+     * patch, the first frame through the patchifier's first slice and the second through its
+     * second.
+     */
+    MemoryView<MemorySegment> encode(
+            Media.Image first, Media.Image second, int[] size, MemoryArena<MemorySegment> arena) {
+        if (secondKernel == null)
+            throw new UnsupportedOperationException("this vision tower reads no video");
+        Scratch s = new Scratch(size[0] / patch, size[1] / patch, arena);
+        patches(second, size, s);
+        MatMul.gemm(secondKernel, s.patches, s.normed, s.count);
+        patches(first, size, s);
+        MatMul.gemm(firstKernel, s.patches, s.x, s.count);
+        Ops.addRows(s.x, s.normed, s.count, dim);
+        return encode(s, null);
+    }
+
+    /** {@code image} resized to {@code size} as normalized patch vectors, in {@code s.patches}. */
+    private void patches(Media.Image image, int[] size, Scratch s) {
+        int[] rgb = Resample.bicubic(image, size[0], size[1], true);
+        float[] pixels = Lfm3VisionPreprocess.patches(rgb, size[0], size[1], patch, mean, std);
         // ggml_conv_2d's im2col is F16 for any kernel but BF16, and its matmul runs in F16
         if (halfPixels) Towers.roundToHalf(pixels);
         Views.copyFromArray(s.patches, 0, pixels, 0, pixels.length, "patches");
-        MatMul.gemm(patchKernel, s.patches, s.x, s.count);
+    }
+
+    /** The tower over the patch embeddings in {@code s.x}. */
+    private MemoryView<MemorySegment> encode(
+            Scratch s, ObjIntConsumer<MemoryView<MemorySegment>> afterLayer) {
         Norms.rmsnormRowsGgml(s.x, s.x, embeddingNorm, s.count, dim, eps);
 
         for (int l = 0; l < layers.length; l++) {

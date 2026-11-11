@@ -5,6 +5,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import com.qxotic.jinfer.Arenas;
 import com.qxotic.jinfer.codecs.ImageCodec;
+import com.qxotic.jinfer.kernels.Resample;
 import com.qxotic.jinfer.media.Media;
 import com.qxotic.jinfer.testkit.TestModels;
 import com.qxotic.jota.memory.MemoryArena;
@@ -58,7 +59,7 @@ final class Lfm3VisionParityTest {
             Lfm3Vision vision = (Lfm3Vision) model.projector(Media.Image.class).orElseThrow();
             Oracle.Tensor pixels = Oracle.tensor(dir, "inp_raw");
             int width = Math.toIntExact(pixels.ne()[0]), height = Math.toIntExact(pixels.ne()[1]);
-            int[] rgb = Lfm3VisionPreprocess.resize(image, width, height);
+            int[] rgb = Resample.bicubic(image, width, height, true);
             float[] planar = new float[pixels.data().length];
             for (int p = 0; p < width * height; p++)
                 for (int c = 0; c < 3; c++)
