@@ -37,6 +37,12 @@ class ConfigurationMetadataTest {
                         "\"spring.ai.jinfer.rerank.instruction\"",
                         "\"spring.ai.jinfer.speech.max-input-chars\"",
                         "\"spring.ai.jinfer.transcription\"",
-                        "\"spring.ai.jinfer.transcription.model\"");
+                        "\"spring.ai.jinfer.transcription.model\"",
+                        // decisions: the properties a Boot app sets for d1/d3 appear too
+                        "\"spring.ai.jinfer.decision\"",
+                        "\"spring.ai.jinfer.decision.model\"",
+                        "\"spring.ai.jinfer.decision.context-capacity\"",
+                        "\"spring.ai.jinfer.decision.together\"",
+                        "\"spring.ai.jinfer.decision.companions\"");
     }
 }
