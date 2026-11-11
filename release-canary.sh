@@ -54,7 +54,7 @@ echo "==> installing the release build (catalog $BOM_VERSION) into throwaway rep
 # (the release profile itself never runs cmake; it packages the staged, verified set).
 # shellcheck disable=SC2086
 $MVN -B -q -f "$ROOT/pom.xml" -Prelease install \
-    -pl jinfer/jinfer-bom,jinfer/jinfer-langchain4j,jinfer/jinfer-spring-ai,jinfer/jinfer-spring-ai-autoconfigure,jinfer/jinfer-spring-ai-spring-boot-starter,jinfer/jinfer-lfm2,jinfer/jinfer-models-all -am \
+    -pl jinfer/jinfer-bom,jinfer/jinfer-langchain4j,jinfer/jinfer-spring-ai,jinfer/jinfer-spring-ai-autoconfigure,jinfer/jinfer-spring-ai-spring-boot-starter,jinfer/jinfer-decision,jinfer/jinfer-lfm2,jinfer/jinfer-models-all -am \
     -DskipTests -Dspotless.check.skip=true -Dgpg.skip=true -Djam.natives.check.skip=true \
     -Dmaven.repo.local="$REPO"
 
@@ -135,16 +135,31 @@ cat > "$WORK/consumer/langchain4j-core/pom.xml" <<'EOF'
       <groupId>com.qxotic</groupId>
       <artifactId>jinfer-kokoro</artifactId>
     </dependency>
+    <dependency>
+      <groupId>com.qxotic</groupId>
+      <artifactId>jinfer-decision</artifactId>
+    </dependency>
   </dependencies>
 </project>
 EOF
 cat > "$WORK/consumer/langchain4j-core/src/main/java/canary/Canary.java" <<'EOF'
 package canary;
 
+import com.qxotic.jinfer.decision.Answer;
+import com.qxotic.jinfer.decision.Decisions;
+import com.qxotic.jinfer.decision.Question;
 import com.qxotic.jinfer.langchain4j.JinferChatModel;
+import com.qxotic.jinfer.langchain4j.JinferDecisionModel;
 import com.qxotic.jinfer.langchain4j.JinferSpeechModel;
 import dev.langchain4j.model.audio.TextToSpeechModel;
+import dev.langchain4j.model.decision.DecisionModel;
+import dev.langchain4j.model.decision.request.ChoiceQuestion;
+import dev.langchain4j.model.decision.request.DecisionRequest;
+import dev.langchain4j.model.decision.request.ScaleQuestion;
+import dev.langchain4j.model.decision.request.YesNoQuestion;
+import dev.langchain4j.model.decision.response.DecisionResponse;
 import java.nio.file.Path;
+import java.util.List;
 
 final class Canary {
 
@@ -154,6 +169,43 @@ final class Canary {
 
     static TextToSpeechModel speech(Path model, Path voice) {
         return JinferSpeechModel.builder().modelPath(model).companionPath("voice", voice).build();
+    }
+
+    /** The framework face: a decision model answers typed questions, its media companion attached. */
+    static DecisionResponse decide(DecisionModel model) {
+        return model.decide(
+                DecisionRequest.builder()
+                        .input("I was charged twice and I want my money back today.")
+                        .question("refund", YesNoQuestion.from("Is this a refund request?"))
+                        .question(
+                                "team",
+                                ChoiceQuestion.from(
+                                        "Which team?", List.of("billing", "shipping", "other")))
+                        .question(
+                                "urgency",
+                                ScaleQuestion.from("How urgent?", List.of("Can wait", "Today")))
+                        .build());
+    }
+
+    static DecisionModel decision(Path model, Path media) {
+        return JinferDecisionModel.builder()
+                .modelPath(model)
+                .companionPath("media", media)
+                .build();
+    }
+
+    /** The typed face over the engine, as documented in jinfer's README. */
+    static <T extends Enum<T>> T route(Decisions decisions, Question.Choice<T> question) {
+        return decisions.ask("I was charged twice and I want my money back today.", question)
+                .selectedOption();
+    }
+
+    static boolean refund(Decisions decisions) {
+        Answer.Predicate answer =
+                decisions.ask(
+                        "I was charged twice and I want my money back today.",
+                        Question.predicate("Is this a refund request?"));
+        return answer.isYes();
     }
 }
 EOF
@@ -222,10 +274,18 @@ cat > "$WORK/consumer/spring-ai-core/src/main/java/canary/Canary.java" <<'EOF'
 package canary;
 
 import com.qxotic.jinfer.spring.ai.JinferChatModel;
+import com.qxotic.jinfer.spring.ai.JinferDecisionModel;
 import com.qxotic.jinfer.spring.ai.JinferSpeechModel;
 import java.nio.file.Path;
+import java.util.Map;
 import org.springframework.ai.audio.tts.TextToSpeechModel;
 import org.springframework.ai.chat.model.ChatModel;
+import org.springframework.ai.decision.DecisionModel;
+import org.springframework.ai.decision.DecisionResponse;
+import org.springframework.ai.decision.input.DecisionInput;
+import org.springframework.ai.decision.question.ChoiceQuestion;
+import org.springframework.ai.decision.question.ScoreQuestion;
+import org.springframework.ai.decision.question.YesNoQuestion;
 
 final class Canary {
 
@@ -235,6 +295,24 @@ final class Canary {
 
     static TextToSpeechModel speech(Path model, Path voice) {
         return JinferSpeechModel.builder().modelPath(model).companionPath("voice", voice).build();
+    }
+
+    /** The framework face: fields in, one typed answer per question named. */
+    static DecisionResponse decide(DecisionModel model) {
+        return model.call(
+                DecisionInput.fields(Map.of("message", "I was charged twice.")),
+                Map.of(
+                        "refund", YesNoQuestion.of("Is this a refund request?"),
+                        "team", ChoiceQuestion.of("Which team?", "billing", "shipping", "other"),
+                        "urgency", ScoreQuestion.of("How urgent?", "Can wait", "Today")));
+    }
+
+    static DecisionModel decision(Path model, Path media) {
+        return JinferDecisionModel.builder()
+                .modelPath(model)
+                .companionPath("media", media)
+                .together(true)
+                .build();
     }
 }
 EOF
@@ -317,6 +395,11 @@ cat > "$WORK/no-bom-providers/pom.xml" <<EOF
       <artifactId>jinfer-kokoro</artifactId>
       <version>$(version_of jinfer/jinfer-kokoro)</version>
     </dependency>
+    <dependency>
+      <groupId>com.qxotic</groupId>
+      <artifactId>jinfer-decision</artifactId>
+      <version>$(version_of jinfer/jinfer-decision)</version>
+    </dependency>
   </dependencies>
 </project>
 EOF
@@ -343,6 +426,19 @@ final class Canary {
     static org.springframework.ai.audio.tts.TextToSpeechModel springAiSpeech(Path model, Path voice) {
         return com.qxotic.jinfer.spring.ai.JinferSpeechModel.builder()
                 .modelPath(model).companionPath("voice", voice).build();
+    }
+
+    static dev.langchain4j.model.decision.DecisionModel langChain4jDecision(Path model) {
+        return com.qxotic.jinfer.langchain4j.JinferDecisionModel.builder().modelPath(model).build();
+    }
+
+    static org.springframework.ai.decision.DecisionModel springAiDecision(Path model) {
+        return com.qxotic.jinfer.spring.ai.JinferDecisionModel.builder().modelPath(model).build();
+    }
+
+    static com.qxotic.jinfer.decision.Decisions decisions(
+            com.qxotic.jinfer.chat.DecisionModel model) {
+        return com.qxotic.jinfer.decision.Decisions.over(model, 2048);
     }
 }
 EOF
