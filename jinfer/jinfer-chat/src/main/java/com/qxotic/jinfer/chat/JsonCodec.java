@@ -32,6 +32,14 @@ public final class JsonCodec {
         return Json.stringify(toLibrary(value));
     }
 
+    /**
+     * As {@link #stringify(Object)}; {@code pretty} writes a member or an element a line, indented
+     * by two spaces - the JSON a model reads when a value is put to it as text.
+     */
+    public static String stringify(Object value, boolean pretty) {
+        return Json.stringify(toLibrary(value), pretty);
+    }
+
     /** Json.NULL -> Java null, in place (the parser's containers are mutable). */
     private static Object fromLibrary(Object value) {
         if (value == Json.NULL) {
