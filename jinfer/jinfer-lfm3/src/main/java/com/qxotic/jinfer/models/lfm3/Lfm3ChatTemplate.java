@@ -25,6 +25,7 @@ import java.lang.foreign.Arena;
 import java.util.HashSet;
 import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
 import java.util.Objects;
 import java.util.Optional;
@@ -182,11 +183,18 @@ final class Lfm3ChatTemplate implements ChatTemplate {
     private <R extends Media> MediaProjector<R> projector(R value) {
         Optional<MediaProjector<R>> projector =
                 media == null ? Optional.empty() : media.projector((Class<R>) value.getClass());
+        String kind = value.getClass().getSimpleName().toLowerCase(Locale.ROOT);
+        // the mmproj declares its towers: without one, the remedy is to attach it
+        boolean attached =
+                media != null
+                        && (media.projector(Media.Image.class).isPresent()
+                                || media.projector(Media.Audio.class).isPresent());
         return projector.orElseThrow(
                 () ->
                         new UnsupportedConversation(
-                                value.getClass().getSimpleName().toLowerCase()
-                                        + " input needs the model's mmproj"));
+                                attached
+                                        ? "this model takes no " + kind
+                                        : kind + " input needs the model's mmproj"));
     }
 
     @Override

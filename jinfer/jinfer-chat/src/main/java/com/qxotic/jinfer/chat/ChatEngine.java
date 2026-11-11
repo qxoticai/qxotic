@@ -15,6 +15,7 @@ import com.qxotic.jinfer.llm.SpecialTokens;
 import com.qxotic.jinfer.llm.SpeculativeDecoding;
 import com.qxotic.jinfer.llm.SpeechOutput;
 import com.qxotic.jinfer.media.Media;
+import com.qxotic.jinfer.media.Multimodal;
 import com.qxotic.jinfer.telemetry.CacheSample;
 import com.qxotic.jinfer.telemetry.DecodeEvent;
 import com.qxotic.jinfer.telemetry.InferenceEvent;
@@ -1009,6 +1010,13 @@ public final class ChatEngine implements AutoCloseable {
         return Set.copyOf(output);
     }
 
+    /** Whether a media companion is attached: the model holds a tower for some medium. */
+    private boolean hasTowers() {
+        return loaded.model() instanceof Multimodal media
+                && (media.projector(Media.Image.class).isPresent()
+                        || media.projector(Media.Audio.class).isPresent());
+    }
+
     /** The loaded model's voice; refused when it has none. */
     private SpeechOutput<?> voice() {
         if (loaded.model() instanceof SpeechOutput<?> voice && voice.speaks()) return voice;
@@ -1223,11 +1231,14 @@ public final class ChatEngine implements AutoCloseable {
             }
         }
         if (hasMedia(conversation)) {
-            // the remedy rides the refusal: a bare load of a capable family is the common case
+            // the remedy rides the refusal: a bare load of a capable family is the common case;
+            // a model whose mmproj is attached has its towers, and the media it takes, already
             throw new UnsupportedOperationException(
                     "image/audio/video input is not supported by this model"
                             + (punted != null ? ": " + punted.getMessage() : "")
-                            + " - attach the model's mmproj as the 'media' companion");
+                            + (hasTowers()
+                                    ? ""
+                                    : " - attach the model's mmproj as the 'media' companion"));
         }
         IntSequence ids =
                 jinja.render(
