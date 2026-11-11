@@ -12,6 +12,7 @@ import java.nio.ByteOrder;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.List;
+import java.util.Map;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
@@ -547,8 +548,8 @@ class WorkflowTest {
         assertTrue(
                 capture.err()
                         .contains(
-                                "is neither a language, an embedding, a reranking nor a"
-                                        + " transcription model"),
+                                "is neither a language, an embedding, a reranking, a decision"
+                                        + " nor a transcription model"),
                 capture.err());
         assertEquals(0, CliModelProvider.speechLoads, "serving must never synthesize speech");
     }
@@ -597,6 +598,42 @@ class WorkflowTest {
                 assertFalse(capture.err().contains("\tat "), capture.err());
             }
         }
+    }
+
+    /**
+     * The server serves a decision model, its media file attached, after the header says it is no
+     * retrieval model and before transcription is tried; the language options are refused.
+     */
+    @Test
+    void decisionModelsAreServedWithTheirCompanions() throws Exception {
+        Path path = model("decision", "load");
+        Path mmproj = Files.writeString(dir.resolve("mmproj.gguf"), "towers");
+        var serve = new CliFixtures.Capture("");
+        assertEquals(
+                1,
+                run(
+                        serve,
+                        "server",
+                        "-m",
+                        path.toString(),
+                        "--with",
+                        "media=" + mmproj,
+                        "-c",
+                        "2048",
+                        "--port",
+                        "0"),
+                serve.err());
+        assertTrue(serve.err().contains("fixture load failed"), serve.err());
+        assertEquals(1, CliModelProvider.decisionLoads);
+        assertEquals(0, CliModelProvider.transcriptionLoads);
+        assertEquals(Map.of("media", mmproj), CliModelProvider.attachments);
+        assertFalse(CliModelProvider.weights.scope().isAlive(), "the weights arena is freed");
+
+        Files.delete(path); // the same fixture, now loading
+        var tuned = new CliFixtures.Capture("");
+        assertEquals(
+                2, run(tuned, "server", "-m", model("decision", "").toString(), "--temp", "0.5"));
+        assertTrue(tuned.err().contains("--temp does not apply to a decision server"), tuned.err());
     }
 
     /**

@@ -4,12 +4,14 @@ import com.qxotic.jinfer.Arenas;
 import com.qxotic.jinfer.TranscriptionModel;
 import com.qxotic.jinfer.cache.PromptCache;
 import com.qxotic.jinfer.chat.ChatEngine;
+import com.qxotic.jinfer.chat.DecisionModel;
 import com.qxotic.jinfer.chat.LoadedEmbedder;
 import com.qxotic.jinfer.chat.LoadedReranker;
 import com.qxotic.jinfer.chat.ModelProvider;
 import com.qxotic.jinfer.chat.Models;
 import com.qxotic.jinfer.hub.ModelStore;
 import com.qxotic.jinfer.llm.Sampling;
+import com.qxotic.jinfer.server.DecisionServer;
 import com.qxotic.jinfer.server.RetrievalServer;
 import com.qxotic.jinfer.server.ServerConfig;
 import com.qxotic.jinfer.server.TranscriptionServer;
@@ -228,6 +230,12 @@ final class Server {
                         return serveRetrieval(
                                 retrieval.get(), options, files, arena, config, spinner, io);
                     }
+                    DecisionModel decision = decisionModel(files, arena);
+                    if (decision != null) {
+                        validateTask(options, "a decision server", "--context-capacity", "-c");
+                        spinner.close();
+                        return serveDecisions(decision, options, files, config, io);
+                    }
                     validateTask(options, "a transcription server");
                     TranscriptionModel<?, ?, ?> transcription =
                             Models.loadTranscription(files.model(), arena, files.companions());
@@ -250,8 +258,8 @@ final class Server {
             throw new IllegalArgumentException(
                     "model '"
                             + options.modelRef
-                            + "' is neither a language, an embedding, a reranking nor a"
-                            + " transcription model",
+                            + "' is neither a language, an embedding, a reranking, a decision"
+                            + " nor a transcription model",
                     neither);
         } finally {
             Arenas.close(arena);
@@ -272,6 +280,41 @@ final class Server {
                         engine.modelName(), engine.contextCapacity());
         listening(io.err(), config.bind(), running.address().getPort(), "OpenAI-compatible");
         return running;
+    }
+
+    /**
+     * The checkpoint as a decision model, its companions attached, or null when it is not one: a
+     * port refuses from the header, before any weights load.
+     */
+    private static DecisionModel decisionModel(Options.Files files, Arena arena)
+            throws IOException {
+        try {
+            return Models.loadDecisionModel(files.model(), arena, files.companions());
+        } catch (ModelProvider.IncompatibleModelException notDecision) {
+            return null;
+        }
+    }
+
+    private static int serveDecisions(
+            DecisionModel model,
+            Options options,
+            Options.Files files,
+            ServerConfig config,
+            Main.IO io)
+            throws IOException {
+        String name = files.model().getFileName().toString();
+        int capacity = options.contextCapacity == null ? 0 : options.contextCapacity;
+        DecisionServer.Running running;
+        try {
+            running = DecisionServer.start(model, capacity, name, config);
+        } catch (BindException e) {
+            throw bindFailure(config, e);
+        } catch (IllegalArgumentException refused) {
+            throw Options.asFlag(refused);
+        }
+        io.err().printf("model       %s%n", name);
+        listening(io.err(), config.bind(), running.address().getPort(), "POST /v1/systemone");
+        return await(running::await, running::close);
     }
 
     private static int serveTranscription(
@@ -365,8 +408,10 @@ final class Server {
 
                 The model selects the API: chat and completions for a language model,
                 /v1/embeddings for an embedding model, /v1/rerank for a reranker,
-                /v1/audio/transcriptions for a speech-to-text model. A model that
-                speaks (LFM3-Omni) answers chat in speech when a request allows it.
+                /v1/audio/transcriptions for a speech-to-text model, and /v1/systemone
+                for a decision model (Liquid's d1, vLLM's d3): typed questions answered
+                with probabilities, nothing generated. A model that speaks (LFM3-Omni)
+                answers chat in speech when a request allows it.
 
                 Server options (after the command):
                   --host <host>              bind address; default 127.0.0.1

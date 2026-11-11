@@ -61,6 +61,12 @@
       <artifactId>jinfer-qwen3</artifactId>
       <scope>test</scope>
     </dependency>
+    <!-- DecisionServerD3IntegrationTest serves vLLM's d3, the second decision family. -->
+    <dependency>
+      <groupId>com.qxotic</groupId>
+      <artifactId>jinfer-qwen35</artifactId>
+      <scope>test</scope>
+    </dependency>
   </dependencies>
 
   <build>
