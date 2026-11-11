@@ -32,10 +32,12 @@ import com.qxotic.toknroll.gguf.GGUFTokenizerLoader;
 import java.io.IOException;
 import java.lang.foreign.Arena;
 import java.lang.foreign.MemorySegment;
+import java.lang.foreign.ValueLayout;
 import java.lang.ref.Reference;
 import java.nio.channels.FileChannel;
 import java.nio.file.Path;
 import java.nio.file.StandardOpenOption;
+import java.util.List;
 import java.util.Map;
 import java.util.Objects;
 import java.util.Optional;
@@ -111,6 +113,16 @@ public final class Lfm3
         if (modality == Media.Audio.class && audio != null)
             return Optional.of((MediaProjector<R>) audio);
         return Optional.empty();
+    }
+
+    /** The vision tower, or null without one. */
+    Lfm3Vision vision() {
+        return vision;
+    }
+
+    /** The width of a row: a token's embedding, a tower's output. */
+    int width() {
+        return configuration.embeddingLength;
     }
 
     /** LFM3-Omni's speech head, or null. */
@@ -197,6 +209,49 @@ public final class Lfm3
         ingest(state, batch, null);
     }
 
+    /** A tower's {@code count} rows of model width, at row {@code at} of a batch. */
+    record Placed(int at, MemoryView<MemorySegment> rows, int count) {}
+
+    /**
+     * A decision checkpoint's prompts in one batch, every row's output retained: the prompts back
+     * to back, {@code prompts[i]} giving prompt {@code i}'s parts as ends counted from its first
+     * row - {@code [0]} the rows its questions share, each further entry the end of a question's
+     * rows, the last its length; a prompt of one part is a plain prompt. No layer reads from one
+     * prompt into another, and positions restart with each. Within a prompt, on the two-way layers
+     * the shared rows see the whole prompt and a question's rows the shared ones and their own; the
+     * other layers read the prompt as the one sequence it is.
+     *
+     * <p>{@code media} are the batch's rows that are not tokens: each a tower's rows for a picture
+     * or a clip, taking the place of the token rows at its position, whose ids are not read.
+     */
+    void ingestPrompts(State state, int[] tokens, int[][] prompts, List<Placed> media) {
+        if (configuration.causalAttention)
+            throw new IllegalStateException("a causal checkpoint packs nothing");
+        for (Placed placed : media)
+            if (placed.at() < 0 || placed.at() + placed.count() > tokens.length)
+                throw new IllegalArgumentException("media rows outside the batch");
+        int total = 0;
+        for (int[] parts : prompts) {
+            for (int i = 0, last = 0; i < parts.length; last = parts[i++])
+                if (parts[i] <= last) throw new IllegalArgumentException("parts must grow");
+            total += parts[parts.length - 1];
+        }
+        if (total != tokens.length)
+            throw new IllegalArgumentException("the prompts do not cover the batch");
+        state.exclusively(
+                () -> {
+                    state.prompts = prompts;
+                    state.media = media;
+                    try {
+                        forward(state, Batch.score(tokens), null);
+                    } finally {
+                        state.prompts = null;
+                        state.media = List.of();
+                    }
+                });
+        Reference.reachabilityFence(this);
+    }
+
     /** As {@link #ingest(State, Batch)}, calling {@code afterBlock} with each finished layer. */
     void ingest(State state, Batch batch, IntConsumer afterBlock) {
         state.exclusively(() -> forward(state, batch, afterBlock));
@@ -210,6 +265,11 @@ public final class Lfm3
             throw new IllegalArgumentException(
                     "batch " + rows + " exceeds batchCapacity " + state.batchCapacity());
         int start = state.position();
+        if (!configuration.causalAttention && start != 0)
+            throw new IllegalStateException(
+                    "this checkpoint reads a prompt both ways, so a prompt is one batch into an"
+                            + " empty state: reset the state, and open a batch capacity that"
+                            + " holds the whole prompt");
         if (start + rows > state.contextCapacity())
             throw new IllegalArgumentException(
                     "ingest of "
@@ -232,6 +292,13 @@ public final class Lfm3
                                         + ")");
                 Views.checkAlive(weights.tokenEmbeddings, "tokenEmbeddings");
                 Convert.gatherToF32(weights.tokenEmbeddings, ids, 0, rows, state.residual, 0, dim);
+                for (Placed placed : state.media)
+                    Convert.copyF32(
+                            placed.rows(),
+                            0,
+                            state.residual,
+                            (long) placed.at() * dim,
+                            (long) placed.count() * dim);
             }
             case Batch.Input.Embeddings embeddings -> {
                 if (vision == null && audio == null && speech == null)
@@ -255,8 +322,18 @@ public final class Lfm3
                     throw new UnsupportedOperationException("LFM3 does not pack sequences");
         }
         int lanes = configuration.headSize / 2;
-        RoPE.fill(state.ropeCosFull, state.ropeSinFull, start, rows, lanes, weights.ropeFull);
-        RoPE.fill(state.ropeCosSwa, state.ropeSinSwa, start, rows, lanes, weights.ropeSwa);
+        if (state.prompts == null) {
+            RoPE.fill(state.ropeCosFull, state.ropeSinFull, start, rows, lanes, weights.ropeFull);
+            RoPE.fill(state.ropeCosSwa, state.ropeSinSwa, start, rows, lanes, weights.ropeSwa);
+        } else { // each prompt counts from 0
+            int[] positions = new int[rows];
+            int at = 0;
+            for (int[] parts : state.prompts)
+                for (int p = 0; p < parts[parts.length - 1]; p++) positions[at++] = p;
+            RoPE.fill(
+                    state.ropeCosFull, state.ropeSinFull, positions, rows, lanes, weights.ropeFull);
+            RoPE.fill(state.ropeCosSwa, state.ropeSinSwa, positions, rows, lanes, weights.ropeSwa);
+        }
         for (int layer = 0; layer < configuration.numberOfLayers; layer++) {
             block(state, layer, start, rows);
             if (afterBlock != null) afterBlock.accept(layer);
@@ -297,15 +374,34 @@ public final class Lfm3
     private void shortConv(State state, int layer, ShortConvWeights w, int rows) {
         int dim = configuration.embeddingLength;
         MatMul.gemm(w.inProj, state.normed, state.shortConvIn, rows);
-        Convolutions.shortConvScan(
-                w.kernel,
-                state.shortConvState[layer],
-                state.shortConvIn,
-                state.shortConvOut,
-                rows,
-                dim,
-                configuration.shortConvLCache,
-                SHORTCONV_PARTS);
+        MemoryView<MemorySegment> history = state.shortConvState[layer];
+        if (state.prompts == null) {
+            Convolutions.shortConvScan(
+                    w.kernel,
+                    history,
+                    state.shortConvIn,
+                    state.shortConvOut,
+                    rows,
+                    dim,
+                    configuration.shortConvLCache,
+                    SHORTCONV_PARTS);
+        } else { // each prompt from an empty history
+            int from = 0;
+            for (int[] parts : state.prompts) {
+                int length = parts[parts.length - 1];
+                Ops.fillInPlace(history, 0, Math.toIntExact(history.logicalSize()), 0f);
+                Convolutions.shortConvScan(
+                        w.kernel,
+                        history,
+                        state.shortConvIn.slice(0, from, from + length),
+                        state.shortConvOut.slice(0, from, from + length),
+                        length,
+                        dim,
+                        configuration.shortConvLCache,
+                        SHORTCONV_PARTS);
+                from += length;
+            }
+        }
         MatMul.gemm(w.outProj, state.shortConvOut, state.branch, rows);
     }
 
@@ -350,7 +446,34 @@ public final class Lfm3
         float scale = 1f / (float) Math.sqrt(headSize);
         int kvMul = heads / kvHeads;
         MemoryView<MemorySegment> keys = state.keyCache[layer], values = state.valueCache[layer];
-        if (rows == 1) {
+        if (!configuration.causalAttention && !swa) {
+            twoWayAttention(state, rows, heads, kvHeads, scale);
+        } else if (state.prompts != null) { // the window stays inside each prompt
+            int from = 0;
+            for (int[] parts : state.prompts) {
+                int to = from + parts[parts.length - 1];
+                FlashAttention.slidingWindowPrefill(
+                        state.query.slice(0, from, to),
+                        state.attnOut.slice(0, from, to),
+                        keys,
+                        values,
+                        state.batchK.slice(0, from, to),
+                        state.batchV.slice(0, from, to),
+                        heads,
+                        0,
+                        to - from,
+                        headSize,
+                        kvDim,
+                        queryDim,
+                        kvDim,
+                        kvMul,
+                        scale,
+                        window,
+                        ringMask,
+                        null);
+                from = to;
+            }
+        } else if (rows == 1) {
             FlashAttention.flashDecode(
                     state.query,
                     state.attnOut,
@@ -389,7 +512,8 @@ public final class Lfm3
                     ringMask,
                     null);
         }
-        commitKv(state, layer, start, rows);
+        // a two-way checkpoint never continues a batch: its cache would hold what nothing reads
+        if (configuration.causalAttention) commitKv(state, layer, start, rows);
 
         long gateStride = state.gate.stride().flatAt(0);
         Parallel.forLoop(
@@ -406,6 +530,115 @@ public final class Lfm3
                 });
         MatMul.gemm(w.output, state.attnOut, state.branch, rows);
     }
+
+    /** Query rows whose scores against every key are held at once. */
+    private static final int SCORE_ROWS = 256;
+
+    /**
+     * Two-way attention over the batch, as two matrix products a block of query rows: scores =
+     * queries x keys, softmaxed by row, outputs = scores x values. The whole prompt of a decision
+     * checkpoint is one batch, thousands of rows: the matmul backend carries a product that size
+     * several times faster than the tile kernel made for a chat batch.
+     *
+     * <p>A plain batch is one prompt of one part: every row sees every row. Else ({@link
+     * #ingestPrompts}) each prompt is a shared part and a part a question: its shared rows see the
+     * whole prompt, a question's rows the shared part and their own, so they score against two runs
+     * of keys.
+     */
+    private void twoWayAttention(State state, int rows, int heads, int kvHeads, float scale) {
+        Configuration c = configuration;
+        int headSize = c.headSize, queryDim = c.queryDim(), kvDim = kvHeads * headSize;
+        int kvMul = heads / kvHeads, capacity = state.batchCapacity();
+        MemoryView<MemorySegment> scores = state.scores(SCORE_ROWS),
+                valuesT = state.valuesT(headSize);
+        MemorySegment values = state.batchV.memory().base(), vt = valuesT.memory().base();
+        long valuesAt = state.batchV.byteOffset(), vtAt = valuesT.byteOffset();
+        int[][] prompts = state.prompts == null ? new int[][] {{rows}} : state.prompts;
+        for (int group = 0; group < kvHeads; group++) {
+            int kvHead = group * headSize;
+            int base = 0;
+            for (int[] parts : prompts) {
+                int length = parts[parts.length - 1], sharedFrom = base, shared = parts[0];
+                for (int part = 0; part < parts.length; part++) {
+                    int from = base + (part == 0 ? 0 : parts[part - 1]), to = base + parts[part];
+                    // the keys this part sees: the prompt's shared rows, then its own (for the
+                    // shared part, every question's)
+                    int ownFrom = part == 0 ? base + shared : from;
+                    int own = (part == 0 ? base + length : to) - ownFrom;
+                    int width = shared + own;
+                    // this KV head's values for those keys, transposed: a weight row a channel
+                    Parallel.forLoop(
+                            headSize,
+                            channel -> {
+                                long out = vtAt + (long) channel * capacity * Float.BYTES;
+                                long in = valuesAt + (long) (kvHead + channel) * Float.BYTES;
+                                for (int column = 0; column < width; column++) {
+                                    int key =
+                                            column < shared
+                                                    ? sharedFrom + column
+                                                    : ownFrom + column - shared;
+                                    vt.set(
+                                            FLOAT,
+                                            out + (long) column * Float.BYTES,
+                                            values.get(
+                                                    FLOAT, in + (long) key * kvDim * Float.BYTES));
+                                }
+                            });
+                    for (int head = group * kvMul; head < (group + 1) * kvMul; head++) {
+                        int qHead = head * headSize;
+                        for (int row0 = from; row0 < to; row0 += SCORE_ROWS) {
+                            int n = Math.min(SCORE_ROWS, to - row0);
+                            long at = (long) row0 * queryDim + qHead;
+                            MatMul.mm(
+                                    state.batchK,
+                                    (long) sharedFrom * kvDim + kvHead,
+                                    kvDim,
+                                    state.query,
+                                    at,
+                                    queryDim,
+                                    scores,
+                                    0,
+                                    width,
+                                    shared,
+                                    n,
+                                    headSize);
+                            if (own > 0)
+                                MatMul.mm(
+                                        state.batchK,
+                                        (long) ownFrom * kvDim + kvHead,
+                                        kvDim,
+                                        state.query,
+                                        at,
+                                        queryDim,
+                                        scores,
+                                        shared,
+                                        width,
+                                        own,
+                                        n,
+                                        headSize);
+                            FlashAttention.softmaxRows(scores, n, width, scale);
+                            MatMul.mm(
+                                    valuesT,
+                                    0,
+                                    capacity,
+                                    scores,
+                                    0,
+                                    width,
+                                    state.attnOut,
+                                    at,
+                                    queryDim,
+                                    headSize,
+                                    n,
+                                    width);
+                        }
+                    }
+                }
+                base += length;
+            }
+        }
+    }
+
+    private static final ValueLayout.OfFloat FLOAT = ValueLayout.JAVA_FLOAT_UNALIGNED;
 
     /** This chunk's K/V into the layer's cache: linear for full layers, the ring for SWA. */
     private void commitKv(State state, int layer, int start, int rows) {
@@ -450,12 +683,63 @@ public final class Lfm3
         return state.logits;
     }
 
+    /**
+     * The logits of {@code tokens} alone at retained row {@code output}, into {@code out}: the
+     * head's rows for those tokens against the row, not the whole vocabulary's. What a decision
+     * reads, a handful of answer tokens, at a fraction of {@link #logits}.
+     */
+    void logits(State state, int output, int[] tokens, float[] out) {
+        state.exclusively(
+                () -> {
+                    if (output < 0 || output >= state.outputCount())
+                        throw new IllegalArgumentException(
+                                "output " + output + " outside [0," + state.outputCount() + ")");
+                    int dim = configuration.embeddingLength;
+                    int row = state.lastBatchSize() - state.outputCount() + output;
+                    Norms.rmsnormGgml(
+                            state.normed,
+                            0,
+                            state.residual,
+                            (long) row * dim,
+                            weights.outputNorm,
+                            dim,
+                            configuration.rmsNormEps);
+                    // the head's rows, dequantized into the feed-forward scratch, free by now
+                    MemoryView<MemorySegment> scratch = state.hidden;
+                    int chunk =
+                            Math.toIntExact(Math.min(tokens.length, scratch.logicalSize() / dim));
+                    MemorySegment rows = scratch.memory().base(),
+                            hidden = state.normed.memory().base();
+                    long rowsAt = scratch.byteOffset(), hiddenAt = state.normed.byteOffset();
+                    for (int from = 0; from < tokens.length; from += chunk) {
+                        int n = Math.min(chunk, tokens.length - from);
+                        Convert.gatherToF32(weights.output, tokens, from, n, scratch, 0, dim);
+                        for (int i = 0; i < n; i++) {
+                            long at = rowsAt + (long) i * dim * Float.BYTES;
+                            float dot = 0;
+                            for (int d = 0; d < dim; d++)
+                                dot +=
+                                        rows.get(FLOAT, at + (long) d * Float.BYTES)
+                                                * hidden.get(
+                                                        FLOAT, hiddenAt + (long) d * Float.BYTES);
+                            out[from + i] = dot;
+                        }
+                    }
+                });
+        Reference.reachabilityFence(this);
+    }
+
     // === Configuration ===
 
     /**
      * @param kvHeads per layer; 0 marks a short-conv layer
      * @param isSwa per layer; a sliding-window attention layer attends the last {@code
      *     slidingWindow} positions through a ring cache
+     * @param causalAttention whether each row of a full-attention layer sees only itself and the
+     *     rows before it, as in every chat model ({@code true}, the default when the GGUF has no
+     *     {@code lfm3.attention.causal}). {@code false} for decision checkpoints trained to read a
+     *     whole prompt at once (Liquid's d1 and d1-Omni): every row sees every row of the prompt,
+     *     which is then one batch. Sliding-window and short-conv layers are causal either way.
      */
     public record Configuration(
             int embeddingLength,
@@ -471,7 +755,8 @@ public final class Lfm3
             float ropeTheta,
             float ropeThetaSwa,
             int slidingWindow,
-            int shortConvLCache)
+            int shortConvLCache,
+            boolean causalAttention)
             implements ContextConfiguration {
 
         public Configuration {
@@ -617,6 +902,30 @@ public final class Lfm3
             }
         }
 
+        /**
+         * A batch's prompts and their parts while it runs ({@link Lfm3#ingestPrompts}), else null.
+         */
+        int[][] prompts;
+
+        /** The same batch's media rows, none outside it. */
+        List<Placed> media = List.of();
+
+        /** Two-way attention's work buffers, made by the first batch that needs them. */
+        private MemoryView<MemorySegment> scores, valuesT;
+
+        /** {@code rows} query rows' scores against every key of a batch. */
+        MemoryView<MemorySegment> scores(int rows) {
+            if (scores == null) scores = Views.allocateF32(memoryArena(), rows, batchCapacity());
+            return scores;
+        }
+
+        /** One KV head's values, a row a channel. */
+        MemoryView<MemorySegment> valuesT(int headSize) {
+            if (valuesT == null)
+                valuesT = Views.allocateF32(memoryArena(), headSize, batchCapacity());
+            return valuesT;
+        }
+
         private void advance(Batch batch) {
             advanceContext(batch.count(), batch.outputs());
         }
@@ -738,7 +1047,8 @@ public final class Lfm3
                         gguf.getValue(float.class, "lfm3.rope.freq_base"),
                         gguf.getValue(float.class, "lfm3.rope.freq_base_swa"),
                         window,
-                        gguf.getValue(int.class, "lfm3.shortconv.l_cache"));
+                        gguf.getValue(int.class, "lfm3.shortconv.l_cache"),
+                        gguf.getValueOrDefault(boolean.class, "lfm3.attention.causal", true));
         require(
                 dim > 0 && heads > 0 && headSize > 0 && headSize % 2 == 0 && layers > 0,
                 "invalid core dimensions");

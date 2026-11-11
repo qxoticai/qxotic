@@ -1,6 +1,7 @@
 package com.qxotic.jinfer.models.lfm3;
 
 import com.qxotic.format.gguf.GGUF;
+import com.qxotic.jinfer.chat.DecisionModel;
 import com.qxotic.jinfer.chat.LoadedModel;
 import com.qxotic.jinfer.chat.ModelProvider;
 import com.qxotic.jinfer.chat.Models;
@@ -39,6 +40,16 @@ public final class Lfm3Provider implements ModelProvider {
             Map<String, Path> companions,
             Tokenizer tokenizer)
             throws IOException {
+        String decision = gguf.getStringOrDefault("lfm3.decision.type", "");
+        if (!decision.isEmpty()
+                || !gguf.getValueOrDefault(boolean.class, "lfm3.attention.causal", true))
+            throw new IncompatibleModelException(
+                    "'"
+                            + path.getFileName()
+                            + "' is a decision model"
+                            + (decision.isEmpty() ? "" : " (" + decision + ")")
+                            + ": it answers typed questions and generates no text, so it is not"
+                            + " a language model to chat with");
         Lfm3 model = Lfm3.loadModel(fileChannel, gguf, arena, tokenizer);
         Path media = companions.get("media");
         if (media != null) model = model.withMedia(media, arena);
@@ -51,5 +62,26 @@ public final class Lfm3Provider implements ModelProvider {
                 Models.modelSeed(fileChannel),
                 Optional.of(new Lfm3ChatTemplate(model)),
                 LoadedModel.SamplingDefaults.NONE);
+    }
+
+    @Override
+    public DecisionModel loadDecisionModel(
+            FileChannel channel,
+            GGUF gguf,
+            Path path,
+            Arena arena,
+            Map<String, Path> companions,
+            Tokenizer tokenizer)
+            throws IOException {
+        if (gguf.getStringOrDefault("lfm3.decision.type", "").isEmpty())
+            throw new IncompatibleModelException(
+                    "'"
+                            + path.getFileName()
+                            + "' is an LFM3 language model, not a decision model: it was not"
+                            + " trained to answer typed questions (Liquid's d1 checkpoints are)");
+        Lfm3 model = Lfm3.loadModel(channel, gguf, arena, tokenizer);
+        Path media = companions.get("media");
+        if (media != null) model = model.withMedia(media, arena);
+        return new Lfm3Decision(model, gguf);
     }
 }
