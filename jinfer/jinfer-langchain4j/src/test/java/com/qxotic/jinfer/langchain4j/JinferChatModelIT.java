@@ -131,7 +131,7 @@ class JinferChatModelIT {
                                                                 "ghost-call", "calculator", "4"))
                                                 .build()));
         assertTrue(e.getMessage().contains("ghost-call"), e.getMessage());
-        assertTrue(e.getMessage().contains("no tool call"), e.getMessage());
+        assertTrue(e.getMessage().contains("no open tool call"), e.getMessage());
     }
 
     @Test

@@ -76,7 +76,7 @@ class ConversationTest {
                                                 new Message(Role.USER, "what is 2+2?"),
                                                 result("ghost", "4"))));
         assertTrue(e.getMessage().contains("ghost"), e.getMessage());
-        assertTrue(e.getMessage().contains("no tool call"), e.getMessage());
+        assertTrue(e.getMessage().contains("no open tool call"), e.getMessage());
     }
 
     @Test
@@ -98,8 +98,8 @@ class ConversationTest {
     }
 
     @Test
-    void idLessResultsFollowAnyEarlierCall() {
-        // families without call ids: presence of a call is the whole check
+    void idLessResultsAnswerAnEarlierCall() {
+        // families without call ids: any one unanswered call is the match
         assertDoesNotThrow(() -> new Conversation(List.of(call(null, "calc"), result(null, "4"))));
         assertThrows(
                 IllegalArgumentException.class, () -> new Conversation(List.of(result(null, "4"))));
@@ -122,6 +122,39 @@ class ConversationTest {
                                                 new Message(Role.USER, "hi"),
                                                 result("call_0", "4"))));
         assertTrue(e.getMessage().contains("call_0"), e.getMessage());
+    }
+
+    /**
+     * Every call answers once, with or without an id: the trim artifact refuses in every family.
+     */
+    @Test
+    void aCallIsAnsweredOnce() {
+        Message user = new Message(Role.USER, "again");
+        for (List<Message> extra :
+                List.of(
+                        List.of(call("", "calc"), result("", "4"), user, result("", "4")),
+                        List.of(
+                                call("", "calc"),
+                                result("call_0", "4"),
+                                user,
+                                result("call_1", "4")),
+                        List.of(call("c1", "calc"), result("", "4"), user, result("c1", "4")))) {
+            assertThrows(
+                    IllegalArgumentException.class, () -> new Conversation(extra), extra::toString);
+        }
+        // two id-less calls, two answers: a count, not a flag
+        assertDoesNotThrow(
+                () ->
+                        new Conversation(
+                                List.of(
+                                        new Message(
+                                                Role.ASSISTANT,
+                                                List.of(
+                                                        new Content.ToolCall("", "calc", Map.of()),
+                                                        new Content.ToolCall(
+                                                                "", "clock", Map.of()))),
+                                        result("", "4"),
+                                        result("", "noon"))));
     }
 
     @Test
