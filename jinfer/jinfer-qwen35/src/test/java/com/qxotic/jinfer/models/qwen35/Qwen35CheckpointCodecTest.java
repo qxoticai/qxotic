@@ -137,6 +137,7 @@ final class Qwen35CheckpointCodecTest {
                 0, // expertCount (dense)
                 0, // expertUsedCount
                 0, // expertFeedForwardLength
-                0); // expertSharedFeedForwardLength
+                0, // expertSharedFeedForwardLength
+                true); // causalAttention
     }
 }

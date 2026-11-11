@@ -45,6 +45,7 @@ import java.nio.channels.FileChannel;
 import java.nio.file.Path;
 import java.nio.file.StandardOpenOption;
 import java.util.Arrays;
+import java.util.List;
 import java.util.Map;
 import java.util.Objects;
 import java.util.Optional;
@@ -78,6 +79,11 @@ public final class Qwen35
         this.weights = weights;
         this.vision = vision;
         this.hadamard = hadamard;
+    }
+
+    /** The width of a row: a token's embedding, a tower's output. */
+    int width() {
+        return configuration.embeddingLength;
     }
 
     @Override
@@ -175,6 +181,7 @@ public final class Qwen35
                             + start
                             + " exceeds contextCapacity "
                             + state.contextCapacity());
+        requireWholePrompt(start);
         int[] tokens =
                 switch (batch.input()) {
                     case Batch.Input.Tokens t -> t.ids();
@@ -202,6 +209,116 @@ public final class Qwen35
                         "token id " + token + " outside [0," + configuration.vocabularySize + ")");
         forward(state, tokens, start, rows);
         state.advance(batch);
+    }
+
+    /** A two-way checkpoint reads a prompt as one batch into an empty state. */
+    private void requireWholePrompt(int start) {
+        if (!configuration.causalAttention && start != 0)
+            throw new IllegalStateException(
+                    "this checkpoint reads a prompt both ways, so a prompt is one batch into an"
+                            + " empty state: reset the state, and open a batch capacity that holds"
+                            + " the whole prompt");
+    }
+
+    /** A tower's {@code count} rows at row {@code at} of a prompt, and where they sit. */
+    record Placed(int at, MemoryView<MemorySegment> rows, int count, Batch.Positions positions) {}
+
+    /**
+     * A decision checkpoint's whole prompt in one batch, into an emptied state: {@code tokens}, the
+     * rows of each of {@code media} taking the place of the token rows at its position, whose ids
+     * are not read. Positions run through the prompt as the chat path lays them out ({@link
+     * #promptPositions}).
+     */
+    void ingestPrompt(State state, int[] tokens, List<Placed> media) {
+        if (configuration.causalAttention)
+            throw new IllegalStateException("a causal checkpoint reads in turns");
+        int rows = tokens.length;
+        state.exclusively(
+                () -> {
+                    state.reset();
+                    if (rows <= 0 || rows > state.batchCapacity())
+                        throw new IllegalArgumentException(
+                                "a prompt of "
+                                        + rows
+                                        + " rows, the state holds "
+                                        + state.batchCapacity());
+                    for (int token : tokens)
+                        if (token < 0 || token >= configuration.vocabularySize)
+                            throw new IllegalArgumentException("token id " + token);
+                    fillMediaRope(state, promptPositions(rows, media), 0, rows);
+
+                    int dim = configuration.embeddingLength;
+                    Views.checkAlive(weights.tokenEmbedding, "tokenEmbedding");
+                    Convert.gatherToF32(
+                            weights.tokenEmbedding, tokens, 0, rows, state.residual, 0, dim);
+                    if (hadamard != null) hadamard.inverse(state.residual, rows, dim);
+                    for (Placed placed : media)
+                        Convert.copyF32(
+                                placed.rows(),
+                                0,
+                                state.residual,
+                                (long) placed.at() * dim,
+                                (long) placed.count() * dim);
+                    for (int layer = 0; layer < configuration.numberOfLayers; layer++)
+                        decoderBlock(state, layer, 0, rows);
+                    state.advance(Batch.score(tokens));
+                });
+        Reference.reachabilityFence(this);
+    }
+
+    /**
+     * Every row's 3D position in a prompt of {@code rows}: a text row the next position on all
+     * three axes, a picture's rows its tower's coordinates from where it starts, the text after it
+     * from there plus the picture's extent.
+     */
+    private static Batch.Positions promptPositions(int rows, List<Placed> media) {
+        int[] at = new int[rows * 3];
+        int row = 0, cursor = 0;
+        for (Placed placed : media) {
+            if (placed.at() < row || placed.at() + placed.count() > rows)
+                throw new IllegalArgumentException("media rows out of order");
+            for (; row < placed.at(); row++, cursor++)
+                at[row * 3] = at[row * 3 + 1] = at[row * 3 + 2] = cursor;
+            for (int j = 0; j < placed.count(); j++, row++)
+                for (int d = 0; d < 3; d++)
+                    at[row * 3 + d] = cursor + placed.positions().value(j, d);
+            cursor += placed.positions().advance();
+        }
+        for (; row < rows; row++, cursor++)
+            at[row * 3] = at[row * 3 + 1] = at[row * 3 + 2] = cursor;
+        return new Batch.Positions(3, at, cursor);
+    }
+
+    /**
+     * The logits of {@code tokens} alone at row {@code row} of the last batch, into {@code out}:
+     * the head's rows for those tokens against the row, not the whole vocabulary's. What a decision
+     * reads, a handful of answer codes.
+     */
+    void logits(State state, int row, int[] tokens, float[] out) {
+        state.exclusively(
+                () -> {
+                    int dim = configuration.embeddingLength;
+                    Norms.rmsnorm(
+                            state.normed,
+                            0,
+                            state.residual,
+                            (long) row * dim,
+                            weights.outputNorm,
+                            dim,
+                            configuration.rmsNormEps);
+                    MemoryView<MemorySegment> x = folded(state, state.normed, 1, dim);
+                    // the head's rows, dequantized into the feed-forward scratch, free by now
+                    MemoryView<MemorySegment> scratch = state.hidden;
+                    int chunk =
+                            Math.toIntExact(Math.min(tokens.length, scratch.logicalSize() / dim));
+                    for (int from = 0; from < tokens.length; from += chunk) {
+                        int n = Math.min(chunk, tokens.length - from);
+                        Convert.gatherToF32(weights.outputWeight, tokens, from, n, scratch, 0, dim);
+                        for (int i = 0; i < n; i++)
+                            out[from + i] = Ops.dot(scratch, (long) i * dim, x, 0, dim);
+                    }
+                });
+        Reference.reachabilityFence(this);
     }
 
     /**
@@ -450,18 +567,33 @@ public final class Qwen35
         long cacheOffset = (long) startPos * kvDim;
         Convert.f32ToF16Rows(s.k, s.keyCache[layer], cacheOffset, rows, kvDim);
         Convert.f32ToF16Rows(s.v, s.valueCache[layer], cacheOffset, rows, kvDim);
-        FlashAttention.causalPrefill(
-                s.q,
-                s.attentionOut,
-                s.keyCache[layer],
-                s.valueCache[layer],
-                c.numberOfHeads,
-                startPos,
-                rows,
-                c.headSize,
-                kvDim,
-                qDim,
-                c.numberOfHeads / c.numberOfKeyValueHeads);
+        if (!configuration
+                .causalAttention) // the prompt is the whole batch, from row 0 of the cache
+        FlashAttention.bidirectionalPrefill(
+                    s.q,
+                    s.attentionOut,
+                    s.keyCache[layer],
+                    s.valueCache[layer],
+                    c.numberOfHeads,
+                    rows,
+                    c.headSize,
+                    kvDim,
+                    qDim,
+                    c.numberOfHeads / c.numberOfKeyValueHeads,
+                    1.0f / (float) Math.sqrt(c.headSize));
+        else
+            FlashAttention.causalPrefill(
+                    s.q,
+                    s.attentionOut,
+                    s.keyCache[layer],
+                    s.valueCache[layer],
+                    c.numberOfHeads,
+                    startPos,
+                    rows,
+                    c.headSize,
+                    kvDim,
+                    qDim,
+                    c.numberOfHeads / c.numberOfKeyValueHeads);
         GatedDeltaNet.sigmoidMultiply(s.attentionOut, s.attentionGate, rows, qDim);
         MatMul.gemm(
                 weights.attnOutput[layer], folded(s, s.attentionOut, rows, qDim), s.branch, rows);
@@ -681,6 +813,13 @@ public final class Qwen35
                 });
     }
 
+    /**
+     * @param causalAttention whether each row of a full-attention layer sees only itself and the
+     *     rows before it, as in every chat model ({@code true}, the default when the GGUF has no
+     *     {@code qwen35.attention.causal}). {@code false} for decision checkpoints trained to read
+     *     a whole prompt at once (vLLM's d3): every row sees every row of the prompt, which is then
+     *     one batch. The Gated DeltaNet layers are causal either way.
+     */
     public record Configuration(
             int embeddingLength,
             int numberOfLayers,
@@ -704,8 +843,10 @@ public final class Qwen35
             int expertCount,
             int expertUsedCount,
             int expertFeedForwardLength,
-            int expertSharedFeedForwardLength)
+            int expertSharedFeedForwardLength,
+            boolean causalAttention)
             implements ContextConfiguration {
+
         int queryDim() {
             return numberOfHeads * headSize;
         }
@@ -1098,7 +1239,8 @@ public final class Qwen35
                 expertCount,
                 expertUsed,
                 expertFfn,
-                sharedFfn);
+                sharedFfn,
+                gguf.getValueOrDefault(boolean.class, arch + ".attention.causal", true));
     }
 
     static Weights loadWeights(Map<String, MemoryView<MemorySegment>> tensors, Configuration c) {

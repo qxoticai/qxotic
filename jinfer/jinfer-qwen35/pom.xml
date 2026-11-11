@@ -58,6 +58,11 @@
     </dependency>
     <dependency>
       <groupId>com.qxotic</groupId>
+      <artifactId>jinfer-codecs</artifactId>
+      <scope>test</scope>
+    </dependency>
+    <dependency>
+      <groupId>com.qxotic</groupId>
       <artifactId>jinfer-cache</artifactId>
       <scope>test</scope>
     </dependency>

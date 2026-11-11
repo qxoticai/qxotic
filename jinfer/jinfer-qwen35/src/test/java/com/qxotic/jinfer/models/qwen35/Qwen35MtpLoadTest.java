@@ -200,7 +200,8 @@ final class Qwen35MtpLoadTest {
                 0,
                 0,
                 0,
-                0);
+                0,
+                true);
     }
 
     static Qwen35.Configuration config(boolean moe) {
@@ -227,6 +228,7 @@ final class Qwen35MtpLoadTest {
                 moe ? 2 : 0,
                 moe ? 1 : 0,
                 moe ? 8 : 0,
-                moe ? 4 : 0);
+                moe ? 4 : 0,
+                true);
     }
 }

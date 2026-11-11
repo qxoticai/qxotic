@@ -1,6 +1,7 @@
 package com.qxotic.jinfer.models.qwen35;
 
 import com.qxotic.format.gguf.GGUF;
+import com.qxotic.jinfer.chat.DecisionModel;
 import com.qxotic.jinfer.chat.LoadedModel;
 import com.qxotic.jinfer.chat.ModelProvider;
 import com.qxotic.jinfer.chat.Models;
@@ -38,6 +39,17 @@ public final class Qwen35Provider implements ModelProvider {
             Map<String, Path> companions,
             Tokenizer tokenizer)
             throws IOException {
+        String arch = gguf.getString("general.architecture");
+        String decision = gguf.getStringOrDefault(arch + ".decision.type", "");
+        if (!decision.isEmpty()
+                || !gguf.getValueOrDefault(boolean.class, arch + ".attention.causal", true))
+            throw new IncompatibleModelException(
+                    "'"
+                            + path.getFileName()
+                            + "' is a decision model"
+                            + (decision.isEmpty() ? "" : " (" + decision + ")")
+                            + ": it answers typed questions and generates no text, so it is not"
+                            + " a language model to chat with");
         Qwen35 model = Qwen35.loadModel(fileChannel, gguf, arena, tokenizer);
         Path media = companions.get("media");
         if (media != null) model = model.withMedia(media, arena);
@@ -53,5 +65,27 @@ public final class Qwen35Provider implements ModelProvider {
                 // (call parsing, constrained decoding, forced calls) on the whole-render path
                 Optional.of(new Qwen35ChatTemplate(model)),
                 SAMPLING_DEFAULTS);
+    }
+
+    @Override
+    public DecisionModel loadDecisionModel(
+            FileChannel channel,
+            GGUF gguf,
+            Path path,
+            Arena arena,
+            Map<String, Path> companions,
+            Tokenizer tokenizer)
+            throws IOException {
+        String arch = gguf.getString("general.architecture");
+        if (gguf.getStringOrDefault(arch + ".decision.type", "").isEmpty())
+            throw new IncompatibleModelException(
+                    "'"
+                            + path.getFileName()
+                            + "' is a Qwen3.5 language model, not a decision model: it was not"
+                            + " trained to answer typed questions (vLLM's d3 checkpoints are)");
+        Qwen35 model = Qwen35.loadModel(channel, gguf, arena, tokenizer);
+        Path media = companions.get("media");
+        if (media != null) model = model.withMedia(media, arena);
+        return new Qwen35Decision(model, gguf);
     }
 }
