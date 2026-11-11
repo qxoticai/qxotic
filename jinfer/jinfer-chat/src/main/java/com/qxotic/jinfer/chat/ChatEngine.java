@@ -37,6 +37,7 @@ import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collections;
 import java.util.EnumSet;
+import java.util.HashSet;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Locale;
@@ -519,6 +520,11 @@ public final class ChatEngine implements AutoCloseable {
             }
             messages = List.copyOf(messages);
             tools = tools == null ? List.of() : List.copyOf(tools);
+            Set<String> names = new HashSet<>();
+            for (Tool tool : tools)
+                if (!names.add(tool.name()))
+                    throw new IllegalArgumentException(
+                            "tool \"" + tool.name() + "\" is offered twice: a call names its tool");
             stops = TextStops.checked(stops);
             forcedTool = forcedTool == null ? ForcedTool.NONE : forcedTool;
             if (grammar != null && forcedTool != ForcedTool.NONE) {

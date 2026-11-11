@@ -192,6 +192,20 @@ final class ChatEngineRequestTest {
                                 null));
     }
 
+    /** A call names its tool, so two offered tools of one name are refused, whatever the face. */
+    @Test
+    void aToolNameIsOfferedOnce() {
+        Tool other = new Tool("f", Map.of("name", "f", "description", "another f"));
+        var refused =
+                assertThrows(
+                        IllegalArgumentException.class,
+                        () ->
+                                ChatEngine.Request.builder(ONE_TURN, SAMPLING)
+                                        .tools(List.of(ONE_TOOL.get(0), other))
+                                        .build());
+        assertTrue(refused.getMessage().contains("\"f\" is offered twice"), refused.getMessage());
+    }
+
     /**
      * The engine owns tool_choice arbitration: a forced call needs offered tools, and a NAMED
      * choice must name one of them - the model would otherwise be "forced" into a call the caller
