@@ -18,6 +18,7 @@ No inference server, Python runtime or API key required.
 - **Automatic tool calling.** Expose `@Tool` methods and let Spring AI manage tool execution and follow-up model calls.
 - **Multimodal support.** Pass Spring `Media` values to models that support images, audio or video.
 - **Local embeddings and reranking.** Generate embeddings through `EmbeddingModel` and rerank retrieved documents with `DocumentPostProcessor`.
+- **Decisions.** Answer yes/no, choice and score questions about text, fields, images, audio and video with probabilities through `DecisionModel`.
 - **Local inference.** Models download on first use and stay cached; inference runs locally.
 
 ## Spring Boot quick start
@@ -81,6 +82,7 @@ The starter creates beans from these properties:
 |------------|-----------|--------------|
 | Chat | `spring.ai.model.chat=jinfer` | `spring.ai.jinfer.chat.model` |
 | Embeddings | `spring.ai.model.embedding=jinfer` | `spring.ai.jinfer.embedding.model` |
+| Decisions | `spring.ai.model.decision=jinfer` | `spring.ai.jinfer.decision.model` |
 | Reranking | configured when a model is present | `spring.ai.jinfer.rerank.model` |
 | Speech | configured when a model is present | `spring.ai.jinfer.speech.model` |
 | Transcription | configured when a model is present | `spring.ai.jinfer.transcription.model` |
@@ -339,7 +341,9 @@ try (var omni = JinferChatModel.builder()
 The same option on a request's `JinferChatOptions` opens or closes the voice for that request alone, and `spring.ai.jinfer.chat.output-modalities=text,audio` sets the default in Spring Boot.
 A streamed reply's media chunks are not aggregated: `ChatClient.stream().content()` yields the transcript, and a subscriber to `ChatModel.stream` collects the audio parts, each chunk a WAV of its own.
 A spoken reply does not reason, so allowing audio turns `thinking` off, and it cannot offer tools or follow a grammar: such a request is refused in words.
-There is no voice or language option: LFM3-Omni's spoken chat replies come in its one chat voice, in English, and a system prompt asking for another voice or language does not change that.
+There is no voice option: LFM3-Omni's spoken chat replies come in its one chat voice, whatever the system prompt asks for.
+A language clause is a request the model may not honour: it can answer in that language, in English, or in text alone (Japanese replies came back as text in every run).
+For speech in a set language, LFM3-Omni's text-to-speech instruction takes the language explicitly (see [jinfer-lfm3](../jinfer-lfm3/README.md#text-to-speech)).
 
 ## Embeddings and reranking
 
@@ -489,6 +493,53 @@ try (var embeddings = JinferEmbeddingModel.builder()
 
 The example embeds a query and reranks two supplied documents.
 In a RAG application, pass the documents returned by your retriever to the reranker.
+
+## Decisions
+
+A decision model, such as Liquid AI's d1 or vLLM Semantic Router's d3, answers questions with probabilities in one forward pass, without generating text:
+
+```java
+try (var model = JinferDecisionModel.builder()
+        .model("LiquidAI/d1-2B-GGUF:Q8_0")
+        .companion("media", "LiquidAI/d1-2B-GGUF/mmproj-d1-2B-F16.gguf") // for images and video
+        .build()) {
+
+    DecisionResponse response = model.call(
+            "I was charged twice for my order and I want my money back today.",
+            Map.of(
+                    "refund", YesNoQuestion.of("Is the customer asking for a refund?"),
+                    "team", ChoiceQuestion.of("Which team should handle this?", "billing", "shipping", "technical"),
+                    "urgency", ScoreQuestion.of("How urgent is this?", "Can wait", "This week", "Today", "Right now")));
+
+    response.getYesNo("refund").getProbability();   // 0.99
+    response.getChoice("team").getValue();          // "billing"
+    response.getScore("urgency").getNearestLevel(); // 2
+}
+```
+
+The input can be text and media parts (`DecisionInput.content(...)`) or fields (`DecisionInput.fields(...)`).
+Fields are put to the model as JSON, the form d1 was trained on; a field holding content parts adds its text (or its media's kinds) to the JSON, and its media to the input, never as base64 in the prompt.
+d1 reads images and video, d1-Omni also audio, d3 images.
+A conversation is not an input and is refused.
+
+Each question is answered as if asked alone.
+On d1 and d1-Omni, `together(true)` reads the input once for all of a call's questions, several times faster; an answer can then shift with the questions asked beside it.
+d3 is not trained to, and answers each question alone either way.
+A score's `getValue()` is the expected level, the probability-weighted mean of the levels, as in LangChain4j's adapter and jinfer's `/v1/systemone`; `getNearestLevel()` is the likeliest level.
+The response metadata carries the checkpoint's name, and a prompt naming another model is refused rather than answered by this one.
+
+With the Spring Boot starter, select `spring.ai.model.decision=jinfer` and configure the model:
+
+```properties
+spring.ai.model.decision=jinfer
+spring.ai.jinfer.decision.model=LiquidAI/d1-2B-GGUF:Q8_0
+spring.ai.jinfer.decision.companions.media=LiquidAI/d1-2B-GGUF/mmproj-d1-2B-F16.gguf
+spring.ai.jinfer.decision.together=false
+spring.ai.jinfer.decision.context-capacity=0
+```
+
+`context-capacity` bounds an input with its questions, a media row counting as a token: `0`, the default, is 4096 or the model's maximum when smaller, and `-1` is that maximum.
+The `DecisionModel` bean is then ready to inject.
 
 ## Prompt caching
 

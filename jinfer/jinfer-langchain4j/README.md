@@ -30,6 +30,7 @@ to a third party.
 - **Multimodal.** Images, audio and video through standard `ImageContent`, `AudioContent` and
   `VideoContent`, decoded locally.
 - **Retrieval.** Embeddings and ColBERT reranking in the same JVM as chat, with no vector service.
+- **Decisions.** `DecisionModel` answers yes/no, choice and scale questions about text, fields, images, audio and video with probabilities, without generating text.
 - **Accurate reporting.** Real token counts and finish reasons. Unsupported parameters fail
   instead of being silently ignored.
 - **Shared weights.** Models built on one `Models.load` run as parallel pipelines over one copy
@@ -311,7 +312,11 @@ omni.streaming().chat(request, new StreamingChatResponseHandler() {
     @Override public void onPartialResponse(String partial) { System.out.print(partial); }
     @Override public void onUnmappedRawEvent(Object event) { stretches.add((Media.Audio) event); }
     @Override public void onCompleteResponse(ChatResponse response) {
-        Files.write(Path.of("reply.wav"), AudioCodec.wav(Media.Audio.concat(stretches)));
+        try {
+            Files.write(Path.of("reply.wav"), AudioCodec.wav(Media.Audio.concat(stretches)));
+        } catch (IOException e) {
+            throw new UncheckedIOException(e);
+        }
     }
     @Override public void onError(Throwable error) { error.printStackTrace(); }
 });
@@ -320,7 +325,9 @@ omni.streaming().chat(request, new StreamingChatResponseHandler() {
 An `AiService`'s `TokenStream` takes the same `onUnmappedRawEvent`.
 A reply sent back in history carries its speech and replays exactly; sent back as `AudioContent.from(speech)`, the clip is heard by the model like any other audio input.
 A spoken reply does not reason, so allowing audio turns `thinking` off, and it cannot offer tools or follow a grammar: such a request is refused in words.
-There is no voice or language option: LFM3-Omni's spoken chat replies come in its one chat voice, in English, and a system prompt asking for another voice or language does not change that.
+There is no voice option: LFM3-Omni's spoken chat replies come in its one chat voice, whatever the system prompt asks for.
+A language clause is a request the model may not honour: it can answer in that language, in English, or in text alone (Japanese replies came back as text in every run).
+For speech in a set language, LFM3-Omni's text-to-speech instruction takes the language explicitly (see [jinfer-lfm3](../jinfer-lfm3/README.md#text-to-speech)).
 
 ## Multi-model agent
 
@@ -489,6 +496,43 @@ RetrievalAugmentor augmentor = DefaultRetrievalAugmentor.builder()
 
 Try the smaller [Search.java](../examples/scripts/Search.java) and
 [Rerank.java](../examples/scripts/Rerank.java) demos side by side.
+
+## Decisions
+
+A decision model, such as Liquid AI's d1 or vLLM Semantic Router's d3, answers questions with probabilities in one forward pass, without generating text:
+
+```java
+try (var model = JinferDecisionModel.builder()
+        .model("LiquidAI/d1-2B-GGUF:Q8_0")
+        .companion("media", "LiquidAI/d1-2B-GGUF/mmproj-d1-2B-F16.gguf")  // for images and video
+        .build()) {
+
+    DecisionResponse response = model.decide(DecisionRequest.builder()
+            .input("I was charged twice for my order and I want my money back today.")
+            .question("refund", YesNoQuestion.from("Is the customer asking for a refund?"))
+            .question("team", ChoiceQuestion.from("Which team should handle this?",
+                    List.of("billing", "shipping", "technical")))
+            .question("urgency", ScaleQuestion.from("How urgent is this?",
+                    List.of("Can wait", "This week", "Today", "Right now")))
+            .build());
+
+    response.yesNo("refund").probability();   // 0.99
+    response.choice("team").value();          // "billing"
+    response.scale("urgency").mean();         // 2.08
+}
+```
+
+The input can be a text, fields or contents.
+Fields are put to the model as JSON, the form d1 was trained on; a field holding contents contributes its text (or its media's kinds) to the JSON, and its media to the input, never as base64 in the prompt.
+Contents take images, audio and video beside text; d1 reads images and video, d1-Omni also audio, d3 images.
+A conversation (`inputMessages`) is not an input and is refused.
+
+Each question is answered as if asked alone.
+On d1 and d1-Omni, `together(true)` reads the input once for all of a request's questions, several times faster; an answer can then shift with the questions asked beside it.
+d3 is not trained to, and answers each question alone either way.
+A scale's `mean()` is the expected level, the probability-weighted mean of the levels, as in Spring AI's adapter and jinfer's `/v1/systemone`.
+The response names the checkpoint it came from (`modelName()`), and a request naming another model is refused rather than answered by this one.
+`listeners(...)` takes langchain4j `DecisionModelListener`s, notified of every request, response and error, for audit logs, metrics and traces.
 
 ## Speech synthesis
 
