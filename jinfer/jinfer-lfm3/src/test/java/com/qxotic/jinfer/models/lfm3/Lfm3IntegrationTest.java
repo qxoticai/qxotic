@@ -169,9 +169,8 @@ final class Lfm3IntegrationTest {
 
     /**
      * Asked for audio, Omni opens a spoken reply ({@code <|mixed_start|>}), which the control rule
-     * used to cut before a word; a text reply forbids the switch and answers in words. Where the
-     * model is set on speaking (LiquidAI's voice-chat prompt) it ends the text at once instead, as
-     * in LiquidAI's own text mode: that request wants speech, not text.
+     * used to cut before a word; a text reply forbids every speech-lane token and answers in words,
+     * under LiquidAI's voice-chat prompt too ({@code Lfm3SpokenChatTest}).
      */
     @Test
     void aTextReplyNeverSwitchesToSpeech() throws Exception {
@@ -193,9 +192,8 @@ final class Lfm3IntegrationTest {
                                     false),
                             ChatEngine.ReplySink.NONE);
             assertTrue(reply.reply().text().contains("well"), reply.reply().text());
-            Set<Integer> openers = loaded.template().orElseThrow().replyForbidden();
-            assertEquals(2, openers.size());
-            for (int token : reply.result().tokens()) assertTrue(!openers.contains(token));
+            Set<Integer> lanes = loaded.template().orElseThrow().replyForbidden();
+            for (int token : reply.result().tokens()) assertTrue(!lanes.contains(token));
         } finally {
             Arenas.close(weights);
         }

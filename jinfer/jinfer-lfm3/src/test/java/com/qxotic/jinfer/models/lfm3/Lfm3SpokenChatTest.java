@@ -135,6 +135,23 @@ final class Lfm3SpokenChatTest {
     }
 
     /**
+     * A text reply under the voice-chat prompt answers in text: no speech-lane token ends it empty.
+     */
+    @Test
+    void aTextReplyUnderTheVoicePromptAnswers() {
+        Message question = Message.user("Name one animal.");
+        Message reply =
+                engine.complete(
+                                ChatEngine.Request.builder(List.of(VOICE_CHAT, question), SEEDED)
+                                        .maxOutputTokens(60)
+                                        .build(),
+                                ChatEngine.ReplySink.NONE)
+                        .reply();
+        assertTrue(reply.text().toLowerCase().contains("dog"), "[" + reply.text() + "]");
+        assertEquals(Optional.empty(), reply.speech(), "text alone");
+    }
+
+    /**
      * The voice is fixed, the language is a request the model may not honour, as the READMEs say: a
      * French clause is spoken in French, a Japanese one comes back as text alone.
      */

@@ -59,9 +59,20 @@ final class Lfm3ChatTemplate implements ChatTemplate {
     private final Lfm3Speech speech; // replays spoken turns; null without the Omni mmproj
     private final int bos, imStart, imEnd, think, endThink, visionOpen, visionClose;
     private final ReplyLanguage.Spans spans;
-    private final Set<Integer> speechOpeners; // a text reply's forbidden mode switches
+    private final Set<Integer> speechLaneIds;
 
     private static final Pattern THINK_MARKER = Pattern.compile("</?think>");
+
+    /** Omni's speech lanes: their openers, markers and audio placeholders. */
+    private static final List<String> SPEECH_LANE_TOKENS =
+            List.of(
+                    "<|audio_start|>",
+                    "<|mixed_start|>",
+                    "<|mixed_end|>",
+                    "<|text_start|>",
+                    "<|text_end|>",
+                    "<|audio|>",
+                    "<|audio_out|>");
 
     Lfm3ChatTemplate(Lfm3 model) {
         this(model.tokenizer(), model);
@@ -78,10 +89,10 @@ final class Lfm3ChatTemplate implements ChatTemplate {
         endThink = SpecialTokens.require(tokenizer, "</think>");
         visionOpen = SpecialTokens.require(tokenizer, "<|vision_start|>");
         visionClose = SpecialTokens.require(tokenizer, "<|vision_end|>");
-        Set<Integer> openers = new HashSet<>();
-        for (String opener : List.of("<|audio_start|>", "<|mixed_start|>"))
-            SpecialTokens.find(tokenizer, opener).ifPresent(openers::add);
-        speechOpeners = Set.copyOf(openers);
+        Set<Integer> lanes = new HashSet<>();
+        for (String token : SPEECH_LANE_TOKENS)
+            SpecialTokens.find(tokenizer, token).ifPresent(lanes::add);
+        speechLaneIds = Set.copyOf(lanes);
         spans =
                 new ReplyLanguage.Spans(
                         "<think>",
@@ -371,13 +382,15 @@ final class Lfm3ChatTemplate implements ChatTemplate {
     }
 
     /**
-     * Speech and interleaved replies open with their own token; a text reply forbids both, as
-     * LiquidAI's {@code generation_mode="text"} and llama.cpp's text mode do. Under a voice-chat
-     * system prompt Omni opens {@code <|mixed_start|>} almost surely.
+     * A text reply never samples a speech-lane token: sampled, any of them ends the reply on the
+     * control rule. LiquidAI's {@code generation_mode="text"} and llama.cpp's text mode ban only
+     * the two openers, and under Omni's voice-chat prompt the model's next choice is then {@code
+     * <|text_end|>}: the reply ends empty. With every lane token banned it answers in text and ends
+     * on {@code <|im_end|>}.
      */
     @Override
     public Set<Integer> replyForbidden() {
-        return speechOpeners;
+        return speechLaneIds;
     }
 
     @Override
