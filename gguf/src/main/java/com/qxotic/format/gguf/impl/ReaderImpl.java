@@ -11,6 +11,11 @@ import java.nio.ByteBuffer;
 import java.nio.ByteOrder;
 import java.nio.channels.ReadableByteChannel;
 import java.nio.charset.StandardCharsets;
+import java.util.ArrayDeque;
+import java.util.ArrayList;
+import java.util.Collection;
+import java.util.Comparator;
+import java.util.Deque;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -44,6 +49,7 @@ final class ReaderImpl {
             }
             tensorInfos.put(ti.name(), ti);
         }
+        requireSizedSlots(tensorInfos.values());
         // Padding to the nearest multiple of `ALIGNMENT`.
         // uint8_t _padding[ALIGNMENT - (sizeof(header + tensor_infos) % ALIGNMENT)];
         int padding = (int) GGUFImpl.padding(totalBytesRead, getAlignment());
@@ -63,6 +69,70 @@ final class ReaderImpl {
         long tensorDataOffset = totalBytesRead + padding;
         return new GGUFImpl(
                 this.version, tensorDataOffset, this.metadata, this.metadataTypes, tensorInfos);
+    }
+
+    /**
+     * Each tensor's size, from its shape and type, must match the room the file gives it: up to the
+     * next tensor, alignment padding only, as llama.cpp requires. A tensor may also lie wholly
+     * inside another, or share its bytes (Q and K as views of a stacked QK); two tensors that cross
+     * are refused. The first tensor starts the data. A type that sizes its tensors wrong (a fork's
+     * layout under an upstream id) fails here instead of decoding garbage. The last tensor's end is
+     * the loader's to check: a header does not know the file's length.
+     */
+    private void requireSizedSlots(Collection<TensorEntry> tensors) {
+        List<TensorEntry> byOffset = new ArrayList<>(tensors);
+        byOffset.sort( // an enclosing tensor before what it holds
+                Comparator.comparingLong(TensorEntry::offset)
+                        .thenComparing(Comparator.comparingLong(ReaderImpl::end).reversed()));
+        Deque<TensorEntry> enclosing = new ArrayDeque<>(); // the innermost last
+        long slot = 0; // where the last outermost tensor ends: the data's start at first
+        String before = "the tensor data's start";
+        for (TensorEntry tensor : byOffset) {
+            while (!enclosing.isEmpty() && end(enclosing.getLast()) <= tensor.offset()) {
+                enclosing.removeLast();
+            }
+            if (enclosing.isEmpty()) {
+                long gap = tensor.offset() - slot;
+                if (gap >= getAlignment()) {
+                    throw new GGUFFormatException(
+                            gap
+                                    + " unused bytes lie between "
+                                    + before
+                                    + " and "
+                                    + describe(tensor)
+                                    + ": a type sizes its tensors wrong");
+                }
+                slot = end(tensor);
+                before = describe(tensor);
+            } else if (end(tensor) > end(enclosing.getLast())) {
+                throw new GGUFFormatException(
+                        "Tensors overlap without one holding the other, "
+                                + describe(enclosing.getLast())
+                                + " and "
+                                + describe(tensor)
+                                + ": a type sizes its tensors wrong");
+            }
+            enclosing.addLast(tensor);
+        }
+    }
+
+    private static long end(TensorEntry tensor) {
+        long end = tensor.offset() + tensor.byteSize();
+        if (end < 0)
+            throw new GGUFFormatException("The data of " + describe(tensor) + " ends past 2^63");
+        return end;
+    }
+
+    private static String describe(TensorEntry tensor) {
+        return "tensor "
+                + tensor.name()
+                + " ("
+                + tensor.byteSize()
+                + " bytes of "
+                + tensor.ggmlType()
+                + " at offset "
+                + tensor.offset()
+                + ")";
     }
 
     private GGMLType readGGMLType(ReadableByteChannel byteChannel, String tensorName)

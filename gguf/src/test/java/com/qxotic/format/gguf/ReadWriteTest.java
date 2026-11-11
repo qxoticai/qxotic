@@ -466,6 +466,59 @@ public class ReadWriteTest extends GGUFTest {
         assertThrows(GGUFFormatException.class, () -> readFromBytes(ggufBytes));
     }
 
+    /**
+     * A tensor's size from its shape and type must match the room the file gives it: up to the next
+     * tensor, padding only. Nested tensors (Q and K as views of a stacked QK) and shared bytes are
+     * legal; a gap or a crossing means a type that sizes its tensors wrong.
+     */
+    @Test
+    public void testTensorsFillTheirSlots() throws IOException {
+        byte[] padded = tensors(f32("a", 1, 0), f32("b", 8, 32)); // 4 bytes, then padding to 32
+        assertEquals(2, readFromBytes(padded).getTensors().size());
+        byte[] stacked =
+                tensors(f32("qk", 16, 0), f32("q", 8, 0), f32("k", 8, 32), f32("next", 1, 64));
+        assertEquals(4, readFromBytes(stacked).getTensors().size());
+        byte[] shared = tensors(f32("a", 8, 0), f32("tied", 8, 0));
+        assertEquals(2, readFromBytes(shared).getTensors().size());
+
+        var gap =
+                assertThrows(
+                        GGUFFormatException.class,
+                        () -> readFromBytes(tensors(f32("a", 8, 0), f32("b", 8, 64))));
+        assertTrue(
+                gap.getMessage()
+                        .contains(
+                                "32 unused bytes lie between tensor a (32 bytes of F32 at offset 0)"
+                                        + " and tensor b"),
+                gap.getMessage());
+        var late =
+                assertThrows(
+                        GGUFFormatException.class, () -> readFromBytes(tensors(f32("a", 8, 32))));
+        assertTrue(
+                late.getMessage()
+                        .contains(
+                                "32 unused bytes lie between the tensor data's start and tensor a"),
+                late.getMessage());
+        var crossing =
+                assertThrows(
+                        GGUFFormatException.class,
+                        () -> readFromBytes(tensors(f32("a", 16, 0), f32("b", 16, 32))));
+        assertTrue(
+                crossing.getMessage()
+                        .contains(
+                                "overlap without one holding the other, tensor a (64 bytes of F32"
+                                    + " at offset 0) and tensor b (64 bytes of F32 at offset 32)"),
+                crossing.getMessage());
+    }
+
+    private static byte[] f32(String name, long elements, long offset) {
+        return tensorInfo(name, new long[] {elements}, GGMLType.F32, offset);
+    }
+
+    private static byte[] tensors(byte[]... infos) {
+        return rawGguf(infos.length, new byte[0][], infos);
+    }
+
     private static byte[] rawGguf(int tensorCount, byte[][] metadataEntries) {
         return rawGguf(tensorCount, metadataEntries, new byte[0][]);
     }

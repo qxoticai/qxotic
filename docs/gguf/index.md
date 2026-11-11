@@ -224,6 +224,13 @@ When reading all tensors, reuse the channel:
 | Q8_0 | 8.5 | 32 | 8-bit quantization |
 | Q4_K | 4.5 | 256 | K-quantized 4-bit |
 | Q6_K | 6.56 | 256 | K-quantized 6-bit |
+| Q2_0 | 2.25 | 64 | 2-bit codes -1, 0, +1, +2 |
+| PQ2_0 | 2.125 | 128 | PrismML: Q2_0 codes at a 128-element block |
+| PTQ1_0 | 1.75 | 128 | PrismML: ternary, TQ1_0 packing at a 128-element block |
+| Q1_0 | 1.125 | 128 | 1-bit sign quantization |
+
+The table shows common types; `GGMLType` lists every type the reader accepts, with its block layout.
+PQ2_0 and PTQ1_0 use the ids the PrismML llama.cpp fork reserves, not upstream GGML ids.
 
 ## Writing GGUF Files
 
@@ -321,6 +328,8 @@ The library throws `GGUFFormatException` for invalid GGUF files:
 - **Format violations**: Tensor names longer than 64 UTF-8 bytes (the writer stops at 63, the most ggml loads), more than 4 dimensions, unaligned offsets
 - **Type mismatches**: Wrong metadata value types for keys the format defines, such as `general.alignment`
 - **Duplicate entries**: Duplicate tensor names or metadata keys
+- **Mis-sized tensors**: Each tensor's byte size, from its shape and type, must fill its slot exactly: up to the next tensor with alignment padding only, the first tensor at the start of the data.
+  A tensor may lie wholly inside another or share its bytes (Q and K as views of a stacked QK tensor); tensors that cross, or gaps of an alignment or more, are refused.
 
 `GGUFFormatException` extends `IllegalArgumentException`.
 Reading a metadata value with `getValue` as a type other than the one stored throws `ClassCastException`, not `GGUFFormatException`.
