@@ -14,6 +14,14 @@ hf.co LiquidAI LFM3-VL-2B-GGUF LFM3-VL-2B-Q8_0.gguf
 hf.co LiquidAI LFM3-VL-2B-GGUF mmproj-LFM3-VL-2B-F16.gguf
 hf.co LiquidAI LFM3-Omni-2B-GGUF LFM3-Omni-2B-Q8_0.gguf
 hf.co LiquidAI LFM3-Omni-2B-GGUF mmproj-LFM3-Omni-2B-F16.gguf
+hf.co LiquidAI d1-2B-GGUF d1-2B-Q8_0.gguf
+hf.co LiquidAI d1-2B-GGUF mmproj-d1-2B-F16.gguf
+hf.co LiquidAI d1-Omni-2B-GGUF d1-Omni-2B-Q8_0.gguf
+hf.co LiquidAI d1-Omni-2B-GGUF mmproj-d1-Omni-2B-F16.gguf
+hf.co ggml-org vllm-d3-edge-GGUF vllm-d3-edge-Q8_0.gguf
+hf.co ggml-org vllm-d3-edge-GGUF mmproj-vllm-d3-edge-BF16.gguf
+hf.co ggml-org vllm-d3-mini-GGUF vllm-d3-mini-Q8_0.gguf
+hf.co ggml-org vllm-d3-mini-GGUF mmproj-vllm-d3-mini-Q8_0.gguf
 hf.co unsloth gemma-4-E2B-it-GGUF gemma-4-E2B-it-Q8_0.gguf
 hf.co unsloth gemma-4-E2B-it-GGUF mmproj-F32.gguf
 hf.co unsloth gemma-4-E2B-it-GGUF mtp-gemma-4-E2B-it.gguf

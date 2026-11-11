@@ -13,7 +13,7 @@ tokenization, model formats, tensor math, native quantized matmul, and a full in
 
 | Library | What it does | Mantra |
 |---------|--------------|--------|
-| [jinfer](/jinfer) | In-process LLM inference: chat, vision, embeddings, reranking, speech, OpenAI-compatible server | **Local LLM inference for the JVM** |
+| [jinfer](/jinfer) | In-process LLM inference: chat, vision, embeddings, reranking, decisions, speech, OpenAI-compatible server | **Local LLM inference for the JVM** |
 | [jam](/jam) | Native quantized matmul, `R = W @ Aᵀ`, from Java or C | **Just a matmul.** The fastest one on the JVM |
 | [jota](/jota) | Tensor engine with pluggable CPU/GPU backends | **One tensor API, every backend** |
 | [toknroll](/toknroll) | LLM tokenization (tiktoken + SentencePiece BPE) | **Token-perfect** parity with the reference tokenizers |

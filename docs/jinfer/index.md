@@ -7,7 +7,7 @@ sidebar_position: 1
 **Local LLM inference for the JVM. No server. No Python. No ONNX. Just a jar.**
 
 In-process GGUF inference: chat, streaming, tool calling, structured output, embeddings,
-reranking, speech, multimodal projection, prompt caching, and an OpenAI-compatible server.
+reranking, decisions, speech, multimodal projection, prompt caching, and an OpenAI-compatible server.
 Models download from the hub on first use and stay cached.
 
 Vector API kernels provide the portable floor. [jam](/jam) accelerates matmul when a compatible
@@ -67,7 +67,12 @@ The modalities are allowed, not required: the system prompt steers the choice, a
 A stream carries `pcm16` chunks and the transcript in `delta.audio`; its words go out once the first speech does, or as `delta.content` if the reply never speaks.
 A later turn refers back to a spoken reply by its `audio.id`, and it replays exactly as the model spoke it, for an hour.
 `audio.voice` does not steer a chat reply: the model speaks in its own voice.
-The same model serves `POST /v1/audio/speech`, with `voice` `female` or `male`, a `language`, `response_format` `wav` or `pcm`, and an optional integer `seed` that makes the reading reproducible.
+A language asked for in the system prompt is a request the model may not honour: it can answer in that language, in English, or in text alone.
+
+A decision model (Liquid's d1 and d1-Omni, vLLM Semantic Router's d3) answers yes/no, choice and rating questions about an input with probabilities, in one forward pass and without generating text.
+It serves `POST /v1/systemone` in llama.cpp's System One shape: `state` (a text, any other JSON value, or `null` with `files` alone), `files` with images, audio and video as base64 `data:` URIs, and `questions` of type `noul`, `choice` or `score`.
+On d1 and d1-Omni, `"together": true` reads the state once for all of the questions, faster, an answer then free to shift with the questions beside it; d3 answers each question alone either way.
+A `score` is the expected level, the probability-weighted mean of the levels, on every face; `/v1/models` lists only the modalities the loaded model really reads.
 
 Loopback is the default.
 Non-loopback binding requires `--api-key`.
@@ -83,9 +88,9 @@ Architecture dispatch comes from providers on the classpath.
 | Gemma 4 | chat, vision with an mmproj (E2B, E4B, 12B), E2B conformer audio, MTP |
 | EmbeddingGemma 2 | embeddings of text, and of images, audio and video with its mmproj |
 | Qwen 3 | embeddings, reranking |
-| Qwen 3.5 | chat, vision, MTP |
+| Qwen 3.5 | chat, vision, MTP, decisions (d3), ternary weights (PrismML Ternary Bonsai 2) |
 | LFM 2.5 | chat, embeddings, ColBERT reranking, VL projection |
-| LFM3 | chat, vision (LFM3-VL, Omni), audio input and speech output (Omni) |
+| LFM3 | chat, vision (LFM3-VL, Omni), audio input and spoken replies (Omni), decisions (d1, d1-Omni) |
 | Laguna XS 2.1 | chat |
 | Mellum 2 | chat |
 | Ling 3 | chat |
@@ -106,12 +111,13 @@ GGUF support: F32, F16, BF16, Q4_0, Q4_1, Q5_0, Q5_1, Q4_K, Q5_K, Q6_K, Q8_0, MX
 | reranking | `jinfer-lfm2` (ColBERT), `jinfer-qwen3` | `Reranker`; server `/v1/rerank` |
 | vision | `jinfer-gemma4`, `jinfer-lfm2`, `jinfer-lfm3`, `jinfer-qwen35` | `--with media=<clip.gguf>` |
 | audio input | `jinfer-gemma4`, `jinfer-lfm3` | E2B conformer; LFM3-Omni, 16 kHz |
-| speech synthesis | `jinfer-inflect2`, `jinfer-kokoro` | Kokoro needs a voice GGUF and eSpeak on `PATH` |
-| speech output | `jinfer-lfm3` | LFM3-Omni, 24 kHz; `Modality.AUDIO` on a chat request, server audio and `/v1/audio/speech` |
+| speech synthesis | `jinfer-inflect2`, `jinfer-kokoro` | CLI `speak`; Kokoro needs a voice GGUF and eSpeak on `PATH` |
+| spoken replies | `jinfer-lfm3` | LFM3-Omni, 24 kHz; `Modality.AUDIO` on a chat request, server `modalities: ["text", "audio"]` |
 | speech recognition | `jinfer-parakeet` | mono 16 kHz; CLI `transcribe`, server `/v1/audio/transcriptions` |
 | MTP speculation | `jinfer-gemma4`, `jinfer-qwen35` | embedded MTP head |
+| decisions | `jinfer-decision` over `jinfer-lfm3`, `jinfer-qwen35` | typed questions; CLI `server`, `/v1/systemone` |
 | prompt cache | `jinfer-cache` | sessions + checkpoint tree + JKVF |
-| hub + downloads | `jinfer-hub` | `owner/repo`, `modelscope.cn/...` |
+| hub + downloads | `jinfer-hub` | `owner/repo` in any case, `modelscope.cn/...` |
 
 Add `jinfer-models-all` for every provider, or individual `jinfer-<model>` artifacts. `Models.load` discovers present providers and names the missing artifact when an architecture is unsupported.
 
@@ -269,6 +275,8 @@ This table is the translation.
 | speculation depth | `ChatEngine.speculationDepth` | `--speculation-depth` | `--speculation-depth` at start | `speculationDepth` | `speculationDepth` |
 | prompt cache on disk | `PromptCache.Options.withCatalog` | `--cache`, `--cache-ro` | `--cache`, `--cache-ro` at start | `promptCache` | `promptCache` |
 | structured output | `Request.grammar` from `Grammar.schemaGbnf` | - | `response_format` | `AiServices` return type, described to the model in one line (`describeSchema`) | `outputSchema`, described by Spring AI's own converters, never by the provider |
+| decision questions read together | `DecisionModel.decideTogether`, `Decisions.askTogether` | - | `"together": true` | `together(true)` | `together(true)`, `spring.ai.jinfer.decision.together` |
+| decision context capacity | `DecisionModel.newState(capacity)` | `--context-capacity`, `-c` | `--context-capacity` at start (`context_capacity` in `/props`) | `contextCapacity` | `contextCapacity`, `spring.ai.jinfer.decision.context-capacity` |
 
 ## Performance and observability
 

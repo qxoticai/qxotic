@@ -52,8 +52,9 @@ The native executable runs without a JVM.
 
 ## Model selection
 
-`--model` / `-m` accepts a local GGUF file or a hub reference. Hub models are downloaded on first use
-and reused from the cache. These examples use a small language model:
+`--model` / `-m` accepts a local GGUF file or a hub reference.
+Hub models are downloaded on first use and reused from the cache; like the hubs, a reference reads its owner and repository in any case.
+These examples use a small language model:
 
 ```sh
 LM=LiquidAI/LFM2.5-350M-GGUF:Q8_0
@@ -157,7 +158,7 @@ ffmpeg -nostdin -loglevel error -i speech.wav -ar 16000 -ac 1 -f s16le - \
 
 ## HTTP server: `server`
 
-Start an OpenAI-compatible API for the model: chat for a language model, embeddings, reranking or transcription for the others.
+Start an OpenAI-compatible API for the model: chat for a language model, embeddings, reranking, transcription or decisions for the others.
 `serve` is an alias for `server`.
 
 ```sh
@@ -190,7 +191,9 @@ An id lives one hour on the server that minted it, among the last 4096; an unkno
 A streamed spoken reply carries the transcript and the speech in `delta.audio` chunks naming that id, the speech as `pcm16` only, 16-bit mono at the voice's rate, and the `expires_at` chunk last.
 `/v1/models` lists the `output_modalities` the served model has.
 A spoken reply cannot offer tools or follow a grammar, and does not reason; the server never speaks unless the request allows audio.
-`audio.voice`, which OpenAI's clients always send, is accepted and ignored: LFM3-Omni's spoken chat replies come in its one chat voice, in English.
+`audio.voice`, which OpenAI's clients always send, is accepted and ignored: LFM3-Omni's spoken chat replies come in its one chat voice.
+A language clause is a request the model may not honour: it can answer in that language, in English, or in text alone (Japanese replies came back as text in every run).
+For speech in a set language, LFM3-Omni's text-to-speech instruction takes the language explicitly (see [jinfer-lfm3](../jinfer-lfm3/README.md#text-to-speech)).
 
 To serve transcription instead, stop the language server and select the ASR model:
 
@@ -248,6 +251,27 @@ Qwen3-Reranker scores are probabilities in [0, 1].
 LFM2.5-ColBERT scores are unbounded MaxSim sums that sit close together (about 28 to 30 out of 32), so rank by them and never threshold them.
 `--context-capacity` sizes the server's state (default `0`: 4096, or the model's maximum when smaller; `max` or `-1` for the model's maximum); the language options are refused.
 
+A decision model serves `POST /v1/systemone`, in the request and response shape llama.cpp uses:
+
+```sh
+jinfer server -m LiquidAI/d1-2B-GGUF:Q8_0 \
+  --with media=LiquidAI/d1-2B-GGUF/mmproj-d1-2B-F16.gguf --port 8080
+curl -sS http://127.0.0.1:8080/v1/systemone \
+  -H 'Content-Type: application/json' \
+  -d '{"state":"I was charged twice and I want my money back today.",
+       "questions":{
+         "refund":{"type":"noul","instructions":"Is the customer asking for a refund?"},
+         "team":{"type":"choice","instructions":"Which team?","criteria":{"billing":"Charges and refunds","shipping":null}},
+         "urgency":{"type":"score","instructions":"How urgent is this?","criteria":["Can wait","Today","Right now"]}}}'
+```
+
+`state` is a text, any other JSON value (read as JSON), or `null` when the files alone are judged.
+`files` holds images, audio and video as base64 `data:` URIs, read before the state.
+d1 reads images and video, d1-Omni also audio, vLLM's d3 images; `/v1/models` lists the modalities the loaded checkpoint really reads.
+A `noul` answer is the probability of yes; a `choice` names the likeliest option with every option's probability; a `score` is the expected level (the probability-weighted mean of the levels) with each level's probability; `confidence` is the probability of the likeliest option, for every model.
+Each question is answered as if asked alone; on d1 and d1-Omni, `"together": true` reads the state once for all of them, faster, an answer then free to shift with the questions beside it.
+d3 is not trained to, and answers each question alone either way.
+
 The default bind is `127.0.0.1:54154`. To listen on other interfaces, supply `--host` and `--api-key`:
 
 ```sh
@@ -260,6 +284,7 @@ Every server offers `GET /health`, `/v1/models`, `/props`, and `/metrics`, even 
 `/health` needs no API key; the other probes use the configured key.
 The transcription server's `/props` reports the model name and input sample rate.
 The retrieval server's `/props` reports the task, the context capacity and, for an embedder, its dimensions.
+The decision server's `/props` reports the task and the context capacity.
 
 ## Model downloads: `pull`
 

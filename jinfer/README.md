@@ -16,6 +16,7 @@ AI on the JVM, just a Maven dependency away.
 ## Highlights
 
 - **Multimodal support.** Vision, audio, video, embeddings for RAG, text-to-speech, speech-to-text.
+- **Decisions.** Yes/no, choice and rating answers with probabilities in one forward pass, from Liquid AI's d1 and vLLM Semantic Router's d3.
 - **Supports popular Java AI frameworks.** [LangChain4j](jinfer-langchain4j/README.md) and
   [Spring AI](jinfer-spring-ai/README.md) providers and an [OpenAI-compatible server](./jinfer-server).
 - **Top performance.** Efficient prompt caching, speculative decoding, Matryoshka embeddings and optional hand-tuned native kernels from [JAM](../jam), with a performant Vector API fallback.
@@ -29,7 +30,8 @@ AI on the JVM, just a Maven dependency away.
 | [Google Gemma 4](https://deepmind.google/models/gemma/gemma-4) | chat, vision, audio, MTP | `jinfer-gemma4` |
 | [Google EmbeddingGemma 2](https://huggingface.co/google/embeddinggemma-2) | embeddings of text, images, audio and video, seven tasks | [`jinfer-gemma-embedding2`](jinfer-gemma-embedding2/README.md) |
 | [Liquid AI LFM 2.5](https://www.liquid.ai/blog/introducing-lfm2-5-the-next-generation-of-on-device-ai) | chat, vision, embeddings, reranking | `jinfer-lfm2` |
-| [Liquid AI LFM3](https://huggingface.co/LiquidAI/LFM3-1.7B-GGUF) | chat, vision (LFM3-VL), vision, audio input and speech (LFM3-Omni) | `jinfer-lfm3` |
+| [Liquid AI LFM3](https://huggingface.co/LiquidAI/LFM3-1.7B-GGUF) | chat, vision (LFM3-VL), vision, audio input and spoken replies (LFM3-Omni) | `jinfer-lfm3` |
+| [Liquid AI d1](https://huggingface.co/LiquidAI/d1-2B-GGUF) | decisions about text, images and video (d1), and audio (d1-Omni) | `jinfer-lfm3` |
 | [OpenAI gpt-oss](https://openai.com/index/introducing-gpt-oss/) | chat | `jinfer-gptoss` |
 | [Poolside Laguna XS 2.1](https://poolside.ai/blog/introducing-laguna-xs-2-1) | chat | `jinfer-laguna` |
 | [JetBrains Mellum 2](https://blog.jetbrains.com/ai/2026/06/mellum2-goes-open-source-a-fast-model-for-ai-workflows/) | chat | `jinfer-mellum` |
@@ -41,6 +43,8 @@ AI on the JVM, just a Maven dependency away.
 | [OpenBMB MiniCPM5](https://github.com/OpenBMB/MiniCPM) | chat | `jinfer-llama` |
 | [Alibaba Qwen 3](https://qwen.ai/blog?id=qwen3) | embeddings, reranking | `jinfer-qwen3` |
 | [Alibaba Qwen 3.5+](https://qwen.ai/blog?id=qwen3.5) | chat, vision, MTP | `jinfer-qwen35` |
+| [vLLM Semantic Router d3](https://huggingface.co/ggml-org/vllm-d3-mini-GGUF) | decisions about text and images (d3-edge 0.8B to d3 27B) | `jinfer-qwen35` |
+| [PrismML Ternary Bonsai 2](https://huggingface.co/prism-ml/Ternary-Bonsai-2-4B-gguf) | chat, vision, in 2-bit and ternary weights (`Q2_0`, `PQ2_0`, `PTQ1_0`) | `jinfer-qwen35` |
 | [NVIDIA Nemotron-H](https://arxiv.org/abs/2504.03624) | chat | `jinfer-nemotronh` |
 | [Owen Song's Inflect](https://github.com/owenawsong/Inflect) | speech synthesis | `jinfer-inflect2` |
 | [Kokoro](https://huggingface.co/hexgrad/Kokoro-82M) | speech synthesis | `jinfer-kokoro` |
@@ -216,6 +220,50 @@ ScoringModel reranker = JinferScoringModel.builder()
         .model("mradermacher/Qwen3-Reranker-0.6B-GGUF:Q8_0")
         .build();
 ```
+
+**Decisions.** A decision model answers yes/no, choice and rating questions about an input with probabilities, in one forward pass and without generating text.
+`jinfer-decision` puts typed questions over it:
+
+```java
+try (Arena arena = Arenas.newCrossThread()) {
+    Path path = ModelStore.standard().resolve("LiquidAI/d1-2B-GGUF:Q8_0");
+    DecisionModel model = Models.loadDecisionModel(path, arena);
+    try (Decisions decisions = Decisions.over(model, 2048)) {
+        Team team = decisions.ask(ticket, Question.choice("Which team should handle this?", Team.class))
+                .selectedOption();                                // Team.BILLING
+
+        var refund = Question.predicate("Is the customer asking for a refund?");
+        var urgency = Question.rating("How urgent is this?", "Can wait", "This week", "Today", "Right now");
+        Answers answers = decisions.askEach(ticket, refund, urgency);
+        answers.get(refund).isYes();                              // true
+        answers.get(urgency).mean();                              // 2.2
+    }
+}
+```
+
+`askEach` answers every question as if it were asked alone.
+On d1 and d1-Omni, `askTogether` reads the input once for up to 16 questions, several times faster; the questions are then not kept apart, and an answer can shift with what is asked beside it.
+d3 is not trained to, and answers each question alone either way.
+
+The input can hold images, audio and video beside its text, as the same `Content` parts a chat message is made of.
+The model reads them through its projector, the `mmproj-*.gguf` file of its repository, loaded as the `media` companion:
+
+```java
+ModelStore hub = ModelStore.standard();
+DecisionModel model = Models.loadDecisionModel(
+        hub.resolve("LiquidAI/d1-2B-GGUF:Q8_0"),
+        arena,
+        Map.of("media", hub.resolve("LiquidAI/d1-2B-GGUF/mmproj-d1-2B-F16.gguf")));
+try (Decisions decisions = Decisions.over(model)) {
+    List<Content> claim = List.of(
+            new Content.Media(ImageCodec.load(Path.of("parcel.jpg"))),
+            new Content.Text("Claim #4411: the customer says the parcel arrived damaged."));
+    decisions.ask(claim, Question.predicate("Does the photo show a damaged parcel?")).isYes();
+}
+```
+
+d1 reads images and video, d1-Omni also listens; d3 reads images.
+All three read an input's media before its text, whatever their order in the list.
 
 **Prompt caching.** Prefill a long system prompt once and reload it after a restart:
 
