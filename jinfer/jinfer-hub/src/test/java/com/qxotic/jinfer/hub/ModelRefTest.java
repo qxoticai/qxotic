@@ -345,6 +345,10 @@ class ModelRefTest {
                 "a branch resolves through refs/ to its commit");
         assertEquals(
                 repo.resolve("snapshots/abc123def"),
+                Hub.snapshot(ModelRef.parse("hf.co/GGML-org/stories15m_moe:Q8_0"), hub),
+                "the hub reads an id in any case, so its cache does too");
+        assertEquals(
+                repo.resolve("snapshots/abc123def"),
                 Hub.snapshot(ModelRef.parse("hf.co/ggml-org/stories15M_MOE@abc123def"), hub),
                 "a pinned commit needs no indirection");
         assertEquals(

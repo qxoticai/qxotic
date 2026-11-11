@@ -61,6 +61,9 @@ Three rules keep a host-less reference from swallowing a local path:
 A dot in the first segment reserves it for the host table, so a misspelled host is reported rather
 than read as an owner.
 
+Owner and repository match the cache in any case, as both hubs read repository ids case-insensitively.
+`LiquidAI/d1-2B-gguf` and `LiquidAI/d1-2B-GGUF` share one cache folder and one download, online or offline.
+
 ## Quant shorthand
 
 A reference with no `:quant` selects `Q4_K_M`, matching llama.cpp's default so
@@ -96,6 +99,9 @@ $JINFER_MODELS/
 The root is `-Djinfer.models` or `JINFER_MODELS`, falling back to the platform cache
 (`~/.cache/jinfer`, `~/Library/Caches/jinfer` or `%LOCALAPPDATA%\jinfer`). A pinned revision joins
 the repository directory as `repo@revision`.
+
+With that default root, a Hugging Face download is written into the Hugging Face hub cache in its own layout, so `hf download` and llama.cpp see the same bytes.
+An explicit root keeps every file under it.
 
 ## Downloads
 

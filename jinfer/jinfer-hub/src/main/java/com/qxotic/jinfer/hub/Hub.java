@@ -40,7 +40,7 @@ final class Hub {
         if (!ref.host().equals(ModelRef.Host.HF.name)) {
             return null; // ModelScope's own cache is a different layout; not ours to read
         }
-        Path repo = hubCache.resolve("models--" + ref.owner() + "--" + ref.repo()).normalize();
+        Path repo = repoFolder(ref, hubCache).normalize();
         String revision = ref.revisionOrDefault();
         Path branch = repo.resolve("refs").resolve(revision);
         if (Files.isRegularFile(branch)) {
@@ -48,6 +48,13 @@ final class Hub {
         }
         Path snapshot = repo.resolve("snapshots").resolve(revision);
         return snapshot.resolve(ref.path());
+    }
+
+    /**
+     * {@code ref}'s repository folder in the hub cache, in any case ({@link ModelStore#anyCase}).
+     */
+    static Path repoFolder(ModelRef ref, Path hubCache) {
+        return ModelStore.anyCase(hubCache, "models--" + ref.owner() + "--" + ref.repo());
     }
 
     static Path cache() {
@@ -206,7 +213,7 @@ final class Hub {
             RepositorySource source,
             boolean force)
             throws IOException {
-        Path repo = hubCache.resolve("models--" + ref.owner() + "--" + ref.repo());
+        Path repo = repoFolder(ref, hubCache);
         Path blob = repo.resolve("blobs").resolve(file.sha256());
         Path dest = ModelStore.under(repo.resolve("snapshots").resolve(commit), file.path());
         boolean reuse = !force && Fetch.matches(blob, file.sizeBytes(), file.sha256());
@@ -238,9 +245,7 @@ final class Hub {
     }
 
     static Path publicationKey(ModelRef ref, Path hubCache) {
-        return hubCache.resolve("models--" + ref.owner() + "--" + ref.repo())
-                .resolve("refs")
-                .resolve(ref.revisionOrDefault());
+        return repoFolder(ref, hubCache).resolve("refs").resolve(ref.revisionOrDefault());
     }
 
     /**

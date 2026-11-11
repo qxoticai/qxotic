@@ -589,7 +589,7 @@ public final class ModelStore {
     private String lookedIn(ModelRef ref) {
         Path own = folderDir(ref);
         if (!ref.host().equals(ModelRef.Host.HF.name)) return own.toString();
-        Path hub = Hub.cache().resolve("models--" + ref.owner() + "--" + ref.repo());
+        Path hub = Hub.repoFolder(ref, Hub.cache());
         return own + " or " + hub;
     }
 
@@ -901,11 +901,7 @@ public final class ModelStore {
             }
         }
         if (shared) {
-            Path snapshot =
-                    Hub.cache()
-                            .resolve("models--" + ref.owner() + "--" + ref.repo())
-                            .resolve("snapshots")
-                            .resolve(commit);
+            Path snapshot = Hub.repoFolder(ref, Hub.cache()).resolve("snapshots").resolve(commit);
             requireSelectableIn(ref, file, under(snapshot, parentOf(file.path())));
             return Hub.fetchInto(
                     ref,
@@ -1168,7 +1164,25 @@ public final class ModelStore {
     }
 
     private Path repoDir(ModelRef ref) {
-        return root.resolve(ref.host()).resolve(ref.owner()).resolve(ref.cacheRepo());
+        return anyCase(anyCase(root.resolve(ref.host()), ref.owner()), ref.cacheRepo());
+    }
+
+    /**
+     * {@code parent/name}, or the folder already there under {@code name} in another case. Both
+     * hubs read an id in any case, so {@code LiquidAI/d1-2B-gguf} is {@code LiquidAI/d1-2B-GGUF}:
+     * one folder, one download, found offline whichever spelling came first.
+     */
+    static Path anyCase(Path parent, String name) {
+        Path exact = parent.resolve(name);
+        if (Files.exists(exact) || !Files.isDirectory(parent)) return exact;
+        try (var entries = Files.list(parent)) {
+            return entries.filter(e -> e.getFileName().toString().equalsIgnoreCase(name))
+                    .sorted()
+                    .findFirst()
+                    .orElse(exact);
+        } catch (IOException unreadable) {
+            return exact; // ponytail: an unreadable folder keeps the exact spelling
+        }
     }
 
     /**

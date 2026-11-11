@@ -62,6 +62,21 @@ class ModelStoreFindTest {
         assertEquals(Optional.of(model), store.find(ref));
     }
 
+    /** Both hubs read an id in any case, so the cache does too: one folder, never a second copy. */
+    @Test
+    void aRefInAnyCaseFindsTheCachedRepository() throws IOException {
+        Path file = plant("stories15M_MOE-Q8_0.gguf");
+        ModelStore store = ModelStore.standard();
+        assertEquals(Optional.of(file), store.find("hf.co/JINFER-tests/stories15m_moe:Q8_0"));
+        assertEquals(
+                Optional.of(file),
+                store.find("jinfer-tests/STORIES15M_MOE/stories15M_MOE-Q8_0.gguf"));
+        // a file name keeps its case: it is a path, not an id
+        assertEquals(
+                Optional.empty(),
+                store.find("jinfer-tests/stories15m_moe/stories15m_moe-q8_0.gguf"));
+    }
+
     @Test
     void aMissIsEmptyWithoutAnyListing() {
         System.setProperty("jinfer.models", root.toString());
