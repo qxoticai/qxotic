@@ -19,6 +19,7 @@ No llama.cpp, no Python runtime.
 - **Spoken replies.** LFM3-Omni answers out loud with a transcript, or in text, as the conversation asks.
 - **Text to speech.** LFM3-Omni reads text aloud in 18 languages, in a female or a male voice.
 - **Reasoning and tools.** Reasons through a problem and calls tools.
+- **Decisions.** d1 answers yes/no, choice and rating questions about text, images, audio and video with probabilities, without generating text.
 
 ## Supported models
 
@@ -27,6 +28,8 @@ No llama.cpp, no Python runtime.
 | LFM3-1.7B | text | text | [LFM3-1.7B-GGUF](https://huggingface.co/LiquidAI/LFM3-1.7B-GGUF) |
 | LFM3-VL-2B | text, images | text | [LFM3-VL-2B-GGUF](https://huggingface.co/LiquidAI/LFM3-VL-2B-GGUF) |
 | LFM3-Omni-2B | text, images, audio | text, speech | [LFM3-Omni-2B-GGUF](https://huggingface.co/LiquidAI/LFM3-Omni-2B-GGUF) |
+| d1-2B | text, images, video | decisions | [d1-2B-GGUF](https://huggingface.co/LiquidAI/d1-2B-GGUF) |
+| d1-Omni-2B | text, images, audio, video | decisions | [d1-Omni-2B-GGUF](https://huggingface.co/LiquidAI/d1-Omni-2B-GGUF) |
 
 Images, audio and speech need the model's projector, the `mmproj-*.gguf` file in the same repository.
 Models download on first use and stay cached.
@@ -114,7 +117,9 @@ try (var omni = new ChatEngine(
 
 The words arrive as they are spoken, and the speech in parts of 80 ms at 24 kHz.
 With "Respond in text." as the system turn, the same request is answered in text.
-A spoken chat reply comes in the model's one chat voice, the female one, in English: the voice and language clauses of the text-to-speech instruction do not carry over, a "using a male voice" clause leaves the voice as it is and cuts the speech short, and an "in French" clause makes the model answer in French text without speaking.
+A spoken chat reply comes in the model's one chat voice, the female one: a "using a male voice" clause leaves the voice as it is and cuts the speech short.
+A language clause is a request the model may not honour: it can answer in that language, in English, or in text alone (Japanese replies came back as text in every run).
+For speech in a set language, use the text-to-speech instruction, which takes the language explicitly.
 
 ## Text to speech
 
@@ -137,7 +142,3 @@ omni.complete(
 
 The voice is `female` or `male`.
 The language is one of `ar`, `da`, `de`, `el`, `en`, `en-gb`, `es`, `fi`, `fr`, `he`, `it`, `ja`, `ko`, `nl`, `pl`, `pt`, `sv`, `tr` and `zh`.
-
-## Model notes
-
-LFM3-Omni speaks in its own voice.

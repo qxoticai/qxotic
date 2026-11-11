@@ -135,6 +135,30 @@ final class Lfm3SpokenChatTest {
     }
 
     /**
+     * The voice is fixed, the language is a request the model may not honour, as the READMEs say: a
+     * French clause is spoken in French, a Japanese one comes back as text alone.
+     */
+    @Test
+    void aLanguageClauseIsARequest() {
+        Message question = Message.user("Tell me a fun fact about octopuses.");
+        Message reply = inLanguage("French", question);
+        Media.Audio speech = reply.speech().orElseThrow();
+        assertTrue(speech.pcm().length > speech.sampleRate(), "a second of speech at least");
+        assertTrue(reply.text().matches("(?s).*\\b(les|est|ont|sont)\\b.*"), reply.text());
+
+        reply = inLanguage("Japanese", question);
+        assertEquals(Optional.empty(), reply.speech(), "text alone");
+        assertTrue(
+                reply.text().codePoints().anyMatch(c -> c >= 0x3040 && c <= 0x30FF), reply.text());
+    }
+
+    private static Message inLanguage(String language, Message question) {
+        Message system =
+                Message.system("Respond with interleaved text and audio in " + language + ".");
+        return engine.complete(chat(List.of(system, question)), ChatEngine.ReplySink.NONE).reply();
+    }
+
+    /**
      * Allowed outputs are a choice the model makes: with text and audio allowed, a prompt that asks
      * for text gets a reply in text alone, and one that allows an output this model lacks still
      * answers in what it has.
