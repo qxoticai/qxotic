@@ -346,6 +346,9 @@ public final class DecisionServer {
                 return new Choice(text, options);
             }
             case "score" -> {
+                // ponytail: llama.cpp's server limit, kept for request compatibility. The real
+                // limit is the model's: d1 answers a single digit (10 levels), d3 a letter code
+                // (up to 255 through DecisionModel). Lift it here when a client needs more.
                 Validation.requireParam(
                         criteria instanceof List<?> list && list.size() >= 2 && list.size() <= 10,
                         at + ".criteria",
