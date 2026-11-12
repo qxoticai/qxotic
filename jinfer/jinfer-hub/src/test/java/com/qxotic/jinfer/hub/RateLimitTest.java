@@ -111,6 +111,23 @@ class RateLimitTest {
         assertNull(RateLimit.requested(headers(Map.of()), 0));
     }
 
+    /**
+     * A request waits out a hold that clears within its budget, and does not wait at all for one
+     * that outlasts it: a listing behind a download's 15-minute hold asks at once, and the host
+     * says 429 if it still means it. Hosts of their own, so no other test meets these holds.
+     */
+    @Test
+    void aHoldPastTheBudgetIsNotWaited() throws InterruptedException {
+        RateLimit.hold("long-hold.test", Duration.ofMinutes(10));
+        long t0 = System.nanoTime();
+        RateLimit.awaitClear("long-hold.test", RateLimit.LISTING_BUDGET);
+        assertTrue(System.nanoTime() - t0 < 1_000_000_000L, "a hold past the budget: no wait");
+
+        RateLimit.hold("short-hold.test", Duration.ofMillis(300));
+        long waited = RateLimit.awaitClear("short-hold.test", RateLimit.LISTING_BUDGET);
+        assertTrue(waited >= 250_000_000L, "a hold within the budget is waited out: " + waited);
+    }
+
     @Test
     void aRateLimitThatNeverLiftsIsGivenUpWithinTheBudget() throws IOException {
         HttpServer server = HttpServer.create(new InetSocketAddress("127.0.0.1", 0), 0);

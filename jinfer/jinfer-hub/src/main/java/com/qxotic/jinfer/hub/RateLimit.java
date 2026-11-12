@@ -133,8 +133,12 @@ final class RateLimit {
         return extended[0];
     }
 
-    /** Blocks until {@code host} is not held. Returns the nanoseconds spent waiting. */
-    static long awaitClear(String host) throws InterruptedException {
+    /**
+     * Waits until {@code host} is not held, if it clears within {@code budget}, the request's wait
+     * left; a longer hold is not waited at all: the request goes, and a host still limiting answers
+     * 429, which {@code Fetch.send} warns of and returns. Returns the nanoseconds waited.
+     */
+    static long awaitClear(String host, Duration budget) throws InterruptedException {
         long start = System.nanoTime();
         while (true) {
             Long until = HOLD_UNTIL.get(host);
@@ -143,6 +147,7 @@ final class RateLimit {
                 if (until != null) HOLD_UNTIL.remove(host, until);
                 return now - start;
             }
+            if (until - start > budget.toNanos()) return now - start; // not worth waiting for
             Thread.sleep(Math.max(1, Math.min((until - now) / 1_000_000L, 1_000)));
         }
     }

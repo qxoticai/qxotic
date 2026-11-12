@@ -1084,7 +1084,7 @@ final class Fetch {
             throws IOException {
         long waitedNanos = 0;
         for (int backoff = 0; ; backoff++) {
-            Sent sent = sendOnce(uri, headers, timeout);
+            Sent sent = sendOnce(uri, headers, timeout, budget.minusNanos(waitedNanos));
             Transport.Response response = sent.response();
             int status = response.status();
             Duration asked =
@@ -1141,7 +1141,7 @@ final class Fetch {
                 if (backoff == 0) announce(message);
             }
             try {
-                waitedNanos += RateLimit.awaitClear(host);
+                waitedNanos += RateLimit.awaitClear(host, budget.minusNanos(waitedNanos));
             } catch (InterruptedException e) {
                 Thread.currentThread().interrupt();
                 throw new IOException("interrupted while waiting out a rate limit on " + uri, e);
@@ -1158,14 +1158,15 @@ final class Fetch {
     private record Sent(Transport.Response response, URI uri) {}
 
     /** One GET, following redirects by hand and dropping credentials off-origin. */
-    private static Sent sendOnce(URI uri, Map<String, String> headers, Duration timeout)
+    private static Sent sendOnce(
+            URI uri, Map<String, String> headers, Duration timeout, Duration budget)
             throws IOException {
         URI current = uri;
         Map<String, String> currentHeaders = headers;
         for (int redirect = 0; ; redirect++) {
             try {
-                RateLimit.awaitClear(
-                        current.getHost()); // a held host is asked nothing until it clears
+                // a held host is asked nothing until it clears, if that is within the budget
+                RateLimit.awaitClear(current.getHost(), budget);
             } catch (InterruptedException e) {
                 Thread.currentThread().interrupt();
                 throw new IOException("interrupted while fetching " + current, e);
