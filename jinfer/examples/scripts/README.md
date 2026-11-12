@@ -66,6 +66,27 @@ jbang Detect.java street.jpg "person, bicycle, traffic light"
 
 The model returns normalized boxes. Java2D scales and paints them into `detected.png`.
 
+### Support triage
+
+```bash
+jbang Triage.java "I was charged twice and I want my money back today."
+```
+
+A decision model (Liquid's d1) answers routing, refund and urgency questions in one forward pass,
+no text generated, and the script prints the probability behind each answer.
+
+```text
+team     billing    0.9960
+         billing    0.9960
+         shipping   0.0021
+         technical  0.0010
+         account    0.0009
+refund   yes        0.9993
+urgency  Today      0.8662  (mean 2.12, median Today)
+
+sure enough to auto-route: true
+```
+
 ## More examples
 
 | Task | Command | Result |
@@ -76,6 +97,7 @@ The model returns normalized boxes. Java2D scales and paints them into `detected
 | Reranking | `jbang Rerank.java "what causes coffee bitterness?"` | Scores each query and document pair |
 | Prompt caching | `jbang CachedPrompt.java` | Reports restored prompt tokens |
 | Logic scoring | `jbang Logic.java` | Checks constrained answers against exact solutions |
+| Decisions | `jbang Triage.java "..."` | Routes a support ticket, with probabilities |
 
 The scripts include `jam-native` and `jam-vector`. Jinfer selects the native backend when supported
 and otherwise uses the Java Vector backend.
