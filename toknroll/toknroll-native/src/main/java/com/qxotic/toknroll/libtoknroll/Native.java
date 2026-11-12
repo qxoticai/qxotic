@@ -400,54 +400,105 @@ public final class Native {
             Tokenizer tokenizer = loaded.tokenizer();
             // raw addresses: a lambda in an image cannot capture a word
             long in = texts.rawValue() + base;
-            // runs of texts of about equal bytes, several per core so a long text holds no core
-            // back; a run copies its texts in through one buffer and keeps its ids in one array
-            int[] runs = Runs.of(starts, count, 4 * Workers.THREADS);
-            int[] counts = new int[count];
-            IntSequence[] ids = new IntSequence[runs.length - 1];
-            Workers.run(
-                    ids.length,
-                    r -> {
-                        int first = runs[r];
-                        int last = runs[r + 1];
-                        int longest = 0;
-                        for (int i = first; i < last; i++)
-                            longest = Math.max(longest, (int) (starts[i + 1] - starts[i]));
-                        // one buffer per run, small enough to stay in cache, each text
-                        // copied in as it comes (one copy per run measured 6% slower)
-                        byte[] text = new byte[longest + SLACK];
-                        IntSequence.Builder b =
-                                IntSequence.newBuilder(estimate(starts[last] - starts[first]));
-                        for (int i = first; i < last; i++) {
-                            int length = (int) (starts[i + 1] - starts[i]);
-                            copy(in + starts[i], text, length);
-                            int before = b.size();
-                            encodeUtf8(tokenizer, matcher, text, 0, length, b);
-                            counts[i] = b.size() - before;
-                        }
-                        ids[r] = b.build();
-                    });
             int[] at = new int[count + 1]; // where text i's ids start
             offsets.write(0, 0);
-            for (int i = 0; i < count; i++) {
-                long next = (long) at[i] + counts[i];
-                if (next > Integer.MAX_VALUE) throw Errors.invalid("the batch is over 2^31 ids");
-                at[i + 1] = (int) next;
-                offsets.write(i + 1, at[i + 1]);
+            // chunks of texts of at most a CHUNK_SHARE of the heap (a longer text alone), each
+            // encoded
+            // and written out before the next: the ids a batch holds at once are a chunk's,
+            // whatever
+            // the batch's length
+            long chunk = Math.max(1, Runtime.getRuntime().maxMemory() / CHUNK_SHARE);
+            for (int first = 0; first < count; ) {
+                int last = first + 1;
+                while (last < count && starts[last + 1] - starts[first] <= chunk) last++;
+                encodeChunk(
+                        tokenizer,
+                        matcher,
+                        in,
+                        starts,
+                        first,
+                        last,
+                        at,
+                        offsets,
+                        out,
+                        tokenCapacity);
+                first = last;
             }
-            // each run's ids written where they belong, on its own core
-            long outAddress = out.rawValue();
-            Workers.run(
-                    ids.length,
-                    r -> {
-                        int from = at[runs[r]];
-                        int n = Math.min(ids[r].length(), tokenCapacity - from);
-                        write(ids[r], 0, outAddress + 4L * from, n);
-                    });
             return at[count];
         } catch (Throwable t) {
             return Errors.set(t);
         }
+    }
+
+    /**
+     * The heap's share a batch chunk's text may take: an id is 4 bytes, up to one per byte of text,
+     * and a run's builder may hold twice its ids while it grows, so a chunk holds up to 8 times its
+     * text in ids, a quarter of the heap at most. ponytail: a fixed share; measure a chunk's ids if
+     * a tokenizer's own tables ever crowd the heap.
+     */
+    private static final int CHUNK_SHARE = 32;
+
+    /**
+     * Texts {@code [first, last)} of a batch, encoded in runs of about equal bytes on every core,
+     * their offsets and ids written out: ids past the capacity are counted, not written.
+     */
+    private static void encodeChunk(
+            Tokenizer tokenizer,
+            Specials matcher,
+            long in,
+            long[] batchStarts,
+            int first,
+            int last,
+            int[] at,
+            CIntPointer offsets,
+            CIntPointer out,
+            int tokenCapacity) {
+        int count = last - first;
+        long[] starts = new long[count + 1]; // the chunk's offsets from its first text
+        for (int i = 0; i <= count; i++) starts[i] = batchStarts[first + i] - batchStarts[first];
+        long from = in + batchStarts[first];
+        // runs of texts of about equal bytes, several per core so a long text holds no core
+        // back; a run copies its texts in through one buffer and keeps its ids in one array
+        int[] runs = Runs.of(starts, count, 4 * Workers.THREADS);
+        int[] counts = new int[count];
+        IntSequence[] ids = new IntSequence[runs.length - 1];
+        Workers.run(
+                ids.length,
+                r -> {
+                    int head = runs[r];
+                    int tail = runs[r + 1];
+                    int longest = 0;
+                    for (int i = head; i < tail; i++)
+                        longest = Math.max(longest, (int) (starts[i + 1] - starts[i]));
+                    // one buffer per run, small enough to stay in cache, each text copied in as
+                    // it comes (one copy per run measured 6% slower)
+                    byte[] text = new byte[longest + SLACK];
+                    IntSequence.Builder b =
+                            IntSequence.newBuilder(estimate(starts[tail] - starts[head]));
+                    for (int i = head; i < tail; i++) {
+                        int length = (int) (starts[i + 1] - starts[i]);
+                        copy(from + starts[i], text, length);
+                        int before = b.size();
+                        encodeUtf8(tokenizer, matcher, text, 0, length, b);
+                        counts[i] = b.size() - before;
+                    }
+                    ids[r] = b.build();
+                });
+        for (int i = 0; i < count; i++) {
+            long next = (long) at[first + i] + counts[i];
+            if (next > Integer.MAX_VALUE) throw Errors.invalid("the batch is over 2^31 ids");
+            at[first + i + 1] = (int) next;
+            offsets.write(first + i + 1, at[first + i + 1]);
+        }
+        // each run's ids written where they belong, on its own core
+        long outAddress = out.rawValue();
+        Workers.run(
+                ids.length,
+                r -> {
+                    int to = at[first + runs[r]];
+                    int n = Math.max(0, Math.min(ids[r].length(), tokenCapacity - to));
+                    write(ids[r], 0, outAddress + 4L * to, n);
+                });
     }
 
     @CEntryPoint(name = "toknroll__decode", exceptionHandler = Escape.LongFailure.class)

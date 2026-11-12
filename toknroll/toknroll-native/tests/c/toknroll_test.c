@@ -1454,37 +1454,31 @@ static void heap_too_small(void) {
 /* the words of a quarantined tokenizer's refusal */
 #define RELOAD "may have been left half-updated by an earlier out-of-memory or stack overflow: free it and load it again"
 
-/* a heap too small for a batch: the call fails naming the knob, never hanging or aborting the process; the
- * tokenizer goes on working, or is quarantined when the error escaped a task; on too few cores to run out,
- * there is nothing to test */
-static void batch_out_of_heap(void) {
+/* A batch far larger than the heap's headroom completes: it is encoded a chunk at a time, each chunk's ids
+ * written out before the next, so its ids are the ones each text gets alone. */
+static void batch_memory_is_bounded(void) {
     const char* options[] = {"-Dtoknroll.offline=true", "-XX:MaxHeapSize=192m"};
     CHECK_EQ(toknroll_configure(options, 2), TOKNROLL_OK);
     toknroll_tokenizer* t = cached(QWEN);
-    /* the workers start with the first parallel batch: started in a heap already full, a thread can
-       fail inside the runtime's own start, where nothing catches it; this test is about the batch */
-    int32_t warm[2], warm_at[3];
-    CHECK_EQ(toknroll_encode_batch(t, "hi yo", (const int64_t[]) {0, 2, 5}, 2, 0, warm, 2, warm_at), 2);
-    enum { TEXTS = 64, LENGTH = 2 * 1024 * 1024 };
+    enum { TEXTS = 64, LENGTH = 12 * 175000 };   /* 134 MB of text, about 90 MB of ids; whole "hello world "s */
     static char texts[TEXTS * LENGTH];
     static int64_t at[TEXTS + 1];
     for (int i = 0; i < TEXTS * LENGTH; i++) texts[i] = "hello world "[i % 12];
     for (int i = 0; i <= TEXTS; i++) at[i] = (int64_t) i * LENGTH;
-    int32_t out[1], offsets[TEXTS + 1];
-    int32_t rc = toknroll_encode_batch(t, texts, at, TEXTS, 0, out, 1, offsets);   /* a count, or the error */
-    if (rc >= 0) { toknroll_tokenizer_free(t); skip("the batch fit in a 192 MB heap on this machine's cores"); }
-    int32_t code = 0;
-    const char* message = LE(&code);
-    CHECK_EQ(rc, TOKNROLL_ERROR);
-    CHECK_EQ(code, TOKNROLL_ERROR);
-    CHECK_HAS(message, "out of memory");
-    CHECK_HAS(message, "-XX:MaxHeapSize");
-    int32_t ids[8];
-    int32_t n = toknroll_encode(t, "Hello, world!", 13, 0, ids, 8);   /* caught, it goes on; escaped, it is quarantined */
-    if (n != 4) CHECK_ERROR(n, TOKNROLL_ERROR, LE, RELOAD);
-    toknroll_tokenizer_free(t);
-    t = cached(QWEN);   /* the process goes on */
-    CHECK_EQ(toknroll_encode(t, "Hello, world!", 13, 0, ids, 8), 4);
+    int32_t one = toknroll_encode(t, texts, LENGTH, 0, NULL, 0);   /* every text is the same */
+    CHECK(one > 0);
+    int32_t* alone = malloc((size_t) one * sizeof *alone);
+    int32_t* out = malloc((size_t) one * TEXTS * sizeof *out);
+    static int32_t offsets[TEXTS + 1];
+    CHECK(alone && out);
+    CHECK_EQ(toknroll_encode(t, texts, LENGTH, 0, alone, one), one);
+    CHECK_EQ(toknroll_encode_batch(t, texts, at, TEXTS, 0, out, one * TEXTS, offsets), one * TEXTS);
+    for (int i = 0; i < TEXTS; i++) {
+        CHECK_EQ(offsets[i + 1], one * (i + 1));
+        CHECK(same_ids(out + (size_t) one * i, alone, one));
+    }
+    free(out);
+    free(alone);
     toknroll_tokenizer_free(t);
 }
 
@@ -2075,7 +2069,7 @@ static const scenario scenarios[] = {
     {"address_space_too_small", address_space_too_small, NULL},
 #endif
     {"heap_too_small", heap_too_small, NULL},
-    {"batch_out_of_heap", batch_out_of_heap, NULL},
+    {"batch_memory_is_bounded", batch_memory_is_bounded, NULL},
     {"escape_out_of_memory", escape_out_of_memory, NULL},
     {"escape_stack_overflow", escape_stack_overflow, NULL},
     {"escape_other", escape_other, NULL},
