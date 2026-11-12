@@ -83,6 +83,26 @@
   </dependencies>
 
   <profiles>
+    <!-- Build-time only: Errors' exception handlers are @Uninterruptible, as native image requires of
+         them, an annotation the builder recognizes by name (com.oracle.svm.shared, where the 25.4
+         builders keep it) and compiled here against jam's never-published stub. As in jam-vector: a
+         profile, so the flattened, released POM never names the coordinate. -->
+    <profile>
+      <id>graalvm-annotations</id>
+      <activation>
+        <property>
+          <name>!qxotic.noGraalvmAnnotations</name>
+        </property>
+      </activation>
+      <dependencies>
+        <dependency>
+          <groupId>com.qxotic</groupId>
+          <artifactId>graalvm-annotations</artifactId>
+          <version>${jam.version}</version>
+          <scope>provided</scope>
+        </dependency>
+      </dependencies>
+    </profile>
     <profile>
       <id>native</id>
       <build>

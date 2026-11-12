@@ -19,7 +19,10 @@ import org.graalvm.word.WordFactory;
 
 /**
  * The calling thread's last error, valid until its next toknroll call or thread exit. A successful
- * call clears it.
+ * call clears it. Code and message live in C thread-local storage (toknroll_isolate.c): nothing is
+ * allocated to keep them, so a call that fails out of memory can still say so.
+ *
+ * <p>The entry points' catches end here; what no catch saw ends in {@link Escape}.
  */
 final class Errors {
     static final int OK = 0, ERROR = -1, EINVAL = -2, ENOTFOUND = -3, EUNSUPPORTED = -4;
@@ -42,15 +45,14 @@ final class Errors {
         return new Failure(ENOTFOUND, message);
     }
 
-    /** The thread's last result code; message storage belongs to native TLS. */
-    private static final class Last {
-        int code = OK;
-    }
-
-    private static final ThreadLocal<Last> LAST = ThreadLocal.withInitial(Last::new);
-
     @CFunction("toknroll__error_buffer")
     private static native CCharPointer messageBuffer(int allocate);
+
+    @CFunction("toknroll__error_code")
+    private static native int code();
+
+    @CFunction("toknroll__error_code_set")
+    private static native void code(int code);
 
     /**
      * "" after a success: made once, on first use, as a holder class initializes. Not in Errors'
@@ -62,7 +64,7 @@ final class Errors {
 
     /** Every entry point starts here, so that a call that succeeds leaves no error behind. */
     static void clear() {
-        LAST.get().code = OK;
+        code(OK);
     }
 
     static int code(Throwable t) {
@@ -88,20 +90,13 @@ final class Errors {
      */
     private static final int LIMIT = 1024; // ponytail: a fixed bound
 
-    /**
-     * Out of memory, in words made when Errors initializes, at the first call: a full heap leaves
-     * nothing to build them with, and a second OutOfMemoryError out of an entry point aborts the
-     * process. The runtime's own words name -Xmx, a flag it does not take here.
-     */
-    private static final byte[] OUT_OF_MEMORY =
-            ("out of memory: the runtime's heap is full; raise it with -XX:MaxHeapSize=<size>"
-                            + " through configure or "
-                            + Log.optionsVariable()
-                            + " (a vocabulary of 262k tokens needs about 256 MB)")
-                    .getBytes(StandardCharsets.UTF_8);
-
     static int set(Throwable t) {
-        if (t instanceof OutOfMemoryError) return outOfMemory();
+        int kind = Escape.kind(t);
+        if (kind
+                != Escape.OTHER) { // nothing left to build words with, or no stack to build them on
+            Escape.words(kind, 0);
+            return ERROR;
+        }
         String message = t.getMessage();
         // a file the system refused, in the library's words, not java.nio's class names
         if (t.getCause() instanceof FileSystemException f && f.toString().equals(message)) t = f;
@@ -116,25 +111,13 @@ final class Errors {
             message += ": " + cause.getMessage();
         message = bounded(Log.oneLine(message)); // a caller logs it as it comes: one line, bounded
         int code = code(t);
-        Last last = LAST.get();
         CCharPointer buffer = messageBuffer(1);
         if (buffer.isNonNull())
             CTypeConversion.toCString(
                     message, StandardCharsets.UTF_8, buffer, WordFactory.unsigned(LIMIT + 1));
         // If allocation failed, reads return static fallback text with the original error code.
-        last.code = code;
+        code(code);
         return code;
-    }
-
-    /** An OutOfMemoryError, recorded without allocating: the words copied into the C buffer. */
-    private static int outOfMemory() {
-        CCharPointer buffer = messageBuffer(1);
-        if (buffer.isNonNull()) {
-            for (int i = 0; i < OUT_OF_MEMORY.length; i++) buffer.write(i, OUT_OF_MEMORY[i]);
-            buffer.write(OUT_OF_MEMORY.length, (byte) 0);
-        }
-        LAST.get().code = ERROR;
-        return ERROR;
     }
 
     /** A file the system refused, in its own words: java.nio leaves the reason out of some. */
@@ -155,12 +138,11 @@ final class Errors {
     }
 
     static int lastCode() {
-        return LAST.get().code;
+        return code();
     }
 
     static CCharPointer last() {
-        Last last = LAST.get();
-        return last.code != OK ? messageBuffer(0) : None.EMPTY.get();
+        return code() != OK ? messageBuffer(0) : None.EMPTY.get();
     }
 
     private Errors() {}

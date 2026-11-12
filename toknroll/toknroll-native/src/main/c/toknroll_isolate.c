@@ -117,6 +117,39 @@ static const char* error_buffer(int api, int32_t allocate) {
 const char* toknroll__error_buffer(int32_t allocate) { return error_buffer(0, allocate); }
 const char* jinfer__error_buffer(int32_t allocate) { return error_buffer(1, allocate); }
 
+/* The calling thread's last toknroll error code, beside its message: here and not in a Java thread-local,
+ * whose first use allocates, so a call that fails out of memory can still say so. */
+static PORT_THREAD_LOCAL int32_t error_code;
+int32_t toknroll__error_code(void) { return error_code; }
+void toknroll__error_code_set(int32_t code) { error_code = code; }
+
+/* Set by toknroll__escaped, read and cleared by toknroll__took_escape: the C shim quarantines the call's
+ * tokenizer when its call ended so (toknroll_shim.c). */
+static PORT_THREAD_LOCAL int escape_seen;
+int toknroll__took_escape(void) { int seen = escape_seen; escape_seen = 0; return seen; }
+
+/* The words for an error that escaped the runtime's own handlers, an OutOfMemoryError or a StackOverflowError
+ * that native image raised where no catch ran: static, so nothing is allocated to say it. */
+static const char escaped_out_of_memory[] =
+    "out of memory: the runtime's heap is full; raise it with -XX:MaxHeapSize=<size> through configure or "
+    STR(TOKNROLL_OPTIONS_ENV) " (a vocabulary of 262k tokens needs about 256 MB)";
+static const char escaped_stack_overflow[] = "stack overflow: the input nests deeper than the calling thread's stack allows";
+static const char escaped_other[] = "internal error: an exception escaped the library; the call failed and the process goes on (please report it)";
+
+/* The thread's error as the static words for kind, 1 out of memory, 2 stack overflow, anything else an escaped
+ * exception: Errors.java's, for an error it caught, and every entry point's last resort for one that reached
+ * the entry point past every catch, which also quarantines the call's tokenizer (escaped 1): handlers were
+ * skipped, so what the call was updating may be half-written. Allocates nothing that can fail the call: the
+ * message buffer is the thread's own, or the static fallback when it cannot have one. */
+const char* toknroll__escaped(int32_t kind, int32_t escaped) {
+    const char* words = kind == 1 ? escaped_out_of_memory : kind == 2 ? escaped_stack_overflow : escaped_other;
+    char* buffer = (char*) error_buffer(0, 1);
+    if (buffer) snprintf(buffer, 1025, "%s", words);
+    error_code = TOKNROLL_ERROR;
+    if (escaped) escape_seen = 1;
+    return buffer ? buffer : words;
+}
+
 /* What toknroll_log_set or jinfer_log_set gave, before the runtime starts; start hands it to Log.java. */
 static toknroll__log_fn log_fn;
 static void* log_user_data;

@@ -25,10 +25,11 @@ import org.graalvm.word.WordFactory;
 
 /**
  * The toknroll__* entry points the C shim forwards to, one per header function. Every one catches
- * everything: an exception leaving a {@code @CEntryPoint} is fatal to the process, so a failure
- * becomes the thread's last error and a NULL or negative return. A handle is an {@link
- * ObjectHandles} word over a {@link Loaded}; a library that hosts these symbols next to its own
- * hands out handles with {@link #handle(Tokenizer)}.
+ * what it can, so a failure becomes the thread's last error and a NULL or negative return, in
+ * words; what no catch saw, an OutOfMemoryError or StackOverflowError native image raised where
+ * none ran, reaches the entry point's exceptionHandler (Escape), never the process. A handle is an
+ * {@link ObjectHandles} word over a {@link Loaded}; a library that hosts these symbols next to its
+ * own hands out handles with {@link #handle(Tokenizer)}.
  */
 public final class Native {
     private static final ObjectHandles HANDLES = ObjectHandles.getGlobal();
@@ -272,12 +273,12 @@ public final class Native {
     }
 
     /** The shim's own failures (a configure call after the isolate exists) use the same channel. */
-    @CEntryPoint(name = "toknroll__error_set")
+    @CEntryPoint(name = "toknroll__error_set", exceptionHandler = Escape.VoidFailure.class)
     static void errorSet(IsolateThread thread, int code, CCharPointer message) {
         Errors.set(new Errors.Failure(code, CTypeConversion.toJavaString(message)));
     }
 
-    @CEntryPoint(name = "toknroll__last_error")
+    @CEntryPoint(name = "toknroll__last_error", exceptionHandler = Escape.StringFailure.class)
     static CCharPointer lastError(IsolateThread thread, CIntPointer code) {
         if (code.isNonNull()) code.write(Errors.lastCode());
         return Errors.last();
@@ -287,7 +288,7 @@ public final class Native {
      * The isolate's first call, in libtoknroll and libjinfer alike: given is whether the host
      * called toknroll_log_set or jinfer_log_set, fn and userData what it passed.
      */
-    @CEntryPoint(name = "toknroll__log_start")
+    @CEntryPoint(name = "toknroll__log_start", exceptionHandler = Escape.VoidFailure.class)
     static void logStart(IsolateThread thread, int given, Log.Fn fn, VoidPointer userData) {
         try {
             Log.start(given != 0, fn, userData);
@@ -295,7 +296,7 @@ public final class Native {
         }
     }
 
-    @CEntryPoint(name = "toknroll__tokenizer_load")
+    @CEntryPoint(name = "toknroll__tokenizer_load", exceptionHandler = Escape.HandleFailure.class)
     static ObjectHandle load(IsolateThread thread, CCharPointer source) {
         try {
             Errors.clear();
@@ -306,7 +307,7 @@ public final class Native {
         }
     }
 
-    @CEntryPoint(name = "toknroll__tokenizer_free")
+    @CEntryPoint(name = "toknroll__tokenizer_free", exceptionHandler = Escape.VoidFailure.class)
     static void free(IsolateThread thread, ObjectHandle handle) {
         try {
             Errors.clear();
@@ -317,7 +318,7 @@ public final class Native {
         }
     }
 
-    @CEntryPoint(name = "toknroll__encode")
+    @CEntryPoint(name = "toknroll__encode", exceptionHandler = Escape.IntFailure.class)
     static int encode(
             IsolateThread thread,
             ObjectHandle handle,
@@ -326,8 +327,9 @@ public final class Native {
             int flags,
             CIntPointer out,
             int tokenCapacity) {
+        Errors.clear();
+        Faults.at("encode"); // the tests' error that no catch sees
         try {
-            Errors.clear();
             Loaded loaded = get(handle);
             if (length < 0) throw Errors.invalid("length must not be negative");
             if (length > MAX) throw Errors.invalid("text is over 2 GiB");
@@ -351,7 +353,7 @@ public final class Native {
         }
     }
 
-    @CEntryPoint(name = "toknroll__encode_batch")
+    @CEntryPoint(name = "toknroll__encode_batch", exceptionHandler = Escape.IntFailure.class)
     static int encodeBatch(
             IsolateThread thread,
             ObjectHandle handle,
@@ -448,7 +450,7 @@ public final class Native {
         }
     }
 
-    @CEntryPoint(name = "toknroll__decode")
+    @CEntryPoint(name = "toknroll__decode", exceptionHandler = Escape.LongFailure.class)
     static long decode(
             IsolateThread thread,
             ObjectHandle handle,
@@ -529,7 +531,7 @@ public final class Native {
         }
     }
 
-    @CEntryPoint(name = "toknroll__vocabulary_size")
+    @CEntryPoint(name = "toknroll__vocabulary_size", exceptionHandler = Escape.IntFailure.class)
     static int vocabularySize(IsolateThread thread, ObjectHandle handle) {
         try {
             Errors.clear();
@@ -540,7 +542,7 @@ public final class Native {
     }
 
     /** TOKNROLL_TOKEN_*: bit n for GGUF type n, every type the vocabulary reports for the id. */
-    @CEntryPoint(name = "toknroll__token_flags")
+    @CEntryPoint(name = "toknroll__token_flags", exceptionHandler = Escape.LongFailure.class)
     static long tokenFlags(IsolateThread thread, ObjectHandle handle, int id) {
         try {
             Errors.clear();
@@ -556,7 +558,7 @@ public final class Native {
         }
     }
 
-    @CEntryPoint(name = "toknroll__token")
+    @CEntryPoint(name = "toknroll__token", exceptionHandler = Escape.LongFailure.class)
     static long token(
             IsolateThread thread,
             ObjectHandle handle,
@@ -574,7 +576,7 @@ public final class Native {
         }
     }
 
-    @CEntryPoint(name = "toknroll__id")
+    @CEntryPoint(name = "toknroll__id", exceptionHandler = Escape.IntFailure.class)
     static int id(IsolateThread thread, ObjectHandle handle, CCharPointer token, long length) {
         try {
             Errors.clear();

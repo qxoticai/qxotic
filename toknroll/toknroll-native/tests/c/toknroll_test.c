@@ -1478,6 +1478,28 @@ static void batch_out_of_heap(void) {
     toknroll_tokenizer_free(t);
 }
 
+/* An error native image raises where no catch runs, injected (-Dtoknroll.test.escape), reaches the entry
+   point's exception handler: the call fails with static words, nothing allocated, and the process goes on. */
+static void escape_at_the_boundary(const char* kind, const char* words) {
+    char option[64];
+    snprintf(option, sizeof option, "-Dtoknroll.test.escape=encode:%s", kind);
+    const char* options[] = {"-Dtoknroll.offline=true", option};
+    CHECK_EQ(toknroll_configure(options, 2), TOKNROLL_OK);
+    toknroll_tokenizer* t = cached(QWEN);
+    int32_t ids[8];
+    CHECK_EQ(toknroll_encode(t, "Hello, world!", 13, 0, ids, 8), TOKNROLL_ERROR);
+    int32_t code = 0;
+    CHECK_HAS(LE(&code), words);
+    CHECK_EQ(code, TOKNROLL_ERROR);
+    toknroll_tokenizer* other = cached(QWEN);   /* the process goes on */
+    CHECK_EQ(toknroll_vocabulary_size(other), QWEN_VOCAB);
+    toknroll_tokenizer_free(other);
+    toknroll_tokenizer_free(t);
+}
+static void escape_out_of_memory(void) { escape_at_the_boundary("oom", "out of memory: the runtime's heap is full"); }
+static void escape_stack_overflow(void) { escape_at_the_boundary("stack", "stack overflow"); }
+static void escape_other(void) { escape_at_the_boundary("other", "internal error: an exception escaped"); }
+
 static void hub_reference(void) {
     offline();
     toknroll_tokenizer* t = cached(QWEN);
@@ -2012,6 +2034,9 @@ static const scenario scenarios[] = {
 #endif
     {"heap_too_small", heap_too_small, NULL},
     {"batch_out_of_heap", batch_out_of_heap, NULL},
+    {"escape_out_of_memory", escape_out_of_memory, NULL},
+    {"escape_stack_overflow", escape_stack_overflow, NULL},
+    {"escape_other", escape_other, NULL},
     PROGRESS_SCENARIOS
     {"every_special_token", every_special_token, NULL},
     {"gguf_reference", gguf_reference, NULL},
