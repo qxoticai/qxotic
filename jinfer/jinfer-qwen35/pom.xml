@@ -4,7 +4,7 @@
   <parent>
     <groupId>com.qxotic</groupId>
     <artifactId>jinfer-parent</artifactId>
-    <version>0.4.0</version>
+    <version>0.4.0-rc1</version>
   </parent>
   <artifactId>jinfer-qwen35</artifactId>
   <name>Jinfer Qwen 3.5+ Provider</name>

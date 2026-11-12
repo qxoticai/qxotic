@@ -76,14 +76,14 @@
          is not republished. These lines are where everything outside a project resolves it, so a
          bump is two edits, that POM and this one (plus jinfer-bom, which names the same versions
          for consumers). Jinfer library versions are managed in jinfer/pom.xml. -->
-    <gguf.version>0.4.0</gguf.version>
+    <gguf.version>0.4.0-rc1</gguf.version>
     <json.version>0.2.0</json.version>
     <fetch.version>0.1.0</fetch.version>
     <safetensors.version>0.3.1</safetensors.version>
-    <jota.version>0.4.0</jota.version>
-    <jam.version>0.4.0</jam.version>
-    <toknroll.version>0.4.0</toknroll.version>
-    <jinfer.version>0.4.0</jinfer.version>
+    <jota.version>0.4.0-rc1</jota.version>
+    <jam.version>0.4.0-rc1</jam.version>
+    <toknroll.version>0.4.0-rc1</toknroll.version>
+    <jinfer.version>0.4.0-rc1</jinfer.version>
     <!-- Publication is opt-in. Each supported or required transitive artifact overrides this.
          The release profile forwards it to central-publishing's skipPublishing, the plugin's own
          (and only) gate, so one switch decides what reaches Maven Central. -->
@@ -97,7 +97,7 @@
     <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
     <project.reporting.outputEncoding>UTF-8</project.reporting.outputEncoding>
     <!-- Reproducible builds: move this with every release. -->
-    <project.build.outputTimestamp>2026-10-07T00:00:00Z</project.build.outputTimestamp>
+    <project.build.outputTimestamp>2026-11-12T00:00:00Z</project.build.outputTimestamp>
     <maven.compiler.release>11</maven.compiler.release>
 
     <!-- Dependency versions -->

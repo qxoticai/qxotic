@@ -60,7 +60,7 @@ extern "C" {
 #define JAM_VERSION_MINOR 4
 #define JAM_VERSION_PATCH 0
 /* The release as text: MAJOR.MINOR.PATCH, then -rcN on a release candidate; what jam_version() returns. */
-#define JAM_VERSION "0.4.0"
+#define JAM_VERSION "0.4.0-rc1"
 
 /* status: the values jam, toknroll and jinfer share */
 #define JAM_OK             0

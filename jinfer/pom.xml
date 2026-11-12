@@ -11,7 +11,7 @@
 
   <artifactId>jinfer-parent</artifactId>
   <!-- The version of a jinfer release, and of every artifact that declares none of its own. -->
-  <version>0.4.0</version>
+  <version>0.4.0-rc1</version>
   <packaging>pom</packaging>
 
   <name>Jinfer Parent</name>
@@ -61,7 +61,7 @@
   <properties>
     <!-- This POM's version, written out: in an artifact that declares its own,
          ${project.version} would mean that one. -->
-    <jinfer.version>0.4.0</jinfer.version>
+    <jinfer.version>0.4.0-rc1</jinfer.version>
     <jinfer-jinja.version>0.3.1</jinfer-jinja.version>
     <maven.compiler.release>25</maven.compiler.release>
 

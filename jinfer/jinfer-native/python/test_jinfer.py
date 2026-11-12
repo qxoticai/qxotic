@@ -50,7 +50,7 @@ with tempfile.TemporaryDirectory() as d:
 
 # library
 jinfer.configure("-Djinfer.offline=true")  # a test never downloads: offline is the process's, as the hub reads it
-ok(jinfer.__version__ == "0.4.0", "version")
+ok(jinfer.__version__ == "0.4.0rc1", "version")
 # jinfer-config: where a C build finds this install's headers and library, the version the package's
 flags = subprocess.run([sys.executable, "-c", "from jinfer._config import main; import sys; sys.argv[1:] = ['--version', '--cflags', '--libs', '--pkgconfigdir']; raise SystemExit(main())"],
                        capture_output=True, text=True, timeout=60, env={**os.environ, **({} if "JINFER_INSTALLED" in os.environ else {"PYTHONPATH": HERE})})
@@ -549,7 +549,7 @@ N.lib.jinfer_stream_cancel(r._ptr)
 t.join(timeout=30)
 ok(outcome == ["cancelled"] and seen, f"cancel from another thread: {outcome} after {len(seen)} chunks")
 ok(r.finish_reason == "cancelled" and 0 < r.usage.completion_tokens <= 400 and r.usage.prompt_tokens > 0, f"result after cancel: {r.finish_reason} {r.usage}")
-ok(jinfer.__version__ == "0.4.0" and N.lib.jinfer_version().decode() == "0.4.0", f"version {jinfer.__version__}")
+ok(jinfer.__version__ == "0.4.0rc1" and N.lib.jinfer_version().decode() == "0.4.0-rc1", f"version {jinfer.__version__}")
 
 # a stream takes one call at a time: a second thread's call while a step blocks is JINFER_EBUSY
 r = m.chat("Write a very long story about the sea.", max_tokens=200)

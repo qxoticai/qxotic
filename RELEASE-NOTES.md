@@ -1,6 +1,9 @@
 # Release notes
 
-## Unreleased
+## 0.4.0-rc1
+
+A release candidate for 0.4.0: Maven Central `0.4.0-rc1`, PyPI `0.4.0rc1` (`pip install --pre`), the native libraries and their archives `0.4.0-rc1`.
+The libraries keep the soname of 0.4.0, `libtoknroll.so.0.4.0` and `libjinfer.so.0.4.0`, so a program built against the candidate runs on the release.
 
 - **Decisions.** A decision model answers yes/no, choice and rating questions about an input with probabilities, in one forward pass and without generating text: Liquid AI's d1 and d1-Omni (`jinfer-lfm3`) and vLLM Semantic Router's d3 (`jinfer-qwen35`).
   `Models.loadDecisionModel` loads one, `DecisionModel` answers in probabilities, and `jinfer-decision` puts typed questions over it (`Decisions`, `Question.predicate`, `choice` and `rating`).
