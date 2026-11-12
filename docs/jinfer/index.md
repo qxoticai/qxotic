@@ -71,7 +71,7 @@ A language asked for in the system prompt is a request the model may not honour:
 
 A decision model (Liquid's d1 and d1-Omni, vLLM Semantic Router's d3) answers yes/no, choice and rating questions about an input with probabilities, in one forward pass and without generating text.
 It serves `POST /v1/systemone` in llama.cpp's System One shape: `state` (a text, any other JSON value, or `null` with `files` alone), `files` with images, audio and video as base64 `data:` URIs, and `questions` of type `noul`, `choice` or `score`.
-On d1 and d1-Omni, `"together": true` reads the state once for all of the questions, faster, an answer then free to shift with the questions beside it; d3 answers each question alone either way.
+Each question is answered as if asked alone, unless `"joint": true`, vLLM's field, asks for the model's joint reading: d1 and d1-Omni then read the state once for all of the questions, faster, an answer free to shift with the questions beside it; d3 answers each question alone either way.
 A `score` is the expected level, the probability-weighted mean of the levels, on every face; `/v1/models` lists only the modalities the loaded model really reads.
 
 Loopback is the default.
@@ -275,7 +275,7 @@ This table is the translation.
 | speculation depth | `ChatEngine.speculationDepth` | `--speculation-depth` | `--speculation-depth` at start | `speculationDepth` | `speculationDepth` |
 | prompt cache on disk | `PromptCache.Options.withCatalog` | `--cache`, `--cache-ro` | `--cache`, `--cache-ro` at start | `promptCache` | `promptCache` |
 | structured output | `Request.grammar` from `Grammar.schemaGbnf` | - | `response_format` | `AiServices` return type, described to the model in one line (`describeSchema`) | `outputSchema`, described by Spring AI's own converters, never by the provider |
-| decision questions read together | `DecisionModel.decideTogether`, `Decisions.askTogether` | - | `"together": true` | `together(true)` | `together(true)`, `spring.ai.jinfer.decision.together` |
+| decision questions answered independently | `DecisionModel.decideIndependently`, `Decisions.askIndependently` (`decide` and `ask` take them the model's own way) | - | the default (`"joint": true` for the model's own way) | `independent(true)` | `independent(true)`, `spring.ai.jinfer.decision.independent` |
 | decision context capacity | `DecisionModel.newState(capacity)` | `--context-capacity`, `-c` | `--context-capacity` at start (`context_capacity` in `/props`) | `contextCapacity` | `contextCapacity`, `spring.ai.jinfer.decision.context-capacity` |
 
 ## Performance and observability

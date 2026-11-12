@@ -527,9 +527,9 @@ Fields are put to the model as JSON, the form d1 was trained on; a field holding
 Contents take images, audio and video beside text; d1 reads images and video, d1-Omni also audio, d3 images.
 A conversation (`inputMessages`) is not an input and is refused.
 
-Each question is answered as if asked alone.
-On d1 and d1-Omni, `together(true)` reads the input once for all of a request's questions, several times faster; an answer can then shift with the questions asked beside it.
-d3 is not trained to, and answers each question alone either way.
+The questions of a request are taken the way the model was trained to, with no isolation between them guaranteed.
+On d1 and d1-Omni the input is read once for all of them, several times faster, and an answer can then shift with the questions asked beside it.
+`independent(true)` answers each question as if asked alone, on every model; d3 is not trained to read questions together and answers each alone either way.
 A scale's `mean()` is the expected level, the probability-weighted mean of the levels, as in Spring AI's adapter and jinfer's `/v1/systemone`.
 The response names the checkpoint it came from (`modelName()`), and a request naming another model is refused rather than answered by this one.
 `listeners(...)` takes langchain4j `DecisionModelListener`s, notified of every request, response and error, for audit logs, metrics and traces.

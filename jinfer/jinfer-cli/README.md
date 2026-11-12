@@ -271,8 +271,9 @@ curl -sS http://127.0.0.1:8080/v1/systemone \
 `files` holds images, audio and video as base64 `data:` URIs, read before the state.
 d1 reads images and video, d1-Omni also audio, vLLM's d3 images; `/v1/models` lists the modalities the loaded checkpoint really reads.
 A `noul` answer is the probability of yes; a `choice` names the likeliest option with every option's probability; a `score` is the expected level (the probability-weighted mean of the levels) with each level's probability; `confidence` is the probability of the likeliest option, for every model.
-Each question is answered as if asked alone; on d1 and d1-Omni, `"together": true` reads the state once for all of them, faster, an answer then free to shift with the questions beside it.
-d3 is not trained to, and answers each question alone either way.
+Each question is answered as if asked alone, unless `"joint": true`, the field vLLM's `/v1/systemone` uses, asks for the model's joint reading: d1 and d1-Omni then read the state once for all of them, faster, and an answer can shift with the questions beside it.
+d3 is not trained to read questions together and answers each alone either way.
+`--context-capacity` sizes the state as for retrieval; a decision model reads each prompt in one batch, so `max` takes tens of gigabytes on d1 and d3.
 
 The default bind is `127.0.0.1:54154`. To listen on other interfaces, supply `--host` and `--api-key`:
 

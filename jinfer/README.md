@@ -43,7 +43,7 @@ AI on the JVM, just a Maven dependency away.
 | [OpenBMB MiniCPM5](https://github.com/OpenBMB/MiniCPM) | chat | `jinfer-llama` |
 | [Alibaba Qwen 3](https://qwen.ai/blog?id=qwen3) | embeddings, reranking | `jinfer-qwen3` |
 | [Alibaba Qwen 3.5+](https://qwen.ai/blog?id=qwen3.5) | chat, vision, MTP | `jinfer-qwen35` |
-| [vLLM Semantic Router d3](https://huggingface.co/ggml-org/vllm-d3-mini-GGUF) | decisions about text and images (d3-edge 0.8B to d3 27B) | `jinfer-qwen35` |
+| [vLLM Semantic Router d3](https://huggingface.co/ggml-org/vllm-d3-mini-GGUF) | decisions about text and images (d3-edge, d3-lite, d3-nano and d3-mini) | `jinfer-qwen35` |
 | [PrismML Ternary Bonsai 2](https://huggingface.co/prism-ml/Ternary-Bonsai-2-4B-gguf) | chat, vision, in 2-bit and ternary weights (`Q2_0`, `PQ2_0`, `PTQ1_0`) | `jinfer-qwen35` |
 | [NVIDIA Nemotron-H](https://arxiv.org/abs/2504.03624) | chat | `jinfer-nemotronh` |
 | [Owen Song's Inflect](https://github.com/owenawsong/Inflect) | speech synthesis | `jinfer-inflect2` |
@@ -228,22 +228,25 @@ ScoringModel reranker = JinferScoringModel.builder()
 try (Arena arena = Arenas.newCrossThread()) {
     Path path = ModelStore.standard().resolve("LiquidAI/d1-2B-GGUF:Q8_0");
     DecisionModel model = Models.loadDecisionModel(path, arena);
-    try (Decisions decisions = Decisions.over(model, 2048)) {
-        Team team = decisions.ask(ticket, Question.choice("Which team should handle this?", Team.class))
+    Decisions decisions = Decisions.of(model);                   // immutable, share it freely
+    try (ContextState state = model.newState(2048)) {            // reused call after call
+        Team team = decisions.ask(state, ticket, Question.choice("Which team should handle this?", Team.class))
                 .selectedOption();                                // Team.BILLING
 
         var refund = Question.predicate("Is the customer asking for a refund?");
         var urgency = Question.rating("How urgent is this?", "Can wait", "This week", "Today", "Right now");
-        Answers answers = decisions.askEach(ticket, refund, urgency);
+        Answers answers = decisions.ask(state, ticket, refund, urgency);
         answers.get(refund).isYes();                              // true
         answers.get(urgency).mean();                              // 2.2
     }
 }
 ```
 
-`askEach` answers every question as if it were asked alone.
-On d1 and d1-Omni, `askTogether` reads the input once for up to 16 questions, several times faster; the questions are then not kept apart, and an answer can shift with what is asked beside it.
-d3 is not trained to, and answers each question alone either way.
+`ask` takes several questions the way the model was trained to, with no isolation between them guaranteed.
+On d1 and d1-Omni it reads the input once for up to 16 questions, several times faster, and an answer can then shift with what is asked beside it and in which order.
+`askIndependently` answers every question as if it were asked alone, on every model: use it when an answer must not depend on the others, as in evaluations or cached answers.
+A call runs in the caller's state, one call at a time per state: open one state per thread over the same model to run side by side.
+d3 is not trained to read questions together, so both give the same answers on it.
 
 The input can hold images, audio and video beside its text, as the same `Content` parts a chat message is made of.
 The model reads them through its projector, the `mmproj-*.gguf` file of its repository, loaded as the `media` companion:
@@ -254,11 +257,11 @@ DecisionModel model = Models.loadDecisionModel(
         hub.resolve("LiquidAI/d1-2B-GGUF:Q8_0"),
         arena,
         Map.of("media", hub.resolve("LiquidAI/d1-2B-GGUF/mmproj-d1-2B-F16.gguf")));
-try (Decisions decisions = Decisions.over(model)) {
+try (ContextState state = model.newState(0)) {
     List<Content> claim = List.of(
             new Content.Media(ImageCodec.load(Path.of("parcel.jpg"))),
             new Content.Text("Claim #4411: the customer says the parcel arrived damaged."));
-    decisions.ask(claim, Question.predicate("Does the photo show a damaged parcel?")).isYes();
+    Decisions.of(model).ask(state, claim, Question.predicate("Does the photo show a damaged parcel?")).isYes();
 }
 ```
 

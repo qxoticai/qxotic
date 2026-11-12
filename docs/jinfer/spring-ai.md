@@ -347,9 +347,9 @@ Fields are put to the model as JSON, the form d1 was trained on; a field holding
 d1 reads images and video, d1-Omni also audio, d3 images.
 A conversation is not an input and is refused.
 
-Each question is answered as if asked alone.
-On d1 and d1-Omni, `together(true)` reads the input once for all of a call's questions, several times faster; an answer can then shift with the questions asked beside it.
-d3 is not trained to, and answers each question alone either way.
+The questions of a call are taken the way the model was trained to, with no isolation between them guaranteed.
+On d1 and d1-Omni the input is read once for all of them, several times faster, and an answer can then shift with the questions asked beside it.
+`independent(true)` answers each question as if asked alone, on every model; d3 is not trained to read questions together and answers each alone either way.
 A score's `getValue()` is the expected level, the probability-weighted mean of the levels; `getNearestLevel()` is the likeliest level.
 The response metadata carries the checkpoint's name, and a prompt naming another model is refused rather than answered by this one.
 
@@ -359,7 +359,7 @@ With the Spring Boot starter, select `spring.ai.model.decision=jinfer` and confi
 spring.ai.model.decision=jinfer
 spring.ai.jinfer.decision.model=LiquidAI/d1-2B-GGUF:Q8_0
 spring.ai.jinfer.decision.companions.media=LiquidAI/d1-2B-GGUF/mmproj-d1-2B-F16.gguf
-spring.ai.jinfer.decision.together=false
+spring.ai.jinfer.decision.independent=false
 spring.ai.jinfer.decision.context-capacity=0
 ```
 

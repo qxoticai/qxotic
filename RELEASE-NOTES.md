@@ -4,7 +4,9 @@
 
 - **Decisions.** A decision model answers yes/no, choice and rating questions about an input with probabilities, in one forward pass and without generating text: Liquid AI's d1 and d1-Omni (`jinfer-lfm3`) and vLLM Semantic Router's d3 (`jinfer-qwen35`).
   `Models.loadDecisionModel` loads one, `DecisionModel` answers in probabilities, and `jinfer-decision` puts typed questions over it (`Decisions`, `Question.predicate`, `choice` and `rating`).
-  The input holds text, JSON fields, images and video, and audio on d1-Omni; d1's packed mode reads the input once for up to 16 questions.
+  The input holds text, JSON fields, images and video, and audio on d1-Omni.
+  Several questions are taken the way the model was trained to, with no isolation guaranteed: d1 reads the input once for up to 16 of them, and an answer can shift with the questions beside it.
+  `decideIndependently` and `askIndependently` answer each question as if asked alone, as the adapters' `independent(true)` does; the server answers each alone unless vLLM's `"joint": true` asks otherwise.
   `jinfer server` serves `POST /v1/systemone` in llama.cpp's System One shape, and LangChain4j and Spring AI get a `JinferDecisionModel`, with `spring.ai.model.decision=jinfer` in the starter.
   d1 matches Liquid's reference and llama.cpp, and d3 matches llama.cpp.
 - **PrismML Ternary Bonsai 2.** `Q2_0` and PrismML's `PQ2_0` and `PTQ1_0` load across gguf, jota, jam and jinfer, and the Qwen3.5 port applies Bonsai's `prism.hadamard` rotation, so Ternary Bonsai 2 runs in all three, images included.
