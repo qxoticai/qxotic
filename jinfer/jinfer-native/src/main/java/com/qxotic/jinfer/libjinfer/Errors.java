@@ -2,6 +2,7 @@ package com.qxotic.jinfer.libjinfer;
 
 import com.qxotic.format.json.Json;
 import com.qxotic.jinfer.chat.ModelProvider;
+import com.qxotic.jinfer.hub.ModelNotFoundException;
 import java.io.EOFException;
 import java.io.FileNotFoundException;
 import java.io.UncheckedIOException;
@@ -50,10 +51,6 @@ final class Errors {
         return new Failure(EUNSUPPORTED, message);
     }
 
-    static Failure notFound(String message) {
-        return new Failure(ENOTFOUND, message);
-    }
-
     /** The thread's last result code; message storage belongs to native TLS. */
     private static final class Last {
         int code = OK;
@@ -77,6 +74,7 @@ final class Errors {
         // before EINVAL: an IllegalArgumentException too
         if (t instanceof ModelProvider.IncompatibleModelException
                 || t instanceof UnsupportedOperationException) return EUNSUPPORTED;
+        if (t instanceof ModelNotFoundException) return ENOTFOUND; // before its superclass
         // a file that does not parse is bad input, as in libtoknroll: bad JSON, a truncated GGUF
         if (t instanceof IllegalArgumentException
                 || t instanceof NullPointerException

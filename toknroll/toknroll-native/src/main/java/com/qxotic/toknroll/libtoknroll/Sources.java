@@ -1,5 +1,6 @@
 package com.qxotic.toknroll.libtoknroll;
 
+import com.qxotic.jinfer.hub.ModelNotFoundException;
 import com.qxotic.jinfer.hub.ModelRef;
 import com.qxotic.jinfer.hub.ModelStore;
 import com.qxotic.toknroll.Tokenizer;
@@ -136,23 +137,29 @@ final class Sources {
             }
             try {
                 return Located.file(store.resolve(source + "/tokenizer.json"));
-            } catch (IllegalArgumentException missing) {
-                // the store says what the folder holds: no folder at all (a cause), or a folder
-                // without the file
+            } catch (ModelNotFoundException missing) {
+                // offline, a bare repository may be a tiktoken one, whose files live in the
+                // loader's own cache: its cache-only path reads them, or says not cached
+                if (Stores.offline()) {
+                    if (ref.path().isEmpty()) return Located.tiktoken(ref);
+                    throw missing;
+                }
+                // online the store says what the folder holds: no folder at all (a 404, the
+                // cause), or a folder without the file
                 if (missing.getCause() != null && !ref.path().isEmpty())
                     return Located.file(store.resolve(source)); // a file, read whole
                 if (ref.path().isEmpty() && missing.getMessage().contains("tiktoken.model"))
                     return Located.tiktoken(ref);
-                throw Errors.notFound(missing.getMessage());
+                throw missing;
             }
+        } catch (ModelNotFoundException e) {
+            throw Errors.notFound(e.getMessage());
         } catch (IllegalArgumentException e) {
-            throw failure(e);
+            throw Errors.invalid(e.getMessage());
         } catch (UncheckedIOException e) {
-            // offline, either way the store knows it: built without sources, or its own knob. A
-            // repository the store has no file of may be a tiktoken one, whose files live in the
-            // loader's own cache: its cache-only path reads them, or says not cached
-            if (e.getMessage().contains("no source")
-                    || e.getCause() instanceof FileNotFoundException) {
+            // a store built without sources: offline by construction, so a bare repository may
+            // still be a tiktoken one the loader has cached
+            if (e.getMessage().contains("no source")) {
                 if (ref.quant() == null && ref.path().isEmpty()) return Located.tiktoken(ref);
                 throw notCached(source);
             }
@@ -162,18 +169,6 @@ final class Sources {
 
     private static Errors.Failure notCached(String source) {
         return Errors.notFound(source + " is not cached, and offline mode never fetches");
-    }
-
-    /**
-     * The store reports a missing repository, folder, file or quant as an IllegalArgumentException
-     * that says "no ..." (a 404 as its cause when a listing answered so); everything else it
-     * refuses is the reference's spelling.
-     */
-    private static Errors.Failure failure(IllegalArgumentException e) {
-        String message = e.getMessage() == null ? e.toString() : e.getMessage();
-        return e.getCause() != null || message.startsWith("no ")
-                ? Errors.notFound(message)
-                : Errors.invalid(message);
     }
 
     private static Located local(String source) {

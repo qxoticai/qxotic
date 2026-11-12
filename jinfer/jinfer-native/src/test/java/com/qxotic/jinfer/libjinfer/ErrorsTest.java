@@ -3,11 +3,15 @@ package com.qxotic.jinfer.libjinfer;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 
+import com.qxotic.jinfer.hub.ModelNotFoundException;
+import com.qxotic.jinfer.hub.ModelStore;
 import java.io.IOException;
 import java.io.UncheckedIOException;
 import java.nio.file.NoSuchFileException;
+import java.nio.file.Path;
 import java.util.concurrent.CancellationException;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.io.TempDir;
 
 class ErrorsTest {
 
@@ -42,20 +46,13 @@ class ErrorsTest {
                 Errors.ERROR, Errors.code(new UncheckedIOException("io", new IOException("disk"))));
     }
 
-    /**
-     * A ref the hub refuses is coded as libtoknroll codes it: a missing repository is not found.
-     */
+    /** A source that names nothing is ENOTFOUND, by the hub's type, not by its wording. */
     @Test
-    void aHubRefusalIsNotFoundAndAMalformedRefInvalid() {
-        IllegalArgumentException missing =
-                new IllegalArgumentException(
-                        "acme/nothing does not exist, or is gated or private",
-                        new IOException("HTTP 404"));
-        assertEquals(Errors.ENOTFOUND, Model.refusal(missing).code);
-        assertEquals(
-                Errors.ENOTFOUND,
-                Model.refusal(new IllegalArgumentException("no such model file: 'x'")).code);
-        assertEquals(
-                Errors.EINVAL, Model.refusal(new IllegalArgumentException("bad ref: a//b")).code);
+    void aSourceThatNamesNothingIsNotFound(@TempDir Path root) {
+        String absent = root.resolve("absent.gguf").toString();
+        var missing =
+                assertThrows(
+                        ModelNotFoundException.class, () -> ModelStore.of(root).resolve(absent));
+        assertEquals(Errors.ENOTFOUND, Errors.code(missing));
     }
 }

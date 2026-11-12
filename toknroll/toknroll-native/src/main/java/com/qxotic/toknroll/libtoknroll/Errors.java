@@ -1,6 +1,7 @@
 package com.qxotic.toknroll.libtoknroll;
 
 import com.qxotic.format.json.Json;
+import com.qxotic.jinfer.hub.ModelNotFoundException;
 import com.qxotic.toknroll.TokenizerLoadException;
 import com.qxotic.toknroll.UnsupportedTokenizerException;
 import java.io.EOFException;
@@ -70,6 +71,7 @@ final class Errors {
         if (t instanceof TokenizerLoadException && t.getCause() != null) return code(t.getCause());
         // well-formed, but asking for what toknroll does not implement: another library may load it
         if (t instanceof UnsupportedTokenizerException) return EUNSUPPORTED;
+        if (t instanceof ModelNotFoundException) return ENOTFOUND; // before its superclass
         // a file that does not parse is bad input, as one of no known kind is: bad JSON, a GGUF cut
         if (t instanceof IllegalArgumentException
                 || t instanceof NullPointerException
