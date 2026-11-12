@@ -5,7 +5,7 @@ from __future__ import annotations
 
 import time
 from types import SimpleNamespace
-from typing import Iterator
+from typing import Any, Iterator
 
 from . import Model, _OPTIONS, load
 
@@ -36,8 +36,9 @@ class _Completions:
     def __init__(self, model):
         self._model = model
 
-    def create(self, *, messages, model: str | None = None, stream: bool = False, stream_options=None,
-               response_format: dict | None = None, **options):
+    def create(self, *, messages: list[dict[str, Any]], model: str | None = None, stream: bool = False,
+               stream_options: dict[str, Any] | None = None, response_format: dict[str, Any] | None = None,
+               **options: Any) -> Any:
         # the SDK's request fields that have a jinfer option; the rest (n, user, logprobs, ...) are ignored
         schema = None
         if response_format and response_format.get("type") == "json_schema":
@@ -76,7 +77,8 @@ class _Embeddings:
     def __init__(self, model):
         self._model = model
 
-    def create(self, *, input, model: str | None = None, dimensions: int | None = None, **_):
+    def create(self, *, input: str | list[str], model: str | None = None, dimensions: int | None = None,
+               **_: Any) -> Any:
         texts = [input] if isinstance(input, str) else list(input)
         vectors = self._model.embed(texts, dimension=dimensions)
         data = [{"object": "embedding", "index": i, "embedding": vector.tolist()} for i, vector in enumerate(vectors)]

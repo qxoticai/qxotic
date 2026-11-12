@@ -60,7 +60,7 @@ def bind(lib: C.CDLL) -> C.CDLL:
     return lib
 
 
-def open_library(path) -> C.CDLL:
+def open_library(path: str) -> C.CDLL:
     """ctypes.CDLL, with glibc's refusal of a CPU below the library's x86-64 level (2.33 and later check it before
     any of our code runs) given the requirement; the runtime says the same itself under an older glibc."""
     try:

@@ -153,7 +153,7 @@ ok(N.lib.jinfer_model_info(None) == b"" and last_code() == N.EINVAL, "model_info
 
 r = m.chat("What is the capital of France? Answer in one word.", max_tokens=8, temperature=0)
 ok("Paris" in r.text and not hasattr(r, "response") and not hasattr(r, "message"), f"answer: {r.text!r}")
-ok(r.finish_reason in ("stop", "length") and r.tool_calls == [] and r.reasoning is None, "reply fields")
+ok(r.finish_reason in ("stop", "length") and r.tool_calls == [] and r.reasoning == "", "reply fields")
 ok(r.usage.prompt_tokens > 0 and r.usage.completion_tokens >= 1 and r.usage.prompt_ms > 0 and r.usage.cached_tokens == 0, f"usage {r.usage}")
 
 # determinism is a contract: temperature 0 gives the same tokens every run

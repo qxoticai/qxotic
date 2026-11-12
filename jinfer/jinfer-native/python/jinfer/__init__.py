@@ -53,7 +53,14 @@ import typing
 import wave
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, Callable, Generic, Literal, TypeVar
+from typing import TYPE_CHECKING, Any, Callable, Generic, Literal, TypeVar
+
+if TYPE_CHECKING:
+    from collections.abc import Iterable, Sequence
+
+    Part = str | os.PathLike[str] | bytes | dict[str, Any]  # text, a file, its bytes, a part as is
+    Messages = str | Sequence[Part] | Sequence[dict[str, Any]]  # a turn, a content list, messages
+    ToolChoice = str | dict[str, Any] | Callable[..., Any]
 
 import array as _array
 
@@ -80,7 +87,12 @@ MAXIMUM_CONTEXT = -1
 0 or None is the default. The same -1 as C's JINFER_CONTEXT_MAXIMUM and Java's
 PromptCache.Options.MAXIMUM_CONTEXT."""
 
-T = TypeVar("T")
+if TYPE_CHECKING:  # no schema, no parsed type: a reply is Reply[Any] to a type checker
+    from typing_extensions import TypeVar as _TypeVar
+
+    T = _TypeVar("T", default=Any)
+else:
+    T = TypeVar("T")
 FinishReason = Literal["stop", "length", "tool_calls", "cancelled"]
 
 
@@ -544,9 +556,9 @@ class Reply(_Stream, Generic[T]):
         return self._message.get("content") or ""
 
     @property
-    def reasoning(self) -> str | None:
-        """The model's reasoning before the answer; None when it did not reason."""
-        return self._message.get("reasoning_content")
+    def reasoning(self) -> str:
+        """The model's reasoning before the answer, "" when it did not reason; waits for the end."""
+        return self._message.get("reasoning_content") or ""
 
     @property
     def tool_calls(self) -> list[ToolCall]:
@@ -592,9 +604,9 @@ class Speech(_Stream):
     """Synthesized speech, already generating. Iterate it for float32 mono PCM chunks (arrays) as
     they are produced, or read `.audio` for all of it; `.save(path)` writes a 16-bit WAV."""
 
-    def __init__(self, ptr, model: "Model"):
+    def __init__(self, ptr: Any, model: Speaker):
         super().__init__(ptr, model)
-        self._chunks = []
+        self._chunks: list[_array.array[float]] = []
         self.sample_rate = model.sample_rate
 
     def __repr__(self) -> str:
@@ -610,7 +622,7 @@ class Speech(_Stream):
         return chunk
 
     @property
-    def audio(self):
+    def audio(self) -> _array.array[float]:
         """All samples, a float32 array, mono at `sample_rate`; waits for the end."""
         self._finish()
         out = _array.array("f")
@@ -618,7 +630,7 @@ class Speech(_Stream):
             out.extend(chunk)
         return out
 
-    def save(self, path) -> None:
+    def save(self, path: str | os.PathLike[str]) -> None:
         """Writes all of the audio as a 16-bit mono WAV."""
         pcm = self.audio
         with wave.open(str(path), "wb") as out:
@@ -781,9 +793,9 @@ class Conversation:
         self._settle()
         return list(self._messages)
 
-    def chat(self, content, *, schema: type[T] | dict | None = None, max_tokens: int | None = None,
+    def chat(self, content: str | Sequence[Part], *, schema: type[T] | dict[str, Any] | None = None, max_tokens: int | None = None,
              temperature: float | None = None, top_p: float | None = None, seed: int | None = None,
-             stop: str | list[str] | None = None, tools: list | None = None, tool_choice=None,
+             stop: str | list[str] | None = None, tools: list[Any] | None = None, tool_choice: ToolChoice | None = None,
              reasoning_effort: str | None = None) -> Reply[T]:
         """Your turn (a string, or a list of strings, Paths and bytes) and the model's reply, already
         generating: iterate it for the text as it arrives, or read it. Functions among the tools run
@@ -825,10 +837,10 @@ class Conversation:
 class LanguageModel(_Tokens):
     """A chat model: `chat` for one reply, `conversation` for a chat with memory."""
 
-    def chat(self, messages, *, system: str | None = None, schema: type[T] | dict | None = None,
+    def chat(self, messages: Messages, *, system: str | None = None, schema: type[T] | dict[str, Any] | None = None,
              max_tokens: int | None = None, temperature: float | None = None, top_p: float | None = None,
-             seed: int | None = None, stop: str | list[str] | None = None, tools: list | None = None,
-             tool_choice=None, reasoning_effort: str | None = None) -> Reply[T]:
+             seed: int | None = None, stop: str | list[str] | None = None, tools: list[Any] | None = None,
+             tool_choice: ToolChoice | None = None, reasoning_effort: str | None = None) -> Reply[T]:
         """Starts a reply. `messages` is a string (one user turn), a content list (strings, Paths,
         bytes) or a list of messages; `system` prepends a system message; `schema` constrains the
         reply to a type (a dataclass, TypedDict, Pydantic class, list[T], Literal, Enum or a JSON
@@ -841,9 +853,9 @@ class LanguageModel(_Tokens):
         request = _request(messages, schema, options)
         return Reply(N.lib.jinfer_chat(self._h, json.dumps(request).encode()), self, schema)
 
-    def conversation(self, *, system: str | None = None, messages: list[dict] = (), max_tokens: int | None = None,
+    def conversation(self, *, system: str | None = None, messages: Sequence[dict[str, Any]] = (), max_tokens: int | None = None,
                      temperature: float | None = None, top_p: float | None = None, seed: int | None = None,
-                     stop: str | list[str] | None = None, tools: list | None = None, tool_choice=None,
+                     stop: str | list[str] | None = None, tools: list[Any] | None = None, tool_choice: ToolChoice | None = None,
                      reasoning_effort: str | None = None) -> Conversation:
         """A chat with memory; the options apply to every turn."""
         options = {k: v for k, v in locals().items() if k in _OPTIONS and v is not None}
@@ -858,7 +870,7 @@ class Embedder(_Tokens):
         """The length of a vector from `embed`, before any `dimension=` truncation."""
         return self._info["embedding_dimension"]
 
-    def embed(self, texts, *, dimension: int | None = None):
+    def embed(self, texts: str | Iterable[str], *, dimension: int | None = None) -> list[_array.array[float]]:
         """A float32 array per text, in the texts' order; a single string is a list of one.
         `dimension` truncates (and renormalises) a Matryoshka model's vectors."""
         texts = [texts] if isinstance(texts, str) else list(texts)
@@ -873,7 +885,7 @@ class Embedder(_Tokens):
 class Reranker(_Context):
     """A reranking model: `rerank` scores documents against a query."""
 
-    def rerank(self, query: str, documents, *, instruction: str | None = None):
+    def rerank(self, query: str, documents: str | Iterable[str], *, instruction: str | None = None) -> list[float]:
         """A relevance score per document, in the documents' order; higher is more relevant.
         A single string is a list of one; `instruction` replaces the model's default."""
         if not isinstance(query, str):
@@ -908,7 +920,7 @@ class Transcriber(Model):
         """Hz the model listens at; `transcribe` resamples any other rate to it."""
         return self._info["sample_rate"]
 
-    def transcribe(self, audio, *, sample_rate: int | None = None) -> Transcript:
+    def transcribe(self, audio: str | os.PathLike[str] | Iterable[float], *, sample_rate: int | None = None) -> Transcript:
         """Transcribes a WAV file (a path) or mono PCM samples at `sample_rate`: a float32 buffer
         (array, numpy) or any iterable of numbers; any rate, the library resamples. The Transcript
         has the text and timed words."""

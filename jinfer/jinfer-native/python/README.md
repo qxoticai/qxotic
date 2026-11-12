@@ -106,7 +106,7 @@ The [jinfer README](https://github.com/qxoticai/qxotic/tree/main/jinfer#supporte
 | a streamed reply | `for text in model.chat(prompt)`, or `async for`; closing the reply cancels it, and what it produced stays readable |
 | the rest of a reply | `reply.tool_calls`, `.reasoning`, `.finish_reason`, `.usage` (tokens, cached tokens, milliseconds) |
 | a system prompt | `model.chat(prompt, system="You are terse.")` |
-| options | `max_tokens`, `temperature`, `top_p`, `seed`, `stop`, `tools`, `tool_choice`, `reasoning_effort`: keyword-only, `None` is the model's default, and a typo is a `TypeError` |
+| options | `max_tokens`, `temperature`, `top_p`, `seed`, `stop`, `tools`, `tool_choice`, `reasoning_effort`: keyword-only, `None` is the model's default, and a typo is a `TypeError`; `reasoning_effort` is on or off, `"none"` off and any level on |
 | structured output | `model.chat(prompt, schema=Person).parsed`: a dataclass, TypedDict, Pydantic class, `list[T]`, `Literal`, `Enum`, `dict` or a JSON schema dict |
 | tools | `tools=[fn]`; a conversation runs the calls, a plain `chat` returns them as `reply.tool_calls`; `tool_choice` is `"auto"`, `"none"`, `"required"`, a function or its name |
 | a conversation | `model.conversation(system=...)`, with `.chat(...)`, `.fork()`, `.rewind()`, `.prepare()`, `.messages` |
