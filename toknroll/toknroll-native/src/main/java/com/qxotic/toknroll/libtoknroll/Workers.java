@@ -3,6 +3,7 @@ package com.qxotic.toknroll.libtoknroll;
 import java.util.Queue;
 import java.util.concurrent.ConcurrentLinkedQueue;
 import java.util.concurrent.atomic.AtomicInteger;
+import java.util.concurrent.atomic.AtomicIntegerArray;
 import java.util.concurrent.locks.LockSupport;
 import java.util.function.IntConsumer;
 import java.util.stream.IntStream;
@@ -90,28 +91,33 @@ final class Workers {
 
     /**
      * The workers, once. Each is listed with the gate before this returns, so a fork from then on
-     * waits for it; until then the caller, inside its call, holds the fork back.
+     * waits for it; until then the caller, inside its call, holds the fork back. A worker that a
+     * full heap kills before it lists itself is not waited for: the batch runs on the others.
      */
     private static synchronized void start() {
         if (started) return;
         started = true;
-        AtomicInteger listed = new AtomicInteger(); // all a worker keeps of its start
+        AtomicIntegerArray listed =
+                new AtomicIntegerArray(THREADS); // all a worker keeps of its start
+        Thread[] workers = new Thread[THREADS];
         for (int i = 1; i < THREADS; i++) {
-            Thread worker =
+            int slot = i;
+            workers[i] =
                     new Thread(
                             () -> {
                                 PointerBase self = newWorker();
-                                listed.incrementAndGet();
+                                listed.set(slot, 1);
                                 // ponytail: calloc failed: it ends here, a few frames outside
                                 // the gate, in a process that is out of memory anyway
                                 if (self.isNonNull()) loop(self);
                             },
                             "toknroll-batch-" + i);
-            worker.setDaemon(true);
-            worker.start();
+            workers[i].setDaemon(true);
+            workers[i].start();
         }
         // ponytail: yields for the threads' start, once per process; nothing to wake, nothing kept
-        while (listed.get() < THREADS - 1) Thread.yield();
+        for (int i = 1; i < THREADS; i++)
+            while (listed.get(i) == 0 && workers[i].isAlive()) Thread.yield();
     }
 
     /**

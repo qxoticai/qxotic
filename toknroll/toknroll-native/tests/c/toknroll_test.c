@@ -1455,7 +1455,11 @@ static void batch_out_of_heap(void) {
     const char* options[] = {"-Dtoknroll.offline=true", "-XX:MaxHeapSize=192m"};
     CHECK_EQ(toknroll_configure(options, 2), TOKNROLL_OK);
     toknroll_tokenizer* t = cached(QWEN);
-    enum { TEXTS = 64, LENGTH = 256 * 1024 };
+    /* the workers start with the first parallel batch: started in a heap already full, a thread can
+       fail inside the runtime's own start, where nothing catches it; this test is about the batch */
+    int32_t warm[2], warm_at[3];
+    CHECK_EQ(toknroll_encode_batch(t, "hi yo", (const int64_t[]) {0, 2, 5}, 2, 0, warm, 2, warm_at), 2);
+    enum { TEXTS = 64, LENGTH = 2 * 1024 * 1024 };
     static char texts[TEXTS * LENGTH];
     static int64_t at[TEXTS + 1];
     for (int i = 0; i < TEXTS * LENGTH; i++) texts[i] = "hello world "[i % 12];
