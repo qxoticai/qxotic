@@ -11,13 +11,10 @@ import java.nio.ByteBuffer;
 import java.nio.channels.FileChannel;
 import java.nio.channels.FileLock;
 import java.nio.charset.StandardCharsets;
-import java.nio.file.FileSystems;
 import java.nio.file.Files;
-import java.nio.file.LinkOption;
 import java.nio.file.Path;
 import java.nio.file.StandardCopyOption;
 import java.nio.file.StandardOpenOption;
-import java.nio.file.attribute.PosixFilePermissions;
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
 import java.time.Duration;
@@ -1306,7 +1303,10 @@ final class Fetch {
         // source its destination, not the store's root): two JVMs with different model roots
         // must still exclude each other on the same destination, and a store on a writable
         // volume must not depend on the user's cache directory being writable
-        Path locks = lockFolder(Path.of(System.getProperty("java.io.tmpdir")));
+        Path locks =
+                Path.of(System.getProperty("java.io.tmpdir"))
+                        .resolve("jinfer-locks-" + System.getProperty("user.name", "jinfer"));
+        Files.createDirectories(locks);
         String key =
                 HexFormat.of()
                         .formatHex(
@@ -1317,34 +1317,6 @@ final class Fetch {
                                                         .getBytes(StandardCharsets.UTF_8)))
                         .substring(0, 32);
         return locks.resolve(key + ".lock");
-    }
-
-    /**
-     * The {@code jinfer-locks-<user>} folder in {@code tmp}, and on a POSIX file system (Linux,
-     * macOS) this user's alone: made owner-only, and refused when another user owns it, since in a
-     * shared {@code /tmp} anyone could make it first and hold our lock files, hanging our
-     * downloads. Its owner is read without following a link and compared with a file this process
-     * has just made, so the check works by user id, named or not. Windows gives each user a temp
-     * folder of their own.
-     */
-    static Path lockFolder(Path tmp) throws IOException {
-        Path locks = tmp.resolve("jinfer-locks-" + System.getProperty("user.name", "jinfer"));
-        if (!FileSystems.getDefault().supportedFileAttributeViews().contains("posix"))
-            return Files.createDirectories(locks);
-        Files.createDirectories(
-                locks,
-                PosixFilePermissions.asFileAttribute(PosixFilePermissions.fromString("rwx------")));
-        Path mine = Files.createTempFile(tmp, "jinfer-owner-", ".probe");
-        try {
-            if (!Files.getOwner(locks, LinkOption.NOFOLLOW_LINKS).equals(Files.getOwner(mine)))
-                throw new IOException(
-                        locks
-                                + " belongs to another user: remove it, or point java.io.tmpdir"
-                                + " at a folder of your own");
-        } finally {
-            Files.deleteIfExists(mine);
-        }
-        return locks;
     }
 
     private static MessageDigest sha256Digest() {

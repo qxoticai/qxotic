@@ -17,7 +17,6 @@ import java.net.URI;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
-import java.nio.file.attribute.PosixFilePermissions;
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
 import java.time.Duration;
@@ -33,8 +32,6 @@ import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicReference;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
-import org.junit.jupiter.api.condition.EnabledOnOs;
-import org.junit.jupiter.api.condition.OS;
 import org.junit.jupiter.api.io.TempDir;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.CsvSource;
@@ -50,21 +47,6 @@ class FetchDownloadTest {
 
     private static final String PAYLOAD =
             "weights, but long enough to have a middle worth resuming from";
-
-    /**
-     * On Linux and macOS a new lock folder is the user's alone (another user's: by hand, as root).
-     */
-    @Test
-    @EnabledOnOs({OS.LINUX, OS.MAC})
-    void theLockFolderIsTheUsersAlone(@TempDir Path tmp) throws IOException {
-        Path locks = Fetch.lockFolder(tmp);
-        assertEquals(
-                PosixFilePermissions.fromString("rwx------"), Files.getPosixFilePermissions(locks));
-        assertEquals(locks, Fetch.lockFolder(tmp), "a folder of one's own is used again");
-        try (var left = Files.list(tmp)) {
-            assertEquals(1, left.count(), "the owner probe is gone");
-        }
-    }
 
     @Test
     void housekeepingFailureAfterPublicationDoesNotFailTheDownload(@TempDir Path dir)
