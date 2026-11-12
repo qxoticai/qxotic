@@ -78,7 +78,7 @@ static void version(void) {
     char base[32];
     size_t nb = (size_t) snprintf(base, sizeof base, "%d.%d.%d", TOKNROLL_VERSION_MAJOR, TOKNROLL_VERSION_MINOR, TOKNROLL_VERSION_PATCH);
     CHECK_STR(toknroll_version(), TOKNROLL_VERSION);
-    CHECK(!strncmp(TOKNROLL_VERSION, base, nb) && (TOKNROLL_VERSION[nb] == '\0' || !strncmp(TOKNROLL_VERSION + nb, "-rc", 3)));
+    CHECK(!strncmp(TOKNROLL_VERSION, base, nb) && (TOKNROLL_VERSION[nb] == '\0' || !strncmp(&TOKNROLL_VERSION[nb], "-rc", 3)));
     CHECK_CLEAR(LE);                     /* before any call: "" and OK */
     CHECK_STR(LE(NULL), "");             /* code may be NULL */
     toknroll_tokenizer_free(NULL);       /* accepted, and starts nothing */

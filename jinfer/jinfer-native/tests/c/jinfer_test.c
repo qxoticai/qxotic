@@ -72,7 +72,7 @@ static void version(void) {
     char base[32];
     size_t nb = (size_t) snprintf(base, sizeof base, "%d.%d.%d", JINFER_VERSION_MAJOR, JINFER_VERSION_MINOR, JINFER_VERSION_PATCH);
     CHECK_STR(jinfer_version(), JINFER_VERSION);
-    CHECK(!strncmp(JINFER_VERSION, base, nb) && (JINFER_VERSION[nb] == '\0' || !strncmp(JINFER_VERSION + nb, "-rc", 3)));
+    CHECK(!strncmp(JINFER_VERSION, base, nb) && (JINFER_VERSION[nb] == '\0' || !strncmp(&JINFER_VERSION[nb], "-rc", 3)));
     CHECK_STR(toknroll_version(), TOKNROLL_VERSION);   /* the toknroll it carries */
     CHECK_CLEAR(LE);
     CHECK_STR(LE(NULL), "");
