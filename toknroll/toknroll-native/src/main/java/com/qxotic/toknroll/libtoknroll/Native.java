@@ -141,8 +141,8 @@ public final class Native {
 
     /**
      * A calling thread's memory, kept for its next call so that a short one allocates nothing: the
-     * text copied in, and the ids builder, read back through a live view. Either is let go once it
-     * outgrows {@link #KEPT}.
+     * text copied in, and the ids builder, read back through a live view. Neither is kept past
+     * about {@link #KEPT}.
      */
     private static final class Buffers {
         private static final int KEPT = 1 << 16;
@@ -163,23 +163,27 @@ public final class Native {
             return bigger;
         }
 
-        /** The builder, empty. */
-        IntSequence.Builder ids() {
+        /**
+         * An empty builder for about {@code expected} ids: the kept one, or past KEPT a fresh one,
+         * never kept, so a long call, finished or failed, leaves nothing large behind. ponytail:
+         * the kept one grows to at most 3 KEPT ids, a text's ids being at most its bytes.
+         */
+        IntSequence.Builder ids(int expected) {
+            if (expected > KEPT) return IntSequence.newBuilder(expected);
             if (ids == null) {
-                ids = IntSequence.newBuilder(256);
-                view = ids.asSequenceView();
+                IntSequence.Builder fresh = IntSequence.newBuilder(256);
+                view = fresh.asSequenceView(); // kept with its view, or not at all
+                ids = fresh;
             } else {
                 ImplAccessor.clear(ids);
             }
+            ids.ensureCapacity(expected);
             return ids;
         }
 
-        /** Discards a builder holding more than KEPT tokens and the view that keeps it alive. */
-        void discardLargeTokenBuffer() {
-            if (ids != null && ids.size() > KEPT) {
-                ids = null;
-                view = null;
-            }
+        /** A view of {@code builder}: the kept one's, made once, or a new one. */
+        IntSequence view(IntSequence.Builder builder) {
+            return builder == ids ? view : builder.asSequenceView();
         }
     }
 
@@ -341,12 +345,11 @@ public final class Native {
             Buffers buffers = BUFFERS.get();
             byte[] utf8 = buffers.text(n);
             copy(text.rawValue(), utf8, n);
-            IntSequence.Builder ids = buffers.ids();
-            ids.ensureCapacity(estimate(n)); // a long text's ids in one array, not grown into
+            // a long text's ids in one array, not grown into
+            IntSequence.Builder ids = buffers.ids(estimate(n));
             encodeUtf8(loaded.tokenizer(), matcher, utf8, 0, n, ids);
             int count = ids.size();
-            write(buffers.view, 0, out.rawValue(), Math.min(count, tokenCapacity));
-            buffers.discardLargeTokenBuffer();
+            write(buffers.view(ids), 0, out.rawValue(), Math.min(count, tokenCapacity));
             return count;
         } catch (Throwable t) {
             return Errors.set(t);
