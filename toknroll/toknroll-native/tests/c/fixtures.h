@@ -15,6 +15,33 @@
 #include <stdint.h>
 #include <stdlib.h>
 #include <string.h>
+#ifdef _WIN32
+#  include <process.h>
+#  include <windows.h>
+#else
+#  include <unistd.h>
+#endif
+
+/* A fixture appears whole or not at all: written under a name of this process's own, then renamed into
+ * place, so scenarios running at once that write the same fixture never read one half-written. */
+static inline FILE* fixture_open(const char* path, char* temp, size_t size) {
+#ifdef _WIN32
+    snprintf(temp, size, "%s.%d", path, (int) _getpid());
+#else
+    snprintf(temp, size, "%s.%d", path, (int) getpid());
+#endif
+    FILE* f = fopen(temp, "wb");
+    if (!f) { printf("    cannot write %s\n", temp); exit(2); }
+    return f;
+}
+static inline void fixture_close(FILE* f, const char* temp, const char* path) {
+#ifdef _WIN32
+    int ok = fclose(f) == 0 && MoveFileExA(temp, path, MOVEFILE_REPLACE_EXISTING);
+#else
+    int ok = fclose(f) == 0 && rename(temp, path) == 0;
+#endif
+    if (!ok) { printf("    cannot write %s\n", path); exit(2); }
+}
 
 enum { ID_HE = 256, ID_END = 257, ID_USER = 258, ID_UNK = 259, ID_UNUSED = 260, ID_BYTE = 261 };
 enum { VOCAB_JSON = 259, VOCAB_GGUF = 262 };
@@ -34,8 +61,8 @@ static inline void byte_spellings(char spelling[256][4]) {
 static inline void write_tiny_json_he(const char* path, int he) {
     char spelling[256][4];
     byte_spellings(spelling);
-    FILE* f = fopen(path, "wb");
-    if (!f) { printf("    cannot write %s\n", path); exit(2); }
+    char temp[1024];
+    FILE* f = fixture_open(path, temp, sizeof temp);
     fputs("{\"version\":\"1.0\",\"added_tokens\":["
           "{\"id\":257,\"content\":\"<|end|>\",\"single_word\":false,\"lstrip\":false,\"rstrip\":false,\"normalized\":false,\"special\":true},"
           "{\"id\":258,\"content\":\"<user>\",\"single_word\":false,\"lstrip\":false,\"rstrip\":false,\"normalized\":false,\"special\":false}],"
@@ -48,7 +75,7 @@ static inline void write_tiny_json_he(const char* path, int he) {
         fprintf(f, "\"%s%s\":%d,", (*s == '"' || *s == '\\') ? "\\" : "", s, b);
     }
     fprintf(f, "\"he\":%d},\"merges\":[\"h e\"]}}", he);
-    fclose(f);
+    fixture_close(f, temp, path);
 }
 static inline void write_tiny_json(const char* path) { write_tiny_json_he(path, ID_HE); }
 static inline void write_gapped_json(const char* path) { write_tiny_json_he(path, 300); }
@@ -60,8 +87,8 @@ static inline void gguf_str(FILE* f, const char* s) { gguf_u64(f, strlen(s)); fw
 /* SentencePiece's way, as Llama's tokenizer.json writes it: a word's space is a leading U+2581, and
  * the decoder drops a text's first one, so "hi there" is ids {7, 12} and 12 alone decodes to "there" */
 static inline void write_metaspace_json(const char* path) {
-    FILE* f = fopen(path, "wb");
-    if (!f) { printf("    cannot write %s\n", path); exit(2); }
+    char temp[1024];
+    FILE* f = fixture_open(path, temp, sizeof temp);
     fputs("{\"version\":\"1.0\",\"added_tokens\":[],\"normalizer\":null,\"post_processor\":null,"
           "\"pre_tokenizer\":{\"type\":\"Metaspace\",\"replacement\":\"\\u2581\",\"prepend_scheme\":\"always\",\"split\":true},"
           "\"decoder\":{\"type\":\"Metaspace\",\"replacement\":\"\\u2581\",\"prepend_scheme\":\"always\",\"split\":true},"
@@ -70,7 +97,7 @@ static inline void write_metaspace_json(const char* path) {
           "\"e\":4,\"r\":5,\"\\u2581h\":6,\"\\u2581hi\":7,\"\\u2581t\":8,\"\\u2581th\":9,\"\\u2581the\":10,\"\\u2581ther\":11,"
           "\"\\u2581there\":12,\"th\":13},\"merges\":[\"\\u2581 h\",\"\\u2581h i\",\"\\u2581 t\",\"t h\",\"\\u2581t h\",\"\\u2581th e\","
           "\"\\u2581the r\",\"\\u2581ther e\"]}}", f);
-    fclose(f);
+    fixture_close(f, temp, path);
 }
 
 /* tokenizer.ggml.pre is pre: "gpt2", or a name only an option can make known */
@@ -79,8 +106,8 @@ static inline void write_tiny_gguf(const char* path, const char* pre) {
     static const int32_t extra_type[] = {1, 3, 4, 2, 5, 6};   /* normal, control, user-defined, unknown, unused, byte */
     char spelling[256][4];
     byte_spellings(spelling);
-    FILE* f = fopen(path, "wb");
-    if (!f) { printf("    cannot write %s\n", path); exit(2); }
+    char temp[1024];
+    FILE* f = fixture_open(path, temp, sizeof temp);
     fwrite("GGUF", 1, 4, f);
     gguf_u32(f, 3);   /* version */
     gguf_u64(f, 0);   /* tensors */
@@ -94,7 +121,7 @@ static inline void write_tiny_gguf(const char* path, const char* pre) {
     for (int b = 0; b < 256; b++) { int32_t normal = 1; fwrite(&normal, 4, 1, f); }
     fwrite(extra_type, 4, 6, f);
     gguf_str(f, "tokenizer.ggml.merges"); gguf_u32(f, 9); gguf_u32(f, 8); gguf_u64(f, 1); gguf_str(f, "h e");
-    fclose(f);
+    fixture_close(f, temp, path);
 }
 
 #endif
