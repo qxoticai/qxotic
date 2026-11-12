@@ -50,13 +50,18 @@ function Build-Library {   # the pom's optimization unless -Quick (-Ob -march=na
         finally { Pop-Location }
     } finally { $env:NATIVE_IMAGE_OPTIONS = $options }
 }
-function Check-Version {   # the header, the wheel, the pom and (where it is a literal) the package name the same release
-    $h = ((Select-String "include\$Name.h" -Pattern "$($Name.ToUpper())_VERSION_(MAJOR|MINOR|PATCH) (\d+)").Matches | ForEach-Object { $_.Groups[2].Value }) -join '.'
+# The release as the header spells it, 0.4.0, or 0.4.0-rc1 for a release candidate, as native.mk's VERSION;
+# Python's spelling drops the dash (0.4.0rc1, PEP 440's).
+function Get-Version { (Select-String "include\$Name.h" -Pattern "^#define $($Name.ToUpper())_VERSION `"([^`"]+)`"").Matches[0].Groups[1].Value }
+function Check-Version {   # the header, its numbers, the pom, the wheel and (where it is a literal) the package name the same release
+    $h = Get-Version; $y = $h -replace '-', ''
+    $n = ((Select-String "include\$Name.h" -Pattern "$($Name.ToUpper())_VERSION_(MAJOR|MINOR|PATCH) (\d+)").Matches | ForEach-Object { $_.Groups[2].Value }) -join '.'
     $w = (Select-String python\pyproject.toml -Pattern '^version = "([^"]+)"').Matches[0].Groups[1].Value
     $m = (Select-String pom.xml -Pattern '<version>([^<]+)</version>' | Select-Object -First 1).Matches[0].Groups[1].Value
     $p = (Select-String "python\$Name\__init__.py" -Pattern '^__version__ = "([^"]+)"' | ForEach-Object { $_.Matches[0].Groups[1].Value } | Select-Object -First 1)
-    if ($h -ne $w -or $h -ne $m -or ($p -and $h -ne $p)) { throw "version drift: header $h, wheel $w, pom $m, package $p" }
-    "version $h everywhere"
+    if ($h -notmatch "^$([regex]::Escape($n))(-rc\d+)?$") { throw "version drift: header $h, its numbers $n" }
+    if ($h -ne $m -or $y -ne $w -or ($p -and $y -ne $p)) { throw "version drift: header $h, pom $m, wheel $w, package $p" }
+    "version $h everywhere, $y for Python"
 }
 function Check-Exports {   # every function the headers declare is exported, and the module definition's names are all there is
     Enter-Toolchain
@@ -74,7 +79,7 @@ function Stage-Python {   # this platform's library, its import library and the 
     New-Item -ItemType Directory -Force "python\$Name\lib\$Platform", "python\$Name\include" | Out-Null
     Copy-Item $Lib, "target\$Name.lib" "python\$Name\lib\$Platform\"; Copy-Item $Headers "python\$Name\include\"
     # the pkg-config file, as native.mk writes it: paths relative to itself, so it is right wherever pip puts it
-    $version = ((Get-Content "include\$Name.h") -match "$($Name.ToUpper())_VERSION_(MAJOR|MINOR|PATCH) " | ForEach-Object { ($_ -split ' ')[-1] }) -join '.'
+    $version = (Get-Version)
     New-Item -ItemType Directory -Force "python\$Name\lib\$Platform\pkgconfig" | Out-Null
     $pc = 'prefix=${pcfiledir}/../../..', 'includedir=${prefix}/include', 'libdir=${pcfiledir}/..', '',
           "Name: $Name", "Description: $Description", "Version: $version", 'Cflags: -I${includedir}', "Libs: -L`${libdir} -l$Name"
@@ -94,7 +99,7 @@ function Build-Wheel {   # tagged py3-none-win_amd64 by setup.py: ctypes over a 
 }
 function Build-Dist {   # the release zip as native.mk's dist: a prefix tree, Windows' own layout (bin\ for the DLL, lib\ for the import library and the .def)
     Write-Exports | Out-Host
-    $version = ((Get-Content "include\$Name.h") -match "$($Name.ToUpper())_VERSION_(MAJOR|MINOR|PATCH) " | ForEach-Object { ($_ -split ' ')[-1] }) -join '.'
+    $version = (Get-Version)
     $dist = "lib$Name-$version-$Platform"
     Remove-Item -Recurse -Force "target\dist\$dist", "target\dist\$dist.zip" -ErrorAction Ignore
     New-Item -ItemType Directory -Force "target\dist\$dist\include", "target\dist\$dist\lib", "target\dist\$dist\bin" | Out-Null

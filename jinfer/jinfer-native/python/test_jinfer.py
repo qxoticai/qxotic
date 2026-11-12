@@ -549,7 +549,7 @@ N.lib.jinfer_stream_cancel(r._ptr)
 t.join(timeout=30)
 ok(outcome == ["cancelled"] and seen, f"cancel from another thread: {outcome} after {len(seen)} chunks")
 ok(r.finish_reason == "cancelled" and 0 < r.usage.completion_tokens <= 400 and r.usage.prompt_tokens > 0, f"result after cancel: {r.finish_reason} {r.usage}")
-ok(jinfer.__version__ == "0.4.0" == N.lib.jinfer_version().decode(), f"version {jinfer.__version__}")
+ok(jinfer.__version__ == "0.4.0" and N.lib.jinfer_version().decode() == "0.4.0", f"version {jinfer.__version__}")
 
 # a stream takes one call at a time: a second thread's call while a step blocks is JINFER_EBUSY
 r = m.chat("Write a very long story about the sea.", max_tokens=200)

@@ -9,14 +9,19 @@ ARCH  := $(shell uname -m | sed -e 's/x86_64/x86-64/' -e 's/arm64/aarch64/')
 PLATFORM := $(OS)-$(ARCH)
 UPPER := $(shell echo $(NAME) | tr a-z A-Z)
 LIB   := target/lib$(NAME).$(if $(filter darwin,$(OS)),dylib,so)
-VERSION := $(shell grep -oE '$(UPPER)_VERSION_(MAJOR|MINOR|PATCH) [0-9]+' include/$(NAME).h | awk '{print $$2}' | paste -sd. -)
+# The release as the header spells it, 0.4.0, or 0.4.0-rc1 for a release candidate; Python's spelling
+# drops the dash (0.4.0rc1, PEP 440's); the soname takes only the numbers, so a candidate and its release
+# share one ABI name.
+VERSION := $(shell sed -n 's/^\#define $(UPPER)_VERSION "\(.*\)"/\1/p' include/$(NAME).h)
+BASE := $(firstword $(subst -, ,$(VERSION)))
+PYVERSION := $(subst -,,$(VERSION))
 DIST  := lib$(NAME)-$(VERSION)-$(PLATFORM)
-# The soname follows the version, never set by hand: the whole version while the major is 0, as ABI
+# The soname follows the version's numbers, never set by hand: all three while the major is 0, as ABI
 # compatibility is not guaranteed between any two 0.x releases (a program loads the release it was built
 # against and no other), the major from 1.0. The build names the library by it (native-cc.sh) and links
 # target/$(SONAME) to it, so a program linked against target/ runs from there.
-MAJOR := $(word 1,$(subst ., ,$(VERSION)))
-SOVERSION := $(if $(filter 0,$(MAJOR)),$(VERSION),$(MAJOR))
+MAJOR := $(word 1,$(subst ., ,$(BASE)))
+SOVERSION := $(if $(filter 0,$(MAJOR)),$(BASE),$(MAJOR))
 SONAME := $(if $(filter darwin,$(OS)),lib$(NAME).$(SOVERSION).dylib,lib$(NAME).so.$(SOVERSION))
 NATIVE_IMAGE ?= $(if $(JAVA_HOME),$(JAVA_HOME)/bin/native-image,native-image)
 # native-image's options: the caller's (NATIVE_IMAGE_OPTIONS=-march=x86-64-v4 asks for another target than
@@ -70,12 +75,15 @@ help::
 	@echo 'make publish-dist TAG=<tag>   the tarball and its checksum as assets of that GitHub release (gh)'
 	@echo 'This machine'"'"'s two wheels from a clean export, and PyPI: make wheels, make publish-wheels at the root.'
 
-check-version:   # the header, the wheel, the pom and (where it is a literal) the package name the same release
-	@h=$(VERSION); \
+check-version:   # the header, its numbers, the pom, the wheel and (where it is a literal) the package name the same release
+	@h=$(VERSION); y=$(PYVERSION); \
+	 n=$$(grep -oE '$(UPPER)_VERSION_(MAJOR|MINOR|PATCH) [0-9]+' include/$(NAME).h | awk '{print $$2}' | paste -sd. -); \
 	 w=$$(grep -oE '^version = "[^"]+"' python/pyproject.toml | cut -d'"' -f2); \
 	 m=$$(grep -oE '<version>[^<]+</version>' pom.xml | head -1 | sed 's/<[^>]*>//g'); \
 	 p=$$(grep -oE '^__version__ = "[^"]+"' python/$(NAME)/__init__.py | cut -d'"' -f2); \
-	 [ "$$h" = "$$w" ] && [ "$$h" = "$$m" ] && [ "$$h" = "$${p:-$$h}" ] && echo "version $$h everywhere" || { echo "version drift: header $$h, wheel $$w, pom $$m, package $$p"; exit 1; }
+	 case "$$h" in "$$n"|"$$n"-rc[0-9]*) ;; *) echo "version drift: header $$h, its numbers $$n"; exit 1 ;; esac; \
+	 [ "$$h" = "$$m" ] && [ "$$y" = "$$w" ] && [ "$$y" = "$${p:-$$y}" ] && echo "version $$h everywhere, $$y for Python" \
+	   || { echo "version drift: header $$h, pom $$m, wheel $$w, package $$p"; exit 1; }
 
 # The library exports every function the headers declare, the EXTRA_EXPORTS, and nothing else: none of the
 # runtime behind it (graal_*, the entry points), whose names would collide with another library's.

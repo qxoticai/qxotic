@@ -59,6 +59,8 @@ extern "C" {
 #define JAM_VERSION_MAJOR 0
 #define JAM_VERSION_MINOR 4
 #define JAM_VERSION_PATCH 0
+/* The release as text: MAJOR.MINOR.PATCH, then -rcN on a release candidate; what jam_version() returns. */
+#define JAM_VERSION "0.4.0"
 
 /* status: the values jam, toknroll and jinfer share */
 #define JAM_OK             0
@@ -87,7 +89,7 @@ enum {
     JAM_ISA_METAL = 19                                  /* the Apple GPU, chosen by AUTO; cap below it for the CPU */
 };
 
-JAM_API const char* jam_version(void);               /* "0.4.0", the release it was built from */
+JAM_API const char* jam_version(void);               /* JAM_VERSION, the release it was built from */
 JAM_API const char* jam_last_error(int32_t* code);   /* the message; *code = the code unless NULL */
 JAM_API const char* jam_isa_name(int32_t isa);       /* "avx512_vnni"; "" for an unknown level */
 

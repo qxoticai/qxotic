@@ -92,6 +92,8 @@ extern "C" {
 #define TOKNROLL_VERSION_MAJOR 0
 #define TOKNROLL_VERSION_MINOR 4
 #define TOKNROLL_VERSION_PATCH 0
+/* The release as text: MAJOR.MINOR.PATCH, then -rcN on a release candidate; what toknroll_version() returns. */
+#define TOKNROLL_VERSION "0.4.0"
 
 #define TOKNROLL_OK            0
 #define TOKNROLL_ERROR        (-1) /* see toknroll_last_error() */
@@ -114,7 +116,7 @@ typedef struct toknroll_tokenizer toknroll_tokenizer;
 enum { TOKNROLL_LOG_DEBUG = 0, TOKNROLL_LOG_INFO = 1, TOKNROLL_LOG_WARN = 2, TOKNROLL_LOG_ERROR = 3 };
 typedef void (*toknroll_log_fn)(int32_t level, const char* message, void* user_data);
 
-/* "0.4.0", the toknroll release the library was built from. */
+/* TOKNROLL_VERSION, the toknroll release the library was built from: "0.4.0". */
 TOKNROLL_API const char* toknroll_version(void);
 /* The message of the thread's last call; *code = its code unless code is NULL. "" and TOKNROLL_OK after a
  * success. */

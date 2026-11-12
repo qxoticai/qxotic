@@ -60,10 +60,8 @@ __attribute__((constructor)) static void jam_load(void) {
 
 /* ---- version and errors ---- */
 
-#define JAM_STR2(x) #x
-#define JAM_STR(x)  JAM_STR2(x)
 const char* jam_version(void) {
-    return JAM_STR(JAM_VERSION_MAJOR) "." JAM_STR(JAM_VERSION_MINOR) "." JAM_STR(JAM_VERSION_PATCH);
+    return JAM_VERSION;
 }
 
 static _Thread_local int32_t g_last_code;

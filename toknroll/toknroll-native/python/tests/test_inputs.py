@@ -436,9 +436,10 @@ class ErrorTypesTest(unittest.TestCase):
         root = Path(__file__).resolve().parents[2]
         header = (root / "include" / "toknroll.h").read_text()
         macros = {k: int(header.split(f"#define TOKNROLL_VERSION_{k} ")[1].split()[0]) for k in ("MAJOR", "MINOR", "PATCH")}
-        c_version = f"{macros['MAJOR']}.{macros['MINOR']}.{macros['PATCH']}"
+        c_version = header.split('#define TOKNROLL_VERSION "')[1].split('"')[0]
+        self.assertRegex(c_version, rf"^{macros['MAJOR']}\.{macros['MINOR']}\.{macros['PATCH']}(-rc\d+)?$")
         pyproject = (root / "python" / "pyproject.toml").read_text()
-        self.assertIn(f'version = "{c_version}"', pyproject)
+        self.assertIn(f'version = "{c_version.replace("-", "")}"', pyproject)
         self.assertEqual(N.library().toknroll_version().decode(), c_version)
 
     def test_every_header_function_is_bound(self):

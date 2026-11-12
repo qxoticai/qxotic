@@ -11,9 +11,11 @@ static_assert(JINFER_CONTEXT_MAXIMUM == -1, "the maximum context, -1 on every fa
 int main() {
     jinfer_model_options options;
     jinfer_model_options_init(&options);
-    std::string jinfer = std::to_string(JINFER_VERSION_MAJOR) + "." + std::to_string(JINFER_VERSION_MINOR) + "."
-                         + std::to_string(JINFER_VERSION_PATCH);
-    std::string toknroll = std::to_string(TOKNROLL_VERSION_MAJOR) + "." + std::to_string(TOKNROLL_VERSION_MINOR) + "."
-                           + std::to_string(TOKNROLL_VERSION_PATCH);
-    return jinfer == jinfer_version() && toknroll == toknroll_version() && options.struct_size == (int64_t) sizeof options ? 0 : 1;
+    std::string base = std::to_string(JINFER_VERSION_MAJOR) + "." + std::to_string(JINFER_VERSION_MINOR) + "."
+                       + std::to_string(JINFER_VERSION_PATCH);
+    std::string jinfer = JINFER_VERSION;
+    return jinfer == jinfer_version() && jinfer.rfind(base, 0) == 0 && std::string(TOKNROLL_VERSION) == toknroll_version()
+                   && options.struct_size == (int64_t) sizeof options
+               ? 0
+               : 1;
 }

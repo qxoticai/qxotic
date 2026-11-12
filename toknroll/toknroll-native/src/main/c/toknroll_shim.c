@@ -24,7 +24,7 @@ int64_t toknroll__token_flags(T, const toknroll_tokenizer*, int32_t);
 int64_t toknroll__token(T, const toknroll_tokenizer*, int32_t, char*, int64_t);
 int32_t toknroll__id(T, const toknroll_tokenizer*, const char*, int64_t);
 
-const char* toknroll_version(void) { return STR(TOKNROLL_VERSION_MAJOR) "." STR(TOKNROLL_VERSION_MINOR) "." STR(TOKNROLL_VERSION_PATCH); }
+const char* toknroll_version(void) { return TOKNROLL_VERSION; }
 const char* toknroll_last_error(int32_t* code) { return toknroll__last_error_of(code, toknroll__last_error); }
 int32_t toknroll_log_set(toknroll_log_fn fn, void* user_data) { return toknroll__log(fn, user_data, "toknroll_log_set", toknroll__error_set); }
 int32_t toknroll_configure(const char* const* options, int32_t count) { return toknroll__configure(options, count, "toknroll_configure", toknroll__error_set); }

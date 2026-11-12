@@ -198,14 +198,17 @@ One exception: on Windows, GraalVM marks its own runtime functions `dllexport`, 
 #define PREFIX_VERSION_MAJOR 0
 #define PREFIX_VERSION_MINOR 4
 #define PREFIX_VERSION_PATCH 0
-const char* prefix_version(void);   /* "0.4.0", the release the library was built from */
+#define PREFIX_VERSION "0.4.0"          /* "0.4.0-rc1" for a release candidate */
+const char* prefix_version(void);   /* PREFIX_VERSION, the release the library was built from */
 ```
 
-The version is the project's release version; `make check-version` keeps the header, the POM and the Python package equal.
+The version is the project's release version: `0.4.0`, or `0.4.0-rc1` for a release candidate, on Maven Central and the release archives alike, and `0.4.0rc1` in Python, PEP 440's spelling.
+`make check-version` keeps the header's text and numbers, the POM and the Python package the same release.
 The soname is derived from it by the build, never set by hand, so a program built against one ABI refuses to start against another instead of misreading it.
 
 Before 1.0 (alpha), as practice:
-- the soname carries the whole version, `libprefix.so.0.4.0` on Linux and `@rpath/libprefix.0.4.0.dylib` on macOS: a program loads the release it was built against and no other;
+- the soname carries the version's three numbers, `libprefix.so.0.4.0` on Linux and `@rpath/libprefix.0.4.0.dylib` on macOS: a program loads the release it was built against and no other;
+- a release candidate shares its release's soname, so it may not change the API or the ABI before the release: a change makes the next release `0.4.1`, not another candidate;
 - any release may break the API or the ABI, and nothing checks it.
 
 From 1.0, enforced:

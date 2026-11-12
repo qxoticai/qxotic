@@ -12,7 +12,8 @@ static_assert(TOKNROLL_LOG_DEBUG == 0 && TOKNROLL_LOG_ERROR == 3, "log levels");
 int main() {
     toknroll_log_fn fn = nullptr;
     (void) fn;
-    std::string want = std::to_string(TOKNROLL_VERSION_MAJOR) + "." + std::to_string(TOKNROLL_VERSION_MINOR) + "."
+    std::string base = std::to_string(TOKNROLL_VERSION_MAJOR) + "." + std::to_string(TOKNROLL_VERSION_MINOR) + "."
                        + std::to_string(TOKNROLL_VERSION_PATCH);
-    return want == toknroll_version() ? 0 : 1;
+    std::string version = TOKNROLL_VERSION;
+    return version == toknroll_version() && version.rfind(base, 0) == 0 ? 0 : 1;
 }

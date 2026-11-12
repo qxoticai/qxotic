@@ -26,15 +26,21 @@ if (NOT WIN32)
     set(CMAKE_VISIBILITY_INLINES_HIDDEN ON)
 endif()
 
-# The version is jam.h's JAM_VERSION_*, and it must be the jam Maven project's: one release number for the
-# jar and the library. The soname follows it, never set by hand, as native.mk derives libtoknroll's and
-# libjinfer's: the whole version while the major is 0 (any release may break), libjam.so.<major> from 1.0.
+# The version is jam.h's JAM_VERSION, 0.4.0, or 0.4.0-rc1 for a release candidate, and it must be the jam
+# Maven project's: one release for the jar and the library. The soname follows its numbers, JAM_VERSION_*,
+# never set by hand, as native.mk derives libtoknroll's and libjinfer's: all three while the major is 0
+# (any release may break; a candidate shares its release's), libjam.so.<major> from 1.0.
 file(STRINGS include/jam.h JAM_VERSION_DEFINES REGEX "^#define JAM_VERSION_(MAJOR|MINOR|PATCH) +[0-9]+")
 foreach(line IN LISTS JAM_VERSION_DEFINES)
     string(REGEX MATCH "JAM_VERSION_([A-Z]+) +([0-9]+)" _ "${line}")
     set(JAM_VERSION_${CMAKE_MATCH_1} ${CMAKE_MATCH_2})
 endforeach()
 set(JAM_VERSION "${JAM_VERSION_MAJOR}.${JAM_VERSION_MINOR}.${JAM_VERSION_PATCH}")
+file(STRINGS include/jam.h JAM_RELEASE REGEX "^#define JAM_VERSION \"[^\"]+\"")
+string(REGEX REPLACE "^#define JAM_VERSION \"([^\"]+)\".*" "\\1" JAM_RELEASE "${JAM_RELEASE}")
+if (NOT JAM_RELEASE MATCHES "^${JAM_VERSION}(-rc[0-9]+)?$")
+    message(FATAL_ERROR "jam.h says ${JAM_RELEASE}, its numbers ${JAM_VERSION}: move them together")
+endif()
 if (JAM_VERSION_MAJOR EQUAL 0)
     set(JAM_SOVERSION "${JAM_VERSION}")
 else()
@@ -48,8 +54,8 @@ if (EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/../pom.xml")   # absent in a copy of jam
     endif()
     string(SUBSTRING "${JAM_POM}" ${JAM_POM_AT} -1 JAM_POM)
     string(REGEX MATCH "<version>([^<]+)</version>" _ "${JAM_POM}")
-    if (NOT CMAKE_MATCH_1 STREQUAL JAM_VERSION)
-        message(FATAL_ERROR "jam.h says ${JAM_VERSION}, jam/pom.xml says ${CMAKE_MATCH_1}: move them together")
+    if (NOT CMAKE_MATCH_1 STREQUAL JAM_RELEASE)
+        message(FATAL_ERROR "jam.h says ${JAM_RELEASE}, jam/pom.xml says ${CMAKE_MATCH_1}: move them together")
     endif()
 endif()
 

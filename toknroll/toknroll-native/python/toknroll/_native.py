@@ -50,7 +50,8 @@ def bind(lib: C.CDLL) -> C.CDLL:
     except AttributeError:  # a shared library, not this one
         raise OSError(f"{lib._name} is not a toknroll library: it has no toknroll_version") from None
     found = lib.toknroll_version().decode()
-    if found != __version__:  # ponytail: exact while the API is 0.x; same major once it is stable
+    # the library spells a release candidate 0.4.0-rc1, Python 0.4.0rc1
+    if found.replace("-", "") != __version__:  # ponytail: exact while the API is 0.x; same major once it is stable
         raise OSError(f"toknroll {__version__}'s Python layer cannot drive the toknroll {found} in {lib._name}")
     P, S, I32, I64 = C.c_void_p, C.c_char_p, C.c_int32, C.c_int64
     sig = {

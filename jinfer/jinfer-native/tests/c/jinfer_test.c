@@ -68,11 +68,12 @@ static int32_t drain(jinfer_stream* s, char* text, size_t size) {
 /* ---- version, last error, settings ---- */
 
 static void version(void) {
-    char want[32];
-    snprintf(want, sizeof want, "%d.%d.%d", JINFER_VERSION_MAJOR, JINFER_VERSION_MINOR, JINFER_VERSION_PATCH);
-    CHECK_STR(jinfer_version(), want);
-    snprintf(want, sizeof want, "%d.%d.%d", TOKNROLL_VERSION_MAJOR, TOKNROLL_VERSION_MINOR, TOKNROLL_VERSION_PATCH);
-    CHECK_STR(toknroll_version(), want);   /* the toknroll it carries */
+    /* the text macros, each beginning with its numbers and going on only with a -rcN */
+    char base[32];
+    size_t nb = (size_t) snprintf(base, sizeof base, "%d.%d.%d", JINFER_VERSION_MAJOR, JINFER_VERSION_MINOR, JINFER_VERSION_PATCH);
+    CHECK_STR(jinfer_version(), JINFER_VERSION);
+    CHECK(!strncmp(JINFER_VERSION, base, nb) && (JINFER_VERSION[nb] == '\0' || !strncmp(JINFER_VERSION + nb, "-rc", 3)));
+    CHECK_STR(toknroll_version(), TOKNROLL_VERSION);   /* the toknroll it carries */
     CHECK_CLEAR(LE);
     CHECK_STR(LE(NULL), "");
     jinfer_model_options o;

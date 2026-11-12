@@ -56,8 +56,8 @@ check: check-version check-pin check-exports check-c target/chat
 # The wheel pins the toknroll it embeds exactly: toknroll's Python layer is bound to this library, so a
 # newer toknroll wheel calling a function this libjinfer lacks must be refused by pip, not found at import.
 check-pin:
-	@p=$$(grep -oE 'toknroll==[0-9.]+' python/pyproject.toml | cut -d= -f3); \
-	 t=$$(grep -oE 'TOKNROLL_VERSION_(MAJOR|MINOR|PATCH) [0-9]+' $(TOKNROLL)/include/toknroll.h | awk '{printf "%s%s", (NR>1?".":""), $$2}'); \
+	@p=$$(grep -oE 'toknroll==[0-9a-z.]+' python/pyproject.toml | cut -d= -f3); \
+	 t=$$(sed -n 's/^#define TOKNROLL_VERSION "\(.*\)"/\1/p' $(TOKNROLL)/include/toknroll.h | tr -d -); \
 	 [ "$$p" = "$$t" ] && echo "the wheel pins toknroll==$$t, the one inside" || { echo "pin drift: the wheel says toknroll==$$p, libjinfer carries $$t"; exit 1; }
 
 qa:

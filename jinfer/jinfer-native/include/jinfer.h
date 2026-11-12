@@ -79,6 +79,8 @@ extern "C" {
 #define JINFER_VERSION_MAJOR 0
 #define JINFER_VERSION_MINOR 4
 #define JINFER_VERSION_PATCH 0
+/* The release as text: MAJOR.MINOR.PATCH, then -rcN on a release candidate; what jinfer_version() returns. */
+#define JINFER_VERSION "0.4.0"
 
 #define JINFER_OK            0
 #define JINFER_DONE          1    /* a stream has nothing more to produce */
@@ -92,7 +94,7 @@ extern "C" {
 enum { JINFER_LOG_DEBUG = 0, JINFER_LOG_INFO = 1, JINFER_LOG_WARN = 2, JINFER_LOG_ERROR = 3 };   /* a line's level */
 typedef void (*jinfer_log_fn)(int32_t level, const char* message, void* user_data);
 
-/* "0.4.0", the jinfer release the library was built from. */
+/* JINFER_VERSION, the jinfer release the library was built from: "0.4.0". */
 JINFER_API const char* jinfer_version(void);
 /* The message of the thread's last call; *code = its code unless code is NULL. "" and JINFER_OK after a
  * success. */

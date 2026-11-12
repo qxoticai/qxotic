@@ -698,9 +698,10 @@ static void suite_api(void) {
     int m=4, n=2, k=64;
     int32_t code = 1;
 
-    /* version: the macros, spelled out */
-    char want[32]; snprintf(want, sizeof want, "%d.%d.%d", JAM_VERSION_MAJOR, JAM_VERSION_MINOR, JAM_VERSION_PATCH);
-    OK("version", !strcmp(jam_version(), want));
+    /* version: the text macro, which begins with the numbers and goes on only with a -rcN */
+    char base[32]; size_t nb = (size_t) snprintf(base, sizeof base, "%d.%d.%d", JAM_VERSION_MAJOR, JAM_VERSION_MINOR, JAM_VERSION_PATCH);
+    OK("version", !strcmp(jam_version(), JAM_VERSION) && !strncmp(JAM_VERSION, base, nb)
+                  && (JAM_VERSION[nb] == '\0' || !strncmp(JAM_VERSION + nb, "-rc", 3)));
 
     /* jam_isa_name: known levels, "" for an unknown one */
     OK("isa_name generic", !strcmp(jam_isa_name(JAM_ISA_GENERIC), "generic"));
