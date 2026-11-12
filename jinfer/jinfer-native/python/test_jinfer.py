@@ -39,6 +39,15 @@ def ok(cond, what):
     assert cond, what
     checks += 1
 
+# a file named in a str is text, so the model would answer from its name: refused, with the recipe
+with tempfile.TemporaryDirectory() as d:
+    png = Path(d, "cat.png"); png.write_bytes(b"\x89PNG")
+    try:
+        jinfer._part(str(png)); ok(False, "a str naming an image is refused")
+    except jinfer.InvalidArgument as e:
+        ok("pass Path(" in str(e), f"the recipe: {e}")
+    ok(jinfer._part("see cat.png") == {"type": "text", "text": "see cat.png"}, "text that mentions a file stays text")
+
 # library
 jinfer.configure("-Djinfer.offline=true")  # a test never downloads: offline is the process's, as the hub reads it
 ok(jinfer.__version__ == "0.4.0", "version")

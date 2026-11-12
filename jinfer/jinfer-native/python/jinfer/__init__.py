@@ -181,6 +181,9 @@ def _part(item) -> dict:
     if isinstance(item, dict):
         return item
     if isinstance(item, str):
+        mime = mimetypes.guess_type(item)[0] or ""
+        if mime.startswith(("image/", "audio/")) and os.path.isfile(item):  # a file, sent as its name
+            raise InvalidArgument(f"{item!r} is a str, so it would be sent as text: pass Path({item!r}) to send the file")
         return {"type": "text", "text": item}
     if isinstance(item, os.PathLike):
         path = Path(item)
