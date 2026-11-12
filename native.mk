@@ -93,6 +93,7 @@ python: $(LIB)
 	    echo "$(LIB) needs x86-64-v4 (QUICK=1?): a package needs the x86-64-v3 floor, rebuild without QUICK"; exit 1; fi
 	rm -rf python/$(NAME)/lib python/$(NAME)/include && mkdir -p python/$(NAME)/lib/$(PLATFORM)/pkgconfig python/$(NAME)/include
 	cp $(LIB) python/$(NAME)/lib/$(PLATFORM)/$(SONAME) && cp $(HEADERS) python/$(NAME)/include/   # by its soname: a C program linked against it loads it by that name
+	$(if $(filter linux,$(OS)),printf 'INPUT(%s)\n' $(SONAME) > python/$(NAME)/lib/$(PLATFORM)/lib$(NAME).so)   # -l$(NAME): a linker script, as glibc's libc.so, since a wheel holds no symlink
 	@printf '%s\n' 'prefix=$${pcfiledir}/../../..' 'includedir=$${prefix}/include' 'libdir=$${pcfiledir}/..' '' \
 	    'Name: $(NAME)' 'Description: $(DESCRIPTION)' 'Version: $(VERSION)' \
 	    'Cflags: -I$${includedir}' 'Libs: $${libdir}/$(SONAME) -Wl,-rpath,$${libdir}' > python/$(NAME)/lib/$(PLATFORM)/pkgconfig/$(NAME).pc
@@ -121,6 +122,9 @@ check-wheel: wheel
 	 "$(abspath target/wheelenv/bin/$(NAME)-config)" "$(WHEEL_EXAMPLE)"
 	./target/wheel-example $(WHEEL_EXAMPLE_ARGS) > /dev/null
 	@echo "the C example builds and runs against the installed wheel: $(NAME)-config --cflags --libs"
+	@if [ "$(OS)" = linux ]; then config=target/wheelenv/bin/$(NAME)-config && lib=$$(dirname "$$($$config --pkgconfigdir)") && \
+	 $(CC) -std=c99 -o target/wheel-example-l $(WHEEL_EXAMPLE) $$($$config --cflags) -L"$$lib" -l$(NAME) -Wl,-rpath,"$$lib" && \
+	 ./target/wheel-example-l $(WHEEL_EXAMPLE_ARGS) > /dev/null && echo "and with plain -l$(NAME), through the linker script"; fi
 	@if command -v pkg-config > /dev/null; then \
 	 pc=$$(target/wheelenv/bin/$(NAME)-config --pkgconfigdir) && PKG_CONFIG_PATH="$$pc" pkg-config --exists $(NAME); \
 	 else echo "no pkg-config here: the .pc file not checked"; fi

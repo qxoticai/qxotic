@@ -35,7 +35,7 @@ def locate(name: str) -> Path:
             return candidate
     raise OSError(
         f"lib{name} not found for {folder}; looked at " + ", ".join(map(str, looked))
-        + f". Set {name.upper()}_LIBRARY to the shared library, or build it with `make lib{name}`."
+        + f". Set {name.upper()}_LIBRARY to the shared library, or build it with `make lib{name}` (a `mvn clean` deletes it)."
     )
 
 

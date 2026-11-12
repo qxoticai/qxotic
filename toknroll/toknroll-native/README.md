@@ -44,6 +44,9 @@ cc -Iinclude tokenize.c -L<dir> -ltoknroll            # Linux, macOS: the soname
 cl /Iinclude tokenize.c /link /LIBPATH:<dir> toknroll.lib   # Windows: the import library beside toknroll.dll
 ```
 
+`-L<dir> -ltoknroll` works with the release archive's `lib/`, and on Linux with the installed wheel's library folder, the parent of `toknroll-config --pkgconfigdir`.
+On macOS, link the wheel with `$(toknroll-config --cflags --libs)`.
+
 On Linux and macOS the library exports the header's thirteen functions and nothing else, neither GraalVM's runtime API nor the entry points behind the header.
 A Windows DLL has no export list, so `toknroll.dll` exports the runtime's symbols too, and the zip carries `toknroll.def`, the API's module definition, for another toolchain's import library (`dlltool -d toknroll.def -l libtoknroll.a`); a program binds the thirteen by name as on any DLL.
 
