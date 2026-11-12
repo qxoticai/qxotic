@@ -2,6 +2,21 @@
 
 ## Unreleased
 
+- **Decisions.** A decision model answers yes/no, choice and rating questions about an input with probabilities, in one forward pass and without generating text: Liquid AI's d1 and d1-Omni (`jinfer-lfm3`) and vLLM Semantic Router's d3 (`jinfer-qwen35`).
+  `Models.loadDecisionModel` loads one, `DecisionModel` answers in probabilities, and `jinfer-decision` puts typed questions over it (`Decisions`, `Question.predicate`, `choice` and `rating`).
+  The input holds text, JSON fields, images and video, and audio on d1-Omni; d1's packed mode reads the input once for up to 16 questions.
+  `jinfer server` serves `POST /v1/systemone` in llama.cpp's System One shape, and LangChain4j and Spring AI get a `JinferDecisionModel`, with `spring.ai.model.decision=jinfer` in the starter.
+  d1 matches Liquid's reference and llama.cpp, and d3 matches llama.cpp.
+- **PrismML Ternary Bonsai 2.** `Q2_0` and PrismML's `PQ2_0` and `PTQ1_0` load across gguf, jota, jam and jinfer, and the Qwen3.5 port applies Bonsai's `prism.hadamard` rotation, so Ternary Bonsai 2 runs in all three, images included.
+  Checkpoints with an MTP head and a Hadamard rotation are refused.
+- **Qwen3.5 fixes.** RoPE rotates NEOX pairs, as llama.cpp's IMROPE does; the port had rotated adjacent pairs, a mild drift that changed some greedy replies against llama.cpp.
+  Images are resized as the reference does: the grid rounds half to even, the image is stretched with bicubic weights instead of letterboxed, and the projector's own `image_min_pixels` and `image_max_pixels` bound it.
+- **A GGUF's tensors must fill their slots.** The reader checks every tensor's size, from its shape and type, against the room the file gives it, and refuses a gap or two tensors that cross; a tensor inside another, such as Q and K inside a stacked QK, still loads.
+  A type that sizes its tensors wrong, such as the first Ternary Bonsai's `Q2_0` files in a pre-release layout, now fails at load naming the tensors instead of decoding garbage.
+- **Model references read their repository in any case.** Hugging Face and ModelScope do, so `LiquidAI/d1-2B-gguf` now finds the cache of `LiquidAI/d1-2B-GGUF`, offline too, instead of downloading the model again.
+- **LFM3-Omni answers text requests under its voice prompt.** A text-only reply under "Respond with interleaved text and audio." ended before its first word, reported as a normal stop.
+  A text reply now bans every speech-lane token, not only the two lane openers, and answers in text.
+- **Tool calls are matched one to one.** A request offering two tools of one name is refused, since a call names its tool, and each tool result in a conversation answers exactly one earlier call, so a memory trim that drops a call but keeps its result is refused for families without call ids too.
 - **EmbeddingGemma 2.** Google EmbeddingGemma 2 (`jinfer-gemma-embedding2`, architecture `gemma-embedding2`) embeds text into 768 dimensions (Matryoshka down to 128), and images, audio and video through its mmproj with `GemmaEmbedding2.withMedia` and `embed`.
   It matches Google's official pipeline (sentence-transformers over `google/embeddinggemma-2`) for every task prompt on the model card, and for images, audio and video: cosine above 0.99999 with F32 weights.
   `GemmaEmbedding2` frames text for the card's seven tasks: `searchQuery`, `question`, `claim` and `codeQuery` against `document(title, text)`, and `classification`, `clustering` and `similarity`; images, audio and video take no prompt.
