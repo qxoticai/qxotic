@@ -363,7 +363,8 @@ static void load_errors(void) {
     const char* cut = TMP("cut.gguf");
     write_file(cut, "GGUF\x03\x00\x00\x00", 8);
     CHECK_NULL_ERROR(jinfer_model_load(cut, NULL), JINFER_EINVAL, LE, "");
-    CHECK_NULL_ERROR(jinfer_model_load("example.com/owner/repo", NULL), JINFER_EINVAL, LE, "");
+    /* neither a ref (no source serves example.com) nor a file: a missing file, as any path that names nothing */
+    CHECK_NULL_ERROR(jinfer_model_load("example.com/owner/repo", NULL), JINFER_ENOTFOUND, LE, "no such model file");
 }
 
 static void load_options(void) {
