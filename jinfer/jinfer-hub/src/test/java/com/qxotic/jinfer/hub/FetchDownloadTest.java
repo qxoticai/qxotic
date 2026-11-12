@@ -51,7 +51,9 @@ class FetchDownloadTest {
     private static final String PAYLOAD =
             "weights, but long enough to have a middle worth resuming from";
 
-    /** On Linux and macOS a new lock folder is the user's alone (another user's: by hand, as root). */
+    /**
+     * On Linux and macOS a new lock folder is the user's alone (another user's: by hand, as root).
+     */
     @Test
     @EnabledOnOs({OS.LINUX, OS.MAC})
     void theLockFolderIsTheUsersAlone(@TempDir Path tmp) throws IOException {

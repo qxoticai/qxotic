@@ -71,10 +71,11 @@ class ModelStoreFindTest {
         assertEquals(
                 Optional.of(file),
                 store.find("jinfer-tests/STORIES15M_MOE/stories15M_MOE-Q8_0.gguf"));
-        // a file name keeps its case: it is a path, not an id
-        assertEquals(
-                Optional.empty(),
-                store.find("jinfer-tests/stories15m_moe/stories15m_moe-q8_0.gguf"));
+        // a file name keeps its case: it is a path, not an id (where the file system tells)
+        if (!Files.exists(file.resolveSibling("stories15m_moe-q8_0.gguf")))
+            assertEquals(
+                    Optional.empty(),
+                    store.find("jinfer-tests/stories15m_moe/stories15m_moe-q8_0.gguf"));
     }
 
     @Test

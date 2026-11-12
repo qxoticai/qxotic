@@ -1189,18 +1189,21 @@ public final class ModelStore {
     /**
      * {@code parent/name}, or the folder already there under {@code name} in another case. Both
      * hubs read an id in any case, so {@code LiquidAI/d1-2B-gguf} is {@code LiquidAI/d1-2B-GGUF}:
-     * one folder, one download, found offline whichever spelling came first.
+     * one folder, one download, found offline whichever spelling came first. Always the spelling on
+     * disk, read from the listing: a file system that ignores case (macOS, Windows) finds the
+     * folder under any spelling, and the lock keyed by the path must be one for all of them.
      */
     static Path anyCase(Path parent, String name) {
         Path exact = parent.resolve(name);
-        if (Files.exists(exact) || !Files.isDirectory(parent)) return exact;
         try (var entries = Files.list(parent)) {
             return entries.filter(e -> e.getFileName().toString().equalsIgnoreCase(name))
-                    .sorted()
-                    .findFirst()
+                    .min(
+                            Comparator.comparing(
+                                            (Path e) -> !e.getFileName().toString().equals(name))
+                                    .thenComparing(Comparator.naturalOrder()))
                     .orElse(exact);
-        } catch (IOException unreadable) {
-            return exact; // ponytail: an unreadable folder keeps the exact spelling
+        } catch (IOException noFolder) {
+            return exact; // ponytail: a missing or unreadable folder keeps the exact spelling
         }
     }
 
