@@ -3,6 +3,7 @@ package com.qxotic.format.gguf;
 import com.qxotic.format.gguf.impl.ImplAccessor;
 import java.io.BufferedInputStream;
 import java.io.IOException;
+import java.io.InputStream;
 import java.nio.channels.Channels;
 import java.nio.channels.ReadableByteChannel;
 import java.nio.channels.WritableByteChannel;
@@ -221,9 +222,8 @@ public interface GGUF {
 
     /** Reads a GGUF file from a path. */
     static GGUF read(Path modelPath) throws IOException {
-        try (ReadableByteChannel byteChannel =
-                Channels.newChannel(new BufferedInputStream(Files.newInputStream(modelPath)))) {
-            return read(byteChannel);
+        try (InputStream file = Files.newInputStream(modelPath)) { // closed even if wrapping fails
+            return read(Channels.newChannel(new BufferedInputStream(file)));
         }
     }
 
