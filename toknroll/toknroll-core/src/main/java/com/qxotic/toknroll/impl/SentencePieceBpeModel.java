@@ -14,6 +14,7 @@ import java.util.LinkedHashMap;
 import java.util.Map;
 import java.util.NoSuchElementException;
 import java.util.Objects;
+import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicReference;
 
 /**
@@ -52,9 +53,13 @@ final class SentencePieceBpeModel extends AbstractTokenizationModel {
      * Words to ids in flat arrays, one slot per hash, shared by every thread without a lock and
      * with no object per word, so a text of a million new words leaves the collector nothing to
      * trace. A word of up to {@link #WORD_CHARS} chars and {@link #WORD_IDS} ids is cached; the
-     * rest merge every time. Made on first use, so a model that encodes no word keeps none.
+     * rest merge every time. Made on first use, so a model that encodes no word keeps none, and by
+     * one thread, the one that sets {@link #building}: the others merge until it is there, rather
+     * than each allocating its 24 MB at a first batch and dropping all but one.
      */
     private final AtomicReference<WordCache> cache = new AtomicReference<>();
+
+    private final AtomicBoolean building = new AtomicBoolean();
 
     private static final int WORD_CHARS = 12; // three longs of four chars
     private static final int WORD_IDS = 4;
@@ -357,8 +362,16 @@ final class SentencePieceBpeModel extends AbstractTokenizationModel {
         }
         WordCache c = cache.get();
         if (c == null) {
-            cache.compareAndSet(null, new WordCache());
-            c = cache.get();
+            if (!building.compareAndSet(false, true)) { // another thread is making it
+                addAll(merged(text, start, end), out);
+                return;
+            }
+            try {
+                cache.set(c = new WordCache());
+            } catch (OutOfMemoryError e) {
+                building.set(false); // made by the next word instead
+                throw e;
+            }
         }
         long k0 = 0;
         long k1 = 0;
