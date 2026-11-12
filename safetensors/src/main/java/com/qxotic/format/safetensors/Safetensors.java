@@ -80,7 +80,12 @@ public interface Safetensors {
         }
     }
 
-    /** Writes a Safetensors header to a channel. */
+    /**
+     * Writes a Safetensors header to a channel, padded with spaces up to {@link
+     * #getTensorDataOffset()}.
+     *
+     * @throws IllegalArgumentException if the header does not fit before that offset
+     */
     static void write(Safetensors safetensors, WritableByteChannel byteChannel) throws IOException {
         Objects.requireNonNull(safetensors, "safetensors");
         Objects.requireNonNull(byteChannel, "byteChannel");

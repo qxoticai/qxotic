@@ -16,37 +16,45 @@ import java.util.List;
 import java.util.Map;
 
 final class WriterImpl {
-    private final ByteBuffer headerSizeBuffer =
-            ByteBuffer.allocate(Long.BYTES).order(ByteOrder.LITTLE_ENDIAN);
 
-    private final Safetensors safetensors;
-    private long totalBytesWritten;
+    private WriterImpl() {}
 
-    private WriterImpl(Safetensors safetensors) {
-        this.safetensors = safetensors;
-    }
-
+    /**
+     * Where the tensor data of a new file starts: past the header, padded to a multiple of 8 as
+     * upstream pads it (or of the alignment, when larger), so the tensor data is aligned.
+     */
     static long computeTensorDataOffset(
             Map<String, String> metadata, Collection<TensorEntry> tensorEntries, int alignment) {
-        byte[] headerBytes = getHeaderBytes(metadata, tensorEntries);
-        int paddingSpaces = Math.toIntExact(padding(8 + headerBytes.length, alignment));
-        return 8 + headerBytes.length + paddingSpaces;
+        long headerEnd = 8 + getHeaderBytes(metadata, tensorEntries).length;
+        return headerEnd + padding(headerEnd, Math.max(8, alignment));
     }
 
+    /**
+     * Writes the header padded with spaces up to {@link Safetensors#getTensorDataOffset()}, so a
+     * file read back is written with its own layout and its tensor offsets stay valid.
+     */
     static void writeImpl(Safetensors safetensors, WritableByteChannel byteChannel)
             throws IOException {
-        WriterImpl writer = new WriterImpl(safetensors);
         byte[] headerBytes = getHeaderBytes(safetensors.getMetadata(), safetensors.getTensors());
-        int paddingSpaces =
-                Math.toIntExact(padding(8 + headerBytes.length, safetensors.getAlignment()));
-        // The length of the header + padding, in bytes.
-        writer.writeLong(byteChannel, headerBytes.length + paddingSpaces);
-        // The string as a UTF-8 non-null-terminated string.
-        writer.writeBytes(byteChannel, headerBytes);
-        // Always align, even if there are no tensors.
-        writer.writePaddingWithSpaces(byteChannel, paddingSpaces);
-        if (writer.totalBytesWritten != safetensors.getTensorDataOffset()) {
-            throw new IllegalStateException("header size mismatch while writing safetensors");
+        long headerSize = safetensors.getTensorDataOffset() - 8; // the JSON and its padding
+        if (headerSize < headerBytes.length) {
+            throw new IllegalArgumentException(
+                    "header of "
+                            + headerBytes.length
+                            + " bytes does not fit before the tensor data at offset "
+                            + safetensors.getTensorDataOffset());
+        }
+        ByteBuffer buffer =
+                ByteBuffer.allocate(Math.toIntExact(8 + headerSize))
+                        .order(ByteOrder.LITTLE_ENDIAN)
+                        .putLong(headerSize)
+                        .put(headerBytes);
+        while (buffer.hasRemaining()) {
+            buffer.put((byte) ' ');
+        }
+        buffer.flip();
+        while (buffer.hasRemaining()) {
+            byteChannel.write(buffer);
         }
     }
 
@@ -76,31 +84,6 @@ final class WriterImpl {
             list.add(value);
         }
         return list;
-    }
-
-    private void writeFully(WritableByteChannel byteChannel, ByteBuffer byteBuffer)
-            throws IOException {
-        while (byteBuffer.hasRemaining()) {
-            this.totalBytesWritten += byteChannel.write(byteBuffer);
-        }
-    }
-
-    private void writePaddingWithSpaces(WritableByteChannel byteChannel, int padding)
-            throws IOException {
-        if (padding == 0) {
-            return;
-        }
-        byte[] paddingSpaces = new byte[padding];
-        Arrays.fill(paddingSpaces, (byte) ' ');
-        writeFully(byteChannel, ByteBuffer.wrap(paddingSpaces));
-    }
-
-    private void writeBytes(WritableByteChannel byteChannel, byte[] bytes) throws IOException {
-        writeFully(byteChannel, ByteBuffer.wrap(bytes));
-    }
-
-    private void writeLong(WritableByteChannel byteChannel, long value) throws IOException {
-        writeFully(byteChannel, headerSizeBuffer.clear().putLong(value).flip());
     }
 
     static long padding(long position, long alignment) {

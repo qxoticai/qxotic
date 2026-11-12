@@ -6,11 +6,11 @@ import com.qxotic.format.safetensors.Safetensors;
 import com.qxotic.format.safetensors.SafetensorsFormatException;
 import com.qxotic.format.safetensors.TensorEntry;
 import java.io.IOException;
-import java.math.BigDecimal;
 import java.math.BigInteger;
 import java.nio.ByteBuffer;
 import java.nio.ByteOrder;
 import java.nio.channels.ReadableByteChannel;
+import java.nio.charset.CharacterCodingException;
 import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.Collection;
@@ -72,7 +72,12 @@ class ReaderImpl {
         }
 
         // Parse JSON header
-        String headerJson = StandardCharsets.UTF_8.decode(headerBuffer).toString();
+        String headerJson;
+        try {
+            headerJson = StandardCharsets.UTF_8.newDecoder().decode(headerBuffer).toString();
+        } catch (CharacterCodingException e) {
+            throw new SafetensorsFormatException("Invalid header: not UTF-8", e);
+        }
         Map<String, ?> header;
         try {
             header = Json.parseMap(headerJson);
@@ -214,52 +219,20 @@ class ReaderImpl {
         return result;
     }
 
+    /** A plain JSON integer in [0, 2^48): upstream refuses 1.0 and 1e0 alike. */
     private static long parseSizeT(Object value, String field, String tensorName) {
-        long parsed = parseIntegerNumber(value, field, tensorName);
-
-        if (parsed < 0 || parsed > MAX_SIZE_T) {
+        if (value instanceof Long) {
+            long parsed = (Long) value;
+            if (parsed >= 0 && parsed <= MAX_SIZE_T) {
+                return parsed;
+            }
+        }
+        if (value instanceof Long || value instanceof BigInteger) {
             throw new SafetensorsFormatException(
                     field + " out of range " + tensorContext(tensorName));
         }
-        return parsed;
-    }
-
-    private static long parseIntegerNumber(Object value, String field, String tensorName) {
-        if (!(value instanceof Number)) {
-            throw new SafetensorsFormatException(
-                    field + " must be a number " + tensorContext(tensorName));
-        }
-
-        if (value instanceof BigDecimal) {
-            try {
-                return ((BigDecimal) value).toBigIntegerExact().longValueExact();
-            } catch (ArithmeticException e) {
-                throw new SafetensorsFormatException(
-                        field + " must be an integer " + tensorContext(tensorName));
-            }
-        }
-        if (value instanceof BigInteger) {
-            BigInteger big = (BigInteger) value;
-            if (big.compareTo(BigInteger.valueOf(Long.MIN_VALUE)) < 0
-                    || big.compareTo(BigInteger.valueOf(Long.MAX_VALUE)) > 0) {
-                throw new SafetensorsFormatException(
-                        field + " out of range " + tensorContext(tensorName));
-            }
-            return big.longValue();
-        }
-        if (value instanceof Double || value instanceof Float) {
-            double d = ((Number) value).doubleValue();
-            if (!Double.isFinite(d)
-                    || d != Math.rint(d)
-                    || d < Long.MIN_VALUE
-                    || d > Long.MAX_VALUE) {
-                throw new SafetensorsFormatException(
-                        field + " must be an integer " + tensorContext(tensorName));
-            }
-            return (long) d;
-        }
-
-        return ((Number) value).longValue();
+        throw new SafetensorsFormatException(
+                field + " must be an integer " + tensorContext(tensorName));
     }
 
     private static Map<?, ?> requireObject(Object value, String message) {

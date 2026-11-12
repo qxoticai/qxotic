@@ -166,7 +166,9 @@ try (FileChannel channel = FileChannel.open(Path.of("output.safetensors"),
 
 ### Alignment
 
-Tensor data starts at aligned byte boundaries (default: 1, the upstream layout; set a power of 2 for aligned tensor data). Padding is added automatically.
+The header is padded with spaces so the tensor data starts at a multiple of 8 bytes, as upstream pads it.
+Tensors are packed back to back by default (alignment 1, the upstream layout); set a power of 2 to align each tensor.
+A file read and written back keeps its own layout, so its tensor offsets stay valid.
 
 ```snippet path="safetensors/src/test/java/com/qxotic/format/safetensors/Snippets.java" tag="builder-alignment"
 ```

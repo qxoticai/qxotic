@@ -613,6 +613,80 @@ public class SafetensorsReadWriteTest extends SafetensorsTest {
         assertTrue(e.getMessage().contains("'tensor'"), e.getMessage());
     }
 
+    /** Upstream pads the header with spaces; a file read back is written with its own layout. */
+    @Test
+    public void aFileReadBackIsWrittenWithItsOwnLayout() throws IOException {
+        String json =
+                "{\"__metadata__\":{\"format\":\"pt\"},"
+                        + "\"w\":{\"dtype\":\"F32\",\"shape\":[2],\"data_offsets\":[0,8]}}";
+        for (int extra : new int[] {0, 3, 37}) {
+            byte[] file = createSafetensorsBytes(json + " ".repeat(extra));
+            Safetensors st = readFromBytes(file);
+            assertEquals(file.length, st.getTensorDataOffset());
+            ByteArrayOutputStream out = new ByteArrayOutputStream();
+            Safetensors.write(st, Channels.newChannel(out));
+            assertArrayEquals(file, out.toByteArray(), extra + " spaces of padding");
+        }
+    }
+
+    /** The tensor data of a new file starts at a multiple of 8, as upstream writes it. */
+    @Test
+    public void newTensorDataStartsAtAMultipleOfEight() throws IOException {
+        for (int length = 1; length <= 16; length++) {
+            Safetensors st =
+                    Builder.newBuilder()
+                            .putTensor(
+                                    TensorEntry.create(
+                                            "w".repeat(length), DType.F32, new long[] {2}, 0))
+                            .build();
+            assertEquals(0, st.getTensorDataOffset() % 8, "a name of " + length);
+            ByteArrayOutputStream out = new ByteArrayOutputStream();
+            Safetensors.write(st, Channels.newChannel(out));
+            assertEquals(st.getTensorDataOffset(), out.size());
+            assertEquals(
+                    List.copyOf(st.getTensors()),
+                    List.copyOf(readFromBytes(out.toByteArray()).getTensors()));
+        }
+        Safetensors aligned =
+                Builder.newBuilder()
+                        .setAlignment(64)
+                        .putTensor(TensorEntry.create("w", DType.F32, new long[] {2}, 0))
+                        .build();
+        assertEquals(0, aligned.getTensorDataOffset() % 64);
+    }
+
+    @Test
+    public void aHeaderThatIsNotUtf8IsRefused() {
+        byte[] bytes =
+                createSafetensorsBytes(
+                        "{\"w?\":{\"dtype\":\"F32\",\"shape\":[1],\"data_offsets\":[0,4]}}");
+        bytes[8 + 3] = (byte) 0xFF; // the '?' in the name
+        SafetensorsFormatException e =
+                assertThrows(SafetensorsFormatException.class, () -> readFromBytes(bytes));
+        assertTrue(e.getMessage().contains("UTF-8"), e.getMessage());
+    }
+
+    /** Shapes and offsets are plain integers: upstream refuses 1.0 and 1e0 alike. */
+    @Test
+    public void shapesAndOffsetsArePlainIntegers() {
+        for (String one : new String[] {"1.0", "1e0", "1E0", "\"1\""}) {
+            for (String json :
+                    new String[] {
+                        "{\"w\":{\"dtype\":\"F32\",\"shape\":["
+                                + one
+                                + "],\"data_offsets\":[0,4]}}",
+                        "{\"w\":{\"dtype\":\"F32\",\"shape\":[1],\"data_offsets\":[0," + one + "]}}"
+                    }) {
+                SafetensorsFormatException e =
+                        assertThrows(
+                                SafetensorsFormatException.class,
+                                () -> readFromBytes(createSafetensorsBytes(json)),
+                                json);
+                assertTrue(e.getMessage().contains("must be an integer"), e.getMessage());
+            }
+        }
+    }
+
     private byte[] createSafetensorsBytes(String json) {
         byte[] headerBytes = json.getBytes(StandardCharsets.UTF_8);
         byte[] bytes = new byte[8 + headerBytes.length];

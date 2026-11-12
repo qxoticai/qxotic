@@ -28,7 +28,6 @@ System.out.println(tensor.byteSize());
 
 Safetensors modified = Builder.newBuilder(st)
     .putMetadataKey("format", "pt")
-    .setAlignment(64)
     .build();
 Safetensors.write(modified, Path.of("output.safetensors"));
 ```
@@ -63,8 +62,7 @@ Path shard = index.requireSafetensorsPath("model.layers.0.self_attn.q_proj.weigh
 
 ## Documentation
 
-Full docs and examples at
-[qxotic.ai/safetensors](https://qxotic.ai/safetensors).
+[The documentation](https://github.com/qxoticai/qxotic/blob/main/docs/safetensors/index.md) covers reading, writing, alignment and sharded models.
 
 Part of [Quixotic](../README.md), an open stack for local AI on the JVM.
 
