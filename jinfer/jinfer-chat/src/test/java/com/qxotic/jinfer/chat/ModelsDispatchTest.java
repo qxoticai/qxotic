@@ -245,13 +245,29 @@ class ModelsDispatchTest {
         assertNotNull(notGguf.getCause(), "the parser's own failure stays on the cause");
 
         Path truncated = Files.writeString(dir.resolve("truncated.gguf"), "GGUF");
-        IllegalArgumentException damaged =
+        IllegalArgumentException cut =
                 assertThrows(
                         IllegalArgumentException.class,
                         () -> Models.load(truncated, Arena.ofAuto()));
         assertTrue(
-                damaged.getMessage().endsWith("is a damaged GGUF file: it ends inside its header"),
-                damaged.getMessage());
+                cut.getMessage()
+                        .endsWith(
+                                "ends inside its GGUF header: an unfinished download, so fetch it"
+                                        + " again"),
+                cut.getMessage());
+        // a GGUF from a later format version: intact, and named as unreadable here, not damaged
+        Path newer =
+                Files.write(dir.resolve("newer.gguf"), new byte[] {'G', 'G', 'U', 'F', 4, 0, 0, 0});
+        IllegalArgumentException unreadable =
+                assertThrows(
+                        IllegalArgumentException.class, () -> Models.load(newer, Arena.ofAuto()));
+        assertTrue(
+                unreadable
+                        .getMessage()
+                        .contains(
+                                "is a GGUF file this version of jinfer cannot read: Unsupported"
+                                        + " GGUF version 4"),
+                unreadable.getMessage());
         assertThrows(
                 NoSuchFileException.class,
                 () -> Models.load(dir.resolve("absent.gguf"), Arena.ofAuto()));

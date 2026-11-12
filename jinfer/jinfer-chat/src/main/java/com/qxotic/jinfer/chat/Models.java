@@ -393,8 +393,9 @@ public final class Models {
     }
 
     /**
-     * Why a GGUF header did not parse: without the magic the file is some other format; with it, a
-     * damaged GGUF whose parser detail is the useful part.
+     * Why a GGUF header did not parse: without the magic the file is some other format; cut short,
+     * an unfinished download; otherwise a GGUF this reader cannot read, whose parser detail is the
+     * useful part (a damaged file, or one newer than this version: an unknown type, say).
      */
     private static String unreadable(Path path, FileChannel fc, Exception failure)
             throws IOException {
@@ -402,11 +403,13 @@ public final class Models {
         while (magic.hasRemaining() && fc.read(magic, magic.position()) > 0) {}
         if (!magic.hasRemaining()
                 && new String(magic.array(), StandardCharsets.US_ASCII).equals("GGUF"))
-            return path
-                    + " is a damaged GGUF file: "
-                    + (failure instanceof EOFException
-                            ? "it ends inside its header"
-                            : failure.getMessage());
+            return failure instanceof EOFException
+                    ? path
+                            + " ends inside its GGUF header: an unfinished download, so fetch it"
+                            + " again"
+                    : path
+                            + " is a GGUF file this version of jinfer cannot read: "
+                            + failure.getMessage();
         return path
                 + " is not a GGUF model file; convert a Hugging Face checkpoint (safetensors,"
                 + " PyTorch) with llama.cpp's convert_hf_to_gguf.py";

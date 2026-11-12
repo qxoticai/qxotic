@@ -70,9 +70,9 @@ public final class Qwen3Provider implements ModelProvider {
             Map<String, Path> companions,
             Tokenizer tokenizer) {
         throw new IncompatibleModelException(
-                "'qwen3' is the Qwen3 retrieval family (Qwen3-Embedding, Qwen3-Reranker), not a"
-                        + " generative model; load it with Models.loadEmbedder or"
-                        + " Models.loadReranker");
+                "'qwen3' runs here only as the Qwen3 retrieval family: load Qwen3-Embedding as an"
+                        + " embedder and Qwen3-Reranker as a reranker; Qwen3 chat models are not"
+                        + " supported, use a Qwen 3.5 model instead");
     }
 
     @Override

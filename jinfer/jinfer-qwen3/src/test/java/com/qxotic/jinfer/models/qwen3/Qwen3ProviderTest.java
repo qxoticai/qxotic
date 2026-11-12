@@ -43,8 +43,9 @@ class Qwen3ProviderTest {
                                                     Arena.ofAuto(),
                                                     Map.of(),
                                                     null));
-            assertTrue(failure.getMessage().contains("loadEmbedder"), failure.getMessage());
-            assertTrue(failure.getMessage().contains("loadReranker"), failure.getMessage());
+            assertTrue(failure.getMessage().contains("as an embedder"), failure.getMessage());
+            assertTrue(failure.getMessage().contains("as a reranker"), failure.getMessage());
+            assertTrue(failure.getMessage().contains("Qwen 3.5"), failure.getMessage());
         }
     }
 }
