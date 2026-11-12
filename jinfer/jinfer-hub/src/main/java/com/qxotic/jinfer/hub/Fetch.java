@@ -1379,7 +1379,8 @@ final class Fetch {
      */
     static final class Progress {
 
-        private static final int WIDTH = 28;
+        // the bar's cells: with the numbers (47) and an 8-cell name, a row fits 80 columns whole
+        private static final int WIDTH = 20;
         static final long TICK_NANOS = 100_000_000L;
 
         /** The classic braille ring; ASCII consoles get the four-spoke wheel. */

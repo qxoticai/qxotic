@@ -84,6 +84,8 @@ class FetchBarTest {
                 assertTrue(
                         row.length() <= columns - 1, "row exceeds " + columns + " columns: " + row);
                 completed |= row.startsWith(" ✓ ") || row.startsWith(" * ");
+                if (columns >= 80 && (row.startsWith(" ✓ ") || row.startsWith(" * ")))
+                    assertTrue(row.contains("eta -"), "80 columns show the whole tail: " + row);
                 count++;
             }
             assertTrue(count >= 2, "expected live and completed progress rows: " + capture);
