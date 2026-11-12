@@ -91,6 +91,8 @@ Every call sets it, except `_last_error` itself, `_free(NULL)` and the functions
 If their native message buffer cannot be allocated, libtoknroll and libjinfer preserve the error code and return the static message `Error message unavailable: out of memory`.
 A library never reports through `errno`, never calls `abort` or `exit`, and writes to stderr only what Configuration lists.
 No Java or C++ exception crosses the boundary: each entry point catches everything and returns a code.
+In libtoknroll, that includes an out-of-memory or a stack overflow the runtime raises where no handler of its own runs: the call returns `ERROR` with a message that names the heap's knob or the stack, and the process goes on.
+A tokenizer such a call may have left half-updated is refused from then on, each call saying so; `toknroll_tokenizer_free` releases it, and a fresh load works.
 
 ## Memory and buffers
 

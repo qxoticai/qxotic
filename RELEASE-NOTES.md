@@ -16,6 +16,9 @@
 - **Model references read their repository in any case.** Hugging Face and ModelScope do, so `LiquidAI/d1-2B-gguf` now finds the cache of `LiquidAI/d1-2B-GGUF`, offline too, instead of downloading the model again.
 - **LFM3-Omni answers text requests under its voice prompt.** A text-only reply under "Respond with interleaved text and audio." ended before its first word, reported as a normal stop.
   A text reply now bans every speech-lane token, not only the two lane openers, and answers in text.
+- **libtoknroll survives running out of memory.** A batch is encoded a chunk at a time, so its heap use is bounded whatever its length, and a batch larger than the heap now succeeds.
+  An out-of-memory or stack overflow the runtime raises where no handler runs fails the call with `TOKNROLL_ERROR` and words naming the knob, where a batch could hang or abort the process before.
+  The tokenizer such a call may have left half-updated is refused until freed; batch workers are the library's own threads, with 8 MB stacks, in libjinfer and on Windows too.
 - **A missing model has its own exception.** `ModelNotFoundException` (`jinfer-hub`), an `IllegalArgumentException`, is thrown wherever a source names nothing: a missing local file, a repository that does not exist or is gated, a file or quant it lacks, or an offline miss, which was an `UncheckedIOException` before.
   `source()` names it; a malformed or ambiguous ref stays a plain `IllegalArgumentException`, and libjinfer and libtoknroll report it as not found by its type.
 - **Shorter calls.** `Sampling.GREEDY` is the most likely token, no seed, in place of `new Sampling(0f, 1f, 0, 0f, null)`, and `ChatEngine.ReplySink.of(delta -> ...)` takes a reply's text as a lambda.

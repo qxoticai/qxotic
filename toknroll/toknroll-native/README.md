@@ -69,7 +69,7 @@ The library is a Java runtime compiled ahead of time; it starts at `toknroll_con
 | a rate-limited hub | waited out as it asks, a listing for a minute at most and a download for half an hour, the first wait logged at warn; past that the 429 is the error |
 | offline | `-Dtoknroll.offline=true` serves the cache and never touches the network; `false`, `0`, `off` and `no` mean online, anything else offline |
 | GGUF pre-tokenizers | `-Dtoknroll.gguf.pre.<name>=alias:<known>` names a scheme the file does not |
-| threads, heap | `-XX:ActiveProcessorCount=<n>` caps what `toknroll_encode_batch` spreads over, `-XX:MaxHeapSize=<size>` the heap, about 256 MB for a 262k-token vocabulary; the runtime reserves about 34 GB of address space for its heap, virtual memory and not RAM, whatever the heap cap, so under a virtual memory limit (`ulimit -v`) below that the start fails saying so, and the fix is a higher limit |
+| threads, heap | `-XX:ActiveProcessorCount=<n>` caps what `toknroll_encode_batch` spreads over, `-XX:MaxHeapSize=<size>` the heap, about 256 MB for a 262k-token vocabulary (a batch takes at most a bounded share of it, encoded a chunk at a time, so any length fits); the runtime reserves about 34 GB of address space for its heap, virtual memory and not RAM, whatever the heap cap, so under a virtual memory limit (`ulimit -v`) below that the start fails saying so, and the fix is a higher limit |
 
 Hub references are fetched through `curl` on the PATH, so the image carries no TLS stack of its own; local files need nothing.
 [C-API.md](../../C-API.md#configuration) has the rules behind the table.
