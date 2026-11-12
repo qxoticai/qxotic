@@ -225,6 +225,27 @@ class FetchBarTest {
         }
     }
 
+    /** A transfer that failed ends its row where it stopped; one that finished is left as is. */
+    @Test
+    void aFailedTransferEndsItsRowWithACross() {
+        Fetch.Progress failed = new Fetch.Progress("model.gguf", 1000);
+        failed.start(0);
+        failed.at(300);
+        failed.fail();
+        assertTrue(failed.done, "a failed row leaves the board like a finished one");
+        String row = failed.renderRow(10, failed.body(System.nanoTime()));
+        assertTrue(row.startsWith(" \u2717 ") || row.startsWith(" x "), row);
+        assertTrue(row.contains(" 30%") && row.contains("failed"), row);
+
+        Fetch.Progress finished = new Fetch.Progress("model.gguf", 1000);
+        finished.start(0);
+        finished.finish();
+        finished.fail(); // the finally after a success: no change
+        String done = finished.renderRow(10, finished.body(System.nanoTime()));
+        assertTrue(done.startsWith(" \u2713 ") || done.startsWith(" * "), done);
+        assertTrue(done.contains("100%") && !done.contains("failed"), done);
+    }
+
     @Test
     void subCellEdgeGlides() {
         // 4 cells wide: 1/8 of a cell shows the thinnest block, and each eighth advances it

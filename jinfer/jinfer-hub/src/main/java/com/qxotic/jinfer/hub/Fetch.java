@@ -578,55 +578,64 @@ final class Fetch {
         Progress progress = new Progress(label, expectedSize);
         IOException last = null;
         boolean parallel = expectedSize >= PARALLEL_FLOOR;
-        for (int attempt = 1; attempt <= MAX_ATTEMPTS; attempt++) {
-            try {
-                if (parallel) {
-                    try {
-                        parallel(url, part, expectedSize, sha256, headers, progress);
-                    } catch (SingleStreamRequired fallback) {
-                        progress.note(fallback.getMessage() + " - downloading as one stream");
-                        parallel = false;
-                        discard(part); // workers have stopped; none may write into the restart
+        try {
+            for (int attempt = 1; attempt <= MAX_ATTEMPTS; attempt++) {
+                try {
+                    if (parallel) {
+                        try {
+                            parallel(url, part, expectedSize, sha256, headers, progress);
+                        } catch (SingleStreamRequired fallback) {
+                            progress.note(fallback.getMessage() + " - downloading as one stream");
+                            parallel = false;
+                            discard(part); // workers have stopped; none may write into the restart
+                        }
+                        if (parallel) verify(part, sha256, progress);
                     }
-                    if (parallel) verify(part, sha256, progress);
-                }
-                if (!parallel) {
-                    sequential(url, part, expectedSize, sha256, headers, progress);
-                }
-                publish(part, dest);
-                progress.finish();
-                cleanup(sibling(part, ".map"));
-                cleanup(sibling(part, ".etag"));
-                return;
-            } catch (IOException e) {
-                if (e instanceof InvalidTransfer) {
-                    try {
-                        discard(part);
-                    } catch (IOException cleanup) {
-                        e.addSuppressed(cleanup);
-                        throw e; // do not retry while suspect state remains on disk
+                    if (!parallel) {
+                        sequential(url, part, expectedSize, sha256, headers, progress);
                     }
-                }
-                if (diskFull(e)) {
-                    // retrying cannot conjure disk space; say the remedy instead of stalling
-                    throw new IOException(
-                            label
-                                    + ": "
-                                    + e.getMessage()
-                                    + " - free some space, or point JINFER_MODELS at another"
-                                    + " disk",
-                            e);
-                }
-                if (refused(e) || Thread.currentThread().isInterrupted()) throw e;
-                last = e;
-                // Transport failures retain validated progress; invalid data starts over.
-                if (attempt < MAX_ATTEMPTS) {
-                    progress.note(
-                            e.getMessage() + " - retrying (" + attempt + "/" + MAX_ATTEMPTS + ")");
+                    publish(part, dest);
+                    progress.finish();
+                    cleanup(sibling(part, ".map"));
+                    cleanup(sibling(part, ".etag"));
+                    return;
+                } catch (IOException e) {
+                    if (e instanceof InvalidTransfer) {
+                        try {
+                            discard(part);
+                        } catch (IOException cleanup) {
+                            e.addSuppressed(cleanup);
+                            throw e; // do not retry while suspect state remains on disk
+                        }
+                    }
+                    if (diskFull(e)) {
+                        // retrying cannot conjure disk space; say the remedy instead of stalling
+                        throw new IOException(
+                                label
+                                        + ": "
+                                        + e.getMessage()
+                                        + " - free some space, or point JINFER_MODELS at another"
+                                        + " disk",
+                                e);
+                    }
+                    if (refused(e) || Thread.currentThread().isInterrupted()) throw e;
+                    last = e;
+                    // Transport failures retain validated progress; invalid data starts over.
+                    if (attempt < MAX_ATTEMPTS) {
+                        progress.note(
+                                e.getMessage()
+                                        + " - retrying ("
+                                        + attempt
+                                        + "/"
+                                        + MAX_ATTEMPTS
+                                        + ")");
+                    }
                 }
             }
+            throw last;
+        } finally {
+            progress.fail(); // every way out ends the row: a failed call leaves nothing redrawing
         }
-        throw last;
     }
 
     private static void discard(Path part) throws IOException {
@@ -1425,6 +1434,7 @@ final class Fetch {
         private volatile long downloadRate; // the DOWNLOAD average, frozen at verify time
         private volatile String phase = ""; // "", or the check's name during the read-back
         volatile boolean done; // the Board prunes finished rows from the top of its region
+        private volatile boolean failed; // done without its file: a cross, the bar where it stopped
         private boolean added; // registered on the Board (once, across retries)
         private long firstStartNanos; // the plain log's "done" line times the whole transfer
         private long firstStartBytes = -1;
@@ -1539,6 +1549,21 @@ final class Fetch {
                             size(seconds > 0 ? (long) (moved / seconds) : 0)));
         }
 
+        /**
+         * Ends a row its transfer never finished, drawn once more with a cross and left to scroll
+         * away like a finished one; a finished row is left as it is. The failure itself is the
+         * caller's exception, so plain progress and a host's listener hear nothing more.
+         */
+        void fail() {
+            if (done) return;
+            double seconds = (System.nanoTime() - startNanos) / 1e9; // the rate it got, frozen
+            downloadRate = seconds > 0 ? (long) ((lastWritten - startBytes) / seconds) : 0;
+            phase = "failed";
+            failed = true;
+            done = true;
+            if (listener == null && BOARD) Board.repaint(true);
+        }
+
         void note(String message) {
             if (listener != null) {
                 LOG.log(System.Logger.Level.INFO, label + ": " + message);
@@ -1551,12 +1576,13 @@ final class Fetch {
 
         /** This row's numbers half, measured by the Board before it sizes the name column. */
         String body(long now) {
-            return render(done ? total : lastWritten, now);
+            return render(done && !failed ? total : lastWritten, now);
         }
 
         /** The Board's view of this transfer: spinner, fitted name, numbers. */
         String renderRow(int labelWidth, String body) {
-            return " " + spinner(done) + " " + fit(label, labelWidth) + body;
+            String mark = failed ? (UNICODE ? "\u2717" : "x") : spinner(done);
+            return " " + mark + " " + fit(label, labelWidth) + body;
         }
 
         /**
