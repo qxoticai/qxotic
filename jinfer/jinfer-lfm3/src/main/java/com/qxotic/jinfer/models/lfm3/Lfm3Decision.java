@@ -29,6 +29,8 @@ import java.util.List;
 import java.util.Locale;
 import java.util.Optional;
 import java.util.Set;
+import java.util.stream.IntStream;
+import java.util.stream.Stream;
 
 /**
  * Liquid d1 and d1-Omni on LFM3 ({@code lfm3.decision.type} of {@code lfm3-d1} and {@code
@@ -61,10 +63,11 @@ import java.util.Set;
  * ({@code A}, {@code B}, .., with and without a leading space), a rating's digit. The scores,
  * divided by the checkpoint's temperature for the kind, softmax into the answer.
  *
- * <p>Questions asked together are packed after one copy of the input, each behind its own {@code
- * QUESTION:} line and read at its own last row, {@link #GROUP} a prompt: the input's rows see every
- * question of the prompt and a question's rows the input and themselves, which is how the
- * checkpoint was trained to share one reading of an input. Several prompts run as one batch.
+ * <p>The questions of {@link #decide(ContextState, List, List)} are packed after one copy of the
+ * input, each behind its own {@code QUESTION:} line and read at its own last row, {@link #GROUP} a
+ * prompt: the input's rows see every question of the prompt and a question's rows the input and
+ * themselves, which is how the checkpoint was trained to share one reading of an input. Several
+ * prompts run as one batch.
  */
 final class Lfm3Decision implements DecisionModel, Multimodal {
 
@@ -97,7 +100,16 @@ final class Lfm3Decision implements DecisionModel, Multimodal {
 
     private final Lfm3 model;
     private final Tokenizer tokenizer;
-    private final int bos, imStart, imEnd, think, endThink, visionOpen, visionClose;
+    private final int bos, imStart, visionOpen, visionClose;
+
+    /**
+     * What ends every prompt: the user turn's end, then the assistant turn up to the answer slot.
+     */
+    private final int[] turnEnd;
+
+    /** The single-token forms of no and yes, a predicate's two labels. */
+    private final int[][] yesNo;
+
     private final float predicateTemperature, choiceTemperature, ratingTemperature;
 
     /** The tokenizer's control tokens as text, longest first: what {@link #plain} breaks. */
@@ -116,9 +128,6 @@ final class Lfm3Decision implements DecisionModel, Multimodal {
         this.tokenizer = model.tokenizer();
         bos = SpecialTokens.require(tokenizer, "<|startoftext|>");
         imStart = SpecialTokens.require(tokenizer, "<|im_start|>");
-        imEnd = SpecialTokens.require(tokenizer, "<|im_end|>");
-        think = SpecialTokens.require(tokenizer, "<think>");
-        endThink = SpecialTokens.require(tokenizer, "</think>");
         visionOpen = SpecialTokens.require(tokenizer, "<|vision_start|>");
         visionClose = SpecialTokens.require(tokenizer, "<|vision_end|>");
         // the file's names for the three kinds: noul (yes/no), choice, score (a rating)
@@ -133,6 +142,21 @@ final class Lfm3Decision implements DecisionModel, Multimodal {
         names.sort(Comparator.comparingInt(String::length).reversed());
         controls = List.copyOf(names);
         specials = SpecialTokens.encoder(tokenizer);
+        turnEnd =
+                Stream.of(
+                                new int[] {SpecialTokens.require(tokenizer, "<|im_end|>")},
+                                tokenizer.encodeToArray("\n"),
+                                new int[] {imStart},
+                                tokenizer.encodeToArray("assistant\n"),
+                                new int[] {
+                                    SpecialTokens.require(tokenizer, "<think>"),
+                                    SpecialTokens.require(tokenizer, "</think>")
+                                })
+                        .flatMapToInt(IntStream::of)
+                        .toArray();
+        yesNo = new int[][] {singles("no", "No", "NO"), singles("yes", "Yes", "YES")};
+        if (yesNo[0].length == 0 || yesNo[1].length == 0)
+            throw new IllegalStateException("the tokenizer holds no single-token yes and no");
     }
 
     private static float temperature(GGUF gguf, String kind) {
@@ -178,25 +202,26 @@ final class Lfm3Decision implements DecisionModel, Multimodal {
 
     @Override
     public float[] decide(ContextState state, List<Content> input, Question question) {
-        return decideEach(state, input, List.of(question))[0];
+        return decideIndependently(state, input, List.of(question))[0];
+    }
+
+    /**
+     * The questions packed {@link #GROUP} a prompt, as d1 was trained to take them: the input is
+     * read once a prompt, with every question of the prompt in view, so an answer can shift with
+     * the questions asked beside it and with their order. A question alone in its prompt is
+     * answered as {@link #decideIndependently} answers it.
+     */
+    @Override
+    public float[][] decide(
+            ContextState state, List<Content> input, List<? extends Question> questions) {
+        return run(own(state), judged(input), questions, GROUP);
     }
 
     /** A prompt a question, short prompts side by side in a batch. */
     @Override
-    public float[][] decideEach(
+    public float[][] decideIndependently(
             ContextState state, List<Content> input, List<? extends Question> questions) {
         return run(own(state), judged(input), questions, 1);
-    }
-
-    /**
-     * The questions packed {@link #GROUP} a prompt: the input is read once a prompt, with every
-     * question of the prompt in view, so an answer can shift with the questions asked beside it and
-     * with their order. A question alone in its prompt is answered as {@link #decide} answers it.
-     */
-    @Override
-    public float[][] decideTogether(
-            ContextState state, List<Content> input, List<? extends Question> questions) {
-        return run(own(state), judged(input), questions, GROUP);
     }
 
     /**
@@ -206,13 +231,7 @@ final class Lfm3Decision implements DecisionModel, Multimodal {
 
     private Asked asked(Question question) {
         return switch (question) {
-            case Predicate q -> {
-                int[][] labels = {singles("no", "No", "NO"), singles("yes", "Yes", "YES")};
-                if (labels[0].length == 0 || labels[1].length == 0)
-                    throw new IllegalStateException(
-                            "the tokenizer holds no single-token yes and no");
-                yield new Asked(predicateBody(q), labels, predicateTemperature);
-            }
+            case Predicate q -> new Asked(predicateBody(q), yesNo, predicateTemperature);
             case Choice q -> {
                 int[][] labels = new int[q.options().size()][];
                 yield new Asked(
@@ -299,7 +318,7 @@ final class Lfm3Decision implements DecisionModel, Multimodal {
             List<int[]> prompts,
             List<int[]> parts,
             Asked[] asked,
-            int question,
+            int next,
             float[][] answers) {
         int total = 0;
         for (int[] prompt : prompts) total += prompt.length;
@@ -317,8 +336,8 @@ final class Lfm3Decision implements DecisionModel, Multimodal {
         int base = 0;
         for (int[] ends : parts) {
             // a lone question's prompt is its one part; a packed one's questions end at ends[1..]
-            for (int k = ends.length == 1 ? 0 : 1; k < ends.length; k++, question++)
-                answers[question] = probabilities(state, base + ends[k] - 1, asked[question]);
+            for (int k = ends.length == 1 ? 0 : 1; k < ends.length; k++, next++)
+                answers[next] = probabilities(state, base + ends[k] - 1, asked[next]);
             base += ends[ends.length - 1];
         }
     }
@@ -618,24 +637,14 @@ final class Lfm3Decision implements DecisionModel, Multimodal {
      */
     private int[] framed(boolean opens, String text) {
         int[] body = specials.encode(tokenizer, text).toArray();
-        int[] newline = tokenizer.encodeToArray("\n");
-        int[] assistant = tokenizer.encodeToArray("assistant\n");
-        int[] ids = new int[(opens ? 2 : 0) + body.length + newline.length + assistant.length + 4];
-        int at = 0;
+        int at = opens ? 2 : 0;
+        int[] ids = new int[at + body.length + turnEnd.length];
         if (opens) {
-            ids[at++] = bos;
-            ids[at++] = imStart;
+            ids[0] = bos;
+            ids[1] = imStart;
         }
         System.arraycopy(body, 0, ids, at, body.length);
-        at += body.length;
-        ids[at++] = imEnd;
-        System.arraycopy(newline, 0, ids, at, newline.length);
-        at += newline.length;
-        ids[at++] = imStart;
-        System.arraycopy(assistant, 0, ids, at, assistant.length);
-        at += assistant.length;
-        ids[at++] = think;
-        ids[at] = endThink;
+        System.arraycopy(turnEnd, 0, ids, at + body.length, turnEnd.length);
         return ids;
     }
 
@@ -732,15 +741,11 @@ final class Lfm3Decision implements DecisionModel, Multimodal {
 
     /** The distinct ids of the forms that are one token each. */
     private int[] singles(String... forms) {
-        int[] ids = new int[forms.length];
-        int n = 0;
-        for (String form : forms) {
-            int id = single(form);
-            boolean seen = id < 0;
-            for (int i = 0; i < n && !seen; i++) seen = ids[i] == id;
-            if (!seen) ids[n++] = id;
-        }
-        return Arrays.copyOf(ids, n);
+        return Arrays.stream(forms)
+                .mapToInt(this::single)
+                .filter(id -> id >= 0)
+                .distinct()
+                .toArray();
     }
 
     /** {@code text}'s token id when it is exactly one token, else -1. */

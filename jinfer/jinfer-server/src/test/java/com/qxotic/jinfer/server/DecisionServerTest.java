@@ -47,7 +47,7 @@ class DecisionServerTest {
     static class Stub implements DecisionModel, Multimodal {
         List<Content> input;
         List<Question> questions;
-        boolean together;
+        boolean joint;
         Function<Question, float[]> rows = q -> new float[q.options().size()];
         RuntimeException failure;
 
@@ -61,11 +61,11 @@ class DecisionServerTest {
 
         @Override
         public float[] decide(ContextState state, List<Content> input, Question question) {
-            return decideEach(state, input, List.of(question))[0];
+            return decideIndependently(state, input, List.of(question))[0];
         }
 
         @Override
-        public float[][] decideEach(
+        public float[][] decideIndependently(
                 ContextState state, List<Content> input, List<? extends Question> questions) {
             if (failure != null) throw failure;
             this.input = input;
@@ -74,10 +74,10 @@ class DecisionServerTest {
         }
 
         @Override
-        public float[][] decideTogether(
+        public float[][] decide(
                 ContextState state, List<Content> input, List<? extends Question> questions) {
-            together = true;
-            return decideEach(state, input, questions);
+            joint = true;
+            return decideIndependently(state, input, questions);
         }
 
         @Override
@@ -187,7 +187,7 @@ class DecisionServerTest {
                 stub.questions.get(1));
         assertEquals(
                 new Rating("How urgent?", Option.of("low", "mid", "high")), stub.questions.get(2));
-        assertFalse(stub.together);
+        assertFalse(stub.joint);
 
         assertEquals("d1", reply.body().get("model"));
         assertEquals(Map.of("type", "noul", "noul", 0.75), reply.map("answers", "refund"));
@@ -204,9 +204,9 @@ class DecisionServerTest {
     }
 
     @Test
-    void togetherIsAskedFor() throws Exception {
-        assertEquals(200, post("{\"state\": \"x\", \"together\": true, " + THREE + "}").status());
-        assertTrue(stub.together);
+    void jointIsAskedFor() throws Exception {
+        assertEquals(200, post("{\"state\": \"x\", \"joint\": true, " + THREE + "}").status());
+        assertTrue(stub.joint);
     }
 
     @Test

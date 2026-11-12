@@ -136,21 +136,13 @@ final class JinferDecisionModelConcurrencyIT {
                     }
 
                     @Override
-                    public float[][] decideEach(
+                    public float[][] decide(
                             ContextState state,
                             List<Content> input,
                             List<? extends Question> questions) {
                         inside.countDown();
                         await(release);
-                        return core.decideEach(state, input, questions);
-                    }
-
-                    @Override
-                    public float[][] decideTogether(
-                            ContextState state,
-                            List<Content> input,
-                            List<? extends Question> questions) {
-                        return core.decideTogether(state, input, questions);
+                        return core.decide(state, input, questions);
                     }
                 };
         JinferDecisionModel model = JinferDecisionModel.builder().model(slow).build();

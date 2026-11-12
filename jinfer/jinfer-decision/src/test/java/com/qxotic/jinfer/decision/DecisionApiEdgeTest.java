@@ -2,7 +2,6 @@ package com.qxotic.jinfer.decision;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
-import static org.junit.jupiter.api.Assertions.assertNotEquals;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 
 import com.qxotic.jinfer.ContextState;
@@ -13,7 +12,6 @@ import java.lang.foreign.Arena;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
-import java.util.SequencedMap;
 import org.junit.jupiter.api.Test;
 
 /**
@@ -107,68 +105,50 @@ final class DecisionApiEdgeTest {
                         new DecisionModel.Option("trailing"),
                         new DecisionModel.Option("with 2 digits"),
                         new DecisionModel.Option("lower case")),
-                Question.rating("q", Odd.class).options());
+                Question.rating("q", Odd.class).labels());
     }
 
-    /** Asked twice in one call, one instance holds the last answer - and says so. */
+    /** Asked twice in one call, a question holds the last answer. */
     @Test
     void oneInstanceAskedTwiceHoldsTheLastAnswer() {
         var refund = Question.predicate("Refund?");
-        try (Decisions decisions = Decisions.over(model, 64)) {
+        Decisions decisions = Decisions.of(model);
+        try (ContextState state = model.newState(64)) {
             model.row = new float[] {0.9f, 0.1f};
-            Answers answers = decisions.askEach("x", refund, refund);
+            Answers answers = decisions.askIndependently(state, "x", refund, refund);
             assertFalse(answers.get(refund).isYes(), "the last row is 0.1 yes");
             assertEquals(2, model.questions.size(), "asked twice");
         }
-        // distinct instances with the same text are distinct keys
-        model.row = new float[] {0.5f, 0.5f};
-        var a = Question.predicate("Refund?");
-        var b = Question.predicate("Refund?");
-        try (Decisions decisions = Decisions.over(model, 64)) {
-            Answers answers = decisions.askEach("x", a, b);
-            assertEquals(0.5f, answers.get(a).yes());
-            assertEquals(0.5f, answers.get(b).yes());
-        }
     }
 
-    /** Answers are keyed by identity: an equal question is not the asked one. */
+    /** Answers are keyed by value: an equal question finds the answer, another one is refused. */
     @Test
-    void anEqualQuestionIsNotTheAskedOne() {
-        var asked = Question.predicate("Refund?");
-        try (Decisions decisions = Decisions.over(model, 64)) {
-            Answers answers = decisions.askEach("x", asked);
+    void anEqualQuestionFindsTheAnswer() {
+        model.row = new float[] {0.25f, 0.75f};
+        Decisions decisions = Decisions.of(model);
+        try (ContextState state = model.newState(64)) {
+            Answers answers = decisions.askIndependently(state, "x", Question.predicate("Refund?"));
+            assertEquals(0.75f, answers.get(Question.predicate("Refund?")).yes());
             IllegalArgumentException refused =
                     assertThrows(
                             IllegalArgumentException.class,
-                            () -> answers.get(Question.predicate("Refund?")));
+                            () -> answers.get(Question.predicate("Urgent?")));
             assertEquals("this question was not asked", refused.getMessage());
         }
     }
 
-    /** An input is text parts joined, in the caller's order. */
+    /** An input is passed through as the caller's parts, in order. */
     @Test
     void anInputKeepsTheCallersParts() {
         var q = Question.predicate("?");
-        try (Decisions decisions = Decisions.over(model, 64)) {
-            decisions.ask("", q); // an empty text is a text
+        Decisions decisions = Decisions.of(model);
+        try (ContextState state = model.newState(64)) {
+            decisions.ask(state, "", q); // an empty text is a text
             assertEquals(List.of(new Content.Text("")), model.inputs.getLast());
             List<Content> parts = List.of(new Content.Text("a"), new Content.Text("b"));
-            decisions.ask(parts, q);
+            decisions.ask(state, parts, q);
             assertEquals(parts, model.inputs.getLast());
         }
-    }
-
-    @Test
-    void capacitiesAreTheModelsRule() {
-        Decisions.over(model).close();
-        assertEquals(0, model.capacity, "0: the model's default");
-        Decisions.over(model, -1).close();
-        assertEquals(-1, model.capacity, "-1: the model's maximum, resolved by the model");
-        Decisions.over(model, 3000).close();
-        assertEquals(3000, model.capacity);
-        // a capacity below -1 is the MODEL's to refuse; the API hands it over unchanged
-        Decisions.over(model, -2).close();
-        assertEquals(-2, model.capacity);
     }
 
     /** A degenerate distribution still answers with the rule each accessor promises. */
@@ -212,11 +192,9 @@ final class DecisionApiEdgeTest {
                 () -> new Answer.Rating<>(List.of("a"), List.of(0.5f, 0.5f)));
         // probabilities are copied: a caller's list cannot change an answer under it
         List<Float> mutable = new ArrayList<>(List.of(0.2f, 0.8f));
-        Answer.Predicate answer = new Answer.Predicate(0.8f);
-        assertEquals(0.2f, answer.probabilities().get(0), 1e-6f);
-        assertEquals(0.8f, answer.probabilities().get(1), 1e-6f);
+        var answer = new Answer.Choice<>(List.of("a", "b"), mutable);
         mutable.set(0, 0f);
-        assertEquals(0.2f, answer.no(), 1e-6f);
+        assertEquals(0.2f, answer.probabilities().get(0));
     }
 
     /** A typed answer is the question's own: a choice over an enum answers with its constants. */
@@ -224,9 +202,10 @@ final class DecisionApiEdgeTest {
     void answersCarryTheirQuestionsType() {
         var which = Question.choice("Which?", Team.class);
         var howMuch = Question.rating("How much?", "low", "high");
-        try (Decisions decisions = Decisions.over(model, 64)) {
+        Decisions decisions = Decisions.of(model);
+        try (ContextState state = model.newState(64)) {
             model.row = new float[] {0.1f, 0.9f};
-            Answers both = decisions.askEach("x", which, howMuch);
+            Answers both = decisions.askIndependently(state, "x", which, howMuch);
             Answer.Choice<Team> choice = both.get(which);
             assertEquals(Team.SHIPPING, choice.selectedOption());
             Answer.Rating<String> rating = both.get(howMuch);
@@ -236,45 +215,46 @@ final class DecisionApiEdgeTest {
         }
     }
 
-    /** A null model is refused where it is passed, with the argument named. */
+    /** A null model or state is refused where it is passed, with the argument named. */
     @Test
     void aNullModelIsRefusedNamingIt() {
         NullPointerException refused =
-                assertThrows(NullPointerException.class, () -> Decisions.over(null));
+                assertThrows(NullPointerException.class, () -> Decisions.of(null));
         assertEquals("model", refused.getMessage());
-        assertThrows(NullPointerException.class, () -> Decisions.over(null, 128));
+        NullPointerException noState =
+                assertThrows(
+                        NullPointerException.class,
+                        () -> Decisions.of(model).ask(null, "x", Question.predicate("?")));
+        assertEquals("state", noState.getMessage());
     }
 
-    /** Several Decisions over one model are independent: closing one leaves the other usable. */
+    /** One Decisions serves any number of states: closing one leaves the others usable. */
     @Test
-    void closingOneDecisionsLeavesAnotherUsable() {
+    void closingOneStateLeavesAnotherUsable() {
         var q = Question.predicate("?");
-        Decisions first = Decisions.over(model, 64);
-        try (Decisions second = Decisions.over(model, 64)) {
-            first.ask("x", q);
-            second.ask("x", Question.predicate("?"));
+        Decisions decisions = Decisions.of(model);
+        ContextState first = model.newState(64);
+        try (ContextState second = model.newState(64)) {
+            decisions.ask(first, "x", q);
+            decisions.ask(second, "x", q);
         }
         // the second closed; the first still answers
-        assertEquals(0.5f, first.ask("x", Question.predicate("?")).yes(), 1e-6f);
+        assertEquals(0.5f, decisions.ask(first, "x", q).yes(), 1e-6f);
         first.close();
-        assertThrows(IllegalStateException.class, () -> first.ask("x", Question.predicate("?")));
+        assertThrows(IllegalStateException.class, () -> decisions.ask(first, "x", q));
     }
 
-    /** A choice's keys and its labels are separate: the caller acts on keys. */
+    /** A choice's options and its labels are separate: the caller acts on options. */
     @Test
     void choicesActOnKeysAndLabelWithDescriptions() {
         record Tool(String name) {}
         Tool search = new Tool("search"), mail = new Tool("mail");
-        SequencedMap<Tool, String> described = new LinkedHashMap<>();
-        described.put(search, "Finds documents");
-        described.put(mail, null);
         Question.Choice<Tool> question =
                 Question.choice("Which tool?", List.of(search, mail), Tool::name);
-        assertEquals(List.of(search, mail), question.keys());
+        assertEquals(List.of(search, mail), question.options());
         assertEquals(
                 List.of(new DecisionModel.Option("search"), new DecisionModel.Option("mail")),
-                question.options());
-        assertNotEquals(search, mail);
+                question.labels());
 
         // a described map keeps its order and its null descriptions
         var strings = new LinkedHashMap<String, String>();
@@ -284,6 +264,6 @@ final class DecisionApiEdgeTest {
                 List.of(
                         new DecisionModel.Option("low"),
                         new DecisionModel.Option("high", "Needs an answer today")),
-                Question.rating("How urgent?", strings).options());
+                Question.rating("How urgent?", strings).labels());
     }
 }

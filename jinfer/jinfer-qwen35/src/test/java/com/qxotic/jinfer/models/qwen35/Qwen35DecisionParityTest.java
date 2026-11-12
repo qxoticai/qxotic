@@ -175,7 +175,8 @@ final class Qwen35DecisionParityTest {
                             Map.of("media", TestModels.require(mmproj)));
             try (ContextState state = d3.newState(4096)) {
                 float[][] ticket =
-                        d3.decideEach(state, text(TICKET), List.of(REFUND, POLITE, TEAM, URGENCY));
+                        d3.decideIndependently(
+                                state, text(TICKET), List.of(REFUND, POLITE, TEAM, URGENCY));
                 // each alone is the same, a prompt a question
                 assertArrayEquals(ticket[3], d3.decide(state, text(TICKET), URGENCY), 1e-6f);
                 yes(expected.refund(), ticket[0], "refund");
@@ -221,7 +222,7 @@ final class Qwen35DecisionParityTest {
                 pictures(d3, state, "dice", expected.dice(), 1154);
                 pictures(d3, state, "wide", expected.wide(), 2188);
                 float[][] alone =
-                        d3.decideEach(state, List.of(picture("cat")), List.of(CAT, SHOWS));
+                        d3.decideIndependently(state, List.of(picture("cat")), List.of(CAT, SHOWS));
                 yes(p(expected.alone()[0]), alone[0], "cat alone");
                 assertArrayEquals(
                         Arrays.copyOfRange(expected.alone(), 1, 5),

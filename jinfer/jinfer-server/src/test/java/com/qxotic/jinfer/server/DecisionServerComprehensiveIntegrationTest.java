@@ -31,8 +31,8 @@ import org.junit.jupiter.api.Test;
 
 /**
  * {@code POST /v1/systemone} beyond the parity cases: a video data URI through ffmpeg and the
- * vision tower, {@code together}, the score's distribution, the metrics counters and a malformed
- * body. Liquid d1-2B with its vision tower, so {@code integration}.
+ * vision tower, {@code joint}, the score's distribution, the metrics counters and a malformed body.
+ * Liquid d1-2B with its vision tower, so {@code integration}.
  */
 @Tag("integration")
 @SuppressWarnings("unchecked")
@@ -122,7 +122,7 @@ final class DecisionServerComprehensiveIntegrationTest {
     @Test
     void togetherIsTheModelsPackedReading() throws Exception {
         String alone = "{\"state\": \"" + TICKET + "\", " + THREE + "}";
-        String packed = "{\"state\": \"" + TICKET + "\", \"together\": true, " + THREE + "}";
+        String packed = "{\"state\": \"" + TICKET + "\", \"joint\": true, " + THREE + "}";
         Map<String, Object> each = answers(post(alone));
         Map<String, Object> all = answers(post(packed));
         assertEquals("billing", ((Map<String, Object>) each.get("team")).get("choice"));
@@ -225,8 +225,7 @@ final class DecisionServerComprehensiveIntegrationTest {
                             "\": {\"type\": \"noul\", \"instructions\": \"Is the customer"
                                     + " asking for a refund?\"}");
         questions.append('}');
-        Reply reply =
-                post("{\"state\": \"" + TICKET + "\", \"together\": true, " + questions + "}");
+        Reply reply = post("{\"state\": \"" + TICKET + "\", \"joint\": true, " + questions + "}");
         assertEquals(200, reply.status(), String.valueOf(reply.body()));
         Map<String, Object> answers = answers(reply);
         assertEquals(17, answers.size());
@@ -377,7 +376,7 @@ final class DecisionServerComprehensiveIntegrationTest {
                             ServerConfig.local(0));
             String url = "http://127.0.0.1:" + d3Server.address().getPort() + "/v1/systemone";
             Reply each = postTo(url, "{" + body + "}");
-            Reply packed = postTo(url, "{" + body + ", \"together\": true}");
+            Reply packed = postTo(url, "{" + body + ", \"joint\": true}");
             assertEquals(200, each.status(), String.valueOf(each.body()));
             assertEquals(200, packed.status(), String.valueOf(packed.body()));
             assertEquals(
@@ -386,6 +385,62 @@ final class DecisionServerComprehensiveIntegrationTest {
                     1e-5);
         } finally {
             if (d3Server != null) d3Server.close();
+        }
+    }
+
+    /** Every JSON shape a state can be is read: array, nested object, deep array, scalar string. */
+    @Test
+    void everyStructuredStateShapeIsRead() throws Exception {
+        for (String state :
+                List.of(
+                        "[\"a\", \"b\"]",
+                        "{\"outer\": {\"inner\": [1, 2, {\"deep\": null}]}}",
+                        "[[1, 2], [3, 4]]",
+                        "{\"message\": \"" + TICKET.replace("\"", "'") + "\"}")) {
+            Reply reply =
+                    post(
+                            "{\"state\": "
+                                    + state
+                                    + ", \"questions\": {\"refund\": {\"type\": \"noul\","
+                                    + " \"instructions\": \"Is the customer asking for a"
+                                    + " refund?\"}}}");
+            assertEquals(200, reply.status(), state + ": " + reply.body());
+            assertTrue(number(answers(reply), "refund", "noul") >= 0);
+        }
+        // the ticket in a field still reads as a refund
+        Reply ticket =
+                post(
+                        "{\"state\": {\"message\": \""
+                                + TICKET.replace("\"", "'")
+                                + "\"}, \"questions\": {\"refund\": {\"type\": \"noul\","
+                                + " \"instructions\": \"Is the customer asking for a"
+                                + " refund?\"}}}");
+        assertTrue(number(answers(ticket), "refund", "noul") > 0.5);
+    }
+
+    /** files and images are the same list under two names; both accept a picture, in order. */
+    @Test
+    void filesAndImagesAreTheSameList() throws Exception {
+        String cat =
+                "data:image/png;base64,"
+                        + Base64.getEncoder()
+                                .encodeToString(
+                                        Files.readAllBytes(
+                                                Path.of(
+                                                        "../../test-fixtures/lfm3/images/"
+                                                                + "cat.png")));
+        String shows =
+                "\"questions\": {\"shows\": {\"type\": \"choice\", \"instructions\":"
+                        + " \"What does the picture show?\", \"criteria\": {\"cat\": null,"
+                        + " \"dog\": null, \"dice\": null, \"landscape\": null}}}";
+        for (String field : List.of("files", "images")) {
+            Reply reply =
+                    post("{\"state\": null, \"" + field + "\": [\"" + cat + "\"], " + shows + "}");
+            assertEquals(200, reply.status(), field + ": " + reply.body());
+            assertEquals(
+                    "cat",
+                    ((Map<String, Object>) answers(reply).get("shows")).get("choice"),
+                    field);
         }
     }
 

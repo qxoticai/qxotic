@@ -49,6 +49,7 @@ final class JinferDecisionModelIT {
                                 "media",
                                 TestModels.require(
                                         "hf.co/LiquidAI/d1-2B-GGUF/mmproj-d1-2B-F16.gguf"))
+                        .independent(true) // the pinned numbers are each question asked alone
                         .build();
     }
 
@@ -128,7 +129,6 @@ final class JinferDecisionModelIT {
         try (JinferDecisionModel together =
                 JinferDecisionModel.builder()
                         .modelPath(TestModels.require("hf.co/LiquidAI/d1-2B-GGUF/d1-2B-Q8_0.gguf"))
-                        .together(true)
                         .build()) {
             DecisionResponse packed = together.call(ticket, three);
             assertTrue(packed.getYesNo("refund").isYes());
@@ -189,6 +189,7 @@ final class JinferDecisionModelIT {
                                 "media",
                                 TestModels.require(
                                         "hf.co/LiquidAI/d1-Omni-2B-GGUF/mmproj-d1-Omni-2B-F16.gguf"))
+                        .independent(true) // the pinned numbers are each question alone
                         .build()) {
             DecisionResponse response =
                     omni.call(

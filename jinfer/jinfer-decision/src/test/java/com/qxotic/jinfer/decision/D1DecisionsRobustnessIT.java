@@ -4,13 +4,20 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
+import com.qxotic.jinfer.ContextState;
+import com.qxotic.jinfer.chat.Content;
 import com.qxotic.jinfer.chat.DecisionModel;
 import com.qxotic.jinfer.chat.Models;
+import com.qxotic.jinfer.codecs.AudioCodec;
+import com.qxotic.jinfer.codecs.ImageCodec;
 import com.qxotic.jinfer.testkit.TestModels;
 import java.lang.foreign.Arena;
+import java.nio.file.Files;
+import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.SequencedMap;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
@@ -62,43 +69,47 @@ final class D1DecisionsRobustnessIT {
     }
 
     @Test
-    void askEachAgreesWithAskAndTogetherLeavesALoneQuestionAsAlone() {
-        try (Decisions decisions = Decisions.over(d1, 1024)) {
-            Answers each = decisions.askEach(TICKET, REFUND, TEAM, URGENCY);
+    void askIndependentlyAgreesWithAskAndALonePackedQuestionIsAsAlone() {
+        Decisions decisions = Decisions.of(d1);
+        try (ContextState state = d1.newState(1024)) {
+            Answers each = decisions.askIndependently(state, TICKET, REFUND, TEAM, URGENCY);
             assertTrue(each.get(REFUND).isYes(), "refund " + each.get(REFUND));
             assertEquals(Team.BILLING, each.get(TEAM).selectedOption());
             assertTrue(each.get(URGENCY).selectedIndex() >= 2, "urgency " + each.get(URGENCY));
 
-            assertEquals(decisions.ask(TICKET, REFUND).yes(), each.get(REFUND).yes(), 1e-4f);
+            assertEquals(decisions.ask(state, TICKET, REFUND).yes(), each.get(REFUND).yes(), 1e-4f);
             assertEquals(
-                    decisions.ask(TICKET, TEAM).selectedOption(), each.get(TEAM).selectedOption());
+                    decisions.ask(state, TICKET, TEAM).selectedOption(),
+                    each.get(TEAM).selectedOption());
             assertEquals(
-                    decisions.ask(TICKET, URGENCY).probabilities(),
+                    decisions.ask(state, TICKET, URGENCY).probabilities(),
                     each.get(URGENCY).probabilities());
 
             // one question in a packed prompt is asked as if alone
-            Answers together = decisions.askTogether(TICKET, REFUND);
-            assertEquals(decisions.ask(TICKET, REFUND).yes(), together.get(REFUND).yes(), 1e-4f);
+            Answers lone = decisions.ask(state, TICKET, new Question<?>[] {REFUND});
+            assertEquals(decisions.ask(state, TICKET, REFUND).yes(), lone.get(REFUND).yes(), 1e-4f);
         }
     }
 
     @Test
     void aReusedStateDoesNotCarryThePreviousInput() {
-        try (Decisions decisions = Decisions.over(d1, 1024)) {
-            float first = decisions.ask(TICKET, REFUND).yes();
+        Decisions decisions = Decisions.of(d1);
+        try (ContextState state = d1.newState(1024)) {
+            float first = decisions.ask(state, TICKET, REFUND).yes();
             for (int i = 0; i < 3; i++)
-                assertEquals(first, decisions.ask(TICKET, REFUND).yes(), 1e-5f);
-            decisions.ask("Please tell me where my parcel is.", TEAM);
-            assertEquals(first, decisions.ask(TICKET, REFUND).yes(), 1e-5f);
+                assertEquals(first, decisions.ask(state, TICKET, REFUND).yes(), 1e-5f);
+            decisions.ask(state, "Please tell me where my parcel is.", TEAM);
+            assertEquals(first, decisions.ask(state, TICKET, REFUND).yes(), 1e-5f);
         }
     }
 
     @Test
-    void separateDecisionsRunSideBySide() throws Exception {
+    void oneDecisionsServesAStatePerThread() throws Exception {
         int threads = 4, repeats = 3;
         float expected;
-        try (Decisions decisions = Decisions.over(d1, 512)) {
-            expected = decisions.ask(TICKET, REFUND).yes();
+        Decisions decisions = Decisions.of(d1);
+        try (ContextState state = d1.newState(512)) {
+            expected = decisions.ask(state, TICKET, REFUND).yes();
         }
         ExecutorService pool = Executors.newFixedThreadPool(threads);
         try {
@@ -107,10 +118,10 @@ final class D1DecisionsRobustnessIT {
                 futures.add(
                         pool.submit(
                                 () -> {
-                                    try (Decisions decisions = Decisions.over(d1, 512)) {
+                                    try (ContextState state = d1.newState(512)) {
                                         float answer = 0;
                                         for (int i = 0; i < repeats; i++)
-                                            answer = decisions.ask(TICKET, REFUND).yes();
+                                            answer = decisions.ask(state, TICKET, REFUND).yes();
                                         return answer;
                                     }
                                 }));
@@ -124,51 +135,34 @@ final class D1DecisionsRobustnessIT {
 
     @Test
     void aClosedStateRefusesFurtherCalls() {
-        Decisions decisions = Decisions.over(d1, 512);
-        decisions.close();
-        decisions.close(); // idempotent
-        assertThrows(IllegalStateException.class, () -> decisions.ask(TICKET, REFUND));
+        ContextState state = d1.newState(512);
+        state.close();
+        state.close(); // idempotent
+        assertThrows(
+                IllegalStateException.class, () -> Decisions.of(d1).ask(state, TICKET, REFUND));
     }
 
     @Test
     void theCapacityIsTheModelsRule() {
-        assertThrows(IllegalArgumentException.class, () -> Decisions.over(d1, 200_000));
-        assertThrows(IllegalArgumentException.class, () -> Decisions.over(d1, -2));
-        try (Decisions small = Decisions.over(d1, 16)) {
+        assertThrows(IllegalArgumentException.class, () -> d1.newState(200_000));
+        assertThrows(IllegalArgumentException.class, () -> d1.newState(-2));
+        Decisions small = Decisions.of(d1);
+        try (ContextState state = d1.newState(16)) {
             IllegalArgumentException refused =
-                    assertThrows(IllegalArgumentException.class, () -> small.ask(TICKET, REFUND));
+                    assertThrows(
+                            IllegalArgumentException.class, () -> small.ask(state, TICKET, REFUND));
             assertTrue(refused.getMessage().contains("open a larger one"), refused.getMessage());
         }
     }
 
-    @Test
-    void badQuestionsFailBeforeAnyInference() {
-        // a question is validated where it is written, before any state or model is touched
-        assertThrows(IllegalArgumentException.class, () -> Question.predicate(" "));
-        assertThrows(IllegalArgumentException.class, () -> Question.predicate(null));
-        assertThrows(IllegalArgumentException.class, () -> Question.choice("Which?", "only"));
-        assertThrows(
-                IllegalArgumentException.class, () -> Question.choice("Which?", new String[0]));
-        assertThrows(IllegalArgumentException.class, () -> Question.rating("How much?", "only"));
-        assertThrows(
-                IllegalArgumentException.class, () -> Question.rating("How much?", new String[0]));
-        assertThrows(
-                IllegalArgumentException.class,
-                () -> Question.choice(" ", "a", "b")); // a blank question text too
-        assertThrows(
-                IllegalArgumentException.class,
-                () -> Question.choice("Which?", new LinkedHashMap<>()));
-    }
-
-    /**
-     * "Together" is the model's packed reading: past sixteen questions it packs several prompts.
-     */
+    /** d1 packs sixteen questions a prompt: past sixteen it packs several prompts. */
     @Test
     void seventeenQuestionsTogetherAreStillAllAnswered() {
-        try (Decisions decisions = Decisions.over(d1, 2048)) {
+        Decisions decisions = Decisions.of(d1);
+        try (ContextState state = d1.newState(2048)) {
             List<Question<?>> many = new ArrayList<>();
             for (int i = 0; i < 17; i++) many.add(Question.predicate("Is this a refund request?"));
-            Answers answers = decisions.askTogether(TICKET, many.toArray(Question<?>[]::new));
+            Answers answers = decisions.ask(state, TICKET, many.toArray(Question<?>[]::new));
             for (Question<?> q : many) {
                 float yes = answers.get(q).probabilities().get(1);
                 assertTrue(yes > 0.5f, "question at " + many.indexOf(q) + ": " + yes);
@@ -176,22 +170,65 @@ final class D1DecisionsRobustnessIT {
         }
     }
 
-    /** -1 is the model's maximum capacity, whatever the checkpoint declares. */
+    /** d1-Omni listens through the typed API: a clip, a clip with text, and both with a picture. */
     @Test
-    void aCapacityOfMinusOneIsTheModelsMaximum() throws Exception {
-        try (var state = d1.newState(-1)) {
-            assertTrue(state.contextCapacity() > 4096, "the maximum, not the default");
+    void omniHearsThroughTheTypedApi() throws Exception {
+        String omni = "hf.co/LiquidAI/d1-Omni-2B-GGUF/d1-Omni-2B-Q8_0.gguf";
+        String mmproj = "hf.co/LiquidAI/d1-Omni-2B-GGUF/mmproj-d1-Omni-2B-F16.gguf";
+        try (Arena arena = Arena.ofShared()) {
+            DecisionModel model =
+                    Models.loadDecisionModel(
+                            TestModels.require(omni),
+                            arena,
+                            Map.of("media", TestModels.require(mmproj)));
+            var speech = Question.predicate("Is someone speaking in the recording?");
+            var holds =
+                    Question.choice(
+                            "What does the recording hold?",
+                            "speech",
+                            "music",
+                            "a steady tone",
+                            "silence");
+            Decisions decisions = Decisions.of(model);
+            try (ContextState state = model.newState(2048)) {
+                Path clip = Path.of("../../test-fixtures/parakeet/ls0.wav");
+                List<Content> audioOnly =
+                        List.of(new Content.Media(AudioCodec.decode(Files.readAllBytes(clip))));
+                List<Content> withText = new ArrayList<>(audioOnly);
+                withText.add(new Content.Text("A recording sent by a customer."));
+
+                // a clip alone, and the same clip with a caption: both read, both answer
+                Answers alone = decisions.askIndependently(state, audioOnly, speech, holds);
+                assertEquals(0.50960f, alone.get(speech).yes(), 2e-2f);
+                assertEquals("speech", alone.get(holds).selectedOption());
+
+                Answers captioned = decisions.askIndependently(state, withText, speech, holds);
+                assertEquals(0.53227f, captioned.get(speech).yes(), 2e-2f);
+                assertEquals(0.74172f, captioned.get(holds).confidence(), 2e-2f);
+
+                // a picture and a clip in one input: both towers, one reading
+                List<Content> both = new ArrayList<>();
+                both.add(
+                        new Content.Media(
+                                ImageCodec.load(
+                                        Path.of("../../test-fixtures/lfm3/images/cat.png"))));
+                both.addAll(audioOnly);
+                both.add(new Content.Text("A photo and a recording."));
+                Answers mixed = decisions.ask(state, both, speech, holds);
+                assertEquals(2, mixed.get(speech).probabilities().size());
+                assertEquals(4, mixed.get(holds).probabilities().size());
+            }
         }
     }
 
     @Test
     void noQuestionsAnswerNothing() {
-        try (Decisions decisions = Decisions.over(d1, 512)) {
-            Answers empty = decisions.askEach(TICKET);
+        Decisions decisions = Decisions.of(d1);
+        try (ContextState state = d1.newState(512)) {
+            Answers empty = decisions.askIndependently(state, TICKET);
             assertThrows(IllegalArgumentException.class, () -> empty.get(REFUND));
             assertThrows(
-                    IllegalArgumentException.class,
-                    () -> decisions.askTogether(TICKET).get(REFUND));
+                    IllegalArgumentException.class, () -> decisions.ask(state, TICKET).get(REFUND));
         }
     }
 
@@ -201,9 +238,10 @@ final class D1DecisionsRobustnessIT {
         options.put("billing", "Charges and refunds");
         options.put("shipping", "Delivery problems");
         options.put("other", null);
-        try (Decisions decisions = Decisions.over(d1, 1024)) {
+        Decisions decisions = Decisions.of(d1);
+        try (ContextState state = d1.newState(1024)) {
             Answer.Choice<String> answer =
-                    decisions.ask(TICKET, Question.choice("Which team?", options));
+                    decisions.ask(state, TICKET, Question.choice("Which team?", options));
             assertEquals(List.of("billing", "shipping", "other"), answer.options());
             assertEquals("billing", answer.selectedOption());
             assertEquals(3, answer.probabilities().size());

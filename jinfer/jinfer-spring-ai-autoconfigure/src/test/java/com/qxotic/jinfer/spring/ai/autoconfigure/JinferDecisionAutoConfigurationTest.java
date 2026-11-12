@@ -45,7 +45,7 @@ class JinferDecisionAutoConfigurationTest {
                         "spring.ai.jinfer.decision.model=LiquidAI/d1-2B-GGUF:Q8_0",
                         "spring.ai.jinfer.decision.companions.media=/mmproj.gguf",
                         "spring.ai.jinfer.decision.context-capacity=2048",
-                        "spring.ai.jinfer.decision.together=true")
+                        "spring.ai.jinfer.decision.independent=true")
                 .run(
                         context -> {
                             JinferDecisionProperties p =
@@ -53,7 +53,7 @@ class JinferDecisionAutoConfigurationTest {
                             assertThat(p.model()).isEqualTo("LiquidAI/d1-2B-GGUF:Q8_0");
                             assertThat(p.companions()).isEqualTo(Map.of("media", "/mmproj.gguf"));
                             assertThat(p.contextCapacity()).isEqualTo(2048);
-                            assertThat(p.together()).isTrue();
+                            assertThat(p.independent()).isTrue();
                         });
     }
 
@@ -67,7 +67,7 @@ class JinferDecisionAutoConfigurationTest {
                             JinferDecisionProperties p =
                                     context.getBean(JinferDecisionProperties.class);
                             assertThat(p.contextCapacity()).isZero(); // 0: 4096, or less
-                            assertThat(p.together()).isFalse(); // each question alone
+                            assertThat(p.independent()).isFalse(); // the model's own way
                             assertThat(p.companions()).isNull(); // text only
                         });
     }
@@ -111,6 +111,44 @@ class JinferDecisionAutoConfigurationTest {
                             assertThat(context).doesNotHaveBean(JinferDecisionModel.class);
                             assertThat(context).hasSingleBean(DecisionModel.class);
                         });
+    }
+
+    /** A capacity the model cannot honor, and a companion that is a URL: refused at startup. */
+    @Test
+    void anImpossibleCapacityOrAUrlCompanionFailsAtStartup() {
+        runner.withPropertyValues(
+                        "spring.ai.model.decision=jinfer",
+                        "spring.ai.jinfer.decision.model=/d1.gguf",
+                        "spring.ai.jinfer.decision.context-capacity=-5")
+                .run(
+                        context -> {
+                            assertThat(context).hasFailed();
+                            assertThat(context.getStartupFailure())
+                                    .hasStackTraceContaining(
+                                            "contextCapacity must be 0 (the default), -1 (the"
+                                                    + " model's maximum) or positive, got -5");
+                        });
+        runner.withPropertyValues(
+                        "spring.ai.model.decision=jinfer",
+                        "spring.ai.jinfer.decision.model=/d1.gguf",
+                        "spring.ai.jinfer.decision.companions.media=https://example.org/m.gguf")
+                .run(
+                        context -> {
+                            assertThat(context).hasFailed();
+                            assertThat(context.getStartupFailure())
+                                    .hasStackTraceContaining("download it first");
+                        });
+    }
+
+    /** A model that fails to load fails startup, in every context. */
+    @Test
+    void aModelThatFailsToLoadFailsStartup() {
+        String d1 = "/nonexistent.gguf"; // the load fails, but the wiring is what this checks
+        for (int i = 0; i < 2; i++)
+            runner.withPropertyValues(
+                            "spring.ai.model.decision=jinfer",
+                            "spring.ai.jinfer.decision.model=" + d1)
+                    .run(context -> assertThat(context).hasFailed());
     }
 
     @EnableConfigurationProperties(JinferDecisionProperties.class)

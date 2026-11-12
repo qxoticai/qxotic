@@ -118,7 +118,7 @@ final class Lfm3DecisionMediaParityTest {
             List<Content> input,
             List<? extends Question> questions,
             float[]... expected) {
-        float[][] got = model.decideEach(state, input, questions);
+        float[][] got = model.decideIndependently(state, input, questions);
         for (int i = 0; i < expected.length; i++) {
             // a predicate is recorded as its yes
             float[] row = expected[i].length == 1 ? new float[] {got[i][1]} : got[i];
@@ -306,8 +306,8 @@ final class Lfm3DecisionMediaParityTest {
                         p(0.36273f));
                 // asked together, the clip is read once for the three: the same picks
                 List<Content> speech = List.of(clip("parakeet/ls0.wav"), RECORDING);
-                float[][] each = omni.decideEach(state, speech, heard);
-                float[][] together = omni.decideTogether(state, speech, heard);
+                float[][] each = omni.decideIndependently(state, speech, heard);
+                float[][] together = omni.decide(state, speech, heard);
                 for (int i = 1; i < heard.size(); i++) // the yes/no is near even: no pick to keep
                 assertEquals(argmax(each[i]), argmax(together[i]), "question " + i);
 
@@ -333,7 +333,7 @@ final class Lfm3DecisionMediaParityTest {
             List<Question> three = List.of(CAT, SHOWS, SHARP);
             try (ContextState state = d1.newState(4096)) {
                 List<Content> input = List.of(picture("cat"), PHOTO);
-                float[][] each = d1.decideEach(state, input, three);
+                float[][] each = d1.decideIndependently(state, input, three);
                 for (int i = 0; i < three.size(); i++)
                     assertArrayEquals(
                             d1.decide(state, input, three.get(i)), each[i], 1e-4f, "alone " + i);
@@ -344,14 +344,14 @@ final class Lfm3DecisionMediaParityTest {
                         each[0], d1.decide(state, List.of(PHOTO, picture("cat")), CAT), 1e-4f);
 
                 // together the picture is read once for the three; one question alone is the same
-                float[][] together = d1.decideTogether(state, input, three);
+                float[][] together = d1.decide(state, input, three);
                 for (int i = 0; i < three.size(); i++) {
                     float sum = 0;
                     for (float v : together[i]) sum += v;
                     assertEquals(1f, sum, 1e-4f);
                     assertEquals(argmax(each[i]), argmax(together[i]), "question " + i);
                 }
-                assertArrayEquals(each[0], d1.decideTogether(state, input, List.of(CAT))[0], 1e-4f);
+                assertArrayEquals(each[0], d1.decide(state, input, List.of(CAT))[0], 1e-4f);
 
                 // a model with no audio tower says so; so does a video without frames
                 assertTrue(

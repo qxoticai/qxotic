@@ -65,7 +65,8 @@ final class Lfm3DecisionRobustnessTest {
                 DecisionModel d1 = Models.loadDecisionModel(TestModels.require(ref), arena);
                 try (ContextState state = d1.newState(1024)) {
                     float[][] rows =
-                            d1.decideEach(state, text(STATE), List.of(REFUND, TEAM, URGENCY));
+                            d1.decideIndependently(
+                                    state, text(STATE), List.of(REFUND, TEAM, URGENCY));
                     for (float[] row : rows) assertRow(row, ref);
                     assertEquals(1, argmax(rows[0]), ref + ": refund");
                     assertEquals(0, argmax(rows[1]), ref + ": billing");
@@ -106,7 +107,7 @@ final class Lfm3DecisionRobustnessTest {
             try (ContextState state = d1.newState(4096)) {
                 List<Question> many = new ArrayList<>();
                 for (int i = 0; i < 2 * Lfm3Decision.GROUP + 1; i++) many.add(REFUND);
-                float[][] packed = d1.decideTogether(state, text(STATE), many);
+                float[][] packed = d1.decide(state, text(STATE), many);
                 assertEquals(2 * Lfm3Decision.GROUP + 1, packed.length);
                 for (float[] row : packed) assertRow(row, "packed");
                 // the thirty-third question opens a prompt of its own: the answer asked alone
@@ -179,8 +180,8 @@ final class Lfm3DecisionRobustnessTest {
         try (Arena arena = Arena.ofShared()) {
             DecisionModel d1 = Models.loadDecisionModel(TestModels.require(D1), arena);
             try (ContextState state = d1.newState(256)) {
-                assertEquals(0, d1.decideEach(state, text(STATE), List.of()).length);
-                assertEquals(0, d1.decideTogether(state, text(STATE), List.of()).length);
+                assertEquals(0, d1.decideIndependently(state, text(STATE), List.of()).length);
+                assertEquals(0, d1.decide(state, text(STATE), List.of()).length);
             }
         }
     }
@@ -232,7 +233,7 @@ final class Lfm3DecisionRobustnessTest {
         try (Arena arena = Arena.ofShared()) {
             DecisionModel d1 = Models.loadDecisionModel(TestModels.require(D1), arena);
             try (ContextState state = d1.newState(1024)) {
-                float[][] batched = d1.decideEach(state, text(license), questions);
+                float[][] batched = d1.decideIndependently(state, text(license), questions);
                 for (int i = 0; i < questions.size(); i++)
                     assertArrayEquals(
                             d1.decide(state, text(license), questions.get(i)),
@@ -310,7 +311,7 @@ final class Lfm3DecisionRobustnessTest {
             try (ContextState state = d1.newState(4096)) {
                 List<Question> many = new ArrayList<>();
                 for (int i = 0; i < Lfm3Decision.GROUP + 1; i++) many.add(shows);
-                float[][] packed = d1.decideTogether(state, input, many);
+                float[][] packed = d1.decide(state, input, many);
                 assertEquals(Lfm3Decision.GROUP + 1, packed.length);
                 for (float[] row : packed) assertRow(row, "packed with media");
                 assertArrayEquals(

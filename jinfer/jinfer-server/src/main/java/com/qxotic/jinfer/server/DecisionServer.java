@@ -43,9 +43,10 @@ import java.util.concurrent.locks.ReentrantLock;
  *
  * {@code state} is a text, any other JSON value - put to the model as JSON, a member a line - or
  * null for media alone; {@code files} (or {@code images}) are images, audio and video as base64
- * data URIs, read ahead of the state through the model's towers. {@code "together": true}, jinfer's
- * own, has the model read the state once for all the questions, an answer then free to shift with
- * the questions beside it; otherwise each is answered as if asked alone.
+ * data URIs, read ahead of the state through the model's towers. Each question is answered as if
+ * asked alone unless {@code "joint": true}, vLLM's field, asks for the model's joint reading: d1
+ * then reads the state once for all the questions, an answer free to shift with the questions
+ * beside it; a model without one answers each alone either way.
  *
  * <p>Requests run one at a time - the compute pool is the process-wide one - while admission and
  * parsing stay concurrent.
@@ -184,37 +185,35 @@ public final class DecisionServer {
         Validation.validateModel(request, servedModel);
         List<Content> input = input(request, model);
         Map<String, Object> asked = questions(request.get("questions"));
-        List<String> names = new ArrayList<>(asked.keySet());
         List<Question> questions = new ArrayList<>();
-        for (String name : names) questions.add(question(name, asked.get(name)));
-        boolean together = Values.booleanValue(request.get("together"), "together", false);
+        asked.forEach((name, question) -> questions.add(question(name, question)));
+        boolean joint = Values.booleanValue(request.get("joint"), "joint", false);
 
         float[][] probabilities;
         compute.lock();
         try {
             probabilities =
-                    together
-                            ? model.decideTogether(state, input, questions)
-                            : model.decideEach(state, input, questions);
-        } catch (IllegalArgumentException tooLong) {
-            // the library's remedy is for Java callers; a client shortens what it sends
-            String message = Http.errorMessage(tooLong);
+                    joint
+                            ? model.decide(state, input, questions)
+                            : model.decideIndependently(state, input, questions);
+        } catch (IllegalArgumentException refused) {
+            // only too long is the state's; the library's remedy is for Java callers
+            String message = Http.errorMessage(refused);
             int remedy = message.indexOf(": open a larger one");
+            if (remedy < 0) throw refused;
             throw new Values.InvalidParam(
                     "state",
-                    remedy < 0
-                            ? message
-                            : message.substring(0, remedy)
-                                    + ": shorten the state or send smaller files");
+                    message.substring(0, remedy) + ": shorten the state or send smaller files");
         } finally {
             compute.unlock();
         }
         requests.incrementAndGet();
-        answered.addAndGet(names.size());
+        answered.addAndGet(questions.size());
 
         Map<String, Object> answers = new LinkedHashMap<>();
-        for (int i = 0; i < names.size(); i++)
-            answers.put(names.get(i), answer(questions.get(i), probabilities[i]));
+        int i = 0;
+        for (String name : asked.keySet())
+            answers.put(name, answer(questions.get(i), probabilities[i++]));
         Http.sendJson(
                 exchange,
                 200,
@@ -260,36 +259,31 @@ public final class DecisionServer {
                         + " holds base64 data: URIs (data:image/..., data:audio/... or"
                         + " data:video/...); the server does not fetch remote URLs");
         String url = (String) file;
-        // a client's malformed URI is refused on its own terms, before any capability check
         Validation.requireParam(
                 url.substring(0, url.indexOf(',')).endsWith(";base64"),
                 field,
                 field + " data: URIs must be base64-encoded (data:image/png;base64,...)");
         if (url.startsWith("data:image/")) {
-            require(modality(model, Media.Image.class), "image");
+            require(model, Media.Image.class, "image");
             return MediaParts.image(Map.of("image_url", url));
         }
         if (url.startsWith("data:audio/")) {
-            require(modality(model, Media.Audio.class), "audio");
+            require(model, Media.Audio.class, "audio");
             return MediaParts.audio(
                     Map.of("input_audio", Map.of("data", url.substring(url.indexOf(',') + 1))));
         }
         if (url.startsWith("data:video/")) {
-            require(modality(model, Media.Video.class), "video");
+            require(model, Media.Video.class, "video");
             return MediaParts.video(Map.of("video_url", url), FRAMES);
         }
         throw new Values.InvalidParam(
                 field, field + " takes image, audio and video data: URIs, not " + type(url));
     }
 
-    private static boolean modality(DecisionModel model, Class<? extends Media> kind) {
-        return model instanceof Multimodal multimodal && multimodal.supports(kind);
-    }
-
-    private static void require(boolean supported, String kind) {
-        if (!supported)
+    private static void require(DecisionModel model, Class<? extends Media> kind, String name) {
+        if (!(model instanceof Multimodal multimodal && multimodal.supports(kind)))
             throw new UnsupportedOperationException(
-                    "this model takes no " + kind + ": send text, or load its media companion");
+                    "this model takes no " + name + ": send text, or load its media companion");
     }
 
     private static String type(String url) {
@@ -307,13 +301,11 @@ public final class DecisionServer {
 
     private static Question question(String name, Object value) {
         String at = "questions." + name;
-        Validation.requireParam(value instanceof Map<?, ?>, at, at + " must be an object");
-        Map<String, Object> q = Values.asObject(value, at);
-        Validation.requireParam(
-                q.get("instructions") instanceof String text && !text.isEmpty(),
-                at + ".instructions",
-                at + ".instructions must be a non-empty text");
-        String text = (String) q.get("instructions");
+        if (!(value instanceof Map<?, ?> q))
+            throw new Values.InvalidParam(at, at + " must be an object");
+        if (!(q.get("instructions") instanceof String text && !text.isEmpty()))
+            throw new Values.InvalidParam(
+                    at + ".instructions", at + ".instructions must be a non-empty text");
         Object criteria = q.get("criteria");
         String type = q.get("type") instanceof String s ? s : "";
         switch (type) {

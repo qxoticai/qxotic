@@ -224,7 +224,7 @@ final class Lfm3DecisionParityTest {
         try (Arena arena = Arena.ofShared()) {
             Lfm3Decision d1 = load(arena);
             try (ContextState state = d1.newState(1024)) {
-                float[][] each = d1.decideEach(state, text(STATE), four);
+                float[][] each = d1.decideIndependently(state, text(STATE), four);
                 for (int i = 0; i < each.length; i++)
                     assertArrayEquals(
                             d1.decide(state, text(STATE), four.get(i)),
@@ -233,7 +233,7 @@ final class Lfm3DecisionParityTest {
                             "question " + i);
                 // a state that holds two of the four prompts: several batches, the same answers
                 try (ContextState tight = d1.newState(160)) {
-                    float[][] split = d1.decideEach(tight, text(STATE), four);
+                    float[][] split = d1.decideIndependently(tight, text(STATE), four);
                     for (int i = 0; i < each.length; i++)
                         assertArrayEquals(each[i], split[i], 1e-4f, "question " + i);
                 }
@@ -255,7 +255,7 @@ final class Lfm3DecisionParityTest {
         try (Arena arena = Arena.ofShared()) {
             Lfm3Decision d1 = load(arena);
             try (ContextState state = d1.newState(2048)) {
-                float[][] together = d1.decideTogether(state, text(STATE), four);
+                float[][] together = d1.decide(state, text(STATE), four);
                 assertEquals(0.99488f, together[0][1], TOLERANCE);
                 assertEquals(0.14401f, together[1][1], TOLERANCE);
                 assertArrayEquals(
@@ -267,7 +267,7 @@ final class Lfm3DecisionParityTest {
                         together[3],
                         TOLERANCE);
 
-                float[][] back = d1.decideTogether(state, text(STATE), reversed);
+                float[][] back = d1.decide(state, text(STATE), reversed);
                 assertArrayEquals(
                         new float[] {0.02541f, 0.02896f, 0.63117f, 0.31446f}, back[0], TOLERANCE);
                 assertArrayEquals(
@@ -275,14 +275,14 @@ final class Lfm3DecisionParityTest {
                 assertEquals(0.15981f, back[2][1], TOLERANCE);
                 assertEquals(0.99630f, back[3][1], TOLERANCE);
 
-                float[][] each = d1.decideEach(state, text(STATE), four);
+                float[][] each = d1.decideIndependently(state, text(STATE), four);
                 assertArrayEquals(
-                        each[0], d1.decideTogether(state, text(STATE), List.of(REFUND))[0], 1e-4f);
+                        each[0], d1.decide(state, text(STATE), List.of(REFUND))[0], 1e-4f);
 
                 // 17 questions: a prompt of 16 and a lone one, in one batch
                 List<Question> many = new ArrayList<>();
                 for (int i = 0; i < Lfm3Decision.GROUP + 1; i++) many.add(REFUND);
-                float[][] rows = d1.decideTogether(state, text(STATE), many);
+                float[][] rows = d1.decide(state, text(STATE), many);
                 assertEquals(Lfm3Decision.GROUP + 1, rows.length);
                 assertEquals(each[0][1], rows[Lfm3Decision.GROUP][1], 1e-4f);
             }

@@ -644,7 +644,7 @@ final class JinferDecisionModelComprehensiveIT {
         assertEquals("cat", response.choice("shows").value());
     }
 
-    /** d3 has one prompt a question: together(true) falls back to each, with the same answers. */
+    /** d3 has one prompt a question: its own way is each alone, the same as independent. */
     @Test
     void togetherOnAFamilyWithoutPackingAnswersEach() throws Exception {
         DecisionRequest request =
@@ -662,15 +662,51 @@ final class JinferDecisionModelComprehensiveIT {
                                         .build())
                         .build();
         Path d3 = TestModels.require("hf.co/ggml-org/vllm-d3-edge-GGUF/vllm-d3-edge-Q8_0.gguf");
-        try (JinferDecisionModel each = JinferDecisionModel.builder().modelPath(d3).build();
-                JinferDecisionModel packed =
-                        JinferDecisionModel.builder().modelPath(d3).together(true).build()) {
+        try (JinferDecisionModel each =
+                        JinferDecisionModel.builder().modelPath(d3).independent(true).build();
+                JinferDecisionModel packed = JinferDecisionModel.builder().modelPath(d3).build()) {
             DecisionResponse one = each.decide(request);
             DecisionResponse all = packed.decide(request);
             assertEquals(
                     one.yesNo("refund").probability(), all.yesNo("refund").probability(), 1e-5);
             assertEquals(one.choice("team").value(), all.choice("team").value());
         }
+    }
+
+    /**
+     * Eleven scale levels exceed what d1 can read (a digit a level): refused in the model's words.
+     */
+    @Test
+    void elevenScaleLevelsAreRefused() {
+        ScaleQuestion.Builder builder = ScaleQuestion.builder().text("?");
+        for (int i = 0; i <= 10; i++) builder.level("level " + i);
+        IllegalArgumentException refused =
+                assertThrows(
+                        IllegalArgumentException.class,
+                        () ->
+                                model.decide(
+                                        DecisionRequest.builder()
+                                                .input("x")
+                                                .question("s", builder.build())
+                                                .build()));
+        assertTrue(refused.getMessage().contains("at most 10 levels"), refused.getMessage());
+    }
+
+    /** A choice stays in the model's code space: 200 options are all told apart. */
+    @Test
+    void aChoiceStaysInTheCodeSpace() {
+        ChoiceQuestion.Builder builder = ChoiceQuestion.builder().text("Which one?");
+        for (int i = 0; i < 200; i++) builder.option("option " + i);
+        DecisionResponse response =
+                model.decide(
+                        DecisionRequest.builder()
+                                .input("Which option is the last one?")
+                                .question("c", builder.build())
+                                .build());
+        assertEquals(200, response.choice("c").probabilities().size());
+        assertTrue(
+                response.choice("c").probabilities().containsKey(response.choice("c").value()),
+                response.choice("c").value());
     }
 
     /** The fixture tree beside the checkout, when scripts/download-models.sh filled it. */

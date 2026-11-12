@@ -138,6 +138,37 @@ final class DecisionServerD3IntegrationTest {
         }
     }
 
+    /** d3 tells at most 255 options apart: a question past it is the client's 400, not a guess. */
+    @Test
+    void moreOptionsThanD3CanCodeIsA400() throws Exception {
+        Arena arena = Arenas.newCrossThread();
+        try {
+            DecisionModel d3 =
+                    Models.loadDecisionModel(
+                            TestModels.require(D3),
+                            arena,
+                            Map.of("media", TestModels.require(MMPROJ)));
+            try (var server = DecisionServer.start(d3, 4096, "d3", ServerConfig.local(0))) {
+                String url = "http://127.0.0.1:" + server.address().getPort() + "/v1/systemone";
+                StringBuilder criteria = new StringBuilder();
+                for (int i = 0; i < 300; i++)
+                    criteria.append(i == 0 ? "" : ", ").append("\"o").append(i).append("\": null");
+                Reply refused =
+                        post(
+                                url,
+                                "{\"state\": \"pick one\", \"questions\": {\"c\": {\"type\":"
+                                        + " \"choice\", \"instructions\": \"Which?\","
+                                        + " \"criteria\": {"
+                                        + criteria
+                                        + "}}}}");
+                assertEquals(400, refused.status(), String.valueOf(refused.body()));
+                assertTrue(refused.error().contains("at most 255"), refused.error());
+            }
+        } finally {
+            Arenas.close(arena);
+        }
+    }
+
     @SuppressWarnings("unchecked")
     private static double number(Map<String, Object> answers, String name, String field) {
         return ((Number) ((Map<String, Object>) answers.get(name)).get(field)).doubleValue();

@@ -102,14 +102,19 @@ final class Mappings {
 
     /** User content, media included: text stays text, image/audio/video decode to media parts. */
     private static List<Content> userParts(UserMessage u, VideoSampler videoSampler) {
+        return parts(u.contents(), videoSampler);
+    }
+
+    /** Contents as parts, in order: text stays text, image/audio/video decode to media parts. */
+    static List<Content> parts(
+            List<dev.langchain4j.data.message.Content> contents, VideoSampler videoSampler) {
         List<Content> parts = new ArrayList<>();
-        for (dev.langchain4j.data.message.Content c : u.contents()) {
-            parts.add(
-                    c instanceof TextContent t
-                            ? new Content.Text(t.text())
-                            : media(c, videoSampler));
-        }
+        for (dev.langchain4j.data.message.Content c : contents) parts.add(part(c, videoSampler));
         return parts;
+    }
+
+    static Content part(dev.langchain4j.data.message.Content c, VideoSampler videoSampler) {
+        return c instanceof TextContent t ? new Content.Text(t.text()) : media(c, videoSampler);
     }
 
     /** One image, audio or video content, decoded; anything else is refused. */

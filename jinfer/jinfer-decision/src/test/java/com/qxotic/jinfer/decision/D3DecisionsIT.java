@@ -4,6 +4,7 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
+import com.qxotic.jinfer.ContextState;
 import com.qxotic.jinfer.chat.Content;
 import com.qxotic.jinfer.chat.DecisionModel;
 import com.qxotic.jinfer.chat.Models;
@@ -63,13 +64,14 @@ final class D3DecisionsIT {
 
     @Test
     void aTicketIsRoutedAndRated() {
-        try (Decisions decisions = Decisions.over(d3, 2048)) {
+        Decisions decisions = Decisions.of(d3);
+        try (ContextState state = d3.newState(2048)) {
             var refund = Question.predicate("Is the customer asking for a refund?");
             var team = Question.choice("Which team should handle this?", Team.class);
             var urgency =
                     Question.rating(
                             "How urgent is this?", "Can wait", "This week", "Today", "Right now");
-            Answers answers = decisions.askEach(TICKET, refund, team, urgency);
+            Answers answers = decisions.askIndependently(state, TICKET, refund, team, urgency);
             assertEquals(0.97326, answers.get(refund).yes(), TOLERANCE);
             assertTrue(answers.get(refund).isYes());
             assertEquals(Team.BILLING, answers.get(team).selectedOption());
@@ -85,7 +87,9 @@ final class D3DecisionsIT {
             described.put("other", null);
             Answer.Choice<String> routed =
                     decisions.ask(
-                            TICKET, Question.choice("Which team should handle this?", described));
+                            state,
+                            TICKET,
+                            Question.choice("Which team should handle this?", described));
             assertEquals("billing", routed.selectedOption());
             assertEquals(0.97421f, routed.confidence(), TOLERANCE);
         }
@@ -94,7 +98,8 @@ final class D3DecisionsIT {
     /** d3 reads images, and only images: sound is refused naming what it takes. */
     @Test
     void mediaIsImagesOnly() throws Exception {
-        try (Decisions decisions = Decisions.over(d3, 2048)) {
+        Decisions decisions = Decisions.of(d3);
+        try (ContextState state = d3.newState(2048)) {
             var cat = Question.predicate("Is there a cat in the picture?");
             List<Content> photo =
                     List.of(
@@ -102,7 +107,7 @@ final class D3DecisionsIT {
                                     ImageCodec.load(
                                             Path.of("../../test-fixtures/lfm3/images/cat.png"))),
                             new Content.Text("A photo sent by a customer."));
-            assertTrue(decisions.ask(photo, cat).isYes(), "the cat");
+            assertTrue(decisions.ask(state, photo, cat).isYes(), "the cat");
 
             List<Content> clip =
                     List.of(
@@ -115,7 +120,8 @@ final class D3DecisionsIT {
                             new Content.Text("A recording sent by a customer."));
             UnsupportedOperationException refused =
                     assertThrows(
-                            UnsupportedOperationException.class, () -> decisions.ask(clip, cat));
+                            UnsupportedOperationException.class,
+                            () -> decisions.ask(state, clip, cat));
             assertTrue(refused.getMessage().contains("takes no audio"), refused.getMessage());
         }
     }
@@ -123,7 +129,8 @@ final class D3DecisionsIT {
     /** An empty picture list and a video without frames fail before any inference. */
     @Test
     void anUnusableMediaIsRefused() throws Exception {
-        try (Decisions decisions = Decisions.over(d3, 2048)) {
+        Decisions decisions = Decisions.of(d3);
+        try (ContextState state = d3.newState(2048)) {
             var cat = Question.predicate("Is there a cat?");
             List<Content> video =
                     List.of(
@@ -131,7 +138,8 @@ final class D3DecisionsIT {
                             new Content.Text("A clip."));
             UnsupportedOperationException refused =
                     assertThrows(
-                            UnsupportedOperationException.class, () -> decisions.ask(video, cat));
+                            UnsupportedOperationException.class,
+                            () -> decisions.ask(state, video, cat));
             assertTrue(refused.getMessage().contains("takes no video"), refused.getMessage());
         }
     }

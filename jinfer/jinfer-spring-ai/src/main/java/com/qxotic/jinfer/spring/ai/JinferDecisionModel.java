@@ -20,6 +20,7 @@ import java.util.ArrayList;
 import java.util.Collections;
 import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
 import java.util.Objects;
 import java.util.concurrent.locks.ReentrantLock;
@@ -34,6 +35,7 @@ import org.springframework.ai.decision.answer.ChoiceAnswer;
 import org.springframework.ai.decision.answer.DecisionAnswer;
 import org.springframework.ai.decision.answer.ScoreAnswer;
 import org.springframework.ai.decision.answer.YesNoAnswer;
+import org.springframework.ai.decision.input.ConversationInput;
 import org.springframework.ai.decision.input.DecisionInput;
 import org.springframework.ai.decision.input.FieldsInput;
 import org.springframework.ai.decision.input.TextInput;
@@ -44,9 +46,9 @@ import org.springframework.ai.decision.question.ScoreQuestion;
 import org.springframework.ai.decision.question.YesNoQuestion;
 
 /**
- * Spring AI {@link DecisionModel} backed by jinfer: a local decision GGUF (Liquid d1) answering
- * yes/no, choice and score questions with probabilities, in process, nothing generated. The
- * family's prompt, the tokens read for each option and the calibration live in its port - this
+ * Spring AI {@link DecisionModel} backed by jinfer: a local decision GGUF (e.g. Liquid's d1)
+ * answering yes/no, choice and score questions with probabilities, in process, nothing generated.
+ * The family's prompt, the tokens read for each option and the calibration live in its port - this
  * class maps types and owns the pipeline.
  *
  * <p>The input is content - text, images, audio and video parts in their order, the media read
@@ -54,9 +56,8 @@ import org.springframework.ai.decision.question.YesNoQuestion;
  * member a line. A field holding content parts is its text; its media join the input's, and a field
  * of media alone is named by their kinds. A conversation is not an input and is refused.
  *
- * <p>The questions of a prompt are answered each as if asked alone, in the prompt's order. {@link
- * Builder#together} has the model read the input once for all of them, several times faster; an
- * answer can then shift with the questions asked beside it.
+ * <p>The questions of a prompt are answered in its order, the model's own way unless {@link
+ * Builder#independent} asks for each alone.
  *
  * <p>Concurrency contract as everywhere: an instance is ONE serial pipeline over one reusable
  * state; for parallel pipelines build several instances - weights are shared via the OS page cache.
@@ -67,7 +68,7 @@ public final class JinferDecisionModel implements DecisionModel, AutoCloseable {
     private final ContextState state;
     private final Arena arena;
     private final ReentrantLock lock = new ReentrantLock(true); // single-stream, like ChatEngine
-    private final boolean together;
+    private final boolean independent;
     private final VideoSampler videoSampler;
     private final String modelName; // the GGUF's file name; null for a model loaded by the caller
 
@@ -85,7 +86,7 @@ public final class JinferDecisionModel implements DecisionModel, AutoCloseable {
             }
             this.state = model.newState(b.contextCapacity);
             this.modelName = b.modelPath == null ? null : b.modelPath.getFileName().toString();
-            this.together = b.together;
+            this.independent = b.independent;
             this.videoSampler = b.videoSampler;
         } catch (RuntimeException | Error e) {
             Arenas.close(arena); // free before failing
@@ -108,40 +109,47 @@ public final class JinferDecisionModel implements DecisionModel, AutoCloseable {
         }
     }
 
-    /**
-     * The GGUF this instance loaded, the name every response's metadata carries; for a model passed
-     * to {@link Builder#model(com.qxotic.jinfer.chat.DecisionModel)}, null.
-     */
-    public String modelName() {
-        return modelName;
-    }
-
     @Override
     public DecisionResponse call(DecisionPrompt prompt) {
         rejectModelSwitch(prompt);
         List<Content> input = input(prompt.getInstructions());
-        List<String> names = new ArrayList<>(prompt.getQuestions().keySet());
-        List<com.qxotic.jinfer.chat.DecisionModel.Question> questions = new ArrayList<>();
-        for (String name : names) questions.add(question(prompt.getQuestions().get(name)));
+        Map<String, DecisionQuestion> asked = prompt.getQuestions();
+        List<com.qxotic.jinfer.chat.DecisionModel.Question> questions =
+                asked.values().stream().map(JinferDecisionModel::question).toList();
 
         float[][] probabilities;
         lock.lock();
         try {
             probabilities =
-                    together
-                            ? model.decideTogether(state, input, questions)
-                            : model.decideEach(state, input, questions);
+                    independent
+                            ? model.decideIndependently(state, input, questions)
+                            : model.decide(state, input, questions);
         } finally {
             lock.unlock();
         }
         DecisionResponse.Builder response = DecisionResponse.builder(prompt);
-        for (int i = 0; i < names.size(); i++)
+        int i = 0;
+        for (Map.Entry<String, DecisionQuestion> entry : asked.entrySet())
             response.answer(
-                    names.get(i),
-                    answer(prompt.getQuestions().get(names.get(i)), probabilities[i]));
+                    entry.getKey(),
+                    answer(entry.getValue(), row(questions.get(i), probabilities[i++])));
         if (modelName != null)
             response.metadata(DecisionResponseMetadata.builder().model(modelName).build());
         return response.build();
+    }
+
+    /** A port that breaks the contract (a probability per option) fails here, loudly. */
+    private static float[] row(
+            com.qxotic.jinfer.chat.DecisionModel.Question question, float[] row) {
+        int options = question.options().size();
+        if (row.length != options)
+            throw new IllegalStateException(
+                    "the model answered "
+                            + row.length
+                            + " probabilities for "
+                            + options
+                            + " options");
+        return row;
     }
 
     /** One loaded GGUF a pipeline: a prompt naming another model is refused, never answered. */
@@ -177,7 +185,7 @@ public final class JinferDecisionModel implements DecisionModel, AutoCloseable {
                 parts.add(new Content.Text(JsonCodec.stringify(plain, true)));
                 yield parts;
             }
-            default ->
+            case ConversationInput conversation ->
                     throw new UnsupportedOperationException(
                             "a jinfer decision model judges content or fields, not a conversation:"
                                     + " put what is to be judged as DecisionInput.text(...),"
@@ -187,7 +195,7 @@ public final class JinferDecisionModel implements DecisionModel, AutoCloseable {
 
     private Content part(MessagePart part) {
         return switch (part) {
-            case TextPart text -> new Content.Text(text.text() == null ? "" : text.text());
+            case TextPart text -> new Content.Text(text.text());
             case MediaPart media -> JinferMappings.media(media.media(), videoSampler);
             default ->
                     throw new UnsupportedOperationException(
@@ -203,19 +211,17 @@ public final class JinferDecisionModel implements DecisionModel, AutoCloseable {
     private String text(List<?> parts, List<Content> media) {
         StringBuilder text = new StringBuilder(), kinds = new StringBuilder();
         boolean written = false;
-        for (Object item : parts)
-            switch (part((MessagePart) item)) {
-                case Content.Text t -> {
-                    text.append(t.text());
-                    written = true;
-                }
-                case Content.Media m -> {
-                    media.add(m);
-                    kinds.append(kinds.isEmpty() ? "" : ", ")
-                            .append(m.media().getClass().getSimpleName().toLowerCase());
-                }
-                default -> throw new AssertionError();
+        for (Object item : parts) {
+            Content part = part((MessagePart) item);
+            if (part instanceof Content.Media m) {
+                media.add(m);
+                kinds.append(kinds.isEmpty() ? "" : ", ")
+                        .append(m.media().getClass().getSimpleName().toLowerCase(Locale.ROOT));
+            } else {
+                text.append(((Content.Text) part).text());
+                written = true;
             }
+        }
         return written ? text.toString() : kinds.toString();
     }
 
@@ -235,9 +241,6 @@ public final class JinferDecisionModel implements DecisionModel, AutoCloseable {
                     levels.add(new Option(level.getLabel(), level.getDescription()));
                 yield new Rating(q.getText(), levels);
             }
-            default ->
-                    throw new UnsupportedOperationException(
-                            question.getClass().getSimpleName() + " is not supported");
         };
     }
 
@@ -255,7 +258,7 @@ public final class JinferDecisionModel implements DecisionModel, AutoCloseable {
                                 .getKey();
                 yield ChoiceAnswer.builder().value(best).probabilities(probabilities).build();
             }
-            default -> {
+            case ScoreQuestion q -> {
                 List<Double> probabilities = new ArrayList<>();
                 double mean = 0;
                 for (int i = 0; i < p.length; i++) {
@@ -283,7 +286,7 @@ public final class JinferDecisionModel implements DecisionModel, AutoCloseable {
         private final Map<String, Path> localCompanions = new LinkedHashMap<>();
         private final Map<String, String> companionRefs = new LinkedHashMap<>();
         private int contextCapacity; // 0: the default
-        private boolean together;
+        private boolean independent;
         private VideoSampler videoSampler = VideoSampler.UNIFORM;
 
         /** The decision GGUF to load. Required. */
@@ -362,13 +365,12 @@ public final class JinferDecisionModel implements DecisionModel, AutoCloseable {
         }
 
         /**
-         * Whether a request's questions are read together: the input once for all of them, far
-         * faster with several questions, an answer then free to shift with the questions asked
-         * beside it and with their order. Off by default: each question is answered as if asked
-         * alone.
+         * Whether each question is answered as if asked alone ({@code decideIndependently}). Off by
+         * default: the model's own way ({@code decide}), where an answer may shift with the other
+         * questions asked.
          */
-        public Builder together(boolean together) {
-            this.together = together;
+        public Builder independent(boolean independent) {
+            this.independent = independent;
             return this;
         }
 

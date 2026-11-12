@@ -42,7 +42,7 @@ class ConfigurationMetadataTest {
                         "\"spring.ai.jinfer.decision\"",
                         "\"spring.ai.jinfer.decision.model\"",
                         "\"spring.ai.jinfer.decision.context-capacity\"",
-                        "\"spring.ai.jinfer.decision.together\"",
+                        "\"spring.ai.jinfer.decision.independent\"",
                         "\"spring.ai.jinfer.decision.companions\"");
     }
 }

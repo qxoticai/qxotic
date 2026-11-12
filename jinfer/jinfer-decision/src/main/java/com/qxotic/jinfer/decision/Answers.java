@@ -1,23 +1,22 @@
 package com.qxotic.jinfer.decision;
 
 import java.util.ArrayList;
-import java.util.IdentityHashMap;
+import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 
 /**
- * The answers to several questions asked together, each typed by its question. Answers are looked
- * up by the question object that was asked, so keep the instances; a question asked twice in one
- * call holds the last of its answers.
+ * The answers to several questions, each typed by its question: immutable, safe to share across
+ * threads. An answer is found by its question or any equal one; a question asked twice in one call
+ * holds the last of its answers.
  */
 public final class Answers {
 
-    private final Map<Question<?>, Answer> answers = new IdentityHashMap<>();
+    private final Map<Question<?>, Answer> answers = new HashMap<>();
 
-    Answers() {}
-
-    void put(Question<?> question, float[] probabilities) {
-        answers.put(question, answer(question, probabilities));
+    Answers(Question<?>[] questions, float[][] rows) {
+        for (int i = 0; i < questions.length; i++)
+            answers.put(questions[i], answer(questions[i], rows[i]));
     }
 
     /** The answer to {@code question}, which must be one of the questions asked. */
@@ -34,7 +33,8 @@ public final class Answers {
         return (A)
                 switch (question) {
                     case Question.Predicate q -> new Answer.Predicate(probabilities[1]); // no, yes
-                    case Question.Choice<?> q -> new Answer.Choice<>(q.keys(), list(probabilities));
+                    case Question.Choice<?> q ->
+                            new Answer.Choice<>(q.options(), list(probabilities));
                     case Question.Rating<?> q ->
                             new Answer.Rating<>(q.levels(), list(probabilities));
                 };

@@ -262,6 +262,78 @@ final class DecisionServerLimitsTest {
         }
     }
 
+    /** A key on the routes that need one: 401 with WWW-Authenticate, and /health stays open. */
+    @Test
+    void theApiKeyGuardsTheWorkRoute() throws Exception {
+        ServerConfig.Access keyed =
+                new ServerConfig.Access("secret-token", java.util.Set.of("https://app.example"));
+        try (var server =
+                DecisionServer.start(stub, 0, "d1", ServerConfig.local(0).withAccess(keyed))) {
+            String base = base(server);
+            String body = "{\"state\": \"x\", " + ONE + "}";
+
+            // no key: 401 on the work route, with the challenge a client acts on
+            HttpResponse<String> anonymous =
+                    send(
+                            HttpRequest.newBuilder(URI.create(base + "/v1/systemone"))
+                                    .POST(HttpRequest.BodyPublishers.ofString(body))
+                                    .header("Content-Type", "application/json")
+                                    .build());
+            assertEquals(401, anonymous.statusCode(), anonymous.body());
+            assertEquals("Bearer", anonymous.headers().firstValue("WWW-Authenticate").orElse(""));
+
+            // a wrong key is the same refusal
+            assertEquals(401, send(withKey(base, body, "wrong")).statusCode());
+
+            // the right key runs the model
+            assertEquals(200, send(withKey(base, body, "secret-token")).statusCode());
+            assertTrue(stub.input != null);
+
+            // /health needs no key: a load balancer must reach it
+            assertEquals(200, send(get(base + "/health")).statusCode());
+            // the other probes do when a key is set
+            assertEquals(401, send(get(base + "/props")).statusCode());
+            assertEquals(
+                    200,
+                    send(HttpRequest.newBuilder(URI.create(base + "/props"))
+                                    .header("Authorization", "Bearer secret-token")
+                                    .GET()
+                                    .build())
+                            .statusCode());
+
+            // a CORS origin not listed is a 403 that says so
+            HttpResponse<String> offOrigin =
+                    send(
+                            HttpRequest.newBuilder(URI.create(base + "/v1/systemone"))
+                                    .POST(HttpRequest.BodyPublishers.ofString(body))
+                                    .header("Content-Type", "application/json")
+                                    .header("Authorization", "Bearer secret-token")
+                                    .header("Origin", "https://evil.example")
+                                    .build());
+            assertEquals(403, offOrigin.statusCode(), offOrigin.body());
+            assertTrue(offOrigin.body().contains("Origin is not allowed"), offOrigin.body());
+
+            // the listed origin passes
+            HttpResponse<String> onOrigin =
+                    send(
+                            HttpRequest.newBuilder(URI.create(base + "/v1/systemone"))
+                                    .POST(HttpRequest.BodyPublishers.ofString(body))
+                                    .header("Content-Type", "application/json")
+                                    .header("Authorization", "Bearer secret-token")
+                                    .header("Origin", "https://app.example")
+                                    .build());
+            assertEquals(200, onOrigin.statusCode(), onOrigin.body());
+        }
+    }
+
+    private static HttpRequest withKey(String base, String body, String key) {
+        return HttpRequest.newBuilder(URI.create(base + "/v1/systemone"))
+                .POST(HttpRequest.BodyPublishers.ofString(body))
+                .header("Content-Type", "application/json")
+                .header("Authorization", "Bearer " + key)
+                .build();
+    }
+
     /** A question's name is the client's key: unusual spellings travel to the answer unchanged. */
     @Test
     void questionNamesAreTheCallersKeys() throws Exception {

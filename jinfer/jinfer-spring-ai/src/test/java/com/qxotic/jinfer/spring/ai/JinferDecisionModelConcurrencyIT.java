@@ -127,21 +127,13 @@ final class JinferDecisionModelConcurrencyIT {
                     }
 
                     @Override
-                    public float[][] decideEach(
+                    public float[][] decide(
                             ContextState state,
                             List<Content> input,
                             List<? extends Question> questions) {
                         inside.countDown();
                         await(release);
-                        return core.decideEach(state, input, questions);
-                    }
-
-                    @Override
-                    public float[][] decideTogether(
-                            ContextState state,
-                            List<Content> input,
-                            List<? extends Question> questions) {
-                        return core.decideTogether(state, input, questions);
+                        return core.decide(state, input, questions);
                     }
                 };
         JinferDecisionModel model = JinferDecisionModel.builder().model(slow).build();
@@ -193,8 +185,8 @@ final class JinferDecisionModelConcurrencyIT {
     }
 
     /**
-     * The same state serves every shape in one instance: text, fields, media parts, together, and
-     * each question kind, in sequence, without one shape leaking into the next.
+     * The same state serves every shape in one instance: text, fields, media parts, several
+     * questions, and each question kind, in sequence, without one shape leaking into the next.
      */
     @Test
     void everyInputShapeInSequenceOnOneInstance() {

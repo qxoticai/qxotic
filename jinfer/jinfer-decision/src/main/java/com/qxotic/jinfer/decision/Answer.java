@@ -81,6 +81,11 @@ public sealed interface Answer {
             return levels.get(selectedIndex());
         }
 
+        /** The median level: the one at {@link #medianIndex}. */
+        public E medianLevel() {
+            return levels.get(medianIndex());
+        }
+
         /** The position on the scale as a number: 1.4 is mostly level 1, some level 2. */
         public float mean() {
             float mean = 0;
@@ -89,12 +94,9 @@ public sealed interface Answer {
         }
 
         /**
-         * The position of the first level at which the cumulative probability reaches a half: the
-         * middle of the distribution, where most of the probability mass has accumulated.
-         *
-         * <p>{@link #mean()} is the level every face reports (LangChain4j's {@code mean()}, Spring
-         * AI's {@code getValue()}, the server's {@code score}); use this for a level the model gave
-         * mass to, which a mean can miss when the distribution is split between distant levels.
+         * The position of the first level at which the cumulative probability reaches a half.
+         * Unlike {@link #mean()}, it is always a level the model gave weight to, even when the mass
+         * is split between distant levels.
          */
         public int medianIndex() {
             float mass = 0;

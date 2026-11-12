@@ -258,14 +258,13 @@ final class JinferDecisionModelComprehensiveIT {
                 empty.getMessage().contains("parts cannot be null or empty"), empty.getMessage());
     }
 
-    /** Together reads a picture once for both questions: the picks hold, the numbers may shift. */
+    /** Asked together, d1 reads a picture once for both questions: the picks hold. */
     @Test
     void togetherReadsAPictureOnce() throws Exception {
         org.springframework.ai.content.Media cat =
                 new org.springframework.ai.content.Media(
                         MimeType.valueOf("image/png"), new ByteArrayResource(imageBytes("cat")));
-        try (JinferDecisionModel packed =
-                JinferDecisionModel.builder().model(core).together(true).build()) {
+        try (JinferDecisionModel packed = JinferDecisionModel.builder().model(core).build()) {
             DecisionResponse response =
                     packed.call(
                             DecisionInput.content(
@@ -321,7 +320,6 @@ final class JinferDecisionModelComprehensiveIT {
     void theResponseNamesTheModelAndAPromptCannotSwitchIt() {
         try (JinferDecisionModel named =
                 JinferDecisionModel.builder().modelPath(TestModels.require(D1)).build()) {
-            assertEquals("d1-2B-Q8_0.gguf", named.modelName());
             DecisionResponse response =
                     named.call(
                             DecisionPrompt.builder()
@@ -595,7 +593,7 @@ final class JinferDecisionModelComprehensiveIT {
         }
     }
 
-    /** d3 has one prompt a question: together(true) falls back to each, with the same answers. */
+    /** d3 has one prompt a question: its own way is each alone, the same as independent. */
     @Test
     void togetherOnAFamilyWithoutPackingAnswersEach() throws Exception {
         Map<String, DecisionQuestion> asked =
@@ -615,6 +613,7 @@ final class JinferDecisionModelComprehensiveIT {
                                         TestModels.require(
                                                 "hf.co/ggml-org/vllm-d3-edge-GGUF/"
                                                         + "vllm-d3-edge-Q8_0.gguf"))
+                                .independent(true)
                                 .build();
                 JinferDecisionModel packed =
                         JinferDecisionModel.builder()
@@ -622,7 +621,6 @@ final class JinferDecisionModelComprehensiveIT {
                                         TestModels.require(
                                                 "hf.co/ggml-org/vllm-d3-edge-GGUF/"
                                                         + "vllm-d3-edge-Q8_0.gguf"))
-                                .together(true)
                                 .build()) {
             DecisionResponse one = each.call(ticket, asked);
             DecisionResponse all = packed.call(ticket, asked);
@@ -632,6 +630,39 @@ final class JinferDecisionModelComprehensiveIT {
                     1e-5);
             assertEquals(one.getChoice("team").getValue(), all.getChoice("team").getValue());
         }
+    }
+
+    /**
+     * Eleven score levels exceed what d1 can read (a digit a level): refused, in the model's words.
+     */
+    @Test
+    void elevenScoreLevelsAreRefused() {
+        ScoreQuestion.Builder builder = ScoreQuestion.builder().text("?");
+        for (int i = 0; i <= 10; i++) builder.level("level " + i);
+        ScoreQuestion eleven = builder.build();
+        IllegalArgumentException refused =
+                assertThrows(
+                        IllegalArgumentException.class,
+                        () -> model.call("x", questions("s", eleven)));
+        assertTrue(refused.getMessage().contains("at most 10 levels"), refused.getMessage());
+    }
+
+    /**
+     * A choice stays in the model's code space: d1's fallback pool covers 200 options, and a
+     * question past it is refused rather than answered with a code it cannot read.
+     */
+    @Test
+    void aChoiceStaysInTheCodeSpace() {
+        ChoiceQuestion.Builder builder = ChoiceQuestion.builder().text("Which one?");
+        for (int i = 0; i < 200; i++) builder.option("option " + i);
+        DecisionResponse response =
+                model.call("Which option is the last one?", questions("c", builder.build()));
+        assertEquals(200, response.getChoice("c").getProbabilities().size());
+        assertTrue(
+                response.getChoice("c")
+                        .getProbabilities()
+                        .containsKey(response.getChoice("c").getValue()),
+                response.getChoice("c").getValue());
     }
 
     /** The fixture tree beside the checkout, when scripts/download-models.sh filled it. */

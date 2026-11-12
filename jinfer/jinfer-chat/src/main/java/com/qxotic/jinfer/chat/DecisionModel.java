@@ -27,7 +27,9 @@ public interface DecisionModel {
      * A state for calls whose input and questions together take up to {@code contextCapacity}
      * tokens; the caller closes it. As everywhere in jinfer, 0 is the default (4096 tokens, or the
      * model's maximum when that is smaller) and -1 the model's maximum. The state's memory grows
-     * with the capacity, so size it to the inputs.
+     * with the capacity, so size it to the inputs: a decision model reads a whole prompt in one
+     * batch, so its working buffers are sized to the capacity too, and the maximum of a
+     * long-context model takes tens of gigabytes (d1 reads up to 128,000 tokens, d3 262,144).
      *
      * @throws IllegalArgumentException for a capacity above the model's maximum, or below -1
      */
@@ -44,27 +46,30 @@ public interface DecisionModel {
     float[] decide(ContextState state, List<Content> input, Question question);
 
     /**
-     * Answers each question about {@code input} on its own: row {@code i} is what {@link #decide}
-     * answers for question {@code i}, whatever else is asked. A model may run several of them in
-     * one pass; by default they are asked one after another.
+     * Answers the questions about {@code input}, a row each, in the way the model was trained to
+     * take several questions. No isolation between the questions is guaranteed: a model trained to
+     * read them together reads the input once for all of them, far faster, and an answer can then
+     * shift with what is asked beside it and in which order. Any other model answers each question
+     * alone. Use {@link #decideIndependently} when an answer must not depend on the other
+     * questions.
      */
-    default float[][] decideEach(
+    default float[][] decide(
+            ContextState state, List<Content> input, List<? extends Question> questions) {
+        return decideIndependently(state, input, questions);
+    }
+
+    /**
+     * Answers each question about {@code input} independently of the others: row {@code i} is what
+     * {@link #decide(ContextState, List, Question)} answers for question {@code i} alone, whatever
+     * else is asked. A model may run several of them in one pass; by default they are asked one
+     * after another.
+     */
+    default float[][] decideIndependently(
             ContextState state, List<Content> input, List<? extends Question> questions) {
         float[][] answers = new float[questions.size()][];
         for (int i = 0; i < answers.length; i++)
             answers[i] = decide(state, input, questions.get(i));
         return answers;
-    }
-
-    /**
-     * Answers the questions about {@code input} together, a row each. A model trained to may read
-     * the input once for all of them, far faster than {@link #decideEach}; the questions are then
-     * not kept apart, and an answer can shift with what is asked beside it and in which order. By
-     * default the same as {@link #decideEach}.
-     */
-    default float[][] decideTogether(
-            ContextState state, List<Content> input, List<? extends Question> questions) {
-        return decideEach(state, input, questions);
     }
 
     /**
@@ -116,7 +121,6 @@ public interface DecisionModel {
                 throw new IllegalArgumentException("a rating needs at least 2 levels");
         }
 
-        /** The levels. */
         @Override
         public List<Option> options() {
             return levels;

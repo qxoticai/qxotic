@@ -12,7 +12,6 @@ import com.qxotic.jinfer.chat.JsonCodec;
 import com.qxotic.jinfer.chat.Models;
 import com.qxotic.jinfer.codecs.VideoSampler;
 import com.qxotic.jinfer.hub.ModelStore;
-import dev.langchain4j.data.message.TextContent;
 import dev.langchain4j.exception.UnsupportedFeatureException;
 import dev.langchain4j.model.decision.DecisionModel;
 import dev.langchain4j.model.decision.listener.DecisionModelListener;
@@ -39,14 +38,15 @@ import java.util.ArrayList;
 import java.util.Collections;
 import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
 import java.util.Objects;
 import java.util.concurrent.locks.ReentrantLock;
 
 /**
- * langchain4j {@link DecisionModel} backed by jinfer: a local decision GGUF (Liquid d1) answering
- * yes/no, choice and scale questions with probabilities, in process, nothing generated. The
- * family's prompt, the tokens read for each option and the calibration live in its port - this
+ * langchain4j {@link DecisionModel} backed by jinfer: a local decision GGUF (e.g. Liquid's d1)
+ * answering yes/no, choice and scale questions with probabilities, in process, nothing generated.
+ * The family's prompt, the tokens read for each option and the calibration live in its port - this
  * class maps types and owns the pipeline.
  *
  * <p>The input is a text, fields - put to the model as JSON, a member a line - or contents: text,
@@ -54,9 +54,8 @@ import java.util.concurrent.locks.ReentrantLock;
  * media} companion. A field holding contents is its text (or its media's kinds); its media join the
  * input's, never the JSON. A conversation is not an input: {@code inputMessages} is refused.
  *
- * <p>The questions of a request are answered each as if asked alone, in the request's order. {@link
- * Builder#together} has the model read the input once for all of them, several times faster; an
- * answer can then shift with the questions asked beside it.
+ * <p>The questions of a request are answered in its order, the model's own way unless {@link
+ * Builder#independent} asks for each alone.
  *
  * <p>Concurrency contract as everywhere: an instance is ONE serial pipeline over one reusable
  * state; for parallel pipelines build several instances - weights are shared via the OS page cache.
@@ -67,7 +66,7 @@ public final class JinferDecisionModel implements DecisionModel, AutoCloseable {
     private final ContextState state;
     private final Arena arena;
     private final ReentrantLock lock = new ReentrantLock(true); // single-stream, like ChatEngine
-    private final boolean together;
+    private final boolean independent;
     private final VideoSampler videoSampler;
     private final String modelName; // the GGUF's file name; null for a model loaded by the caller
     private final List<DecisionModelListener> listeners;
@@ -86,9 +85,9 @@ public final class JinferDecisionModel implements DecisionModel, AutoCloseable {
             }
             this.state = model.newState(b.contextCapacity);
             this.modelName = b.modelPath == null ? null : b.modelPath.getFileName().toString();
-            this.together = b.together;
+            this.independent = b.independent;
             this.videoSampler = b.videoSampler;
-            this.listeners = List.copyOf(b.listeners);
+            this.listeners = b.listeners;
         } catch (RuntimeException | Error e) {
             Arenas.close(arena); // free before failing
             throw e;
@@ -108,15 +107,6 @@ public final class JinferDecisionModel implements DecisionModel, AutoCloseable {
         } finally {
             lock.unlock();
         }
-    }
-
-    /**
-     * The GGUF this instance loaded, the name every response carries; for a model passed to {@link
-     * Builder#model(com.qxotic.jinfer.chat.DecisionModel)}, the interface's default.
-     */
-    @Override
-    public String modelName() {
-        return modelName != null ? modelName : DecisionModel.super.modelName();
     }
 
     /** The listeners core's {@code decide} dispatches onRequest/onResponse/onError to. */
@@ -140,25 +130,41 @@ public final class JinferDecisionModel implements DecisionModel, AutoCloseable {
     public DecisionResponse doDecide(DecisionRequest request) {
         rejectModelSwitch(request);
         List<Content> input = input(request.input());
-        List<String> names = new ArrayList<>(request.questions().keySet());
-        List<com.qxotic.jinfer.chat.DecisionModel.Question> questions = new ArrayList<>();
-        for (String name : names) questions.add(question(request.questions().get(name)));
+        Map<String, Question> asked = request.questions();
+        List<com.qxotic.jinfer.chat.DecisionModel.Question> questions =
+                asked.values().stream().map(JinferDecisionModel::question).toList();
 
         float[][] probabilities;
         lock.lock();
         try {
             probabilities =
-                    together
-                            ? model.decideTogether(state, input, questions)
-                            : model.decideEach(state, input, questions);
+                    independent
+                            ? model.decideIndependently(state, input, questions)
+                            : model.decide(state, input, questions);
         } finally {
             lock.unlock();
         }
         Map<String, DecisionAnswer> answers = new LinkedHashMap<>();
-        for (int i = 0; i < names.size(); i++)
+        int i = 0;
+        for (Map.Entry<String, Question> entry : asked.entrySet())
             answers.put(
-                    names.get(i), answer(request.questions().get(names.get(i)), probabilities[i]));
-        return DecisionResponse.builder().answers(answers).modelName(modelName()).build();
+                    entry.getKey(),
+                    answer(entry.getValue(), row(questions.get(i), probabilities[i++])));
+        return DecisionResponse.builder().answers(answers).modelName(modelName).build();
+    }
+
+    /** A port that breaks the contract (a probability per option) fails here, loudly. */
+    private static float[] row(
+            com.qxotic.jinfer.chat.DecisionModel.Question question, float[] row) {
+        int options = question.options().size();
+        if (row.length != options)
+            throw new IllegalStateException(
+                    "the model answered "
+                            + row.length
+                            + " probabilities for "
+                            + options
+                            + " options");
+        return row;
     }
 
     /** One loaded GGUF a pipeline: a request naming another model is refused, never answered. */
@@ -192,19 +198,11 @@ public final class JinferDecisionModel implements DecisionModel, AutoCloseable {
                 parts.add(new Content.Text(JsonCodec.stringify(plain, true)));
                 yield parts;
             }
-            case ContentsInput contents -> {
-                List<Content> parts = new ArrayList<>();
-                for (dev.langchain4j.data.message.Content content : contents.contents())
-                    parts.add(
-                            content instanceof TextContent text
-                                    ? new Content.Text(text.text())
-                                    : Mappings.media(content, videoSampler));
-                yield parts;
-            }
+            case ContentsInput contents -> Mappings.parts(contents.contents(), videoSampler);
             default ->
                     throw new UnsupportedFeatureException(
                             "a jinfer decision model judges a text, fields or contents, not "
-                                    + input.type().name().toLowerCase()
+                                    + input.type().name().toLowerCase(Locale.ROOT)
                                     + ": put what is to be judged as input(...),"
                                     + " inputFields(...) or inputContents(...)");
         };
@@ -224,22 +222,18 @@ public final class JinferDecisionModel implements DecisionModel, AutoCloseable {
     private String text(List<?> contents, List<Content> media) {
         StringBuilder text = new StringBuilder(), kinds = new StringBuilder();
         boolean written = false;
-        for (Object item : contents)
-            switch (item) {
-                case TextContent t -> {
-                    text.append(t.text());
-                    written = true;
-                }
-                case dev.langchain4j.data.message.Content c -> {
-                    Content.Media m = Mappings.media(c, videoSampler);
-                    media.add(m);
-                    kinds.append(kinds.isEmpty() ? "" : ", ")
-                            .append(m.media().getClass().getSimpleName().toLowerCase());
-                }
-                default ->
-                        throw new UnsupportedFeatureException(
-                                item.getClass().getSimpleName() + " is not supported");
+        for (Object item : contents) {
+            // FieldsInput keeps a content list's items langchain4j contents
+            Content part = Mappings.part((dev.langchain4j.data.message.Content) item, videoSampler);
+            if (part instanceof Content.Media m) {
+                media.add(m);
+                kinds.append(kinds.isEmpty() ? "" : ", ")
+                        .append(m.media().getClass().getSimpleName().toLowerCase(Locale.ROOT));
+            } else {
+                text.append(((Content.Text) part).text());
+                written = true;
             }
+        }
         return written ? text.toString() : kinds.toString();
     }
 
@@ -313,7 +307,7 @@ public final class JinferDecisionModel implements DecisionModel, AutoCloseable {
         private final Map<String, Path> localCompanions = new LinkedHashMap<>();
         private final Map<String, String> companionRefs = new LinkedHashMap<>();
         private int contextCapacity; // 0: the default
-        private boolean together;
+        private boolean independent;
         private VideoSampler videoSampler = VideoSampler.UNIFORM;
         private List<DecisionModelListener> listeners = List.of();
 
@@ -393,13 +387,12 @@ public final class JinferDecisionModel implements DecisionModel, AutoCloseable {
         }
 
         /**
-         * Whether a request's questions are read together: the input once for all of them, far
-         * faster with several questions, an answer then free to shift with the questions asked
-         * beside it and with their order. Off by default: each question is answered as if asked
-         * alone.
+         * Whether each question is answered as if asked alone ({@code decideIndependently}). Off by
+         * default: the model's own way ({@code decide}), where an answer may shift with the other
+         * questions asked.
          */
-        public Builder together(boolean together) {
-            this.together = together;
+        public Builder independent(boolean independent) {
+            this.independent = independent;
             return this;
         }
 

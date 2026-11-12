@@ -50,7 +50,7 @@ class JinferDecisionModelTest {
     static final class Stub implements DecisionModel {
         List<Content> input;
         List<Question> questions;
-        boolean together;
+        boolean joint;
         final List<ContextState> states = new ArrayList<>();
         Function<Question, float[]> rows = q -> uniform(q.options().size());
 
@@ -67,11 +67,11 @@ class JinferDecisionModelTest {
 
         @Override
         public float[] decide(ContextState state, List<Content> input, Question question) {
-            return decideEach(state, input, List.of(question))[0];
+            return decideIndependently(state, input, List.of(question))[0];
         }
 
         @Override
-        public float[][] decideEach(
+        public float[][] decideIndependently(
                 ContextState state, List<Content> input, List<? extends Question> questions) {
             this.input = input;
             this.questions = new ArrayList<>(questions);
@@ -79,10 +79,10 @@ class JinferDecisionModelTest {
         }
 
         @Override
-        public float[][] decideTogether(
+        public float[][] decide(
                 ContextState state, List<Content> input, List<? extends Question> questions) {
-            together = true;
-            return decideEach(state, input, questions);
+            joint = true;
+            return decideIndependently(state, input, questions);
         }
     }
 
@@ -138,7 +138,7 @@ class JinferDecisionModelTest {
                         List.of(new Option("low"), new Option("high", "Needs an answer today"))),
                 stub.questions.get(2));
         assertEquals(List.of(new Content.Text("ticket")), stub.input);
-        assertFalse(stub.together, "each question alone by default");
+        assertTrue(stub.joint, "the questions taken the model's own way by default");
     }
 
     @Test
@@ -266,17 +266,17 @@ class JinferDecisionModelTest {
     }
 
     @Test
-    void togetherReadsTheInputOnceForAllQuestions() {
-        try (JinferDecisionModel packed =
-                JinferDecisionModel.builder().model(stub).together(true).build()) {
-            packed.decide(
+    void independentAsksEachQuestionAlone() {
+        try (JinferDecisionModel independent =
+                JinferDecisionModel.builder().model(stub).independent(true).build()) {
+            independent.decide(
                     DecisionRequest.builder()
                             .input("x")
                             .question("a", YesNoQuestion.from("A?"))
                             .question("b", YesNoQuestion.from("B?"))
                             .build());
         }
-        assertTrue(stub.together);
+        assertFalse(stub.joint);
         assertEquals(2, stub.questions.size());
     }
 

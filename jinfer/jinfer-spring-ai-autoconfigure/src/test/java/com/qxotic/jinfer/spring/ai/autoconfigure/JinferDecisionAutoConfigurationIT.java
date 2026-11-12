@@ -22,8 +22,8 @@ import org.springframework.boot.test.context.runner.ApplicationContextRunner;
 class JinferDecisionAutoConfigurationIT {
 
     /**
-     * The knobs are behaviour, not just binding: together packs, companions attach, the bean
-     * injects.
+     * The knobs are behaviour, not just binding: independent asks each question alone, companions
+     * attach, the bean injects.
      */
     @Test
     void theConfiguredKnobsReachTheModel() {
@@ -37,14 +37,14 @@ class JinferDecisionAutoConfigurationIT {
                         "spring.ai.jinfer.decision.model=" + d1,
                         "spring.ai.jinfer.decision.companions.media=" + mmproj,
                         "spring.ai.jinfer.decision.context-capacity=2048",
-                        "spring.ai.jinfer.decision.together=true")
+                        "spring.ai.jinfer.decision.independent=true")
                 .run(
                         context -> {
                             assertThat(context).hasNotFailed();
                             // the bean is injectable as the framework's interface
                             DecisionModel model = context.getBean(DecisionModel.class);
                             assertThat(model).isInstanceOf(JinferDecisionModel.class);
-                            // together packs the two questions into one reading: both answer
+                            // each question read alone: both answer
                             DecisionResponse response =
                                     model.call(
                                             "I was charged twice and I want my money back today.",
