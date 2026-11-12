@@ -731,7 +731,7 @@ static void encode_specials(void) {
 static void error_messages(void) {
     toknroll_tokenizer* t = tiny();
     char utf8[2000];
-    for (int i = 0; i < 2000; i += 2) { utf8[i] = (char) 0xC3; utf8[i + 1] = (char) 0xA9; }
+    for (int i = 0; i < 2000; i += 2) { utf8[i] = '\xC3'; utf8[i + 1] = '\xA9'; }
     CHECK_ERROR(toknroll_id(t, utf8, sizeof utf8), TOKNROLL_ENOTFOUND, LE, "no token");
     const char* message = LE(NULL);
     CHECK_EQ(strlen(message), 1023);   /* ten-byte prefix, whole two-byte characters, three-byte ellipsis */
