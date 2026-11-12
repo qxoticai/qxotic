@@ -6,6 +6,7 @@ import com.qxotic.jinfer.Transcription;
 import com.qxotic.jinfer.chat.Channel;
 import com.qxotic.jinfer.chat.ChatEngine;
 import com.qxotic.jinfer.chat.Message;
+import com.qxotic.jinfer.chat.Modality;
 import com.qxotic.jinfer.media.Media;
 import com.qxotic.jinfer.server.OpenAiChat;
 import java.util.ArrayList;
@@ -95,8 +96,18 @@ final class Stream {
 
     private static OpenAiChat.Lowered lower(Model model, Map<String, Object> wire) {
         ChatEngine engine = model.engine();
-        return OpenAiChat.lower(
-                wire, model.name, Model.CONFIG, engine.loaded().samplingDefaults().resolve());
+        OpenAiChat.Lowered lowered =
+                OpenAiChat.lower(
+                        wire,
+                        model.name,
+                        Model.CONFIG,
+                        engine.loaded().samplingDefaults().resolve());
+        // ponytail: the speech would be made and dropped - no C call carries it yet
+        if (lowered.request().output().contains(Modality.AUDIO))
+            throw Errors.unsupported(
+                    "spoken replies are not in libjinfer: ask for text, or use jinfer server or"
+                            + " the Java API, which speak");
+        return lowered;
     }
 
     /** jinfer_prepare: the request's prompt computed into the cache now, nothing generated. */

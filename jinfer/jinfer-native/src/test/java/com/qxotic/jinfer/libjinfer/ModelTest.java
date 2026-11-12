@@ -231,4 +231,15 @@ class ModelTest {
     private static String finishReason(String json) {
         return (String) choice(json).get("finish_reason");
     }
+
+    /** libjinfer carries no speech, so a request for it is refused before any work, not dropped. */
+    @Test
+    void aSpokenReplyIsRefusedBeforeAnyWork() {
+        String spoken =
+                "{\"messages\":[{\"role\":\"user\",\"content\":\"Hi\"}],"
+                        + "\"modalities\":[\"text\",\"audio\"],\"audio\":{\"format\":\"wav\"}}";
+        Errors.Failure e = assertThrows(Errors.Failure.class, () -> Stream.chat(lm, spoken));
+        assertEquals(Errors.EUNSUPPORTED, e.code);
+        assertTrue(e.getMessage().contains("jinfer server"), e.getMessage());
+    }
 }

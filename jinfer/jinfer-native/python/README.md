@@ -78,16 +78,17 @@ The [comparison](https://github.com/qxoticai/qxotic/blob/main/docs/jinfer/python
 
 ## Models
 
-Any GGUF of a ported architecture, in `Q4_0`, `Q4_1`, `Q5_0`, `Q5_1`, `Q4_K`, `Q5_K`, `Q6_K`, `Q8_0`, `MXFP4`, `NVFP4`, `Q1_0`, `TQ1_0`, `TQ2_0`, `F32`, `F16` or `BF16`; `Q8_0` is the recommended balance of quality and speed.
+Any GGUF of a ported architecture, in `Q4_0`, `Q4_1`, `Q5_0`, `Q5_1`, `Q4_K`, `Q5_K`, `Q6_K`, `Q8_0`, `MXFP4`, `NVFP4`, `Q1_0`, `Q2_0`, `PQ2_0`, `PTQ1_0`, `TQ1_0`, `TQ2_0`, `F32`, `F16` or `BF16`; `Q8_0` is the recommended balance of quality and speed.
 
 | Family | What the model does |
 |---|---|
 | Google Gemma 4 | chat, vision, audio in |
 | Google EmbeddingGemma 2 | embeddings of text, images, audio and video |
 | Liquid AI LFM 2.5 | chat, vision, embeddings, reranking |
-| Liquid AI LFM3 | chat, vision, audio in and speech out (LFM3-Omni) |
+| Liquid AI LFM3 | chat, vision, audio in (LFM3-Omni); spoken replies only through `jinfer server` and the Java API |
 | OpenAI gpt-oss | chat |
 | Alibaba Qwen 3.5+ | chat, vision |
+| PrismML Ternary Bonsai 2 | chat, vision, in 2-bit and ternary weights |
 | Alibaba Qwen 3 | embeddings, reranking |
 | Meta Llama 3+, IBM Granite 4.1+, Mistral AI Ministral 3, Hugging Face SmolLM3, OpenBMB MiniCPM5 | chat |
 | Poolside Laguna XS 2.1, JetBrains Mellum 2, inclusionAI Ling 3, NVIDIA Nemotron-H | chat |

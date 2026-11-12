@@ -46,8 +46,9 @@
  *              -Djinfer.offline=true never downloads; local files need nothing.
  *   Payloads   Requests are the OpenAI JSON shapes. jinfer_chat takes and returns exactly the jinfer
  *              server's /v1/chat/completions request and response, tools, response_format with a JSON
- *              schema and media as data URLs included; jinfer_speak takes the /v1/audio/speech fields
- *              that apply (input, speed). Text inside a request is JSON text: escape it. A
+ *              schema and media as data URLs included; a spoken reply (audio in "modalities") is
+ *              JINFER_EUNSUPPORTED. jinfer_speak takes OpenAI's /v1/audio/speech fields that apply
+ *              (input, speed). Text inside a request is JSON text: escape it. A
  *              schema-constrained reply cannot come back malformed: tokens outside the schema are
  *              never sampled.
  *   Stability  Before 1.0 any release may break this API or its ABI, and the soname is the whole
@@ -156,7 +157,7 @@ enum {
     JINFER_PROPERTY_HAS_MEDIA           = 101,   /* images and audio in, through the media companion */
     JINFER_PROPERTY_HAS_EMBEDDING       = 102,
     JINFER_PROPERTY_HAS_RERANK          = 103,
-    JINFER_PROPERTY_HAS_SPEECH          = 104,
+    JINFER_PROPERTY_HAS_SPEECH          = 104,   /* jinfer_speak: a speech synthesis model; no chat model speaks here */
     JINFER_PROPERTY_HAS_TRANSCRIPTION   = 105
 };
 
