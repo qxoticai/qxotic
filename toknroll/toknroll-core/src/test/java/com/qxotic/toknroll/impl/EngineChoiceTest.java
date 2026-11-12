@@ -4,6 +4,7 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
+import com.qxotic.toknroll.Splitter;
 import com.qxotic.toknroll.Tokenizer;
 import com.qxotic.toknroll.testkit.TiktokenFixtures;
 import org.junit.jupiter.api.Test;
@@ -14,7 +15,12 @@ import org.junit.jupiter.api.Test;
 class EngineChoiceTest {
     @Test
     void anOutOfMemoryIsNotADisagreement() {
-        Tokenizer tokenizer = TiktokenFixtures.createTiktokenTokenizer("cl100k_base");
+        // a fresh tokenizer, not the fixtures' shared one, whose engine another test may have
+        // chosen
+        Tokenizer tokenizer =
+                TiktokenFixtures.createTiktokenTokenizer(
+                        "cl100k_base",
+                        Splitter.regex(TiktokenFixtures.splitPattern("cl100k_base")));
         ArmedEngine.armed = true;
         try {
             assertThrows(OutOfMemoryError.class, () -> tokenizer.encode("hello world"));
