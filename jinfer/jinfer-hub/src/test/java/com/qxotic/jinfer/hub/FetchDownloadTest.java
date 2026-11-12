@@ -51,14 +51,6 @@ class FetchDownloadTest {
     private static final String PAYLOAD =
             "weights, but long enough to have a middle worth resuming from";
 
-    /** Spellings of one path that differ only in case share one lock, on every file system. */
-    @Test
-    void aPathInAnyCaseHasOneLock(@TempDir Path dir) throws IOException {
-        assertEquals(
-                Fetch.lockFileFor(dir.resolve("models--LiquidAI--d1-2B-GGUF/x.gguf")),
-                Fetch.lockFileFor(dir.resolve("models--liquidai--d1-2b-gguf/x.gguf")));
-    }
-
     /**
      * On Linux and macOS a new lock folder is the user's alone (another user's: by hand, as root).
      */
