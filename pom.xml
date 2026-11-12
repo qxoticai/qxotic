@@ -80,7 +80,7 @@
     <json.version>0.2.0</json.version>
     <fetch.version>0.1.0</fetch.version>
     <safetensors.version>0.3.1</safetensors.version>
-    <jota.version>0.3.1</jota.version>
+    <jota.version>0.4.0</jota.version>
     <jam.version>0.4.0</jam.version>
     <toknroll.version>0.4.0</toknroll.version>
     <jinfer.version>0.4.0</jinfer.version>

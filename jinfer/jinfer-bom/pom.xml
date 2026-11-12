@@ -189,12 +189,12 @@
       <dependency>
         <groupId>com.qxotic</groupId>
         <artifactId>jota-core</artifactId>
-        <version>0.3.1</version>
+        <version>0.4.0</version>
       </dependency>
       <dependency>
         <groupId>com.qxotic</groupId>
         <artifactId>jota-memory</artifactId>
-        <version>0.3.1</version>
+        <version>0.4.0</version>
       </dependency>
       <dependency>
         <groupId>com.qxotic</groupId>
