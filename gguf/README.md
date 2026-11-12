@@ -39,7 +39,7 @@ GGUF.write(modified, Path.of("output.gguf"));
 <dependency>
     <groupId>com.qxotic</groupId>
     <artifactId>gguf</artifactId>
-    <version>0.3.1</version>
+    <version>0.4.0-rc1</version>
 </dependency>
 ```
 
@@ -48,3 +48,7 @@ GGUF.write(modified, Path.of("output.gguf"));
 - **No tensor payload I/O.** Provides only tensor offsets and metadata; no reading, loading or memory-mapping.
 - **No quantization.** Raw bytes only.
 - **No inference.** That is [jinfer](../jinfer).
+
+## Documentation
+
+[The documentation](https://github.com/qxoticai/qxotic/blob/main/docs/gguf/index.md) covers reading, metadata, tensors, quantization types, writing and error handling.

@@ -1,5 +1,5 @@
 ///usr/bin/env jbang "$0" "$@" ; exit $?
-//DEPS com.qxotic:gguf:0.4.0
+//DEPS com.qxotic:gguf:0.4.0-rc1
 //DEPS info.picocli:picocli:4.7.7
 
 import com.qxotic.format.gguf.GGUF;
