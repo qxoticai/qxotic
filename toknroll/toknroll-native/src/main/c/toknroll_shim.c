@@ -12,15 +12,6 @@ void toknroll__error_set(T, int32_t, const char*);
 /* the body of a forwarding function: the call inside the gate, or fail when there is no runtime */
 #define CALL(type, fail, call) { T t = toknroll__enter(); type r = t ? (call) : (fail); toknroll__leave(); return r; }
 #define CALL_VOID(call) { T t = toknroll__enter(); if (t) (call); toknroll__leave(); }
-/* the same for a call on tokenizer tk: refused when quarantined, and quarantined when the call ended past
-   every catch (an escape: what it was updating may be half-written) */
-#define CALL_ON(tk, type, fail, call) { \
-    T t = toknroll__enter(); \
-    int outer = toknroll__escape_swap(0); \
-    type r = !t || toknroll__quarantined(tk) ? (fail) : (call); \
-    if (toknroll__escape_swap(outer)) toknroll__quarantine(tk); \
-    toknroll__leave(); \
-    return r; }
 
 const char* toknroll__last_error(T, int32_t*);
 toknroll_tokenizer* toknroll__tokenizer_load(T, const char*);
@@ -39,14 +30,14 @@ int32_t toknroll_log_set(toknroll_log_fn fn, void* user_data) { return toknroll_
 int32_t toknroll_configure(const char* const* options, int32_t count) { return toknroll__configure(options, count, "toknroll_configure", toknroll__error_set); }
 
 toknroll_tokenizer* toknroll_tokenizer_load(const char* source) CALL(toknroll_tokenizer*, NULL, toknroll__tokenizer_load(t, source))
-void toknroll_tokenizer_free(toknroll_tokenizer* tk) { if (tk) { toknroll__release(tk); CALL_VOID(toknroll__tokenizer_free(t, tk)) } }   /* NULL never starts the runtime; released first: a load meanwhile may get the same handle */
+void toknroll_tokenizer_free(toknroll_tokenizer* tk) { if (tk) CALL_VOID(toknroll__tokenizer_free(t, tk)) }   /* NULL never starts the runtime */
 
-int32_t toknroll_encode(const toknroll_tokenizer* tk, const char* text, int64_t length, uint32_t flags, int32_t* out, int32_t cap) CALL_ON(tk, int32_t, TOKNROLL_ERROR, toknroll__encode(t, tk, text, length, flags, out, cap))
-int64_t toknroll_decode(const toknroll_tokenizer* tk, const int32_t* ids, int32_t count, int32_t start, char* out, int64_t cap, int32_t* decoded_tokens) CALL_ON(tk, int64_t, TOKNROLL_ERROR, toknroll__decode(t, tk, ids, count, start, out, cap, decoded_tokens))
+int32_t toknroll_encode(const toknroll_tokenizer* tk, const char* text, int64_t length, uint32_t flags, int32_t* out, int32_t cap) CALL(int32_t, TOKNROLL_ERROR, toknroll__encode(t, tk, text, length, flags, out, cap))
+int64_t toknroll_decode(const toknroll_tokenizer* tk, const int32_t* ids, int32_t count, int32_t start, char* out, int64_t cap, int32_t* decoded_tokens) CALL(int64_t, TOKNROLL_ERROR, toknroll__decode(t, tk, ids, count, start, out, cap, decoded_tokens))
 
-int32_t toknroll_encode_batch(const toknroll_tokenizer* tk, const char* texts, const int64_t* text_offsets, int32_t count, uint32_t flags, int32_t* out, int32_t cap, int32_t* offsets) CALL_ON(tk, int32_t, TOKNROLL_ERROR, toknroll__encode_batch(t, tk, texts, text_offsets, count, flags, out, cap, offsets))
+int32_t toknroll_encode_batch(const toknroll_tokenizer* tk, const char* texts, const int64_t* text_offsets, int32_t count, uint32_t flags, int32_t* out, int32_t cap, int32_t* offsets) CALL(int32_t, TOKNROLL_ERROR, toknroll__encode_batch(t, tk, texts, text_offsets, count, flags, out, cap, offsets))
 
-int32_t toknroll_vocabulary_size(const toknroll_tokenizer* tk) CALL_ON(tk, int32_t, TOKNROLL_ERROR, toknroll__vocabulary_size(t, tk))
-int64_t toknroll_token_flags(const toknroll_tokenizer* tk, int32_t id) CALL_ON(tk, int64_t, TOKNROLL_ERROR, toknroll__token_flags(t, tk, id))
-int64_t toknroll_token(const toknroll_tokenizer* tk, int32_t id, char* out, int64_t cap) CALL_ON(tk, int64_t, TOKNROLL_ERROR, toknroll__token(t, tk, id, out, cap))
-int32_t toknroll_id(const toknroll_tokenizer* tk, const char* token, int64_t length) CALL_ON(tk, int32_t, TOKNROLL_ERROR, toknroll__id(t, tk, token, length))
+int32_t toknroll_vocabulary_size(const toknroll_tokenizer* tk) CALL(int32_t, TOKNROLL_ERROR, toknroll__vocabulary_size(t, tk))
+int64_t toknroll_token_flags(const toknroll_tokenizer* tk, int32_t id) CALL(int64_t, TOKNROLL_ERROR, toknroll__token_flags(t, tk, id))
+int64_t toknroll_token(const toknroll_tokenizer* tk, int32_t id, char* out, int64_t cap) CALL(int64_t, TOKNROLL_ERROR, toknroll__token(t, tk, id, out, cap))
+int32_t toknroll_id(const toknroll_tokenizer* tk, const char* token, int64_t length) CALL(int32_t, TOKNROLL_ERROR, toknroll__id(t, tk, token, length))

@@ -95,7 +95,7 @@ final class Errors {
         // out of memory or stack: no heap to build words with, or no stack; C's static ones instead
         int kind = Escape.kind(t);
         if (kind != Escape.OTHER) {
-            Escape.words(kind, 0);
+            Escape.words(kind);
             return ERROR;
         }
         String message = t.getMessage();

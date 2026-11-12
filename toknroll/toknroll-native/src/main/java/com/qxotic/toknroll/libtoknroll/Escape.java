@@ -13,9 +13,8 @@ import org.graalvm.word.WordFactory;
  * the classes below, never to the process. Native image runs a handler where no safepoint may come:
  * so everything here is uninterruptible and allocates nothing, and this class and its handlers are
  * initialized at build time (native-image.properties), with nothing left to initialize when one
- * runs. A handler leaves C's static words for the error (toknroll_isolate.c) and quarantines the
- * call's tokenizer, since the catches it skipped may have left what the call was updating
- * half-written.
+ * runs. A handler leaves C's static words for the error (toknroll_isolate.c). What the call was
+ * updating needs no repair: the encode path takes no locks and publishes only whole values.
  */
 final class Escape {
     static final int OUT_OF_MEMORY = 1, STACK_OVERFLOW = 2, OTHER = 3;
@@ -27,12 +26,11 @@ final class Escape {
     static final IllegalStateException BATCH = new IllegalStateException("a batch task escaped");
 
     /**
-     * The thread's error as C's static words for kind, and its message as it now is; {@code
-     * escaped} 1 also quarantines the call's tokenizer. No transition: C neither blocks nor calls
-     * back.
+     * The thread's error as C's static words for kind, and its message as it now is. No transition:
+     * C neither blocks nor calls back.
      */
     @CFunction(value = "toknroll__escaped", transition = CFunction.Transition.NO_TRANSITION)
-    static native CCharPointer words(int kind, int escaped);
+    static native CCharPointer words(int kind);
 
     @Uninterruptible(reason = "an entry point's exception handler")
     static int kind(Throwable t) {
@@ -41,16 +39,11 @@ final class Escape {
                 : t instanceof StackOverflowError ? STACK_OVERFLOW : OTHER;
     }
 
-    @Uninterruptible(reason = "an entry point's exception handler")
-    private static CCharPointer escaped(Throwable t) {
-        return words(kind(t), 1);
-    }
-
     /** The handler of the entry points that return an int: TOKNROLL_ERROR. */
     static final class IntFailure implements CEntryPoint.ExceptionHandler {
         @Uninterruptible(reason = "an entry point's exception handler")
         static int handle(Throwable t) {
-            escaped(t);
+            words(kind(t));
             return Errors.ERROR;
         }
     }
@@ -59,7 +52,7 @@ final class Escape {
     static final class LongFailure implements CEntryPoint.ExceptionHandler {
         @Uninterruptible(reason = "an entry point's exception handler")
         static long handle(Throwable t) {
-            escaped(t);
+            words(kind(t));
             return Errors.ERROR;
         }
     }
@@ -68,7 +61,7 @@ final class Escape {
     static final class HandleFailure implements CEntryPoint.ExceptionHandler {
         @Uninterruptible(reason = "an entry point's exception handler")
         static ObjectHandle handle(Throwable t) {
-            escaped(t);
+            words(kind(t));
             return WordFactory.nullPointer();
         }
     }
@@ -77,7 +70,7 @@ final class Escape {
     static final class StringFailure implements CEntryPoint.ExceptionHandler {
         @Uninterruptible(reason = "an entry point's exception handler")
         static CCharPointer handle(Throwable t) {
-            return escaped(t);
+            return words(kind(t));
         }
     }
 
@@ -85,7 +78,7 @@ final class Escape {
     static final class VoidFailure implements CEntryPoint.ExceptionHandler {
         @Uninterruptible(reason = "an entry point's exception handler")
         static void handle(Throwable t) {
-            escaped(t);
+            words(kind(t));
         }
     }
 

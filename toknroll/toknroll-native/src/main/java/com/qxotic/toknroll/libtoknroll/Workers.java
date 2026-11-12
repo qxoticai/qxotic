@@ -15,8 +15,8 @@ import org.graalvm.nativeimage.c.function.CFunction;
  * task is one call of {@link #task}, whose ordinary failure is kept here and rethrown, and whose
  * error past every catch (an OutOfMemoryError or StackOverflowError native image raised where no
  * catch ran) ends in its exception handler and comes back as the batch's escape: the batch fails,
- * the caller's tokenizer is quarantined, and nothing waits on a task that cannot finish. In a
- * forked child, which has none of the threads, a batch runs on the calling thread.
+ * and nothing waits on a task that cannot finish. In a forked child, which has none of the threads,
+ * a batch runs on the calling thread.
  */
 final class Workers {
     /** The threads a batch is shared between, the caller's included. */
@@ -55,7 +55,7 @@ final class Workers {
             HANDLES.destroy(handle);
         }
         if (escaped != 0) {
-            Escape.words(escaped, 1); // the error, in C's words, and the tokenizer quarantined
+            Escape.words(escaped); // the error, in C's words
             throw Escape.BATCH;
         }
         Throwable failure = list.failure;
