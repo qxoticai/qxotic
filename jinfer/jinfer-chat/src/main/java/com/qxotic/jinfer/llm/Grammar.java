@@ -49,10 +49,10 @@ import java.util.concurrent.ConcurrentHashMap;
  *   <li>{@code "literal"} - its UTF-8 bytes; escapes {@code \" \\ \n \r \t}, and {@code \xNN} for
  *       the raw byte 0xNN.
  *   <li>{@code [abc]} {@code [a-z0-9]} {@code [^,\n]} - BYTE classes: members, ranges, negation,
- *       the same escapes. {@code .} matches any one byte. The engine matches UTF-8 bytes, not code
- *       points (llama.cpp matches code points): a non-ASCII character inside a class is its bytes
- *       as separate members, so put non-ASCII text in literals, and read {@code [^"]*} as "any
- *       bytes but a quote", which is what free text wants.
+ *       the same escapes. {@code .} matches one UTF-8 character, as in llama.cpp. Classes match
+ *       UTF-8 bytes, not code points (llama.cpp matches code points): a non-ASCII character inside
+ *       a class is its bytes as separate members, so put non-ASCII text in literals, and read
+ *       {@code [^"]*} as "any bytes but a quote", which is what free text wants.
  *   <li>{@code x | y} - alternation; {@code ( … )} - grouping.
  *   <li>{@code * + ?} and bounded {@code {m} {m,} {m,n}} - repetition of the preceding element
  *       ({@code "ab"{2,4}}, {@code [0-9]{1,3}}, {@code (num ",")*}).
@@ -565,7 +565,7 @@ public final class Grammar {
                 return switch (e) {
                     case Rule.Element.TokenId(int id) -> slot(T_TOKEN, id, cont);
                     case Rule.Element.Value(byte b) -> term(singleton(b), cont);
-                    case Rule.Element.Dot ignored -> term(all(), cont);
+                    case Rule.Element.Dot ignored -> compileElem(UTF8_CHAR, cont);
                     case Rule.Element.CharClass(List<Byte> chars, boolean neg) ->
                             term(classSet(chars, neg), cont);
                     case Rule.Element.Ref(int rid) -> ref(rid, cont);
@@ -635,10 +635,6 @@ public final class Grammar {
                 int x = b & 0xFF;
                 m[x >>> 6] |= 1L << (x & 63);
                 return m;
-            }
-
-            static long[] all() {
-                return new long[] {-1L, -1L, -1L, -1L};
             }
 
             static long[] classSet(List<Byte> chars, boolean neg) {
@@ -1164,12 +1160,13 @@ public final class Grammar {
      *
      * <p>Object properties are emitted in the schema's DECLARATION order: every required property
      * first, then the optional ones as an ordered subset; {@code required} decides membership,
-     * never order. An object with declared properties admits no other keys. Other keywords ({@code
-     * patternProperties}, {@code pattern}, numeric bounds, unknown formats, …) are ignored, and an
-     * unresolvable {@code $ref} admits any JSON value - the result is always valid JSON satisfying
-     * the supported constraints, never a broken grammar. A minimum above its maximum ({@code
-     * minLength > maxLength}, {@code minItems > maxItems}) admits nothing and throws {@link
-     * IllegalArgumentException}.
+     * never order. An object with declared properties admits no other keys. A standard constraint
+     * the grammar cannot enforce (numeric bounds, {@code pattern}, {@code allOf}, {@code
+     * uniqueItems}, {@code additionalProperties} other than false, …) is refused with an {@link
+     * IllegalArgumentException} naming it, never compiled away; annotations, an unknown {@code
+     * format} and keywords outside the standard are ignored, and an unresolvable {@code $ref}
+     * admits any JSON value. A minimum above its maximum ({@code minLength > maxLength}, {@code
+     * minItems > maxItems}) admits nothing and throws {@link IllegalArgumentException}.
      */
     static Spec fromSchema(Map<String, Object> schema, Vocab v) {
         return of(Schema.toGbnf(schema, true), v);
@@ -1195,6 +1192,39 @@ public final class Grammar {
     /** The schemaless-JSON source ({@link #json}'s grammar) - the JSON-mode content hole. */
     public static String jsonGbnf() {
         return JSON_GRAMMAR;
+    }
+
+    /**
+     * GBNF's {@code .}: one UTF-8 character, as llama.cpp reads it - an ASCII byte, or a lead byte
+     * and its continuation bytes. Lead-byte ranges only: overlong and surrogate forms are not told
+     * apart, which no tokenizer's vocabulary spells.
+     */
+    private static final Rule.Element UTF8_CHAR = utf8Char();
+
+    private static Rule.Element utf8Char() {
+        Rule.Element tail = bytes(0x80, 0xBF);
+        Rule.Element or = new Rule.Element.Pipe();
+        return new Rule.Element.Group(
+                List.of(
+                        bytes(0x00, 0x7F),
+                        or,
+                        bytes(0xC2, 0xDF),
+                        tail,
+                        or,
+                        bytes(0xE0, 0xEF),
+                        tail,
+                        tail,
+                        or,
+                        bytes(0xF0, 0xF4),
+                        tail,
+                        tail,
+                        tail));
+    }
+
+    private static Rule.Element bytes(int lo, int hi) {
+        List<Byte> members = new ArrayList<>();
+        for (int b = lo; b <= hi; b++) members.add((byte) b);
+        return new Rule.Element.CharClass(members, false);
     }
 
     /** Translates a JSON Schema node tree into a GBNF grammar string. */
@@ -1294,10 +1324,67 @@ public final class Grammar {
             return name;
         }
 
+        /**
+         * The standard JSON Schema constraints this compiler cannot enforce. A node carrying one is
+         * refused rather than compiled without it, so a grammar never admits what its schema
+         * forbids. Annotations ({@code title}, {@code description}, {@code examples}, a {@code
+         * format} it does not know, …) and keywords outside the standard stay ignored, as the spec
+         * asks of a validator.
+         */
+        private static final Set<String> UNSUPPORTED =
+                Set.of(
+                        "minimum",
+                        "maximum",
+                        "exclusiveMinimum",
+                        "exclusiveMaximum",
+                        "multipleOf",
+                        "pattern",
+                        "patternProperties",
+                        "propertyNames",
+                        "minProperties",
+                        "maxProperties",
+                        "dependentRequired",
+                        "dependentSchemas",
+                        "dependencies",
+                        "unevaluatedProperties",
+                        "uniqueItems",
+                        "contains",
+                        "minContains",
+                        "maxContains",
+                        "prefixItems",
+                        "additionalItems",
+                        "unevaluatedItems",
+                        "allOf",
+                        "not",
+                        "if",
+                        "then",
+                        "else",
+                        "additionalProperties");
+
+        private static void refuseUnsupported(Map<String, Object> m) {
+            for (Map.Entry<String, Object> e : m.entrySet()) {
+                String key = e.getKey();
+                Object value = e.getValue();
+                boolean noOp =
+                        Boolean.FALSE.equals(value)
+                                && (key.equals("uniqueItems")
+                                        || key.equals("additionalProperties"));
+                if (UNSUPPORTED.contains(key) && !noOp)
+                    throw new IllegalArgumentException(
+                            "JSON Schema keyword \""
+                                    + key
+                                    + "\": "
+                                    + jsonEncode(value)
+                                    + " is not supported in a grammar: remove it from the schema,"
+                                    + " or check it after decoding");
+            }
+        }
+
         @SuppressWarnings("unchecked")
         private String body(Object node) {
             if (!(node instanceof Map)) return "value";
             Map<String, Object> m = (Map<String, Object>) node;
+            refuseUnsupported(m);
             // $ref REPLACES the node it sits on (draft semantics), so it answers before anything
             // else this node might also carry
             if (m.get("$ref") instanceof String pointer) return refRule(pointer);

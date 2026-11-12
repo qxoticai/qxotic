@@ -413,6 +413,26 @@ class ServerIntegrationTest {
         }
     }
 
+    /** A schema keyword the grammar cannot enforce is a 400 naming it, before any decoding. */
+    @Test
+    void anUnenforceableSchemaKeywordIsABadRequest() throws Exception {
+        try (ChatEngine engine = engine(TestModels.require(MODEL), PromptCache.Options.DEFAULTS);
+                Server.Running server = Server.start(engine, ServerConfig.local(0));
+                HttpClient client = HttpClient.newHttpClient()) {
+            HttpResponse<String> reply =
+                    post(
+                            client,
+                            base(server) + "/v1/chat/completions",
+                            """
+                            {"messages": [{"role": "user", "content": "How old?"}], "max_tokens": 8,
+                             "response_format": {"type": "json_schema", "json_schema": {"name": "age",
+                               "schema": {"type": "integer", "minimum": 0}}}}
+                            """);
+            assertEquals(400, reply.statusCode(), reply.body());
+            assertTrue(reply.body().contains("minimum"), reply.body());
+        }
+    }
+
     private static Map<String, Object> chatChoice(String body) {
         Map<String, Object> response = Values.asObject(JsonCodec.parse(body), "response");
         return Values.asObject(

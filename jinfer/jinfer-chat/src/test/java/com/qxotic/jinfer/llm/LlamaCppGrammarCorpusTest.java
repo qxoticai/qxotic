@@ -2,6 +2,8 @@ package com.qxotic.jinfer.llm;
 
 import static com.qxotic.jinfer.llm.GrammarMembership.BV;
 import static com.qxotic.jinfer.llm.GrammarMembership.accepts;
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import com.qxotic.format.json.Json;
@@ -10,8 +12,8 @@ import java.io.InputStream;
 import java.nio.charset.StandardCharsets;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.stream.Stream;
-import org.junit.jupiter.api.Assumptions;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.Arguments;
 import org.junit.jupiter.params.provider.MethodSource;
@@ -23,75 +25,51 @@ import org.junit.jupiter.params.provider.MethodSource;
  * spelling-independent property, so the corpus transfers even though the two compilers name their
  * rules differently and llama.cpp's expected-grammar text does not transfer at all.
  *
- * <p>Two things this pins that hand-written cases do not: an INDEPENDENT author's idea of what the
- * notation means (quantifiers, repetition bounds, escapes, char classes), and the JSON Schema
- * keywords a serious implementation is expected to honour. Where jinfer's documented subset is
- * narrower than llama.cpp's, or the two simply chose differently, the case is listed in {@link
- * #DIVERGENCES} with the reason - that list is the honest coverage report, not a set of excuses: a
- * keyword leaving it is a feature landing, and a case failing OUTSIDE it is a bug.
+ * <p>Every case runs, none is skipped. A schema keyword this compiler cannot enforce must be
+ * REFUSED, naming it ({@link #REFUSED}); where llama.cpp is narrower than the JSON and JSON Schema
+ * specs, the spec's answer is asserted instead, with the reason ({@link #SPEC_OVER_LLAMA}). Any
+ * other disagreement is a failure.
  */
 final class LlamaCppGrammarCorpusTest {
 
     /**
-     * Cases this engine does not agree with, each named with the divergence it exposes. Two kinds:
-     * keywords {@link Grammar#fromSchema} documents as IGNORED (so the grammar is permissive where
-     * llama.cpp is strict - it accepts documents llama.cpp rejects), and genuine semantic choices
-     * that differ. This list IS the coverage report: a keyword leaving it is a feature landing, a
-     * case failing outside it is a bug.
+     * Cases whose schema carries a keyword a grammar cannot enforce: refused, the keyword named.
      */
-    private static final Map<String, String> DIVERGENCES =
+    private static final Map<String, String> REFUSED =
             Map.ofEntries(
-                    // --- keywords documented as ignored: PERMISSIVE where llama.cpp constrains,
-                    //     so this compiler accepts documents llama.cpp rejects ---
-                    Map.entry("min 0", "numeric bounds"),
-                    Map.entry("min 2", "numeric bounds"),
-                    Map.entry("min 456", "numeric bounds"),
-                    Map.entry("min -123", "numeric bounds"),
-                    Map.entry("max 9999", "numeric bounds"),
-                    Map.entry("max -9999", "numeric bounds"),
-                    Map.entry("min 5 max 30", "numeric bounds"),
-                    Map.entry("min 1 max 900719925474091", "numeric bounds"),
-                    Map.entry("min -1 max 1", "numeric bounds"),
-                    Map.entry("min -123 max 42", "numeric bounds"),
-                    Map.entry("exclusive min / max", "numeric bounds"),
+                    Map.entry("min 0", "minimum"),
+                    Map.entry("min 2", "minimum"),
+                    Map.entry("min 456", "minimum"),
+                    Map.entry("min -123", "minimum"),
+                    Map.entry("max 9999", "maximum"),
+                    Map.entry("max -9999", "maximum"),
+                    Map.entry("min 5 max 30", "minimum"),
+                    Map.entry("min 1 max 900719925474091", "exclusiveMinimum"),
+                    Map.entry("min -1 max 1", "minimum"),
+                    Map.entry("min -123 max 42", "minimum"),
+                    Map.entry("exclusive min / max", "exclusiveMinimum"),
                     Map.entry("simple pattern", "pattern"),
                     Map.entry("pattern with escapes", "pattern"),
-
-                    // --- STRICTER than llama.cpp, and deliberately left so ---
-
-                    // additionalProperties. The object rule admits exactly the declared properties,
-                    // so an undeclared key has no path: this compiler behaves as
-                    // additionalProperties:false ALWAYS. That is right for the common case - a
-                    // generated schema for a closed POJO says false - and safe when it is wrong,
-                    // since the model is held to the declared fields rather than inventing some.
-                    // Supporting `true` means spelling out "any string EXCEPT these", which GBNF
-                    // cannot say directly: llama.cpp builds a trie of the declared names and emits
-                    // its complement (~60 lines), then interleaves the extra pairs with the ordered
-                    // subset already built here. Declined on purpose: highest cost of anything
-                    // left,
-                    // to support schemas that ask a CONSTRAINED decode to also accept anything
-                    // else.
                     Map.entry(
                             "additional properties can't override other properties",
-                            "additionalProperties (stricter: declared keys only)"),
+                            "additionalProperties"),
                     Map.entry(
                             "object properties, additionalProperties: true",
-                            "additionalProperties (stricter: declared keys only)"),
+                            "additionalProperties"),
+                    // the JSON Schema site's Product example: price > 0, unique tags
+                    Map.entry("required props", "exclusiveMinimum"));
 
-                    // --- semantic choices that differ ---
-
-                    // An empty schema {} admits ANY JSON here (what the spec says); llama.cpp
-                    // restricts it
-                    // to objects. Their own case name says "(object)".
-                    Map.entry("empty schema (object)", "empty schema means any JSON, not object"),
-
-                    // Trailing whitespace: this engine's ws is [ \t\n\r]{0,8} anywhere, llama.cpp's
-                    // space rule admits ONE space (or a newline plus indent), so it rejects two.
-                    Map.entry("integer", "bounded-whitespace policy"),
-                    // GBNF ".": one BYTE here, one UTF-8 CODE POINT in llama.cpp, so "... abc ..."
-                    // matches
-                    // three emoji there and three bytes of the first emoji here.
-                    Map.entry("special characters", "dot matches a byte, not a code point"));
+    /**
+     * Strings llama.cpp rejects that the specs accept, so this engine accepts them: llama.cpp is
+     * narrower than the spec there, not this engine wider.
+     */
+    private static final Map<String, Set<String>> SPEC_OVER_LLAMA =
+            Map.of(
+                    // JSON Schema: {} is any JSON value; llama.cpp reads it as any object
+                    "empty schema (object)", Set.of("[]", "null", "\"\"", "true"),
+                    // JSON integers have no digit limit and JSON whitespace is free; llama.cpp
+                    // caps an integer at 16 digits and its trailing whitespace at one space
+                    "integer", Set.of("12345678901234567  "));
 
     static Stream<Arguments> cases() throws IOException {
         List<?> cases = (List<?>) Json.parse(resource("/llama-cpp/grammar-corpus.json"));
@@ -103,19 +81,32 @@ final class LlamaCppGrammarCorpusTest {
     @ParameterizedTest(name = "{0}")
     @MethodSource("cases")
     void llamaCppCorpus(String description, Map<?, ?> c) {
-        Assumptions.assumeFalse(DIVERGENCES.containsKey(description), DIVERGENCES.get(description));
-        Grammar.Spec spec =
-                "test_grammar".equals(c.get("kind"))
-                        ? Grammar.of(String.valueOf(c.get("src")), BV)
-                        : Grammar.fromSchema(schema(String.valueOf(c.get("src"))), BV);
+        String src = String.valueOf(c.get("src"));
+        boolean gbnf = "test_grammar".equals(c.get("kind"));
+        String keyword = REFUSED.get(description);
+        if (keyword != null) {
+            IllegalArgumentException e =
+                    assertThrows(
+                            IllegalArgumentException.class,
+                            () -> Grammar.fromSchema(schema(src), BV));
+            assertTrue(e.getMessage().contains("\"" + keyword + "\""), e.getMessage());
+            return;
+        }
+        Grammar.Spec spec = gbnf ? Grammar.of(src, BV) : Grammar.fromSchema(schema(src), BV);
+        Set<String> specAccepts = SPEC_OVER_LLAMA.getOrDefault(description, Set.of());
         for (Object s : (List<?>) c.get("passing"))
             assertTrue(
                     accepts(spec, BV, String.valueOf(s)),
                     () -> "must ACCEPT " + show(String.valueOf(s)));
-        for (Object s : (List<?>) c.get("failing"))
-            assertTrue(
-                    !accepts(spec, BV, String.valueOf(s)),
-                    () -> "must REJECT " + show(String.valueOf(s)));
+        for (Object s : (List<?>) c.get("failing")) {
+            boolean accept = specAccepts.contains(String.valueOf(s));
+            assertEquals(
+                    accept,
+                    accepts(spec, BV, String.valueOf(s)),
+                    () ->
+                            (accept ? "must ACCEPT, as the spec does: " : "must REJECT ")
+                                    + show(String.valueOf(s)));
+        }
     }
 
     @SuppressWarnings("unchecked")

@@ -1,6 +1,7 @@
 package com.qxotic.jinfer.llm;
 
 import static com.qxotic.jinfer.llm.TestLogits.*;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 
 import com.qxotic.jota.memory.MemoryView;
 import java.nio.charset.StandardCharsets;
@@ -789,20 +790,23 @@ public final class GrammarLegacyTest {
                 "required unknown-only admits the declared prop",
                 acceptsDoc(unknownOnly, v, "{\"a\":1}"));
 
-        // additionalProperties does not open the fixed object shape (pinned)
-        Grammar.Spec ap =
-                Grammar.fromSchema(
-                        linked(
-                                "type",
-                                "object",
-                                "properties",
-                                linked("a", Map.of("type", "integer")),
-                                "required",
-                                List.of("a"),
-                                "additionalProperties",
-                                true),
-                        v);
-        check("additionalProperties ignored (pinned)", rejectsDoc(ap, v, "{\"a\":1,\"b\":2}"));
+        // additionalProperties other than false would open the fixed object shape: refused
+        IllegalArgumentException ap =
+                assertThrows(
+                        IllegalArgumentException.class,
+                        () ->
+                                Grammar.fromSchema(
+                                        linked(
+                                                "type",
+                                                "object",
+                                                "properties",
+                                                linked("a", Map.of("type", "integer")),
+                                                "additionalProperties",
+                                                true),
+                                        v));
+        check(
+                "additionalProperties: true refused",
+                ap.getMessage().contains("additionalProperties"));
 
         // a null schema node means "any JSON"
         check("null schema = any", acceptsDoc(Grammar.fromSchema(null, v), v, "[1,{\"a\":2}]"));

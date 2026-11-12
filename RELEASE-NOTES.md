@@ -1,5 +1,13 @@
 # Release notes
 
+## Unreleased
+
+- **A JSON Schema is enforced whole, or refused.** `Grammar.fromSchema`, structured output in the server and the LangChain4j and Spring AI adapters refuse a schema using a constraint the grammar cannot enforce (numeric bounds, `pattern`, `allOf`, `uniqueItems`, `additionalProperties` other than `false`, …), naming the keyword; the server answers 400.
+  These keywords were ignored before, so the model could produce documents the schema forbids.
+  Annotations (`title`, `description`, an unknown `format`) and non-standard keywords are still ignored, as the JSON Schema spec asks.
+- **GBNF's `.` is one UTF-8 character,** as in llama.cpp, where it was one byte: a grammar written for llama.cpp means the same here, and `.{n}` cannot end inside a character.
+- **A first batch no longer allocates once per core.** Its first call built a SentencePiece tokenizer's 24 MB word cache, or a tiktoken tokenizer's fast engine, on every core at once and kept one; one thread builds it now, so a first batch fits the heap a single one does.
+
 ## 0.4.0-rc1
 
 A release candidate for 0.4.0: Maven Central `0.4.0-rc1`, PyPI `0.4.0rc1` (`pip install --pre`), the native libraries and their archives `0.4.0-rc1`.

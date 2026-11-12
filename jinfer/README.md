@@ -466,7 +466,8 @@ Chat Completions accepts `response_format` with type `text`, `json_object`, or `
 For `json_schema`, the server describes the schema in a system instruction and constrains the generated answer with a grammar.
 The question itself need not mention JSON or name the fields.
 The instruction applies to the final answer, so tools can still be called before answering.
-Schema support follows `Grammar.fromSchema`'s supported subset; `strict: true` does not enable unsupported JSON Schema keywords.
+Schema support follows `Grammar.fromSchema`'s supported subset, and `strict: true` does not widen it.
+A schema using a constraint the grammar cannot enforce (numeric bounds, `pattern`, `allOf`, `uniqueItems`, `additionalProperties` other than `false`, …) is refused with a 400 naming the keyword, instead of being enforced only in part.
 
 ```shell
 curl -s http://127.0.0.1:54154/v1/chat/completions \
