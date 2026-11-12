@@ -177,12 +177,13 @@ def _audio(fmt: str, data: bytes) -> dict:
 
 
 def _part(item) -> dict:
-    """One item of a content list: text, an image or audio file, bytes of either, or a part as is."""
+    """One item of a content list: text, an image or audio file, bytes of either, or a part as is.
+    A str is text: one naming an image or audio file is refused, since the model would see only the name."""
     if isinstance(item, dict):
         return item
     if isinstance(item, str):
         mime = mimetypes.guess_type(item)[0] or ""
-        if mime.startswith(("image/", "audio/")) and os.path.isfile(item):  # a file, sent as its name
+        if mime.startswith(("image/", "audio/")) and os.path.isfile(item):
             raise InvalidArgument(f"{item!r} is a str, so it would be sent as text: pass Path({item!r}) to send the file")
         return {"type": "text", "text": item}
     if isinstance(item, os.PathLike):

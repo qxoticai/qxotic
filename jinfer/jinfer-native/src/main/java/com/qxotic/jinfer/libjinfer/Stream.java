@@ -102,7 +102,8 @@ final class Stream {
                         model.name,
                         Model.CONFIG,
                         engine.loaded().samplingDefaults().resolve());
-        // ponytail: the speech would be made and dropped - no C call carries it yet
+        // ponytail: no C call carries speech, so it is refused rather than made and dropped;
+        // carry it as the result's message.audio when C callers need a voice
         if (lowered.request().output().contains(Modality.AUDIO))
             throw Errors.unsupported(
                     "spoken replies are not in libjinfer: ask for text, or use jinfer server or"

@@ -111,7 +111,7 @@ The [jinfer README](https://github.com/qxoticai/qxotic/tree/main/jinfer#supporte
 | tools | `tools=[fn]`; a conversation runs the calls, a plain `chat` returns them as `reply.tool_calls`; `tool_choice` is `"auto"`, `"none"`, `"required"`, a function or its name |
 | a conversation | `model.conversation(system=...)`, with `.chat(...)`, `.fork()`, `.rewind()`, `.prepare()`, `.messages` |
 | prepared prompts that outlive the process | `jinfer.load(ref, prompt_cache="prompts.cache")`: read at load, extended at close |
-| images, audio in | a `Path` or `bytes` in the content list: `model.chat(["What is this?", Path("photo.jpg")])` |
+| images, audio in | a `Path` or `bytes` in the content list: `model.chat(["What is this?", Path("photo.jpg")])`; a `str` is text |
 | embeddings | `embedder.embed(texts)` gives an `(n, dimension)` float32 array; a single string counts as one |
 | reranking | `reranker.rerank(query, documents)` gives one score per document |
 | speech | `speaker.speak(text, speed=1.2)`: iterate its PCM chunks, or `.audio`, or `.save("out.wav")` |

@@ -157,7 +157,7 @@ enum {
     JINFER_PROPERTY_HAS_MEDIA           = 101,   /* images and audio in, through the media companion */
     JINFER_PROPERTY_HAS_EMBEDDING       = 102,
     JINFER_PROPERTY_HAS_RERANK          = 103,
-    JINFER_PROPERTY_HAS_SPEECH          = 104,   /* jinfer_speak: a speech synthesis model; no chat model speaks here */
+    JINFER_PROPERTY_HAS_SPEECH          = 104,   /* jinfer_speak works: a speech synthesis model */
     JINFER_PROPERTY_HAS_TRANSCRIPTION   = 105
 };
 

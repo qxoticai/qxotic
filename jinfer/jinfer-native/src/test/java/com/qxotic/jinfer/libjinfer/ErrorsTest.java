@@ -50,7 +50,7 @@ class ErrorsTest {
         IllegalArgumentException missing =
                 new IllegalArgumentException(
                         "acme/nothing does not exist, or is gated or private",
-                        new java.io.IOException("HTTP 404"));
+                        new IOException("HTTP 404"));
         assertEquals(Errors.ENOTFOUND, Model.refusal(missing).code);
         assertEquals(
                 Errors.ENOTFOUND,
