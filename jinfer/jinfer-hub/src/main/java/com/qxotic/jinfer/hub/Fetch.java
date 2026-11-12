@@ -130,9 +130,10 @@ final class Fetch {
         static synchronized void add(Progress row) {
             rows.add(row);
             if (ticker == null) {
-                ticker = new Thread(Board::tick, "jinfer-progress");
-                ticker.setDaemon(true);
-                ticker.start();
+                Thread started = new Thread(Board::tick, "jinfer-progress");
+                started.setDaemon(true);
+                started.start();
+                ticker = started; // only once started: a failed start leaves none to retry
             }
             paint(true);
         }
@@ -259,9 +260,10 @@ final class Fetch {
             synchronized (Stall.class) { // registered before the scanner can see an empty set
                 WATCHED.add(this);
                 if (scanner == null) {
-                    scanner = new Thread(Stall::scan, "jinfer-stall-guard");
-                    scanner.setDaemon(true);
-                    scanner.start();
+                    Thread started = new Thread(Stall::scan, "jinfer-stall-guard");
+                    started.setDaemon(true);
+                    started.start();
+                    scanner = started; // only once started: a failed start leaves none to retry
                 }
             }
         }
