@@ -1,70 +1,56 @@
 package com.qxotic.toknroll.libtoknroll;
 
-import java.util.Queue;
-import java.util.concurrent.ConcurrentLinkedQueue;
-import java.util.concurrent.atomic.AtomicInteger;
-import java.util.concurrent.atomic.AtomicIntegerArray;
-import java.util.concurrent.locks.LockSupport;
 import java.util.function.IntConsumer;
-import java.util.stream.IntStream;
+import org.graalvm.nativeimage.CurrentIsolate;
+import org.graalvm.nativeimage.IsolateThread;
+import org.graalvm.nativeimage.ObjectHandle;
+import org.graalvm.nativeimage.ObjectHandles;
 import org.graalvm.nativeimage.ProcessProperties;
+import org.graalvm.nativeimage.c.function.CEntryPoint;
 import org.graalvm.nativeimage.c.function.CFunction;
-import org.graalvm.word.PointerBase;
 
 /**
- * The threads a batch runs on: one per core, caller included, started by the first parallel batch,
- * each waiting for work in C between jobs, where a fork finds it idle (toknroll_isolate.c says why
- * not the common pool). Where C has no workers (Windows, libjinfer) a batch runs on the common
- * pool; in a forked child, which has none of the threads, on the calling thread.
+ * A batch's tasks, run on the calling thread and on the library's workers: C threads, the pool and
+ * its bookkeeping in toknroll_isolate.c, which counts every task done whatever happened in it. A
+ * task is one call of {@link #task}, whose ordinary failure is kept here and rethrown, and whose
+ * error past every catch (an OutOfMemoryError or StackOverflowError native image raised where no
+ * catch ran) ends in its exception handler and comes back as the batch's escape: the batch fails,
+ * the caller's tokenizer is quarantined, and nothing waits on a task that cannot finish. In a
+ * forked child, which has none of the threads, a batch runs on the calling thread.
  */
 final class Workers {
     /** The threads a batch is shared between, the caller's included. */
     static final int THREADS = Runtime.getRuntime().availableProcessors();
 
-    @CFunction("toknroll__workers")
-    private static native int available();
-
-    @CFunction("toknroll__worker_new")
-    private static native PointerBase newWorker();
-
-    @CFunction("toknroll__worker_wait")
-    private static native long await(PointerBase worker, long seen);
-
-    @CFunction("toknroll__workers_wake")
-    private static native void wake();
-
-    /** One batch's tasks, claimed one at a time by its caller and the workers. */
-    private static final class Job {
-        final int tasks;
-        final IntConsumer task;
-        final Thread caller = Thread.currentThread();
-        final AtomicInteger next = new AtomicInteger();
-        final AtomicInteger done = new AtomicInteger();
-        volatile Throwable failure;
-
-        Job(int tasks, IntConsumer task) {
-            this.tasks = tasks;
-            this.task = task;
-        }
-
-        void work() {
-            for (int i; (i = next.getAndIncrement()) < tasks; ) {
-                try {
-                    task.accept(i);
-                } catch (Throwable t) {
-                    if (failure == null) failure = t;
-                }
-                if (done.incrementAndGet() == tasks) LockSupport.unpark(caller);
-            }
-        }
-    }
-
-    private static final Queue<Job> JOBS = new ConcurrentLinkedQueue<>();
+    private static final ObjectHandles HANDLES = ObjectHandles.getGlobal();
 
     /** The process the runtime started in. */
     private static final long PROCESS = ProcessProperties.getProcessID();
 
-    private static boolean started; // guarded by Workers.class
+    /**
+     * An escaped task's error, made once, while there is a heap to make it in, thrown each time.
+     */
+    private static final OutOfMemoryError OUT_OF_MEMORY =
+            new OutOfMemoryError("a batch task ran out of memory");
+
+    private static final StackOverflowError STACK_OVERFLOW =
+            new StackOverflowError("a batch task overflowed its stack");
+
+    private static final IllegalStateException ESCAPED =
+            new IllegalStateException("a batch task failed past every catch");
+
+    @CFunction("toknroll__batch")
+    private static native int batch(IsolateThread self, ObjectHandle tasks, int count, int workers);
+
+    /** A batch's tasks, and the first ordinary failure among them. */
+    private static final class Tasks {
+        final IntConsumer task;
+        volatile Throwable failure;
+
+        Tasks(IntConsumer task) {
+            this.task = task;
+        }
+    }
 
     /** Runs every task, sharing work across cores only when there is more than one task. */
     static void run(int tasks, IntConsumer task) {
@@ -72,71 +58,35 @@ final class Workers {
             for (int i = 0; i < tasks; i++) task.accept(i);
             return;
         }
-        if (available() == 0) {
-            IntStream.range(0, tasks).parallel().forEach(task);
-            return;
+        Tasks list = new Tasks(task);
+        ObjectHandle handle = HANDLES.create(list);
+        int escaped;
+        try {
+            escaped = batch(CurrentIsolate.getCurrentThread(), handle, tasks, THREADS - 1);
+        } finally {
+            HANDLES.destroy(handle);
         }
-        start();
-        Job job = new Job(tasks, task);
-        JOBS.add(job);
-        wake();
-        job.work();
-        while (job.done.get() < tasks) LockSupport.park(job);
-        JOBS.remove(job);
-        Throwable failure = job.failure;
+        if (escaped != 0) Escape.words(escaped, 1); // the call's tokenizer is quarantined
+        Throwable failure = list.failure;
         if (failure instanceof RuntimeException e) throw e;
         if (failure instanceof Error e) throw e;
         if (failure != null) throw new IllegalStateException(failure);
+        if (escaped == Escape.OUT_OF_MEMORY) throw OUT_OF_MEMORY;
+        if (escaped == Escape.STACK_OVERFLOW) throw STACK_OVERFLOW;
+        if (escaped != 0) throw ESCAPED;
     }
 
-    /**
-     * The workers, once. Each is listed with the gate before this returns, so a fork from then on
-     * waits for it; until then the caller, inside its call, holds the fork back. A worker that a
-     * full heap kills before it lists itself is not waited for: the batch runs on the others.
-     */
-    private static synchronized void start() {
-        if (started) return;
-        started = true;
-        AtomicIntegerArray listed =
-                new AtomicIntegerArray(THREADS); // all a worker keeps of its start
-        Thread[] workers = new Thread[THREADS];
-        for (int i = 1; i < THREADS; i++) {
-            int slot = i;
-            workers[i] =
-                    new Thread(
-                            () -> {
-                                PointerBase self = newWorker();
-                                listed.set(slot, 1);
-                                // ponytail: calloc failed: it ends here, a few frames outside
-                                // the gate, in a process that is out of memory anyway
-                                if (self.isNonNull()) loop(self);
-                            },
-                            "toknroll-batch-" + i);
-            workers[i].setDaemon(true);
-            workers[i].start();
+    /** One task of a batch, on a worker or the calling thread: 0, or the handler's escape. */
+    @CEntryPoint(name = "toknroll__task", exceptionHandler = Escape.TaskFailure.class)
+    static int task(IsolateThread thread, ObjectHandle handle, int task) {
+        Tasks list = HANDLES.get(handle);
+        Faults.at("task"); // the tests' error that no catch sees
+        try {
+            list.task.accept(task);
+        } catch (Throwable t) {
+            if (list.failure == null) list.failure = t;
         }
-        // ponytail: yields for the threads' start, once per process; nothing to wake, nothing kept
-        for (int i = 1; i < THREADS; i++)
-            while (listed.get(i) == 0 && workers[i].isAlive()) Thread.yield();
-    }
-
-    /**
-     * A worker's life: wait in C, then work on whatever jobs are queued. A job keeps its tasks'
-     * failures; anything else, a heap too full to take a step, is dropped: a worker that died of it
-     * would abort the process.
-     */
-    private static void loop(PointerBase self) {
-        long seen = 0;
-        for (; ; ) {
-            try {
-                seen = await(self, seen);
-                for (Job job; (job = JOBS.peek()) != null; ) {
-                    job.work();
-                    JOBS.remove(job);
-                }
-            } catch (Throwable dropped) { // ponytail: no caller to tell, and no task lost
-            }
-        }
+        return 0;
     }
 
     private Workers() {}

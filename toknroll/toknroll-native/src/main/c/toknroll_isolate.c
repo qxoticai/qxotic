@@ -18,9 +18,9 @@
  *
  * Batch workers. A thread of the runtime caught running Java code at fork hangs the child at its first
  * garbage collection, which waits for every thread the runtime knows, gone or not. So libtoknroll's batches
- * run on workers of its own, held to the same gate: a worker runs Java code only between leaving
- * toknroll__worker_wait, marked busy, and calling it again, and waits for work here, in C, where fork
- * finds it idle. The child has none of them, and encodes its batches on the calling thread. */
+ * run on workers of its own, held to the same gate: a worker runs Java code only while it runs a task, marked
+ * busy, and waits for work here, in C, where fork finds it idle. The child has none of them, and encodes its
+ * batches on the calling thread. The workers serve every build, libjinfer's and Windows' too (below). */
 #define _GNU_SOURCE               /* dladdr */
 #define _DARWIN_C_SOURCE
 #ifndef _WIN32
@@ -226,10 +226,6 @@ static void fork_done(void) {
     __atomic_store_n(&forking, 0, __ATOMIC_SEQ_CST);
     gate_unlock();
 }
-/* the work generation, bumped by toknroll__workers_wake; workers sleep until it moves */
-static int64_t generation;
-static pthread_mutex_t work_lock = PTHREAD_MUTEX_INITIALIZER;
-static pthread_cond_t work = PTHREAD_COND_INITIALIZER;
 #else
 static void gate_lock(void) {}
 static void gate_unlock(void) {}
@@ -485,7 +481,7 @@ graal_thread* toknroll__thread(void) {
     if (!isolate) { no_runtime(); return NULL; }
     caller* c = port_tls_get(key);
     if (!c) {
-        /* a thread the runtime runs itself, a log callback's on a worker: its own, no record, no gate */
+        /* a thread the runtime runs itself, a log callback's on one: its own, no record, no gate */
         graal_thread* own = graal_get_current_thread(isolate);
         if (own) return own;
         graal_thread* t;
@@ -531,51 +527,105 @@ graal_thread* toknroll__enter(void) { return toknroll__thread(); }
 void toknroll__leave(void) {}
 #endif
 
-#ifdef GATE
-int toknroll__workers(void) { return 1; }
+/* ---- Batch workers ----
+ * A batch's tasks run on its calling thread and on workers of the library's own: C threads with an 8 MiB
+ * stack, started by the first parallel batch, attached to the runtime, waiting for work here, in C. A task
+ * is one call of toknroll__task (Workers.java), an entry point whose exception handler returns how the task
+ * ended when it ended past every catch, so C counts every task done whatever happened in it: a batch never
+ * waits on a task that cannot finish, and reports an escaped one as its failure. With the fork gate a worker
+ * is busy from just before it claims a task until it finishes it, so fork finds it idle, never holding a task
+ * the calling thread waits on; a forked child has no workers and runs its batches on the calling thread
+ * (Workers.java). A worker that cannot start or attach is not there: the batch runs on the others. */
 
-/* listed with the callers, so fork waits for it; never freed, as a worker lives as long as the runtime.
- * Busy from the start: the thread is in Java code until its first wait. */
-void* toknroll__worker_new(void) {
-    caller* c = calloc(1, sizeof *c);
-    if (!c) return NULL;
-    c->busy = 1;
-    gate_lock();
-    c->next = callers;
-    callers = c;
-    gate_unlock();
-    return c;
+int32_t toknroll__task(graal_thread* thread, void* tasks, int32_t task);   /* Workers.java */
+
+typedef struct job {
+    void* tasks;              /* the Java task list, a handle */
+    int32_t count;
+    int32_t next, done;       /* the next task to claim, and the tasks finished: atomic (port_*32) */
+    int32_t escaped;          /* how a task ended past every catch (Escape's kinds), 0 for none: atomic */
+    int32_t workers;          /* the workers on it, under pool_lock: it stays queued until they are off it */
+    struct job* link;
+} job;
+
+#define WORKER_STACK ((size_t) 8 << 20)
+static port_mutex_t pool_lock = PORT_MUTEX_INIT;
+static port_cond_t pool_work = PORT_COND_INIT;    /* a job was queued */
+static port_cond_t pool_done = PORT_COND_INIT;    /* a job's last task finished, or its last worker left it */
+static job* jobs;                                 /* queued, oldest first: under pool_lock */
+static int pool_started;
+
+/* the oldest job with a task left to claim; the caller holds pool_lock */
+static job* claimable(void) {
+    for (job* j = jobs; j; j = j->link)
+        if (port_load32(&j->next) < j->count) return j;
+    return NULL;
 }
 
-int64_t toknroll__worker_wait(void* worker, int64_t seen) {
-    caller* c = worker;
-    __atomic_store_n(&c->busy, 0, __ATOMIC_SEQ_CST);
-    pthread_mutex_lock(&work_lock);
-    while (generation == seen) pthread_cond_wait(&work, &work_lock);
-    int64_t now = generation;
-    pthread_mutex_unlock(&work_lock);
-    for (;;) {   /* back into Java code through the gate, as toknroll__enter does */
-        __atomic_store_n(&c->busy, 1, __ATOMIC_SEQ_CST);
-        if (!__atomic_load_n(&forking, __ATOMIC_SEQ_CST)) return now;
-        __atomic_store_n(&c->busy, 0, __ATOMIC_SEQ_CST);
-        gate_lock();
-        gate_unlock();
+/* every task of j that is left, each counted done whatever happened in it */
+static void work(graal_thread* thread, job* j) {
+    for (int32_t task; (task = port_fetch_add32(&j->next, 1)) < j->count;) {
+        int32_t escaped = toknroll__task(thread, j->tasks, task);
+        if (escaped) port_set_if_zero32(&j->escaped, escaped);
+        if (port_fetch_add32(&j->done, 1) + 1 == j->count) {
+            port_mutex_lock(&pool_lock);
+            port_cond_broadcast(&pool_done);
+            port_mutex_unlock(&pool_lock);
+        }
     }
 }
 
-void toknroll__workers_wake(void) {
-    pthread_mutex_lock(&work_lock);
-    generation++;
-    pthread_cond_broadcast(&work);
-    pthread_mutex_unlock(&work_lock);
+PORT_THREAD(worker, number) {
+    char name[32];
+    snprintf(name, sizeof name, STR(TOKNROLL_PROGRAM) "-batch-%d", (int) (intptr_t) number);
+    name[15] = 0;   /* Linux keeps 15 bytes and refuses more: toknroll's number does not fit */
+    port_thread_name(name);
+    graal_thread* thread;
+    gate_lock();   /* attached and listed as a caller is: a worker lives as long as the runtime */
+    caller* c = graal_attach_thread(isolate, &thread) == 0 ? attached(thread) : NULL;
+    gate_unlock();
+    if (!c) return PORT_THREAD_END;   /* out of memory: one worker fewer */
+    port_mutex_lock(&pool_lock);
+    for (;;) {
+        while (!claimable()) port_cond_wait(&pool_work, &pool_lock);
+        port_mutex_unlock(&pool_lock);
+        /* through the gate before taking a job, busy until off it: a job's caller waits for its workers,
+           and fork for the caller, so a worker on a job never waits for fork */
+        (void) toknroll__enter();
+        port_mutex_lock(&pool_lock);
+        job* j = claimable();
+        if (j) j->workers++;
+        port_mutex_unlock(&pool_lock);
+        if (j) work(thread, j);
+        toknroll__leave();
+        port_mutex_lock(&pool_lock);
+        if (j && --j->workers == 0) port_cond_broadcast(&pool_done);
+    }
 }
-#else
-/* no fork to guard against (Windows), or a child refused anyway (libjinfer): batches use the common pool */
-int toknroll__workers(void) { return 0; }
-void* toknroll__worker_new(void) { return NULL; }
-int64_t toknroll__worker_wait(void* worker, int64_t seen) { (void) worker; return seen; }
-void toknroll__workers_wake(void) {}
-#endif
+
+/* Workers.java's batch: count tasks of the task list, on self and on the pool's workers, of which the
+ * first batch starts `workers`; returns how a task ended past every catch, 0 for none. Called from inside
+ * an entry point, so self already holds its place in the gate. */
+int32_t toknroll__batch(graal_thread* self, void* tasks, int32_t count, int32_t workers) {
+    job j = {tasks, count, 0, 0, 0, 0, NULL};   /* on this stack: dequeued before it returns */
+    port_mutex_lock(&pool_lock);
+    if (!pool_started) {
+        pool_started = 1;
+        for (int32_t i = 0; i < workers; i++) (void) port_thread_start(worker, (void*) (intptr_t) (i + 1), WORKER_STACK);   /* a failed one is not there */
+    }
+    job** tail = &jobs;
+    while (*tail) tail = &(*tail)->link;
+    *tail = &j;
+    port_cond_broadcast(&pool_work);
+    port_mutex_unlock(&pool_lock);
+    work(self, &j);   /* the calling thread works on its own batch too */
+    port_mutex_lock(&pool_lock);
+    while (port_load32(&j.done) < count || j.workers) port_cond_wait(&pool_done, &pool_lock);
+    for (job** at = &jobs; *at; at = &(*at)->link)
+        if (*at == &j) { *at = j.link; break; }
+    port_mutex_unlock(&pool_lock);
+    return port_load32(&j.escaped);
+}
 
 int toknroll__created(void) { return port_load(&created) != 0; }
 

@@ -13,7 +13,7 @@
 #  define PROGRAM "jinfer"
 #  define LOG_VAR "JINFER_LOG"
 #  define OPTIONS_VAR "JINFER_OPTIONS"
-#  define WORKER "Pool-worker-"       /* a batch's threads: libjinfer's run on the common pool */
+#  define WORKER "batch-"             /* a batch's threads, jinfer-batch-N */
 #else
 #  define PROGRAM "toknroll"
 #  define LOG_VAR "TOKNROLL_LOG"
@@ -1066,7 +1066,9 @@ static void batch_threads_capped(void) {
     CHECK_EQ(toknroll_encode_batch(t, texts, at, 8, 0, out, 64, offsets), 32);
     for (int i = 0; i < 32; i++) CHECK_EQ(out[i], texts[i]);
     for (int i = 0; i <= 8; i++) CHECK_EQ(offsets[i], 4 * i);
-    CHECK_EQ(batch_workers(), 1);   /* ActiveProcessorCount=2: one beside the caller */
+    /* ActiveProcessorCount=2: one beside the caller, started by the batch, which need not wait for it */
+    for (int i = 0; i < 500 && batch_workers() == 0; i++) nanosleep(&(struct timespec) {0, 10000000}, NULL);
+    CHECK_EQ(batch_workers(), 1);
     toknroll_tokenizer_free(t);
 }
 #endif
@@ -1496,6 +1498,30 @@ static void escape_at_the_boundary(const char* kind, const char* words) {
     toknroll_tokenizer_free(other);
     toknroll_tokenizer_free(t);
 }
+/* A batch task that ends past every catch is counted done in C all the same: the batch fails at once with
+   the task's error, never waits on it, and the process goes on. */
+static void escape_in_a_batch_task(void) {
+    const char* options[] = {"-Dtoknroll.offline=true", "-Dtoknroll.test.escape=task:oom"};
+    CHECK_EQ(toknroll_configure(options, 2), TOKNROLL_OK);
+    toknroll_tokenizer* t = cached(QWEN);
+    enum { TEXTS = 256 };
+    static int64_t at[TEXTS + 1];
+    char texts[TEXTS * 6];
+    for (int i = 0; i < TEXTS; i++) memcpy(texts + 6 * i, "hello ", 6);
+    for (int i = 0; i <= TEXTS; i++) at[i] = 6 * i;
+    int32_t out[TEXTS * 4], offsets[TEXTS + 1];
+    for (int round = 0; round < 3; round++) {   /* the workers survive a failed batch */
+        CHECK_EQ(toknroll_encode_batch(t, texts, at, TEXTS, 0, out, TEXTS * 4, offsets), TOKNROLL_ERROR);
+        int32_t code = 0;
+        CHECK_HAS(LE(&code), "out of memory: the runtime's heap is full");
+        CHECK_EQ(code, TOKNROLL_ERROR);
+    }
+    toknroll_tokenizer* other = cached(QWEN);   /* the process goes on */
+    CHECK_EQ(toknroll_vocabulary_size(other), QWEN_VOCAB);
+    toknroll_tokenizer_free(other);
+    toknroll_tokenizer_free(t);
+}
+
 static void escape_out_of_memory(void) { escape_at_the_boundary("oom", "out of memory: the runtime's heap is full"); }
 static void escape_stack_overflow(void) { escape_at_the_boundary("stack", "stack overflow"); }
 static void escape_other(void) { escape_at_the_boundary("other", "internal error: an exception escaped"); }
@@ -2037,6 +2063,7 @@ static const scenario scenarios[] = {
     {"escape_out_of_memory", escape_out_of_memory, NULL},
     {"escape_stack_overflow", escape_stack_overflow, NULL},
     {"escape_other", escape_other, NULL},
+    {"escape_in_a_batch_task", escape_in_a_batch_task, NULL},
     PROGRESS_SCENARIOS
     {"every_special_token", every_special_token, NULL},
     {"gguf_reference", gguf_reference, NULL},

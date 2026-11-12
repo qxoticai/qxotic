@@ -83,5 +83,16 @@ final class Escape {
         }
     }
 
+    /**
+     * The handler of a batch task (Workers): how it ended, which C counts as done and reports as
+     * the batch's escape. It leaves no words: the batch's calling thread says them.
+     */
+    static final class TaskFailure implements CEntryPoint.ExceptionHandler {
+        @Uninterruptible(reason = "an entry point's exception handler")
+        static int handle(Throwable t) {
+            return kind(t);
+        }
+    }
+
     private Escape() {}
 }
