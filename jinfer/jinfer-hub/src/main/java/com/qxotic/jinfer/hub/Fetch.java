@@ -622,13 +622,8 @@ final class Fetch {
                     last = e;
                     // Transport failures retain validated progress; invalid data starts over.
                     if (attempt < MAX_ATTEMPTS) {
-                        progress.note(
-                                e.getMessage()
-                                        + " - retrying ("
-                                        + attempt
-                                        + "/"
-                                        + MAX_ATTEMPTS
-                                        + ")");
+                        String retry = " - retrying (" + attempt + "/" + MAX_ATTEMPTS + ")";
+                        progress.note(e.getMessage() + retry);
                     }
                 }
             }
