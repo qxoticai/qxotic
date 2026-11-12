@@ -315,16 +315,15 @@ final class Sources {
 
     /**
      * The GGUF loader, built at the first GGUF, the -Dtoknroll.gguf.* options read then: one they
-     * break (an alias to no scheme) fails each GGUF load with its own message, and nothing else.
+     * break (an alias to no scheme) fails each GGUF load with its own message, and nothing else. No
+     * lock, as {@link Stores#store}: threads that race build equal loaders and one is kept, and a
+     * build cut short leaves nothing held for the next.
      */
     private static GGUFTokenizerLoader gguf() {
         GGUFTokenizerLoader loader = ggufLoader;
-        if (loader != null) return loader;
-        synchronized (Sources.class) {
-            if (ggufLoader == null)
-                ggufLoader = GGUFTokenizerLoader.createBuilderWithBuiltins().build();
-            return ggufLoader;
-        }
+        if (loader == null)
+            ggufLoader = loader = GGUFTokenizerLoader.createBuilderWithBuiltins().build();
+        return loader;
     }
 
     private static boolean hasGgufMagic(byte[] bytes) {
