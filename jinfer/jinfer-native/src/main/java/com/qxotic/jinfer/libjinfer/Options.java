@@ -1,5 +1,7 @@
 package com.qxotic.jinfer.libjinfer;
 
+import java.io.File;
+import java.util.ArrayList;
 import java.util.Collections;
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -28,7 +30,7 @@ final class Options {
                 throw new IllegalStateException(
                         "-Djinfer.native.include=<dir of jinfer.h>:<dir of toknroll.h> is"
                                 + " required");
-            return include.split(java.io.File.pathSeparator);
+            return include.split(File.pathSeparator);
         }
 
         @Override
@@ -38,7 +40,7 @@ final class Options {
 
         @Override
         public List<String> getOptions() {
-            List<String> options = new java.util.ArrayList<>();
+            List<String> options = new ArrayList<>();
             for (String dir : includes()) options.add("-I" + dir);
             return options;
         }

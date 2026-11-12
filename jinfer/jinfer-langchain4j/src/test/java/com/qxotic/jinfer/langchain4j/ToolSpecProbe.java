@@ -4,8 +4,11 @@ import com.qxotic.jinfer.testkit.TestModels;
 import dev.langchain4j.agent.tool.ToolSpecification;
 import dev.langchain4j.data.message.UserMessage;
 import dev.langchain4j.model.chat.request.ChatRequest;
+import dev.langchain4j.model.chat.request.ResponseFormat;
+import dev.langchain4j.model.chat.request.ResponseFormatType;
 import dev.langchain4j.model.chat.request.json.JsonIntegerSchema;
 import dev.langchain4j.model.chat.request.json.JsonObjectSchema;
+import dev.langchain4j.model.chat.request.json.JsonSchema;
 import dev.langchain4j.model.chat.response.ChatResponse;
 import java.util.List;
 import org.junit.jupiter.api.Tag;
@@ -112,10 +115,10 @@ class ToolSpecProbe {
                             .build();
 
             var schema =
-                    dev.langchain4j.model.chat.request.ResponseFormat.builder()
-                            .type(dev.langchain4j.model.chat.request.ResponseFormatType.JSON)
+                    ResponseFormat.builder()
+                            .type(ResponseFormatType.JSON)
                             .jsonSchema(
-                                    dev.langchain4j.model.chat.request.json.JsonSchema.builder()
+                                    JsonSchema.builder()
                                             .name("weather")
                                             .rootElement(
                                                     JsonObjectSchema.builder()

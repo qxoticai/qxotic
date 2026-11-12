@@ -10,6 +10,8 @@ import com.qxotic.jinfer.chat.DecisionModel.Question;
 import com.qxotic.jinfer.chat.DecisionModel.Rating;
 import com.qxotic.jinfer.codecs.VideoCodec;
 import com.qxotic.jinfer.codecs.VideoSampler;
+import com.qxotic.jinfer.media.Media;
+import com.qxotic.jinfer.media.Multimodal;
 import com.sun.net.httpserver.HttpExchange;
 import java.io.IOException;
 import java.net.InetSocketAddress;
@@ -264,26 +266,24 @@ public final class DecisionServer {
                 field,
                 field + " data: URIs must be base64-encoded (data:image/png;base64,...)");
         if (url.startsWith("data:image/")) {
-            require(modality(model, com.qxotic.jinfer.media.Media.Image.class), "image");
+            require(modality(model, Media.Image.class), "image");
             return MediaParts.image(Map.of("image_url", url));
         }
         if (url.startsWith("data:audio/")) {
-            require(modality(model, com.qxotic.jinfer.media.Media.Audio.class), "audio");
+            require(modality(model, Media.Audio.class), "audio");
             return MediaParts.audio(
                     Map.of("input_audio", Map.of("data", url.substring(url.indexOf(',') + 1))));
         }
         if (url.startsWith("data:video/")) {
-            require(modality(model, com.qxotic.jinfer.media.Media.Video.class), "video");
+            require(modality(model, Media.Video.class), "video");
             return MediaParts.video(Map.of("video_url", url), FRAMES);
         }
         throw new Values.InvalidParam(
                 field, field + " takes image, audio and video data: URIs, not " + type(url));
     }
 
-    private static boolean modality(
-            DecisionModel model, Class<? extends com.qxotic.jinfer.media.Media> kind) {
-        return model instanceof com.qxotic.jinfer.media.Multimodal multimodal
-                && multimodal.supports(kind);
+    private static boolean modality(DecisionModel model, Class<? extends Media> kind) {
+        return model instanceof Multimodal multimodal && multimodal.supports(kind);
     }
 
     private static void require(boolean supported, String kind) {

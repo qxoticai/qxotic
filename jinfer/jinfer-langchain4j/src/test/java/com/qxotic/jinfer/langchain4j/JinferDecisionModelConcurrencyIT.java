@@ -5,9 +5,12 @@ import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
+import com.qxotic.jinfer.ContextState;
+import com.qxotic.jinfer.chat.Content;
 import com.qxotic.jinfer.chat.DecisionModel;
 import com.qxotic.jinfer.chat.Models;
 import com.qxotic.jinfer.testkit.TestModels;
+import dev.langchain4j.data.message.UserMessage;
 import dev.langchain4j.exception.UnsupportedFeatureException;
 import dev.langchain4j.model.decision.listener.DecisionModelErrorContext;
 import dev.langchain4j.model.decision.listener.DecisionModelListener;
@@ -122,22 +125,20 @@ final class JinferDecisionModelConcurrencyIT {
         DecisionModel slow =
                 new DecisionModel() {
                     @Override
-                    public com.qxotic.jinfer.ContextState newState(int capacity) {
+                    public ContextState newState(int capacity) {
                         return core.newState(capacity);
                     }
 
                     @Override
                     public float[] decide(
-                            com.qxotic.jinfer.ContextState state,
-                            List<com.qxotic.jinfer.chat.Content> input,
-                            Question question) {
+                            ContextState state, List<Content> input, Question question) {
                         return core.decide(state, input, question);
                     }
 
                     @Override
                     public float[][] decideEach(
-                            com.qxotic.jinfer.ContextState state,
-                            List<com.qxotic.jinfer.chat.Content> input,
+                            ContextState state,
+                            List<Content> input,
                             List<? extends Question> questions) {
                         inside.countDown();
                         await(release);
@@ -146,8 +147,8 @@ final class JinferDecisionModelConcurrencyIT {
 
                     @Override
                     public float[][] decideTogether(
-                            com.qxotic.jinfer.ContextState state,
-                            List<com.qxotic.jinfer.chat.Content> input,
+                            ContextState state,
+                            List<Content> input,
                             List<? extends Question> questions) {
                         return core.decideTogether(state, input, questions);
                     }
@@ -235,9 +236,7 @@ final class JinferDecisionModelConcurrencyIT {
                     () ->
                             model.decide(
                                     DecisionRequest.builder()
-                                            .inputMessages(
-                                                    dev.langchain4j.data.message.UserMessage.from(
-                                                            "hi"))
+                                            .inputMessages(UserMessage.from("hi"))
                                             .question("q", YesNoQuestion.from("?"))
                                             .build()));
             assertEquals(1, errors.get());

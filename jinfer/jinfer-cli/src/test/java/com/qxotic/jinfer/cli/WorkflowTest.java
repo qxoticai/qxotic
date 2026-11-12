@@ -4,19 +4,29 @@ import static org.junit.jupiter.api.Assertions.*;
 
 import com.qxotic.format.gguf.Builder;
 import com.qxotic.format.gguf.GGUF;
+import com.qxotic.format.json.Json;
 import com.qxotic.jinfer.codecs.AudioCodec;
 import com.qxotic.jinfer.hub.ModelStore;
 import com.qxotic.jinfer.media.Media;
+import java.io.ByteArrayOutputStream;
+import java.io.PrintStream;
+import java.net.URI;
+import java.net.http.HttpClient;
+import java.net.http.HttpRequest;
+import java.net.http.HttpResponse;
 import java.nio.ByteBuffer;
 import java.nio.ByteOrder;
+import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.time.Duration;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicReference;
+import java.util.regex.Pattern;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -421,10 +431,9 @@ class WorkflowTest {
             var capture = new CliFixtures.Capture("");
             CountDownLatch ready = new CountDownLatch(1);
             var errors =
-                    new java.io.PrintStream(
-                            capture.stderr, true, java.nio.charset.StandardCharsets.UTF_8) {
+                    new PrintStream(capture.stderr, true, StandardCharsets.UTF_8) {
                         @Override
-                        public java.io.PrintStream printf(String format, Object... args) {
+                        public PrintStream printf(String format, Object... args) {
                             var result = super.printf(format, args);
                             if (format.startsWith("listening")) ready.countDown();
                             return result;
@@ -472,51 +481,43 @@ class WorkflowTest {
                                                 ? "OpenAI-compatible"
                                                 : "/v1/audio/transcriptions"));
                 assertEquals("", capture.out());
-                var address = java.util.regex.Pattern.compile("http://\\S+").matcher(capture.err());
+                var address = Pattern.compile("http://\\S+").matcher(capture.err());
                 assertTrue(address.find(), capture.err());
                 String base = address.group();
-                try (var client = java.net.http.HttpClient.newHttpClient()) {
-                    java.net.http.HttpRequest request;
+                try (var client = HttpClient.newHttpClient()) {
+                    HttpRequest request;
                     if (kind.equals("language")) {
                         request =
-                                java.net.http.HttpRequest.newBuilder(
-                                                java.net.URI.create(base + "/health"))
-                                        .timeout(java.time.Duration.ofSeconds(5))
+                                HttpRequest.newBuilder(URI.create(base + "/health"))
+                                        .timeout(Duration.ofSeconds(5))
                                         .GET()
                                         .build();
                     } else {
-                        var body = new java.io.ByteArrayOutputStream();
+                        var body = new ByteArrayOutputStream();
                         body.write(
                                 "--test-boundary\r\nContent-Disposition: form-data; name=\"file\"; filename=\"clip.wav\"\r\nContent-Type: audio/wav\r\n\r\n"
-                                        .getBytes(java.nio.charset.StandardCharsets.UTF_8));
+                                        .getBytes(StandardCharsets.UTF_8));
                         body.write(
                                 AudioCodec.wav(
                                         new Media.Audio(
                                                 new float[] {0, 0.1f, -0.1f, 0}, 16000, 1)));
-                        body.write(
-                                "\r\n--test-boundary--\r\n"
-                                        .getBytes(java.nio.charset.StandardCharsets.UTF_8));
+                        body.write("\r\n--test-boundary--\r\n".getBytes(StandardCharsets.UTF_8));
                         request =
-                                java.net.http.HttpRequest.newBuilder(
-                                                java.net.URI.create(
-                                                        base + "/v1/audio/transcriptions"))
-                                        .timeout(java.time.Duration.ofSeconds(5))
+                                HttpRequest.newBuilder(
+                                                URI.create(base + "/v1/audio/transcriptions"))
+                                        .timeout(Duration.ofSeconds(5))
                                         .header(
                                                 "Content-Type",
                                                 "multipart/form-data; boundary=test-boundary")
                                         .POST(
-                                                java.net.http.HttpRequest.BodyPublishers
-                                                        .ofByteArray(body.toByteArray()))
+                                                HttpRequest.BodyPublishers.ofByteArray(
+                                                        body.toByteArray()))
                                         .build();
                     }
-                    var response =
-                            client.send(
-                                    request, java.net.http.HttpResponse.BodyHandlers.ofString());
+                    var response = client.send(request, HttpResponse.BodyHandlers.ofString());
                     assertEquals(200, response.statusCode(), response.body());
                     if (kind.equals("transcription"))
-                        assertEquals(
-                                "heard",
-                                com.qxotic.format.json.Json.parseMap(response.body()).get("text"));
+                        assertEquals("heard", Json.parseMap(response.body()).get("text"));
                 }
             } finally {
                 server.interrupt();

@@ -9,6 +9,7 @@ import com.qxotic.jota.DataType;
 import com.qxotic.jota.Shape;
 import com.qxotic.jota.memory.MemoryAllocators;
 import java.lang.foreign.Arena;
+import java.util.Random;
 import org.junit.jupiter.api.Test;
 
 /** Formula and boundary contracts independent of the retired FloatTensor implementation. */
@@ -115,7 +116,7 @@ class NormsContractTest {
     @Test
     void layerNormRowsIsStableForLargeMeans() {
         int rows = 37, width = 1027;
-        java.util.Random random = new java.util.Random(7);
+        Random random = new Random(7);
         float[] values = new float[rows * width];
         float[] gamma = new float[width], beta = new float[width];
         for (int i = 0; i < values.length; i++) values[i] = 1000 + (float) random.nextGaussian();

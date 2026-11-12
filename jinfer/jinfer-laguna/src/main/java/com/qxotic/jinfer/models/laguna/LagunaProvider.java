@@ -10,6 +10,7 @@ import java.io.IOException;
 import java.lang.foreign.Arena;
 import java.nio.channels.FileChannel;
 import java.nio.file.Path;
+import java.util.LinkedHashSet;
 import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
@@ -36,7 +37,7 @@ public final class LagunaProvider implements ModelProvider {
         int eot = gguf.getValueOrDefault(int.class, "tokenizer.ggml.eot_token_id", -1);
         Set<Integer> stops = SpecialTokens.stops(model.tokenizer(), eos, "</assistant>");
         if (eot >= 0 && !stops.contains(eot)) {
-            java.util.LinkedHashSet<Integer> expanded = new java.util.LinkedHashSet<>(stops);
+            LinkedHashSet<Integer> expanded = new LinkedHashSet<>(stops);
             expanded.add(eot);
             stops = expanded;
         }

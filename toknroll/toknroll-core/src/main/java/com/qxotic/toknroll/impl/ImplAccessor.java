@@ -2,6 +2,7 @@ package com.qxotic.toknroll.impl;
 
 import com.qxotic.toknroll.*;
 import java.io.BufferedReader;
+import java.nio.ByteBuffer;
 import java.util.Base64;
 import java.util.HashMap;
 import java.util.List;
@@ -218,7 +219,7 @@ public final class ImplAccessor {
      * counting the fit first. Any other tokenizer decodes as the public call does.
      */
     public static int decodeBytesIntoOwn(
-            Tokenizer tokenizer, IntSequence tokens, int from, java.nio.ByteBuffer own) {
+            Tokenizer tokenizer, IntSequence tokens, int from, ByteBuffer own) {
         if (tokenizer instanceof TokenizationPipeline) {
             TokenizationModel model = ((TokenizationPipeline) tokenizer).model();
             if (model instanceof TiktokenModel) {

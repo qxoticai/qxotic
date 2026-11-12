@@ -1,10 +1,15 @@
 package com.qxotic.jinfer.libjinfer;
 
+import com.qxotic.format.json.Json;
 import com.qxotic.jinfer.chat.ModelProvider;
+import java.io.EOFException;
+import java.io.FileNotFoundException;
+import java.io.UncheckedIOException;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.AccessDeniedException;
 import java.nio.file.FileSystemException;
 import java.nio.file.NoSuchFileException;
+import java.util.concurrent.CancellationException;
 import org.graalvm.nativeimage.c.function.CFunction;
 import org.graalvm.nativeimage.c.type.CCharPointer;
 import org.graalvm.nativeimage.c.type.CTypeConversion;
@@ -68,19 +73,18 @@ final class Errors {
         if (t instanceof ExceptionInInitializerError e && e.getCause() != null)
             return code(e.getCause());
         if (t instanceof Failure f) return f.code;
-        if (t instanceof java.io.UncheckedIOException u && u.getCause() != null)
-            return code(u.getCause());
+        if (t instanceof UncheckedIOException u && u.getCause() != null) return code(u.getCause());
         // before EINVAL: an IllegalArgumentException too
         if (t instanceof ModelProvider.IncompatibleModelException
                 || t instanceof UnsupportedOperationException) return EUNSUPPORTED;
         // a file that does not parse is bad input, as in libtoknroll: bad JSON, a truncated GGUF
         if (t instanceof IllegalArgumentException
                 || t instanceof NullPointerException
-                || t instanceof com.qxotic.format.json.Json.ParseException
-                || t instanceof java.io.EOFException) return EINVAL;
-        if (t instanceof java.nio.file.NoSuchFileException
-                || t instanceof java.io.FileNotFoundException) return ENOTFOUND;
-        if (t instanceof java.util.concurrent.CancellationException) return ECANCELLED;
+                || t instanceof Json.ParseException
+                || t instanceof EOFException) return EINVAL;
+        if (t instanceof NoSuchFileException || t instanceof FileNotFoundException)
+            return ENOTFOUND;
+        if (t instanceof CancellationException) return ECANCELLED;
         return ERROR;
     }
 
@@ -118,7 +122,7 @@ final class Errors {
                     .getBytes(StandardCharsets.UTF_8);
 
     static int set(Throwable t) {
-        if (t instanceof java.io.UncheckedIOException u && u.getCause() != null) t = u.getCause();
+        if (t instanceof UncheckedIOException u && u.getCause() != null) t = u.getCause();
         // a -Djinfer.* value a flags class refused: its own message is the one to report
         if (t instanceof ExceptionInInitializerError e && e.getCause() != null) t = e.getCause();
         if (t instanceof OutOfMemoryError) return outOfMemory();

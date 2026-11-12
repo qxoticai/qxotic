@@ -10,6 +10,7 @@ import com.qxotic.jota.DataType;
 import com.qxotic.jota.memory.MemoryAllocator;
 import com.qxotic.jota.memory.MemoryView;
 import java.lang.foreign.MemorySegment;
+import java.util.Arrays;
 
 /** Model-private operations missing from the shared Jinfer kernels. */
 final class KokoroOps {
@@ -111,7 +112,7 @@ final class KokoroOps {
                     .asSlice(hidden.byteOffset(), (long) hiddenSize * Float.BYTES)
                     .fill((byte) 0);
             float[] cell = Workspace.takeFloats(scratch, hiddenSize);
-            java.util.Arrays.fill(cell, 0);
+            Arrays.fill(cell, 0);
 
             MatMul.gemm(weightInput, input, projected, steps);
             for (int iteration = 0; iteration < steps; iteration++) {

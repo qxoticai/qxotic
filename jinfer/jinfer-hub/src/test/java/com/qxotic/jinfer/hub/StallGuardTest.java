@@ -10,6 +10,7 @@ import java.io.OutputStream;
 import java.net.InetSocketAddress;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.Arrays;
 import java.util.Map;
 import java.util.Random;
 import java.util.Set;
@@ -154,7 +155,7 @@ class StallGuardTest {
                 assertTrue(
                         seconds < 30,
                         name + " took " + seconds + "s - the header wait is unbounded");
-                byte[] expected = java.util.Arrays.copyOf(PAYLOAD, size);
+                byte[] expected = Arrays.copyOf(PAYLOAD, size);
                 assertArrayEquals(
                         expected, Files.readAllBytes(dest), name + " resumed wrong bytes");
             }

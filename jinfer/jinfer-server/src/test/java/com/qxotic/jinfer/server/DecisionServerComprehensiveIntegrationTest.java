@@ -16,6 +16,7 @@ import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.ArrayList;
 import java.util.Base64;
 import java.util.List;
 import java.util.Map;
@@ -197,7 +198,7 @@ final class DecisionServerComprehensiveIntegrationTest {
                         + "\"refund\": {\"type\": \"noul\", \"instructions\": \"A refund?\"}}}";
         ExecutorService pool = Executors.newFixedThreadPool(4);
         try {
-            List<Future<Reply>> futures = new java.util.ArrayList<>();
+            List<Future<Reply>> futures = new ArrayList<>();
             for (int i = 0; i < 4; i++) futures.add(pool.submit(() -> post(body)));
             for (Future<Reply> future : futures) {
                 Reply reply = future.get(120, TimeUnit.SECONDS);
@@ -366,7 +367,7 @@ final class DecisionServerComprehensiveIntegrationTest {
         try {
             d3Server =
                     DecisionServer.start(
-                            com.qxotic.jinfer.chat.Models.loadDecisionModel(
+                            Models.loadDecisionModel(
                                     TestModels.require(
                                             "hf.co/ggml-org/vllm-d3-edge-GGUF/"
                                                     + "vllm-d3-edge-Q8_0.gguf"),

@@ -9,9 +9,11 @@ import static com.qxotic.jam.vector.VectorSupport.vectorSegment;
 import com.qxotic.jam.JAM;
 import java.lang.foreign.Arena;
 import java.lang.foreign.MemorySegment;
+import java.lang.foreign.ValueLayout;
 import java.nio.ByteOrder;
 import java.util.HashMap;
 import java.util.Map;
+import java.util.Random;
 import jdk.incubator.vector.ByteVector;
 import jdk.incubator.vector.FloatVector;
 import jdk.incubator.vector.VectorOperators;
@@ -50,7 +52,7 @@ final class Q8Lab {
     public static void main(String[] args) {
         String filter = args.length > 0 ? args[0] : "";
         Arena arena = Arena.ofShared();
-        java.util.Random rng = new java.util.Random(3);
+        Random rng = new Random(3);
 
         QuantWeights.Weight cw = QuantWeights.encode(JAM.Q8_0, 105, 256, arena, rng);
         float[] cact = QuantWeights.gaussians(13 * 256, rng);
@@ -61,12 +63,11 @@ final class Q8Lab {
         QuantWeights.Weight pw = QuantWeights.encode(JAM.Q8_0, m, k, arena, rng);
         MemorySegment a = arena.allocate((long) n * k * 4, 64);
         float[] av = QuantWeights.gaussians(n * k, rng);
-        for (int i = 0; i < av.length; i++)
-            a.set(java.lang.foreign.ValueLayout.JAVA_FLOAT_UNALIGNED, i * 4L, av[i]);
+        for (int i = 0; i < av.length; i++) a.set(ValueLayout.JAVA_FLOAT_UNALIGNED, i * 4L, av[i]);
         MemorySegment o = arena.allocate((long) n * m * 4, 64);
         MemorySegment ca = arena.allocate((long) 13 * 256 * 4, 64);
         for (int i = 0; i < cact.length; i++)
-            ca.set(java.lang.foreign.ValueLayout.JAVA_FLOAT_UNALIGNED, i * 4L, cact[i]);
+            ca.set(ValueLayout.JAVA_FLOAT_UNALIGNED, i * 4L, cact[i]);
         MemorySegment co = arena.allocate((long) 13 * 105 * 4, 64);
 
         MemorySegment g = VectorSupport.GLOBAL;
@@ -79,10 +80,7 @@ final class Q8Lab {
             for (int j = 0; j < 13 && ok; j++)
                 for (int i = 0; i < 105 && ok; i++) {
                     double[] ref = QuantWeights.refDot(cw, cact, i, j, 256);
-                    float vv =
-                            co.get(
-                                    java.lang.foreign.ValueLayout.JAVA_FLOAT_UNALIGNED,
-                                    ((long) j * 105 + i) * 4);
+                    float vv = co.get(ValueLayout.JAVA_FLOAT_UNALIGNED, ((long) j * 105 + i) * 4);
                     if (Math.abs(vv - ref[0]) > ref[1] * 1e-2 + 1e-3) {
                         System.out.printf(
                                 "%-6s INCORRECT [%d,%d]: %f vs %f%n", name, i, j, vv, ref[0]);

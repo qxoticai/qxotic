@@ -1,7 +1,11 @@
 package com.qxotic.toknroll.libtoknroll;
 
+import com.qxotic.format.json.Json;
 import com.qxotic.toknroll.TokenizerLoadException;
 import com.qxotic.toknroll.UnsupportedTokenizerException;
+import java.io.EOFException;
+import java.io.FileNotFoundException;
+import java.io.UncheckedIOException;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.AccessDeniedException;
 import java.nio.file.FileSystemException;
@@ -62,18 +66,17 @@ final class Errors {
 
     static int code(Throwable t) {
         if (t instanceof Failure f) return f.code;
-        if (t instanceof java.io.UncheckedIOException u && u.getCause() != null)
-            return code(u.getCause());
+        if (t instanceof UncheckedIOException u && u.getCause() != null) return code(u.getCause());
         if (t instanceof TokenizerLoadException && t.getCause() != null) return code(t.getCause());
         // well-formed, but asking for what toknroll does not implement: another library may load it
         if (t instanceof UnsupportedTokenizerException) return EUNSUPPORTED;
         // a file that does not parse is bad input, as one of no known kind is: bad JSON, a GGUF cut
         if (t instanceof IllegalArgumentException
                 || t instanceof NullPointerException
-                || t instanceof com.qxotic.format.json.Json.ParseException
-                || t instanceof java.io.EOFException) return EINVAL;
-        if (t instanceof java.nio.file.NoSuchFileException
-                || t instanceof java.io.FileNotFoundException) return ENOTFOUND;
+                || t instanceof Json.ParseException
+                || t instanceof EOFException) return EINVAL;
+        if (t instanceof NoSuchFileException || t instanceof FileNotFoundException)
+            return ENOTFOUND;
         return ERROR;
     }
 

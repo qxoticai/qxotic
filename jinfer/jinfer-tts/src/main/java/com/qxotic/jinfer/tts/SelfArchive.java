@@ -6,6 +6,7 @@ import java.nio.ByteBuffer;
 import java.nio.channels.Channels;
 import java.nio.channels.FileChannel;
 import java.nio.channels.ReadableByteChannel;
+import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.StandardCopyOption;
@@ -76,9 +77,7 @@ final class SelfArchive implements AutoCloseable {
         if (entry.isUnixSymlink()) {
             String target;
             try (InputStream in = zip.getInputStream(entry)) {
-                target =
-                        new String(in.readAllBytes(), java.nio.charset.StandardCharsets.UTF_8)
-                                .trim();
+                target = new String(in.readAllBytes(), StandardCharsets.UTF_8).trim();
             }
             Path targetPath = Path.of(target);
             if (targetPath.isAbsolute() && targetPath.getNameCount() == 0)

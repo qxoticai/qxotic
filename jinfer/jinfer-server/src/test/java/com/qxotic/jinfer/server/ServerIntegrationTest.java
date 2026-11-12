@@ -20,6 +20,7 @@ import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
@@ -407,10 +408,7 @@ class ServerIntegrationTest {
             Map<String, Object> answer = Values.asObject(JsonCodec.parse(text), "answer");
             assertEquals("Paris", answer.get("city"));
             assertTrue(
-                    answer.get("answer")
-                            .toString()
-                            .toLowerCase(java.util.Locale.ROOT)
-                            .contains("sunny"),
+                    answer.get("answer").toString().toLowerCase(Locale.ROOT).contains("sunny"),
                     text);
         }
     }

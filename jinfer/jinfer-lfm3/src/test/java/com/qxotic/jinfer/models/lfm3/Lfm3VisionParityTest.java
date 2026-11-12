@@ -10,6 +10,8 @@ import com.qxotic.jinfer.media.Media;
 import com.qxotic.jinfer.testkit.TestModels;
 import com.qxotic.jota.memory.MemoryArena;
 import com.qxotic.jota.memory.MemoryView;
+import java.io.IOException;
+import java.io.UncheckedIOException;
 import java.lang.foreign.Arena;
 import java.lang.foreign.MemorySegment;
 import java.nio.file.Path;
@@ -89,8 +91,8 @@ final class Lfm3VisionParityTest {
                                                         ref.width());
                                         System.out.printf("  layer_out-%-2d %s%n", layer, s);
                                         worst[0] = Math.max(worst[0], s.maxRel());
-                                    } catch (java.io.IOException e) {
-                                        throw new java.io.UncheckedIOException(e);
+                                    } catch (IOException e) {
+                                        throw new UncheckedIOException(e);
                                     }
                                 });
                 Oracle.Score out =

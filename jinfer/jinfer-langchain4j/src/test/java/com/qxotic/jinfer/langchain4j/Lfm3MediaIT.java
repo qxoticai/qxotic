@@ -1,7 +1,14 @@
 package com.qxotic.jinfer.langchain4j;
 
 import com.qxotic.jinfer.testkit.TestModels;
+import dev.langchain4j.data.message.AudioContent;
+import dev.langchain4j.data.message.TextContent;
+import dev.langchain4j.data.message.UserMessage;
+import dev.langchain4j.exception.UnsupportedFeatureException;
 import java.nio.file.Path;
+import java.util.Base64;
+import org.junit.jupiter.api.Assertions;
+import org.junit.jupiter.api.Test;
 
 /** {@link AbstractMediaIT} against LFM3-VL-2B with its projector attached (images, no audio). */
 class Lfm3MediaIT extends AbstractMediaIT {
@@ -17,23 +24,20 @@ class Lfm3MediaIT extends AbstractMediaIT {
     }
 
     /** LFM3-VL's mmproj has a vision tower and no audio one: a clip is refused, by its kind. */
-    @org.junit.jupiter.api.Test
+    @Test
     void audioIsRefusedByAVisionOnlyProjector() {
-        String wav = java.util.Base64.getEncoder().encodeToString(toneWav(440, 0.2, 16000));
+        String wav = Base64.getEncoder().encodeToString(toneWav(440, 0.2, 16000));
         var refused =
-                org.junit.jupiter.api.Assertions.assertThrows(
-                        dev.langchain4j.exception.UnsupportedFeatureException.class,
+                Assertions.assertThrows(
+                        UnsupportedFeatureException.class,
                         () ->
                                 model.chat(
-                                        dev.langchain4j.data.message.UserMessage.from(
-                                                dev.langchain4j.data.message.AudioContent.from(
-                                                        wav, "audio/wav"),
-                                                dev.langchain4j.data.message.TextContent.from(
-                                                        "Describe this audio."))));
+                                        UserMessage.from(
+                                                AudioContent.from(wav, "audio/wav"),
+                                                TextContent.from("Describe this audio."))));
         // the attached mmproj declares a vision tower only: no advice to attach it again
-        org.junit.jupiter.api.Assertions.assertTrue(
+        Assertions.assertTrue(
                 refused.getMessage().contains("this model takes no audio"), refused.getMessage());
-        org.junit.jupiter.api.Assertions.assertFalse(
-                refused.getMessage().contains("attach"), refused.getMessage());
+        Assertions.assertFalse(refused.getMessage().contains("attach"), refused.getMessage());
     }
 }

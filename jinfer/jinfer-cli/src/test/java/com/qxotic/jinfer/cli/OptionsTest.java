@@ -7,10 +7,15 @@ import com.qxotic.jinfer.chat.LoadedModel;
 import com.qxotic.jinfer.chat.Message;
 import com.qxotic.jinfer.hub.ModelStore;
 import com.qxotic.jinfer.llm.Sampling;
+import java.io.IOException;
+import java.io.UncheckedIOException;
 import java.nio.file.Files;
+import java.nio.file.NoSuchFileException;
 import java.nio.file.Path;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.concurrent.TimeUnit;
+import java.util.regex.Pattern;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 import org.junit.jupiter.params.ParameterizedTest;
@@ -175,14 +180,14 @@ class OptionsTest {
     @Test
     void rawPromptRestrictionsAreSharedByInstructAndServer() {
         for (String command : List.of("instruct", "server")) {
-            var args = new java.util.ArrayList<>(List.of(command, "-m", "unused", "--raw-prompt"));
+            var args = new ArrayList<>(List.of(command, "-m", "unused", "--raw-prompt"));
             if (command.equals("instruct")) args.add("hello");
             for (String[] conflict :
                     new String[][] {
                         {"--think", "off"}, {"--max-reasoning-tokens", "8"},
                         {"--reasoning-cutoff-message", "enough"}, {"--cache", "out.jkv"}
                     }) {
-                var invalid = new java.util.ArrayList<>(args);
+                var invalid = new ArrayList<>(args);
                 invalid.addAll(List.of(conflict));
                 assertThrows(
                         Options.UsageException.class,
@@ -207,17 +212,16 @@ class OptionsTest {
 
     @Test
     void unnamedOperationalFailuresStillHaveADiagnostic() {
-        assertEquals("IOException", Options.rootMessage(new java.io.IOException()));
+        assertEquals("IOException", Options.rootMessage(new IOException()));
         assertEquals(
                 "missing file",
-                Options.rootMessage(
-                        new java.io.UncheckedIOException(new java.io.IOException("missing file"))));
+                Options.rootMessage(new UncheckedIOException(new IOException("missing file"))));
         assertEquals(
                 "failed to open cache missing.jkv: no such file: 'missing.jkv'",
                 Options.rootMessage(
-                        new java.io.UncheckedIOException(
+                        new UncheckedIOException(
                                 "failed to open cache missing.jkv",
-                                new java.nio.file.NoSuchFileException("missing.jkv"))));
+                                new NoSuchFileException("missing.jkv"))));
     }
 
     @ParameterizedTest
@@ -325,9 +329,9 @@ class OptionsTest {
         for (String line : Files.readAllLines(makefile)) {
             int start = line.indexOf("-jar $(JAR_FILE)");
             if (start < 0 || !line.contains("--model")) continue;
-            var tokens = new java.util.ArrayList<String>();
+            var tokens = new ArrayList<String>();
             var matcher =
-                    java.util.regex.Pattern.compile("\"([^\"]*)\"|(\\S+)")
+                    Pattern.compile("\"([^\"]*)\"|(\\S+)")
                             .matcher(
                                     line.substring(start + "-jar $(JAR_FILE)".length())
                                             .replace("$(MODEL)", "model.gguf"));

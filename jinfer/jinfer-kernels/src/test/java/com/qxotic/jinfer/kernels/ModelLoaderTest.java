@@ -17,6 +17,7 @@ import java.nio.channels.FileChannel;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.StandardOpenOption;
+import java.util.List;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
@@ -30,7 +31,7 @@ class ModelLoaderTest {
             var failure =
                     assertThrows(
                             IllegalArgumentException.class,
-                            () -> ModelLoader.loadTensors(channel, 0, java.util.List.of(), arena));
+                            () -> ModelLoader.loadTensors(channel, 0, List.of(), arena));
             assertTrue(failure.getMessage().contains("Confined arenas"));
             assertTrue(arena.scope().isAlive());
         }
@@ -72,7 +73,7 @@ class ModelLoaderTest {
             var failure =
                     assertThrows(
                             IllegalArgumentException.class,
-                            () -> ModelLoader.loadTensors(channel, 1, java.util.List.of(), arena));
+                            () -> ModelLoader.loadTensors(channel, 1, List.of(), arena));
             assertTrue(failure.getMessage().contains("4-byte aligned"), failure.getMessage());
         }
     }

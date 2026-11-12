@@ -8,6 +8,7 @@ import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.junit.jupiter.api.Assertions.fail;
 
+import java.io.IOException;
 import java.lang.management.ManagementFactory;
 import java.lang.management.ThreadMXBean;
 import java.lang.ref.WeakReference;
@@ -27,6 +28,7 @@ import java.util.concurrent.atomic.AtomicLong;
 import java.util.concurrent.atomic.AtomicReference;
 import java.util.concurrent.atomic.AtomicReferenceArray;
 import java.util.concurrent.locks.LockSupport;
+import java.util.function.BooleanSupplier;
 import java.util.function.IntConsumer;
 import java.util.stream.IntStream;
 import org.junit.jupiter.api.Test;
@@ -394,7 +396,7 @@ class ParallelTest {
     @Test
     void checkedThrowablesAreWrapped() {
         try (Parallel pool = Parallel.of(4)) {
-            Exception checked = new java.io.IOException("io");
+            Exception checked = new IOException("io");
             RuntimeException thrown =
                     assertThrows(
                             RuntimeException.class,
@@ -1505,7 +1507,7 @@ class ParallelTest {
         }
     }
 
-    private static void waitUntil(java.util.function.BooleanSupplier condition, long millis) {
+    private static void waitUntil(BooleanSupplier condition, long millis) {
         long until = System.nanoTime() + millis * 1_000_000L;
         while (!condition.getAsBoolean()) {
             if (System.nanoTime() > until) fail("condition not met in " + millis + " ms");

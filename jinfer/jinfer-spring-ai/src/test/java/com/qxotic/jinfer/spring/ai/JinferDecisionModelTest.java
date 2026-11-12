@@ -8,6 +8,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import com.qxotic.jinfer.ContextState;
 import com.qxotic.jinfer.chat.Content;
+import com.qxotic.jinfer.chat.DecisionModel;
 import com.qxotic.jinfer.chat.DecisionModel.Choice;
 import com.qxotic.jinfer.chat.DecisionModel.Option;
 import com.qxotic.jinfer.chat.DecisionModel.Predicate;
@@ -46,7 +47,7 @@ import org.springframework.util.MimeType;
 class JinferDecisionModelTest {
 
     /** Records what it is asked and answers each question with {@link #rows}. */
-    static final class Stub implements com.qxotic.jinfer.chat.DecisionModel {
+    static final class Stub implements DecisionModel {
         List<Content> input;
         List<Question> questions;
         boolean together;
@@ -304,9 +305,7 @@ class JinferDecisionModelTest {
     void aNullModelIsRefusedNamingIt() {
         assertThrows(
                 NullPointerException.class,
-                () ->
-                        JinferDecisionModel.builder()
-                                .model((com.qxotic.jinfer.chat.DecisionModel) null));
+                () -> JinferDecisionModel.builder().model((DecisionModel) null));
         assertThrows(
                 NullPointerException.class, () -> JinferDecisionModel.builder().modelPath(null));
     }

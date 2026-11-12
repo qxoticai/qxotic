@@ -13,7 +13,10 @@ import com.qxotic.jinfer.codecs.AudioCodec;
 import com.qxotic.jinfer.media.Media;
 import com.qxotic.jinfer.testkit.TestModels;
 import com.qxotic.jota.memory.MemoryArena;
+import java.io.File;
 import java.io.IOException;
+import java.io.OutputStream;
+import java.io.PrintStream;
 import java.lang.foreign.MemorySegment;
 import java.nio.ByteBuffer;
 import java.nio.ByteOrder;
@@ -23,6 +26,7 @@ import java.nio.file.Path;
 import java.util.List;
 import java.util.concurrent.TimeUnit;
 import java.util.function.Predicate;
+import org.junit.jupiter.api.Assertions;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.condition.EnabledOnOs;
@@ -238,7 +242,7 @@ final class SpeakTest {
         Speak.execute(new Speech(), "Hi", file, fileCapture.io, new RecordingPlayback());
         Speak.execute(new Speech(), "Hi", pipe, pipeCapture.io, new RecordingPlayback());
         byte[] wav = pipeCapture.stdout.toByteArray();
-        org.junit.jupiter.api.Assertions.assertArrayEquals(Files.readAllBytes(output), wav);
+        Assertions.assertArrayEquals(Files.readAllBytes(output), wav);
         assertEquals(wav.length, ByteBuffer.wrap(wav).order(ByteOrder.LITTLE_ENDIAN).getInt(4) + 8);
         assertEquals("", fileCapture.out());
         assertTrue(pipeCapture.err().contains("s of audio"));
@@ -267,8 +271,8 @@ final class SpeakTest {
             var model = new Speech();
             var capture = new CliFixtures.Capture("");
             var broken =
-                    new java.io.PrintStream(
-                            new java.io.OutputStream() {
+                    new PrintStream(
+                            new OutputStream() {
                                 public void write(int value) throws IOException {
                                     throw new IOException("closed pipe");
                                 }
@@ -414,7 +418,7 @@ final class SpeakTest {
                     .put(
                             "PATH",
                             players
-                                    + java.io.File.pathSeparator
+                                    + File.pathSeparator
                                     + builder.environment().getOrDefault("PATH", ""));
             builder.environment().put("PLAYBACK_CAPTURE", dir.toString());
         }

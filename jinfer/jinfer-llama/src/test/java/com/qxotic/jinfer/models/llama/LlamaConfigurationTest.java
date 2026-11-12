@@ -10,6 +10,7 @@ import com.qxotic.format.gguf.Builder;
 import com.qxotic.format.gguf.GGUF;
 import com.qxotic.jinfer.Views;
 import com.qxotic.jinfer.kernels.RoPE;
+import com.qxotic.jota.memory.MemoryAllocator;
 import com.qxotic.jota.memory.MemoryAllocators;
 import com.qxotic.jota.memory.MemoryView;
 import java.lang.foreign.Arena;
@@ -179,8 +180,7 @@ final class LlamaConfigurationTest {
     }
 
     private static Map<String, MemoryView<MemorySegment>> denseTensors(
-            com.qxotic.jota.memory.MemoryAllocator<MemorySegment> memory,
-            Llama.Configuration config) {
+            MemoryAllocator<MemorySegment> memory, Llama.Configuration config) {
         Map<String, MemoryView<MemorySegment>> tensors = new HashMap<>();
         tensors.put(
                 "token_embd.weight",

@@ -1,5 +1,7 @@
 package com.qxotic.toknroll.impl;
 
+import java.util.Arrays;
+
 /**
  * Immutable map from {@code long} keys (packed {@link IntPair}) to {@code long} values, built for
  * the merge table of a BPE model.
@@ -39,7 +41,7 @@ final class LongLongMap {
             throw new IllegalStateException(gridEntries + " grid entries exceed a char index");
         }
         this.gridIndex = new char[GRID * GRID];
-        java.util.Arrays.fill(gridIndex, NO_GRID_ENTRY);
+        Arrays.fill(gridIndex, NO_GRID_ENTRY);
         this.gridValues = new long[gridEntries];
 
         int capacity = tableSizeFor(keys.length - gridEntries);

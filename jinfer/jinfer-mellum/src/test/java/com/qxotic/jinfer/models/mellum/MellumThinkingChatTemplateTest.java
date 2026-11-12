@@ -22,6 +22,7 @@ import com.qxotic.toknroll.gguf.GGUFTokenizerLoader;
 import java.nio.channels.FileChannel;
 import java.nio.file.Path;
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.List;
 import java.util.Map;
 import org.junit.jupiter.api.BeforeAll;
@@ -64,7 +65,7 @@ final class MellumThinkingChatTemplateTest {
                         .replyPrefix()
                         .toArray();
         assertEquals("<think>\n\n</think>\n\n", tokenizer.decode(IntSequence.of(prefix)));
-        assertArrayEquals(prefix, java.util.Arrays.copyOfRange(off, on.length, off.length));
+        assertArrayEquals(prefix, Arrays.copyOfRange(off, on.length, off.length));
     }
 
     @Test

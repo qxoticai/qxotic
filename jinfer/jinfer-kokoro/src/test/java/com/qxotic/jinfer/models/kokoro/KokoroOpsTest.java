@@ -4,6 +4,7 @@ import static org.junit.jupiter.api.Assertions.assertArrayEquals;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 
 import com.qxotic.jinfer.Views;
+import com.qxotic.jota.memory.MemoryAllocator;
 import com.qxotic.jota.memory.MemoryAllocators;
 import com.qxotic.jota.memory.MemoryView;
 import java.lang.foreign.Arena;
@@ -94,9 +95,7 @@ final class KokoroOpsTest {
     }
 
     private static MemoryView<MemorySegment> floats(
-            com.qxotic.jota.memory.MemoryAllocator<MemorySegment> allocator,
-            float[] values,
-            long... shape) {
+            MemoryAllocator<MemorySegment> allocator, float[] values, long... shape) {
         MemoryView<MemorySegment> view = Views.allocateF32(allocator, shape);
         Views.copyFromArray(view, 0, values, 0, values.length, "fixture");
         return view;

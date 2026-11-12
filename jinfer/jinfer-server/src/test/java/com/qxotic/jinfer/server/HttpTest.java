@@ -6,12 +6,22 @@ import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
+import com.sun.net.httpserver.HttpServer;
 import java.io.ByteArrayOutputStream;
 import java.io.IOException;
 import java.io.InputStream;
+import java.net.InetSocketAddress;
+import java.net.URI;
+import java.net.http.HttpClient;
+import java.net.http.HttpRequest;
+import java.net.http.HttpResponse;
 import java.nio.charset.StandardCharsets;
 import java.time.Duration;
+import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.concurrent.CountDownLatch;
+import java.util.logging.Handler;
+import java.util.logging.LogRecord;
+import java.util.logging.Logger;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.Timeout;
 
@@ -20,12 +30,12 @@ class HttpTest {
     /** One line per exchange, written once it is answered: method, path, status, duration. */
     @Test
     void theAccessLogLineCarriesStatusAndDuration() throws Exception {
-        var logger = java.util.logging.Logger.getLogger("jinfer.server");
-        var lines = new java.util.concurrent.CopyOnWriteArrayList<String>();
+        var logger = Logger.getLogger("jinfer.server");
+        var lines = new CopyOnWriteArrayList<String>();
         var capture =
-                new java.util.logging.Handler() {
+                new Handler() {
                     @Override
-                    public void publish(java.util.logging.LogRecord record) {
+                    public void publish(LogRecord record) {
                         lines.add(record.getMessage());
                     }
 
@@ -36,25 +46,23 @@ class HttpTest {
                     public void close() {}
                 };
         logger.addHandler(capture);
-        var server =
-                com.sun.net.httpserver.HttpServer.create(
-                        new java.net.InetSocketAddress("127.0.0.1", 0), 0);
+        var server = HttpServer.create(new InetSocketAddress("127.0.0.1", 0), 0);
         try {
             Http.logged(
                     server.createContext(
                             "/teapot",
                             exchange -> Http.sendError(exchange, 418, "short and stout")));
             server.start();
-            var client = java.net.http.HttpClient.newHttpClient();
+            var client = HttpClient.newHttpClient();
             var response =
                     client.send(
-                            java.net.http.HttpRequest.newBuilder(
-                                            java.net.URI.create(
+                            HttpRequest.newBuilder(
+                                            URI.create(
                                                     "http://127.0.0.1:"
                                                             + server.getAddress().getPort()
                                                             + "/teapot"))
                                     .build(),
-                            java.net.http.HttpResponse.BodyHandlers.discarding());
+                            HttpResponse.BodyHandlers.discarding());
             assertEquals(418, response.statusCode());
             // the line follows the response: the client can read it before the filter returns
             long deadline = System.nanoTime() + Duration.ofSeconds(5).toNanos();

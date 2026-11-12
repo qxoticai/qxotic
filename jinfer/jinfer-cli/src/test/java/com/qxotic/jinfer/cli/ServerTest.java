@@ -3,17 +3,29 @@ package com.qxotic.jinfer.cli;
 import static org.junit.jupiter.api.Assertions.*;
 
 import com.qxotic.format.json.Json;
+import com.qxotic.jinfer.chat.LoadedModel;
+import com.qxotic.jinfer.codecs.AudioCodec;
+import com.qxotic.jinfer.media.Media;
 import com.qxotic.jinfer.server.ServerConfig;
+import com.qxotic.jinfer.server.TranscriptionServer;
+import java.io.ByteArrayOutputStream;
 import java.io.IOException;
+import java.net.Inet6Address;
+import java.net.InetAddress;
 import java.net.InetSocketAddress;
+import java.net.ServerSocket;
+import java.net.Socket;
 import java.net.URI;
 import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
+import java.nio.charset.StandardCharsets;
 import java.time.Duration;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.atomic.AtomicInteger;
+import java.util.function.Function;
 import org.junit.jupiter.api.Test;
 
 class ServerTest {
@@ -116,13 +128,11 @@ class ServerTest {
                         "--api-key",
                         "test");
         var capture = new CliFixtures.Capture("");
-        var config =
-                Server.config(
-                        o, o.sampling(com.qxotic.jinfer.chat.LoadedModel.SamplingDefaults.NONE));
+        var config = Server.config(o, o.sampling(LoadedModel.SamplingDefaults.NONE));
         var limits = config.limits();
         config =
                 config.withLimits(
-                        new com.qxotic.jinfer.server.ServerConfig.Limits(
+                        new ServerConfig.Limits(
                                 limits.threads(),
                                 limits.maxBodyBytes(),
                                 limits.grammar(),
@@ -156,9 +166,9 @@ class ServerTest {
             assertEquals("", capture.out());
             assertTrue(capture.err().contains(":" + port));
         }
-        try (var socket = new java.net.ServerSocket()) {
+        try (var socket = new ServerSocket()) {
             socket.setReuseAddress(true);
-            socket.bind(new java.net.InetSocketAddress("127.0.0.1", port));
+            socket.bind(new InetSocketAddress("127.0.0.1", port));
         }
     }
 
@@ -276,12 +286,12 @@ class ServerTest {
         var o = Options.parse("server", "-m", "x", "--host", "fe80::1%1", "--api-key", "k");
         var bind = Server.config(o, null).bind();
         assertEquals("fe80::1%1", bind.getHostString());
-        assertEquals(1, ((java.net.Inet6Address) bind.getAddress()).getScopeId());
+        assertEquals(1, ((Inet6Address) bind.getAddress()).getScopeId());
     }
 
     @Test
     void occupiedPortNamesTheHostAsTyped() throws Exception {
-        try (var socket = new java.net.ServerSocket(0, 1, java.net.InetAddress.getByName("::"));
+        try (var socket = new ServerSocket(0, 1, InetAddress.getByName("::"));
                 var engine = CliFixtures.engine(new CliFixtures.Template())) {
             Options o =
                     Options.parse(
@@ -306,9 +316,7 @@ class ServerTest {
 
     @Test
     void occupiedPortReportsTheRemedyAndLeavesTheEngineOwnedByTheCaller() throws Exception {
-        try (var socket =
-                        new java.net.ServerSocket(
-                                0, 1, java.net.InetAddress.getByName("127.0.0.1"));
+        try (var socket = new ServerSocket(0, 1, InetAddress.getByName("127.0.0.1"));
                 var engine = CliFixtures.engine(new CliFixtures.Template())) {
             Options o =
                     Options.parse(
@@ -341,7 +349,7 @@ class ServerTest {
                     {"--context-capacity", "4096"},
                     {"--batch-capacity", "512"}
                 }) {
-            var args = new java.util.ArrayList<>(List.of("server", "-m", "unused"));
+            var args = new ArrayList<>(List.of("server", "-m", "unused"));
             args.addAll(List.of(setting));
             Options o = Options.parse(args.toArray(String[]::new));
             assertThrows(
@@ -361,9 +369,7 @@ class ServerTest {
     }
 
     private static ServerConfig fastConfig(Options o) {
-        var config =
-                Server.config(
-                        o, o.sampling(com.qxotic.jinfer.chat.LoadedModel.SamplingDefaults.NONE));
+        var config = Server.config(o, o.sampling(LoadedModel.SamplingDefaults.NONE));
         var l = config.limits();
         return config.withLimits(
                 new ServerConfig.Limits(
@@ -390,9 +396,7 @@ class ServerTest {
                         "--write-timeout",
                         "5");
         var capture = new CliFixtures.Capture("");
-        var config =
-                Server.config(
-                        o, o.sampling(com.qxotic.jinfer.chat.LoadedModel.SamplingDefaults.NONE));
+        var config = Server.config(o, o.sampling(LoadedModel.SamplingDefaults.NONE));
         var limits = config.limits(); // no shutdown grace: the held requests never complete
         config =
                 config.withLimits(
@@ -410,16 +414,16 @@ class ServerTest {
             String base = "http://127.0.0.1:" + running.address().getPort();
             // a request that announces a body and never sends it holds its permit inside the
             // gate, reading until the write timeout - the only permit, at concurrency 1
-            var held = new java.util.ArrayList<java.net.Socket>();
+            var held = new ArrayList<Socket>();
             try {
                 for (int i = 0; i < 1; i++) {
-                    var socket = new java.net.Socket("127.0.0.1", running.address().getPort());
+                    var socket = new Socket("127.0.0.1", running.address().getPort());
                     socket.getOutputStream()
                             .write(
                                     ("POST /v1/completions HTTP/1.1\r\nHost: localhost\r\n"
                                                     + "Content-Type: application/json\r\n"
                                                     + "Content-Length: 64\r\n\r\n")
-                                            .getBytes(java.nio.charset.StandardCharsets.US_ASCII));
+                                            .getBytes(StandardCharsets.US_ASCII));
                     socket.getOutputStream().flush();
                     held.add(socket);
                 }
@@ -478,13 +482,11 @@ class ServerTest {
                                 limits.requestTimeout(),
                                 Duration.ZERO));
         var model = new TranscribeTest.Transcriber();
-        try (var running =
-                        com.qxotic.jinfer.server.TranscriptionServer.start(
-                                model, "asr.gguf", config);
+        try (var running = TranscriptionServer.start(model, "asr.gguf", config);
                 var client =
                         HttpClient.newBuilder().connectTimeout(Duration.ofSeconds(5)).build()) {
             String base = "http://127.0.0.1:" + running.address().getPort();
-            java.util.function.Function<String, HttpRequest.Builder> get =
+            Function<String, HttpRequest.Builder> get =
                     path ->
                             HttpRequest.newBuilder(URI.create(base + path))
                                     .timeout(Duration.ofSeconds(5));
@@ -556,14 +558,12 @@ class ServerTest {
                         path);
             }
             // one transcription, then the scrape counts it
-            var body = new java.io.ByteArrayOutputStream();
+            var body = new ByteArrayOutputStream();
             body.write(
                     "--b\r\nContent-Disposition: form-data; name=\"file\"; filename=\"clip.wav\"\r\nContent-Type: audio/wav\r\n\r\n"
-                            .getBytes(java.nio.charset.StandardCharsets.US_ASCII));
-            body.write(
-                    com.qxotic.jinfer.codecs.AudioCodec.wav(
-                            new com.qxotic.jinfer.media.Media.Audio(new float[16000], 16000, 1)));
-            body.write("\r\n--b--\r\n".getBytes(java.nio.charset.StandardCharsets.US_ASCII));
+                            .getBytes(StandardCharsets.US_ASCII));
+            body.write(AudioCodec.wav(new Media.Audio(new float[16000], 16000, 1)));
+            body.write("\r\n--b--\r\n".getBytes(StandardCharsets.US_ASCII));
             var heard =
                     client.send(
                             HttpRequest.newBuilder(URI.create(base + "/v1/audio/transcriptions"))
@@ -619,7 +619,7 @@ class ServerTest {
                     metrics.body().contains("jinfer_transcribed_audio_seconds_total 1.0\n"),
                     metrics.body());
             // one request holding the single permit: the next is refused, the probe still answers
-            try (var held = new java.net.Socket("127.0.0.1", running.address().getPort())) {
+            try (var held = new Socket("127.0.0.1", running.address().getPort())) {
                 held.getOutputStream()
                         .write(
                                 ("POST /v1/audio/transcriptions HTTP/1.1\r\n"
@@ -627,7 +627,7 @@ class ServerTest {
                                      + "Authorization: Bearer k\r\n"
                                      + "Content-Type: multipart/form-data; boundary=b\r\n"
                                      + "Content-Length: 64\r\n\r\n")
-                                        .getBytes(java.nio.charset.StandardCharsets.US_ASCII));
+                                        .getBytes(StandardCharsets.US_ASCII));
                 held.getOutputStream().flush();
                 Thread.sleep(500);
                 var refused =
@@ -676,9 +676,7 @@ class ServerTest {
                         "--write-timeout",
                         "5");
         var capture = new CliFixtures.Capture("");
-        var config =
-                Server.config(
-                        o, o.sampling(com.qxotic.jinfer.chat.LoadedModel.SamplingDefaults.NONE));
+        var config = Server.config(o, o.sampling(LoadedModel.SamplingDefaults.NONE));
         var limits = config.limits();
         config =
                 config.withLimits(
@@ -694,16 +692,16 @@ class ServerTest {
                 var client =
                         HttpClient.newBuilder().connectTimeout(Duration.ofSeconds(5)).build()) {
             String base = "http://127.0.0.1:" + running.address().getPort();
-            var held = new java.util.ArrayList<java.net.Socket>();
+            var held = new ArrayList<Socket>();
             try {
                 for (int i = 0; i < 3; i++) { // every one of the three is admitted and waits
-                    var socket = new java.net.Socket("127.0.0.1", running.address().getPort());
+                    var socket = new Socket("127.0.0.1", running.address().getPort());
                     socket.getOutputStream()
                             .write(
                                     ("POST /v1/completions HTTP/1.1\r\nHost: localhost\r\n"
                                                     + "Content-Type: application/json\r\n"
                                                     + "Content-Length: 64\r\n\r\n")
-                                            .getBytes(java.nio.charset.StandardCharsets.US_ASCII));
+                                            .getBytes(StandardCharsets.US_ASCII));
                     socket.getOutputStream().flush();
                     held.add(socket);
                 }

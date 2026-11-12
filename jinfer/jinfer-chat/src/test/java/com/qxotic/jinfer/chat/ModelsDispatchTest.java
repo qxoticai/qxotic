@@ -17,6 +17,7 @@ import java.nio.file.NoSuchFileException;
 import java.nio.file.Path;
 import java.nio.file.StandardOpenOption;
 import java.util.Map;
+import java.util.Set;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
@@ -47,8 +48,7 @@ class ModelsDispatchTest {
 
     @Test
     void theTestProviderIsDiscovered() {
-        assertTrue(
-                Models.supportedArchitectures().containsAll(java.util.Set.of("fake", "fake-too")));
+        assertTrue(Models.supportedArchitectures().containsAll(Set.of("fake", "fake-too")));
     }
 
     @Test

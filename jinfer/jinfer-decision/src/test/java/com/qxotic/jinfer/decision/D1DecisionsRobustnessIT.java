@@ -8,6 +8,7 @@ import com.qxotic.jinfer.chat.DecisionModel;
 import com.qxotic.jinfer.chat.Models;
 import com.qxotic.jinfer.testkit.TestModels;
 import java.lang.foreign.Arena;
+import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.SequencedMap;
@@ -101,7 +102,7 @@ final class D1DecisionsRobustnessIT {
         }
         ExecutorService pool = Executors.newFixedThreadPool(threads);
         try {
-            List<Future<Float>> futures = new java.util.ArrayList<>();
+            List<Future<Float>> futures = new ArrayList<>();
             for (int t = 0; t < threads; t++) {
                 futures.add(
                         pool.submit(
@@ -165,7 +166,7 @@ final class D1DecisionsRobustnessIT {
     @Test
     void seventeenQuestionsTogetherAreStillAllAnswered() {
         try (Decisions decisions = Decisions.over(d1, 2048)) {
-            List<Question<?>> many = new java.util.ArrayList<>();
+            List<Question<?>> many = new ArrayList<>();
             for (int i = 0; i < 17; i++) many.add(Question.predicate("Is this a refund request?"));
             Answers answers = decisions.askTogether(TICKET, many.toArray(Question<?>[]::new));
             for (Question<?> q : many) {

@@ -2,6 +2,7 @@ package com.qxotic.jinfer.cli;
 
 import com.qxotic.jinfer.Batch;
 import com.qxotic.jinfer.ContentKey;
+import com.qxotic.jinfer.RuntimeState;
 import com.qxotic.jinfer.cache.PromptCache;
 import com.qxotic.jinfer.chat.*;
 import com.qxotic.jinfer.testkit.TestLanguageModel;
@@ -9,12 +10,14 @@ import com.qxotic.toknroll.IntSequence;
 import java.io.ByteArrayInputStream;
 import java.io.ByteArrayOutputStream;
 import java.io.PrintStream;
+import java.lang.management.ManagementFactory;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Optional;
 import java.util.Set;
+import java.util.function.Consumer;
 
 /** Existing weightless model, real engine, borrowed streams: no mocks or model files. */
 final class CliFixtures {
@@ -27,13 +30,13 @@ final class CliFixtures {
                                 "--add-modules",
                                 "jdk.incubator.vector",
                                 "--enable-native-access=ALL-UNNAMED"));
-        java.lang.management.ManagementFactory.getRuntimeMXBean().getInputArguments().stream()
+        ManagementFactory.getRuntimeMXBean().getInputArguments().stream()
                 .filter(arg -> arg.startsWith("-javaagent:") && arg.contains("jacoco"))
                 .forEach(command::add);
         return command;
     }
 
-    static final class State extends com.qxotic.jinfer.RuntimeState {
+    static final class State extends RuntimeState {
         private final Runnable closed;
 
         State(Runnable closed) {
@@ -81,8 +84,7 @@ final class CliFixtures {
         final List<Conversation> conversations = new ArrayList<>();
         RuntimeException failure;
 
-        public ReplyState encode(
-                Conversation conversation, int capacity, java.util.function.Consumer<Batch> sink) {
+        public ReplyState encode(Conversation conversation, int capacity, Consumer<Batch> sink) {
             if (failure != null) throw failure;
             if (conversation.messages().getLast().text().equals("reject"))
                 throw new IllegalArgumentException("rejected test turn");

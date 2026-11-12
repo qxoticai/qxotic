@@ -11,8 +11,10 @@ import com.qxotic.jinfer.chat.Models;
 import com.qxotic.jinfer.codecs.ImageCodec;
 import com.qxotic.jinfer.media.Media;
 import com.qxotic.jinfer.testkit.TestModels;
+import java.io.IOException;
 import java.io.UncheckedIOException;
 import java.lang.foreign.Arena;
+import java.net.URI;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.time.Duration;
@@ -235,8 +237,7 @@ final class JinferDecisionModelComprehensiveIT {
         // a URL is refused, never fetched: the library has no network path on inference
         org.springframework.ai.content.Media remote =
                 new org.springframework.ai.content.Media(
-                        MimeType.valueOf("image/png"),
-                        java.net.URI.create("https://example.org/cat.png"));
+                        MimeType.valueOf("image/png"), URI.create("https://example.org/cat.png"));
         UnsupportedOperationException url =
                 assertThrows(
                         UnsupportedOperationException.class,
@@ -646,8 +647,8 @@ final class JinferDecisionModelComprehensiveIT {
     private static byte[] imageBytes(String name) {
         try {
             return Files.readAllBytes(Path.of("../../test-fixtures/lfm3/images/" + name + ".png"));
-        } catch (java.io.IOException e) {
-            throw new java.io.UncheckedIOException(e);
+        } catch (IOException e) {
+            throw new UncheckedIOException(e);
         }
     }
 }

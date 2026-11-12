@@ -9,6 +9,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import com.qxotic.jinfer.ContextState;
 import com.qxotic.jinfer.chat.Content;
+import com.qxotic.jinfer.chat.DecisionModel;
 import com.qxotic.jinfer.chat.DecisionModel.Choice;
 import com.qxotic.jinfer.chat.DecisionModel.Option;
 import com.qxotic.jinfer.chat.DecisionModel.Predicate;
@@ -30,6 +31,7 @@ import java.io.ByteArrayOutputStream;
 import java.lang.foreign.Arena;
 import java.nio.file.Path;
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.Base64;
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -45,7 +47,7 @@ import org.junit.jupiter.api.Test;
 class JinferDecisionModelTest {
 
     /** Records what it is asked and answers each question with {@link #rows}. */
-    static final class Stub implements com.qxotic.jinfer.chat.DecisionModel {
+    static final class Stub implements DecisionModel {
         List<Content> input;
         List<Question> questions;
         boolean together;
@@ -86,7 +88,7 @@ class JinferDecisionModelTest {
 
     static float[] uniform(int n) {
         float[] p = new float[n];
-        java.util.Arrays.fill(p, 1f / n);
+        Arrays.fill(p, 1f / n);
         return p;
     }
 
@@ -341,9 +343,7 @@ class JinferDecisionModelTest {
     void aNullModelIsRefusedNamingIt() {
         assertThrows(
                 NullPointerException.class,
-                () ->
-                        JinferDecisionModel.builder()
-                                .model((com.qxotic.jinfer.chat.DecisionModel) null));
+                () -> JinferDecisionModel.builder().model((DecisionModel) null));
         assertThrows(
                 NullPointerException.class, () -> JinferDecisionModel.builder().modelPath(null));
     }

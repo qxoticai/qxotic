@@ -13,6 +13,7 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 import java.util.function.Function;
+import java.util.stream.Collectors;
 import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.Assumptions;
 import org.junit.jupiter.api.BeforeAll;
@@ -20,6 +21,7 @@ import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 import org.springframework.ai.chat.client.ChatClient;
 import org.springframework.ai.chat.messages.AssistantMessage;
+import org.springframework.ai.chat.messages.Message;
 import org.springframework.ai.chat.messages.ToolResponseMessage;
 import org.springframework.ai.chat.messages.UserMessage;
 import org.springframework.ai.chat.model.ChatResponse;
@@ -303,7 +305,7 @@ class StructuredOutputIT {
                         .stream()
                         .chatResponse()
                         .map(StructuredOutputIT::contentChunk)
-                        .collect(java.util.stream.Collectors.joining())
+                        .collect(Collectors.joining())
                         .block(Duration.ofMinutes(5));
         List<ActorFilms> byStream = converter.convert(streamed);
         assertEquals(2, byStream.size(), streamed);
@@ -349,7 +351,7 @@ class StructuredOutputIT {
                         .seed(7L)
                         .maxTokens(2048)
                         .build();
-        List<org.springframework.ai.chat.messages.Message> conversation = new ArrayList<>();
+        List<Message> conversation = new ArrayList<>();
         conversation.add(
                 new UserMessage(
                         "Transaction 001 is 12.5 and transaction 002 is 40. Look up the status of"

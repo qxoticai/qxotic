@@ -2,7 +2,10 @@ package com.qxotic.jam.vector;
 
 import java.lang.foreign.Arena;
 import java.lang.foreign.MemorySegment;
+import java.lang.foreign.ValueLayout;
 import java.nio.ByteOrder;
+import java.util.Random;
+import java.util.function.Consumer;
 import jdk.incubator.vector.FloatVector;
 import jdk.incubator.vector.VectorOperators;
 import jdk.incubator.vector.VectorSpecies;
@@ -24,24 +27,18 @@ final class F32Probe5 {
         MemorySegment o = arena.allocate((long) n * m * 4, 64);
         MemorySegment wp = arena.allocate((long) m * k * 4, 64); // packed W (whole m, probe)
         MemorySegment ap = arena.allocate((long) n * k * 4, 64); // packed A
-        java.util.Random rng = new java.util.Random(1);
+        Random rng = new Random(1);
         for (long i = 0; i < (long) m * k; i++)
-            w.set(
-                    java.lang.foreign.ValueLayout.JAVA_FLOAT_UNALIGNED,
-                    i * 4,
-                    (float) rng.nextGaussian());
+            w.set(ValueLayout.JAVA_FLOAT_UNALIGNED, i * 4, (float) rng.nextGaussian());
         for (long i = 0; i < (long) n * k; i++)
-            a.set(
-                    java.lang.foreign.ValueLayout.JAVA_FLOAT_UNALIGNED,
-                    i * 4,
-                    (float) rng.nextGaussian());
+            a.set(ValueLayout.JAVA_FLOAT_UNALIGNED, i * 4, (float) rng.nextGaussian());
         MemorySegment g = VectorSupport.GLOBAL;
         long wb = w.address(), ab = a.address(), ob = o.address();
         long wpb = wp.address(), apb = ap.address();
         double flops = 2.0 * m * n * k;
 
         for (String mode : new String[] {"4x4", "3x3", "4x4"}) {
-            java.util.function.Consumer<long[]> f =
+            Consumer<long[]> f =
                     switch (mode) {
                         case "4x4" ->
                                 (z) -> gemmPacked44(g, wb, g, wpb, g, ab, g, apb, g, ob, n, m, k);
@@ -56,7 +53,7 @@ final class F32Probe5 {
             }
             System.out.printf("packed %s BEST %.1f GF/s%n", mode, flops / best / 1e9);
         }
-        System.out.println(o.get(java.lang.foreign.ValueLayout.JAVA_FLOAT_UNALIGNED, 0));
+        System.out.println(o.get(ValueLayout.JAVA_FLOAT_UNALIGNED, 0));
     }
 
     // ---- packed 3x2: MR=3, NR=2 (6 accs; w chunk 192B, a chunk 128B) ----
@@ -126,28 +123,19 @@ final class F32Probe5 {
             c20 = v2.fma(x0, c20);
             c21 = v2.fma(x1, c21);
         }
+        o.set(ValueLayout.JAVA_FLOAT_UNALIGNED, oOff, c00.reduceLanes(VectorOperators.ADD));
         o.set(
-                java.lang.foreign.ValueLayout.JAVA_FLOAT_UNALIGNED,
-                oOff,
-                c00.reduceLanes(VectorOperators.ADD));
-        o.set(
-                java.lang.foreign.ValueLayout.JAVA_FLOAT_UNALIGNED,
+                ValueLayout.JAVA_FLOAT_UNALIGNED,
                 oOff + 4L * os,
                 c01.reduceLanes(VectorOperators.ADD));
+        o.set(ValueLayout.JAVA_FLOAT_UNALIGNED, oOff + 4, c10.reduceLanes(VectorOperators.ADD));
         o.set(
-                java.lang.foreign.ValueLayout.JAVA_FLOAT_UNALIGNED,
-                oOff + 4,
-                c10.reduceLanes(VectorOperators.ADD));
-        o.set(
-                java.lang.foreign.ValueLayout.JAVA_FLOAT_UNALIGNED,
+                ValueLayout.JAVA_FLOAT_UNALIGNED,
                 oOff + 4L * os + 4,
                 c11.reduceLanes(VectorOperators.ADD));
+        o.set(ValueLayout.JAVA_FLOAT_UNALIGNED, oOff + 8, c20.reduceLanes(VectorOperators.ADD));
         o.set(
-                java.lang.foreign.ValueLayout.JAVA_FLOAT_UNALIGNED,
-                oOff + 8,
-                c20.reduceLanes(VectorOperators.ADD));
-        o.set(
-                java.lang.foreign.ValueLayout.JAVA_FLOAT_UNALIGNED,
+                ValueLayout.JAVA_FLOAT_UNALIGNED,
                 oOff + 4L * os + 8,
                 c21.reduceLanes(VectorOperators.ADD));
     }
@@ -214,20 +202,14 @@ final class F32Probe5 {
             c10 = v1.fma(x0, c10);
             c11 = v1.fma(x1, c11);
         }
+        o.set(ValueLayout.JAVA_FLOAT_UNALIGNED, oOff, c00.reduceLanes(VectorOperators.ADD));
         o.set(
-                java.lang.foreign.ValueLayout.JAVA_FLOAT_UNALIGNED,
-                oOff,
-                c00.reduceLanes(VectorOperators.ADD));
-        o.set(
-                java.lang.foreign.ValueLayout.JAVA_FLOAT_UNALIGNED,
+                ValueLayout.JAVA_FLOAT_UNALIGNED,
                 oOff + 4L * os,
                 c01.reduceLanes(VectorOperators.ADD));
+        o.set(ValueLayout.JAVA_FLOAT_UNALIGNED, oOff + 4, c10.reduceLanes(VectorOperators.ADD));
         o.set(
-                java.lang.foreign.ValueLayout.JAVA_FLOAT_UNALIGNED,
-                oOff + 4,
-                c10.reduceLanes(VectorOperators.ADD));
-        o.set(
-                java.lang.foreign.ValueLayout.JAVA_FLOAT_UNALIGNED,
+                ValueLayout.JAVA_FLOAT_UNALIGNED,
                 oOff + 4L * os + 4,
                 c11.reduceLanes(VectorOperators.ADD));
     }
@@ -288,40 +270,31 @@ final class F32Probe5 {
             c21 = v2.fma(ld(a, ap + 64), c21);
             c22 = v2.fma(ld(a, ap + 128), c22);
         }
+        o.set(ValueLayout.JAVA_FLOAT_UNALIGNED, oOff, c00.reduceLanes(VectorOperators.ADD));
         o.set(
-                java.lang.foreign.ValueLayout.JAVA_FLOAT_UNALIGNED,
-                oOff,
-                c00.reduceLanes(VectorOperators.ADD));
-        o.set(
-                java.lang.foreign.ValueLayout.JAVA_FLOAT_UNALIGNED,
+                ValueLayout.JAVA_FLOAT_UNALIGNED,
                 oOff + 4L * os,
                 c01.reduceLanes(VectorOperators.ADD));
         o.set(
-                java.lang.foreign.ValueLayout.JAVA_FLOAT_UNALIGNED,
+                ValueLayout.JAVA_FLOAT_UNALIGNED,
                 oOff + 8L * os,
                 c02.reduceLanes(VectorOperators.ADD));
+        o.set(ValueLayout.JAVA_FLOAT_UNALIGNED, oOff + 4, c10.reduceLanes(VectorOperators.ADD));
         o.set(
-                java.lang.foreign.ValueLayout.JAVA_FLOAT_UNALIGNED,
-                oOff + 4,
-                c10.reduceLanes(VectorOperators.ADD));
-        o.set(
-                java.lang.foreign.ValueLayout.JAVA_FLOAT_UNALIGNED,
+                ValueLayout.JAVA_FLOAT_UNALIGNED,
                 oOff + 4L * os + 4,
                 c11.reduceLanes(VectorOperators.ADD));
         o.set(
-                java.lang.foreign.ValueLayout.JAVA_FLOAT_UNALIGNED,
+                ValueLayout.JAVA_FLOAT_UNALIGNED,
                 oOff + 8L * os + 4,
                 c12.reduceLanes(VectorOperators.ADD));
+        o.set(ValueLayout.JAVA_FLOAT_UNALIGNED, oOff + 8, c20.reduceLanes(VectorOperators.ADD));
         o.set(
-                java.lang.foreign.ValueLayout.JAVA_FLOAT_UNALIGNED,
-                oOff + 8,
-                c20.reduceLanes(VectorOperators.ADD));
-        o.set(
-                java.lang.foreign.ValueLayout.JAVA_FLOAT_UNALIGNED,
+                ValueLayout.JAVA_FLOAT_UNALIGNED,
                 oOff + 4L * os + 8,
                 c21.reduceLanes(VectorOperators.ADD));
         o.set(
-                java.lang.foreign.ValueLayout.JAVA_FLOAT_UNALIGNED,
+                ValueLayout.JAVA_FLOAT_UNALIGNED,
                 oOff + 8L * os + 8,
                 c22.reduceLanes(VectorOperators.ADD));
     }
@@ -440,19 +413,19 @@ final class F32Probe5 {
             FloatVector cr2 = r == 0 ? c02 : r == 1 ? c12 : r == 2 ? c22 : c32;
             FloatVector cr3 = r == 0 ? c03 : r == 1 ? c13 : r == 2 ? c23 : c33;
             o.set(
-                    java.lang.foreign.ValueLayout.JAVA_FLOAT_UNALIGNED,
+                    ValueLayout.JAVA_FLOAT_UNALIGNED,
                     oOff + 4L * r,
                     cr0.reduceLanes(VectorOperators.ADD));
             o.set(
-                    java.lang.foreign.ValueLayout.JAVA_FLOAT_UNALIGNED,
+                    ValueLayout.JAVA_FLOAT_UNALIGNED,
                     oOff + 4L * os + 4L * r,
                     cr1.reduceLanes(VectorOperators.ADD));
             o.set(
-                    java.lang.foreign.ValueLayout.JAVA_FLOAT_UNALIGNED,
+                    ValueLayout.JAVA_FLOAT_UNALIGNED,
                     oOff + 8L * os + 4L * r,
                     cr2.reduceLanes(VectorOperators.ADD));
             o.set(
-                    java.lang.foreign.ValueLayout.JAVA_FLOAT_UNALIGNED,
+                    ValueLayout.JAVA_FLOAT_UNALIGNED,
                     oOff + 12L * os + 4L * r,
                     cr3.reduceLanes(VectorOperators.ADD));
         }
@@ -541,40 +514,31 @@ final class F32Probe5 {
             c21 = v2.fma(x1, c21);
             c22 = v2.fma(x2, c22);
         }
+        o.set(ValueLayout.JAVA_FLOAT_UNALIGNED, oOff, c00.reduceLanes(VectorOperators.ADD));
         o.set(
-                java.lang.foreign.ValueLayout.JAVA_FLOAT_UNALIGNED,
-                oOff,
-                c00.reduceLanes(VectorOperators.ADD));
-        o.set(
-                java.lang.foreign.ValueLayout.JAVA_FLOAT_UNALIGNED,
+                ValueLayout.JAVA_FLOAT_UNALIGNED,
                 oOff + 4L * os,
                 c01.reduceLanes(VectorOperators.ADD));
         o.set(
-                java.lang.foreign.ValueLayout.JAVA_FLOAT_UNALIGNED,
+                ValueLayout.JAVA_FLOAT_UNALIGNED,
                 oOff + 8L * os,
                 c02.reduceLanes(VectorOperators.ADD));
+        o.set(ValueLayout.JAVA_FLOAT_UNALIGNED, oOff + 4, c10.reduceLanes(VectorOperators.ADD));
         o.set(
-                java.lang.foreign.ValueLayout.JAVA_FLOAT_UNALIGNED,
-                oOff + 4,
-                c10.reduceLanes(VectorOperators.ADD));
-        o.set(
-                java.lang.foreign.ValueLayout.JAVA_FLOAT_UNALIGNED,
+                ValueLayout.JAVA_FLOAT_UNALIGNED,
                 oOff + 4L * os + 4,
                 c11.reduceLanes(VectorOperators.ADD));
         o.set(
-                java.lang.foreign.ValueLayout.JAVA_FLOAT_UNALIGNED,
+                ValueLayout.JAVA_FLOAT_UNALIGNED,
                 oOff + 8L * os + 4,
                 c12.reduceLanes(VectorOperators.ADD));
+        o.set(ValueLayout.JAVA_FLOAT_UNALIGNED, oOff + 8, c20.reduceLanes(VectorOperators.ADD));
         o.set(
-                java.lang.foreign.ValueLayout.JAVA_FLOAT_UNALIGNED,
-                oOff + 8,
-                c20.reduceLanes(VectorOperators.ADD));
-        o.set(
-                java.lang.foreign.ValueLayout.JAVA_FLOAT_UNALIGNED,
+                ValueLayout.JAVA_FLOAT_UNALIGNED,
                 oOff + 4L * os + 8,
                 c21.reduceLanes(VectorOperators.ADD));
         o.set(
-                java.lang.foreign.ValueLayout.JAVA_FLOAT_UNALIGNED,
+                ValueLayout.JAVA_FLOAT_UNALIGNED,
                 oOff + 8L * os + 8,
                 c22.reduceLanes(VectorOperators.ADD));
     }

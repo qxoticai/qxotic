@@ -16,6 +16,7 @@ import java.net.URI;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.time.Duration;
+import java.time.ZonedDateTime;
 import java.util.List;
 import java.util.Map;
 import java.util.Random;
@@ -89,7 +90,7 @@ class RateLimitTest {
                                         "RateLimit",
                                         List.of("\"x\";r=0;t=5"))),
                         0));
-        long now = java.time.ZonedDateTime.parse("2026-09-14T12:00:00Z").toInstant().toEpochMilli();
+        long now = ZonedDateTime.parse("2026-09-14T12:00:00Z").toInstant().toEpochMilli();
         assertEquals(
                 Duration.ofSeconds(90),
                 RateLimit.requested(

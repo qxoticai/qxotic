@@ -7,8 +7,10 @@ import com.qxotic.jinfer.TranscriptionModel;
 import com.qxotic.jinfer.TranscriptionStream;
 import com.qxotic.jinfer.media.Media;
 import com.qxotic.jota.memory.MemoryArena;
+import java.io.ByteArrayInputStream;
 import java.io.IOException;
 import java.io.InputStream;
+import java.io.InterruptedIOException;
 import java.lang.foreign.MemorySegment;
 import java.time.Duration;
 import java.util.Arrays;
@@ -117,7 +119,7 @@ class TranscribeTest {
         Thread.currentThread().interrupt();
         try {
             assertThrows(
-                    java.io.InterruptedIOException.class,
+                    InterruptedIOException.class,
                     () -> Transcribe.execute(model, null, o, capture.io));
             assertTrue(Thread.currentThread().isInterrupted());
             assertEquals(0, model.finished);
@@ -135,7 +137,7 @@ class TranscribeTest {
     void truncatedPcmAndReaderFailureCloseTheStreamWithoutFinishing() {
         for (InputStream input :
                 new InputStream[] {
-                    new java.io.ByteArrayInputStream(new byte[] {1, 2, 3}),
+                    new ByteArrayInputStream(new byte[] {1, 2, 3}),
                     new InputStream() {
                         public int read() throws IOException {
                             throw new IOException("test read failure");
@@ -162,7 +164,7 @@ class TranscribeTest {
         model.onPartial = partial::countDown;
         // Half a second of audio, then keep the source open until a partial is requested.
         InputStream live =
-                new java.io.ByteArrayInputStream(new byte[16000]) {
+                new ByteArrayInputStream(new byte[16000]) {
                     @Override
                     public synchronized int read(byte[] bytes, int offset, int length) {
                         if (available() == 0) {

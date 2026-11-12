@@ -13,6 +13,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.random.RandomGenerator;
 import java.util.random.RandomGeneratorFactory;
+import org.junit.jupiter.api.Assertions;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.MethodSource;
@@ -76,7 +77,7 @@ public final class GrammarSpecTest {
     // ---- harness -----------------------------------------------------------
 
     static void check(String what, boolean ok) {
-        org.junit.jupiter.api.Assertions.assertTrue(ok, what);
+        Assertions.assertTrue(ok, what);
     }
 
     /**
@@ -792,8 +793,7 @@ public final class GrammarSpecTest {
         for (String gbnf :
                 List.of("root ::=", "root ::= # comment", "helper ::=\nroot ::= \"x\"")) {
             IllegalArgumentException error =
-                    org.junit.jupiter.api.Assertions.assertThrows(
-                            IllegalArgumentException.class, () -> g(gbnf));
+                    Assertions.assertThrows(IllegalArgumentException.class, () -> g(gbnf));
             check("missing rule body names the remedy", error.getMessage().contains("use \"\""));
         }
 

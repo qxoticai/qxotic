@@ -15,6 +15,7 @@ import java.nio.file.Path;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.OptionalInt;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 
@@ -101,7 +102,7 @@ final class GraniteChatTemplateIntegrationTest {
             return SpecialTokens.encode(tokenizer, render(thinking));
         }
 
-        private String special(java.util.OptionalInt id) {
+        private String special(OptionalInt id) {
             return id.isPresent() ? tokenizer.vocabulary().token(id.getAsInt()) : "";
         }
     }

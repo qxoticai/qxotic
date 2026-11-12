@@ -39,6 +39,7 @@ import java.time.Duration;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.function.Consumer;
@@ -381,7 +382,7 @@ final class Gemma4ChatTemplateTest {
         assertEquals("Hello!", plain.text());
         assertEquals(1, plain.content().size());
         // a tool loop resumed with thinking on: the prompt opens <|channel>thought\n itself
-        Content.ToolCall call = new Content.ToolCall("c1", "now", java.util.Map.of());
+        Content.ToolCall call = new Content.ToolCall("c1", "now", Map.of());
         ChatTemplate.ReplyState resumed =
                 template.encode(
                         new Conversation(

@@ -6,6 +6,9 @@ import static org.junit.jupiter.api.Assertions.assertThrows;
 
 import java.nio.ByteBuffer;
 import java.nio.charset.StandardCharsets;
+import java.util.Collections;
+import java.util.Iterator;
+import java.util.Map;
 import org.junit.jupiter.api.Test;
 
 class TokenizerDefaultsTest {
@@ -123,8 +126,8 @@ class TokenizerDefaultsTest {
                 }
 
                 @Override
-                public java.util.Iterator<java.util.Map.Entry<String, Integer>> iterator() {
-                    return java.util.Collections.emptyIterator();
+                public Iterator<Map.Entry<String, Integer>> iterator() {
+                    return Collections.emptyIterator();
                 }
             };
         }

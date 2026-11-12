@@ -2,7 +2,9 @@ package com.qxotic.jam.vector;
 
 import java.lang.foreign.Arena;
 import java.lang.foreign.MemorySegment;
+import java.lang.foreign.ValueLayout;
 import java.nio.ByteOrder;
+import java.util.Random;
 import jdk.incubator.vector.FloatVector;
 import jdk.incubator.vector.VectorOperators;
 import jdk.incubator.vector.VectorSpecies;
@@ -22,17 +24,11 @@ final class F32Probe4 {
         MemorySegment w = arena.allocate((long) m * k * 4, 64);
         MemorySegment a = arena.allocate((long) n * k * 4, 64);
         MemorySegment o = arena.allocate((long) n * m * 4, 64);
-        java.util.Random rng = new java.util.Random(1);
+        Random rng = new Random(1);
         for (long i = 0; i < (long) m * k; i++)
-            w.set(
-                    java.lang.foreign.ValueLayout.JAVA_FLOAT_UNALIGNED,
-                    i * 4,
-                    (float) rng.nextGaussian());
+            w.set(ValueLayout.JAVA_FLOAT_UNALIGNED, i * 4, (float) rng.nextGaussian());
         for (long i = 0; i < (long) n * k; i++)
-            a.set(
-                    java.lang.foreign.ValueLayout.JAVA_FLOAT_UNALIGNED,
-                    i * 4,
-                    (float) rng.nextGaussian());
+            a.set(ValueLayout.JAVA_FLOAT_UNALIGNED, i * 4, (float) rng.nextGaussian());
         MemorySegment g = VectorSupport.GLOBAL;
         long wb = w.address(), ab = a.address(), ob = o.address();
         double flops = 2.0 * m * n * k;
@@ -50,10 +46,10 @@ final class F32Probe4 {
             }
             double chk = 0;
             for (long i = 0; i < (long) n * m; i += 7919)
-                chk += o.get(java.lang.foreign.ValueLayout.JAVA_FLOAT_UNALIGNED, i * 4);
+                chk += o.get(ValueLayout.JAVA_FLOAT_UNALIGNED, i * 4);
             System.out.printf("%-6s %8.1f GF/s chk=%.3f%n", shape, flops / best / 1e9, chk);
         }
-        System.out.println(o.get(java.lang.foreign.ValueLayout.JAVA_FLOAT_UNALIGNED, 0));
+        System.out.println(o.get(ValueLayout.JAVA_FLOAT_UNALIGNED, 0));
     }
 
     static void run(
@@ -112,10 +108,7 @@ final class F32Probe4 {
     }
 
     static void st(MemorySegment o, long oOff, int i, int j, int oStride, float v) {
-        o.set(
-                java.lang.foreign.ValueLayout.JAVA_FLOAT_UNALIGNED,
-                oOff + 4L * ((long) j * oStride + i),
-                v);
+        o.set(ValueLayout.JAVA_FLOAT_UNALIGNED, oOff + 4L * ((long) j * oStride + i), v);
     }
 
     static float red(FloatVector v) {

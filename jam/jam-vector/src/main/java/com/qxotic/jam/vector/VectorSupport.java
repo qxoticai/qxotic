@@ -9,6 +9,7 @@ import static java.lang.foreign.ValueLayout.JAVA_SHORT_UNALIGNED;
 import com.oracle.svm.shared.AlwaysInline;
 import com.qxotic.jam.JAM;
 import java.lang.foreign.MemorySegment;
+import java.lang.management.ManagementFactory;
 import java.nio.ByteOrder;
 import java.util.Locale;
 import jdk.incubator.vector.ByteVector;
@@ -128,10 +129,7 @@ final class VectorSupport {
     private static boolean detectGraalJit() {
         try {
             String args =
-                    String.join(
-                            " ",
-                            java.lang.management.ManagementFactory.getRuntimeMXBean()
-                                    .getInputArguments());
+                    String.join(" ", ManagementFactory.getRuntimeMXBean().getInputArguments());
             if (args.contains("-XX:-UseJVMCICompiler")) return false;
             if (args.contains("-XX:+UseJVMCICompiler")) return true;
         } catch (Throwable noManagement) {

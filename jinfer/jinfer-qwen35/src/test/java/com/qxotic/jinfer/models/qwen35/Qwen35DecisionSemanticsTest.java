@@ -13,11 +13,14 @@ import com.qxotic.jinfer.chat.DecisionModel.Predicate;
 import com.qxotic.jinfer.chat.DecisionModel.Question;
 import com.qxotic.jinfer.chat.DecisionModel.Rating;
 import com.qxotic.jinfer.chat.Models;
+import com.qxotic.jinfer.codecs.ImageCodec;
 import com.qxotic.jinfer.testkit.TestModels;
 import java.lang.foreign.Arena;
+import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
+import org.junit.jupiter.api.Assertions;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 
@@ -195,15 +198,14 @@ final class Qwen35DecisionSemanticsTest {
                 assertEquals(20, rows.length);
                 float[] alone = d3.decide(state, text(BENIGN), REFUND);
                 for (int i = 0; i < rows.length; i++)
-                    org.junit.jupiter.api.Assertions.assertArrayEquals(
-                            alone, rows[i], 1e-5f, "question " + i);
+                    Assertions.assertArrayEquals(alone, rows[i], 1e-5f, "question " + i);
 
                 // with a picture, the tower runs once and every question reads the same rows
                 List<Content> photo =
                         List.of(
                                 new Content.Media(
-                                        com.qxotic.jinfer.codecs.ImageCodec.load(
-                                                java.nio.file.Path.of(
+                                        ImageCodec.load(
+                                                Path.of(
                                                         "../../test-fixtures/lfm3/images/"
                                                                 + "cat.png"))),
                                 new Content.Text("A photo sent by a customer."));

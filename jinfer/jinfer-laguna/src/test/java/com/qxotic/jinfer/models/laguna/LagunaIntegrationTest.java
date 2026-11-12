@@ -31,6 +31,7 @@ import java.nio.channels.FileChannel;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -107,8 +108,8 @@ final class LagunaIntegrationTest {
                         new Conversation(List.of(Message.user("Who are you?")), List.of(), false));
         assertEquals(19, plainDirect[plainDirect.length - 1], "</think> scaffold token");
         assertArrayEquals(
-                java.util.Arrays.copyOf(plainThinking, plainThinking.length - 1),
-                java.util.Arrays.copyOf(plainDirect, plainDirect.length - 1));
+                Arrays.copyOf(plainThinking, plainThinking.length - 1),
+                Arrays.copyOf(plainDirect, plainDirect.length - 1));
         List<Message> messages =
                 List.of(
                         Message.system("Answer briefly."),
@@ -243,7 +244,7 @@ final class LagunaIntegrationTest {
             int[] tokens = promptTokens(model.tokenizer(), "Hello world");
             List<Batch> prompt =
                     List.of(
-                            Batch.prefill(java.util.Arrays.copyOf(tokens, tokens.length - 1)),
+                            Batch.prefill(Arrays.copyOf(tokens, tokens.length - 1)),
                             Batch.step(tokens[tokens.length - 1]));
             PromptCache.Options options =
                     PromptCache.Options.DEFAULTS

@@ -14,6 +14,7 @@ import java.util.Map;
 import java.util.Set;
 import java.util.random.RandomGenerator;
 import java.util.random.RandomGeneratorFactory;
+import org.junit.jupiter.api.Assertions;
 import org.junit.jupiter.api.Test;
 
 public final class GrammarLegacyTest {
@@ -186,7 +187,7 @@ public final class GrammarLegacyTest {
     }
 
     static void check(String what, boolean ok) {
-        org.junit.jupiter.api.Assertions.assertTrue(ok, what);
+        Assertions.assertTrue(ok, what);
     }
 
     // ========================================================================

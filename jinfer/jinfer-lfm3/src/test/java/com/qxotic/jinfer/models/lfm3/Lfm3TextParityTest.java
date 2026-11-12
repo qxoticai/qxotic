@@ -8,8 +8,12 @@ import com.qxotic.jinfer.Views;
 import com.qxotic.jinfer.testkit.TestModels;
 import com.qxotic.toknroll.IntSequence;
 import com.qxotic.toknroll.Tokenizer;
+import java.io.IOException;
+import java.io.UncheckedIOException;
 import java.lang.foreign.Arena;
+import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.Arrays;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 import org.junit.jupiter.api.Tag;
@@ -50,8 +54,8 @@ final class Lfm3TextParityTest {
                                                 dim);
                                 System.out.printf("l_out-%-2d %s%n", layer, s);
                                 worst[0] = Math.max(worst[0], s.maxRel());
-                            } catch (java.io.IOException e) {
-                                throw new java.io.UncheckedIOException(e);
+                            } catch (IOException e) {
+                                throw new UncheckedIOException(e);
                             }
                         });
                 float[] logits = new float[n * vocab];
@@ -109,9 +113,7 @@ final class Lfm3TextParityTest {
                 int at = 0;
                 for (int i = 0; at < tokens.length; i++) {
                     int size = i < chunks.length ? chunks[i] : 1;
-                    model.ingest(
-                            state,
-                            Batch.score(java.util.Arrays.copyOfRange(tokens, at, at + size)));
+                    model.ingest(state, Batch.score(Arrays.copyOfRange(tokens, at, at + size)));
                     for (int row = 0; row < size; row++, at++) {
                         float[] logits =
                                 Oracle.rows(
@@ -140,7 +142,7 @@ final class Lfm3TextParityTest {
         Path dir = Oracle.dir("text-f32");
         try (Arena arena = Arena.ofShared()) {
             Lfm3 model = Lfm3.loadModel(TestModels.require(F32), arena);
-            String text = java.nio.file.Files.readString(Oracle.ROOT.resolve("prompt-long.txt"));
+            String text = Files.readString(Oracle.ROOT.resolve("prompt-long.txt"));
             int[] expected = Oracle.ints(dir.resolve("tokens.i32"));
             assertArrayEquals(expected, encodeWithSpecials(model.tokenizer(), text));
         }

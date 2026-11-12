@@ -1,6 +1,7 @@
 package com.qxotic.jinfer.chat;
 
 import com.qxotic.jinfer.ContextState;
+import java.util.Arrays;
 import java.util.List;
 
 /**
@@ -134,7 +135,7 @@ public interface DecisionModel {
 
         /** Options by label alone. */
         public static List<Option> of(String... labels) {
-            return java.util.Arrays.stream(labels).map(Option::new).toList();
+            return Arrays.stream(labels).map(Option::new).toList();
         }
     }
 

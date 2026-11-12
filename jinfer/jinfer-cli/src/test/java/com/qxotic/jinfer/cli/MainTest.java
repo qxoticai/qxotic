@@ -3,9 +3,16 @@ package com.qxotic.jinfer.cli;
 import static org.junit.jupiter.api.Assertions.*;
 
 import com.qxotic.jinfer.hub.ModelStore;
+import java.io.IOException;
+import java.io.InputStream;
+import java.io.OutputStream;
+import java.io.PrintStream;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.ArrayList;
 import java.util.List;
+import java.util.regex.MatchResult;
+import java.util.regex.Pattern;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 import org.junit.jupiter.params.ParameterizedTest;
@@ -165,10 +172,10 @@ class MainTest {
     void failedOutputNeverReportsSuccessEvenForHelp() {
         var capture = new CliFixtures.Capture("");
         var broken =
-                new java.io.PrintStream(
-                        new java.io.OutputStream() {
-                            public void write(int value) throws java.io.IOException {
-                                throw new java.io.IOException("closed");
+                new PrintStream(
+                        new OutputStream() {
+                            public void write(int value) throws IOException {
+                                throw new IOException("closed");
                             }
                         });
         var io = new Main.IO(capture.io.in(), broken, capture.io.err());
@@ -189,7 +196,7 @@ class MainTest {
 
     @Test
     void emptyPipedTextFailsBeforeTryingToLoadTheModel() {
-        for (String verb : java.util.List.of("speak", "instruct")) {
+        for (String verb : List.of("speak", "instruct")) {
             var capture = new CliFixtures.Capture(" \n\t");
             assertEquals(
                     2,
@@ -214,7 +221,7 @@ class MainTest {
 
     @Test
     void localModelErrorsAreShortAndDoNotTeachHubSyntax() {
-        for (String verb : java.util.List.of("chat", "pull")) {
+        for (String verb : List.of("chat", "pull")) {
             var capture = new CliFixtures.Capture("");
             String missing = dir.resolve("missing model.gguf").toString();
             String[] args =
@@ -271,7 +278,7 @@ class MainTest {
 
     @Test
     void contextualIoErrorsKeepTheCauseAndIndentBackendDiagnostics() {
-        var cause = new java.io.IOException("decoder exited 7:\ninvalid audio");
+        var cause = new IOException("decoder exited 7:\ninvalid audio");
         var error = Main.failure("cannot decode audio 'clip.wav'", cause);
         assertEquals(
                 "cannot decode audio 'clip.wav'\n  decoder exited 7:\n  invalid audio",
@@ -281,12 +288,12 @@ class MainTest {
 
     @Test
     void failedStdinReadsNameTheInputBeingRead() {
-        for (String verb : java.util.List.of("instruct", "transcribe")) {
+        for (String verb : List.of("instruct", "transcribe")) {
             var capture = new CliFixtures.Capture("");
             var input =
-                    new java.io.InputStream() {
-                        public int read() throws java.io.IOException {
-                            throw new java.io.IOException("input device closed");
+                    new InputStream() {
+                        public int read() throws IOException {
+                            throw new IOException("input device closed");
                         }
                     };
             var io = new Main.IO(input, capture.io.out(), capture.io.err());
@@ -322,17 +329,13 @@ class MainTest {
                 help.out()
                         .lines()
                         .filter(line -> line.startsWith("  -"))
-                        .flatMap(
-                                line ->
-                                        java.util.regex.Pattern.compile("--[a-z-]+")
-                                                .matcher(line)
-                                                .results())
-                        .map(java.util.regex.MatchResult::group)
+                        .flatMap(line -> Pattern.compile("--[a-z-]+").matcher(line).results())
+                        .map(MatchResult::group)
                         .distinct()
                         .toList();
         assertFalse(flags.isEmpty(), verb + " help lists options");
         for (String flag : flags) {
-            var args = new java.util.ArrayList<>(List.of(verb, "-m", "m"));
+            var args = new ArrayList<>(List.of(verb, "-m", "m"));
             if (operand != null) args.add(operand);
             args.addAll(List.of(flag, "1"));
             try {

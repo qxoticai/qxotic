@@ -8,12 +8,16 @@ import static org.junit.jupiter.api.Assumptions.assumeTrue;
 import com.sun.net.httpserver.HttpServer;
 import java.io.IOException;
 import java.io.InputStream;
+import java.net.InetAddress;
 import java.net.InetSocketAddress;
+import java.net.ServerSocket;
+import java.net.Socket;
 import java.net.URI;
 import java.nio.charset.StandardCharsets;
 import java.time.Duration;
 import java.util.List;
 import java.util.Map;
+import java.util.concurrent.Executors;
 import java.util.concurrent.atomic.AtomicReference;
 import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.BeforeAll;
@@ -61,8 +65,7 @@ class TransportTest {
                     exchange.close();
                 });
         server.setExecutor(
-                java.util.concurrent.Executors
-                        .newCachedThreadPool()); // a sleeping handler must not block the next
+                Executors.newCachedThreadPool()); // a sleeping handler must not block the next
         // request
         server.start();
         base = URI.create("http://127.0.0.1:" + server.getAddress().getPort());
@@ -179,14 +182,13 @@ class TransportTest {
     void aBodyThatStallsIsClosedByItsDeadline() throws IOException {
         // a raw socket: the JDK's HttpServer holds the headers back until it has body to send with
         // them
-        try (java.net.ServerSocket drip =
-                new java.net.ServerSocket(0, 1, java.net.InetAddress.getLoopbackAddress())) {
+        try (ServerSocket drip = new ServerSocket(0, 1, InetAddress.getLoopbackAddress())) {
             Thread stall =
                     new Thread(
                             () -> {
                                 try {
                                     while (true) {
-                                        java.net.Socket c = drip.accept();
+                                        Socket c = drip.accept();
                                         Thread one =
                                                 new Thread(
                                                         () -> { // one connection per thread: the

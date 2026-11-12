@@ -14,13 +14,18 @@ import com.qxotic.jinfer.chat.DecisionModel.Option;
 import com.qxotic.jinfer.chat.DecisionModel.Predicate;
 import com.qxotic.jinfer.chat.DecisionModel.Question;
 import com.qxotic.jinfer.chat.DecisionModel.Rating;
+import com.qxotic.jinfer.chat.ModelProvider;
 import com.qxotic.jinfer.chat.Models;
 import com.qxotic.jinfer.codecs.ImageCodec;
+import com.qxotic.jinfer.media.Media;
+import com.qxotic.jinfer.media.Multimodal;
 import com.qxotic.jinfer.testkit.TestModels;
 import java.lang.foreign.Arena;
 import java.nio.charset.StandardCharsets;
+import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Map;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.Future;
@@ -290,8 +295,7 @@ final class Lfm3DecisionRobustnessTest {
                 List.of(
                         new Content.Media(
                                 ImageCodec.load(
-                                        java.nio.file.Path.of(
-                                                "../../test-fixtures/lfm3/images/cat.png"))),
+                                        Path.of("../../test-fixtures/lfm3/images/cat.png"))),
                         new Content.Text("A photo sent by a customer."));
         Question shows =
                 new Choice(
@@ -302,7 +306,7 @@ final class Lfm3DecisionRobustnessTest {
                     Models.loadDecisionModel(
                             TestModels.require(D1),
                             arena,
-                            java.util.Map.of("media", TestModels.require(mmproj)));
+                            Map.of("media", TestModels.require(mmproj)));
             try (ContextState state = d1.newState(4096)) {
                 List<Question> many = new ArrayList<>();
                 for (int i = 0; i < Lfm3Decision.GROUP + 1; i++) many.add(shows);
@@ -323,8 +327,7 @@ final class Lfm3DecisionRobustnessTest {
                 List.of(
                         new Content.Media(
                                 ImageCodec.load(
-                                        java.nio.file.Path.of(
-                                                "../../test-fixtures/lfm3/images/cat.png"))),
+                                        Path.of("../../test-fixtures/lfm3/images/cat.png"))),
                         new Content.Text("A photo sent by a customer."));
         Question cat = new Predicate("Is there a cat in the picture?");
         int threads = 3, repeats = 2;
@@ -333,7 +336,7 @@ final class Lfm3DecisionRobustnessTest {
                     Models.loadDecisionModel(
                             TestModels.require(D1),
                             arena,
-                            java.util.Map.of("media", TestModels.require(mmproj)));
+                            Map.of("media", TestModels.require(mmproj)));
             float[] expected;
             try (ContextState state = d1.newState(4096)) {
                 // the first calls may compile to another tier: warm the towers before measuring
@@ -380,27 +383,25 @@ final class Lfm3DecisionRobustnessTest {
         String mmproj = "hf.co/LiquidAI/d1-2B-GGUF/mmproj-d1-2B-F16.gguf";
         try (Arena arena = Arena.ofShared()) {
             DecisionModel bare = Models.loadDecisionModel(TestModels.require(D1), arena);
-            assertTrue(bare instanceof com.qxotic.jinfer.media.Multimodal);
-            com.qxotic.jinfer.media.Multimodal bareMedia =
-                    (com.qxotic.jinfer.media.Multimodal) bare;
-            assertFalse(bareMedia.supports(com.qxotic.jinfer.media.Media.Video.class));
-            assertFalse(bareMedia.supports(com.qxotic.jinfer.media.Media.Image.class));
+            assertTrue(bare instanceof Multimodal);
+            Multimodal bareMedia = (Multimodal) bare;
+            assertFalse(bareMedia.supports(Media.Video.class));
+            assertFalse(bareMedia.supports(Media.Image.class));
 
             DecisionModel withTower =
                     Models.loadDecisionModel(
                             TestModels.require(D1),
                             arena,
-                            java.util.Map.of("media", TestModels.require(mmproj)));
-            com.qxotic.jinfer.media.Multimodal media =
-                    (com.qxotic.jinfer.media.Multimodal) withTower;
-            assertTrue(media.supports(com.qxotic.jinfer.media.Media.Video.class));
-            assertTrue(media.supports(com.qxotic.jinfer.media.Media.Image.class));
+                            Map.of("media", TestModels.require(mmproj)));
+            Multimodal media = (Multimodal) withTower;
+            assertTrue(media.supports(Media.Video.class));
+            assertTrue(media.supports(Media.Image.class));
             // d1 has no audio tower; d1-Omni does
-            assertFalse(media.supports(com.qxotic.jinfer.media.Media.Audio.class));
+            assertFalse(media.supports(Media.Audio.class));
 
             // the same file is not a chat model: it was trained to answer, not to generate
             assertThrows(
-                    com.qxotic.jinfer.chat.ModelProvider.IncompatibleModelException.class,
+                    ModelProvider.IncompatibleModelException.class,
                     () -> Models.load(TestModels.require(D1), arena));
         }
     }

@@ -12,6 +12,7 @@ import java.nio.charset.StandardCharsets;
 import java.time.Duration;
 import java.util.List;
 import java.util.Map;
+import java.util.concurrent.atomic.AtomicInteger;
 import java.util.regex.Pattern;
 import org.junit.jupiter.api.Test;
 
@@ -111,7 +112,7 @@ class TranscriptHudTest {
     @Test
     void resizingAndClosingALiveViewRestoreTheCursor() throws Exception {
         var bytes = new ByteArrayOutputStream();
-        var columns = new java.util.concurrent.atomic.AtomicInteger(80);
+        var columns = new AtomicInteger(80);
         var committed = List.of(token(" hello", 0, 0.99), token(" world", 1, 0.9));
         try (var view =
                 new TranscriptHud(

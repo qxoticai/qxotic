@@ -20,6 +20,7 @@ import com.qxotic.jinfer.server.ServerConfig;
 import com.qxotic.toknroll.Tokenizer;
 import java.io.IOException;
 import java.lang.foreign.Arena;
+import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.NoSuchFileException;
 import java.nio.file.Path;
@@ -27,6 +28,7 @@ import java.time.Duration;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
@@ -208,10 +210,7 @@ final class Model {
         }
         LOG.log(
                 System.Logger.Level.DEBUG,
-                "loaded "
-                        + model.kind.name().toLowerCase(java.util.Locale.ROOT)
-                        + " "
-                        + model.name);
+                "loaded " + model.kind.name().toLowerCase(Locale.ROOT) + " " + model.name);
         return model;
     }
 
@@ -421,8 +420,7 @@ final class Model {
      */
     private static int longestBytes(List<String> texts) {
         int max = 0;
-        for (String text : texts)
-            max = Math.max(max, text.getBytes(java.nio.charset.StandardCharsets.UTF_8).length);
+        for (String text : texts) max = Math.max(max, text.getBytes(StandardCharsets.UTF_8).length);
         return max / 2 + 16;
     }
 

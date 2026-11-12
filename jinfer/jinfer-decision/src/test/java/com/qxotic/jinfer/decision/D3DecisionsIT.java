@@ -12,6 +12,7 @@ import com.qxotic.jinfer.codecs.ImageCodec;
 import com.qxotic.jinfer.media.Media;
 import com.qxotic.jinfer.testkit.TestModels;
 import java.lang.foreign.Arena;
+import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -107,7 +108,7 @@ final class D3DecisionsIT {
                     List.of(
                             new Content.Media(
                                     AudioCodec.decode(
-                                            java.nio.file.Files.readAllBytes(
+                                            Files.readAllBytes(
                                                     Path.of(
                                                             "../../test-fixtures/parakeet/ls0"
                                                                     + ".wav")))),

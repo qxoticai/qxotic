@@ -8,20 +8,27 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 import com.qxotic.toknroll.IntSequence;
 import com.qxotic.toknroll.StandardTokenType;
 import com.qxotic.toknroll.Vocabulary;
+import java.util.ArrayList;
+import java.util.Collections;
+import java.util.List;
+import java.util.Random;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.Future;
 import org.junit.jupiter.api.Test;
 
 class SentencePieceBpeModelTest {
 
     /** Bytes, letters, and pairs and runs of them that merge: words of one id and of many. */
     private static SentencePieceBpeModel lettersModel() {
-        java.util.List<String> tokens = new java.util.ArrayList<>();
+        List<String> tokens = new ArrayList<>();
         for (int b = 0; b < 256; b++) {
             tokens.add(String.format("<0x%02X>", b));
         }
         String[] merges = {
             "a", "b", "c", "d", "\u2581", "ab", "cd", "abcd", "\u2581a", "ba", "abab"
         };
-        java.util.Collections.addAll(tokens, merges);
+        Collections.addAll(tokens, merges);
         float[] scores = new float[tokens.size()];
         int[] types = new int[tokens.size()];
         for (int i = 0; i < tokens.size(); i++) {
@@ -40,7 +47,7 @@ class SentencePieceBpeModelTest {
     @Test
     void wordsEncodeAlikeOnManyThreadsSharingTheCache() throws Exception {
         String[] parts = {"a", "b", "c", "d", "\u2581", "x", "\u00e9", "\uD83D\uDE00"};
-        java.util.Random random = new java.util.Random(7);
+        Random random = new Random(7);
         String[] words = new String[5000];
         for (int i = 0; i < words.length; i++) {
             StringBuilder w = new StringBuilder();
@@ -56,16 +63,15 @@ class SentencePieceBpeModelTest {
             assertArrayEquals(want[i], reference.encode(words[i]).toArray(), words[i]);
         }
         SentencePieceBpeModel shared = lettersModel();
-        java.util.concurrent.ExecutorService pool =
-                java.util.concurrent.Executors.newFixedThreadPool(16);
+        ExecutorService pool = Executors.newFixedThreadPool(16);
         try {
-            java.util.List<java.util.concurrent.Future<?>> runs = new java.util.ArrayList<>();
+            List<Future<?>> runs = new ArrayList<>();
             for (int t = 0; t < 16; t++) {
                 int seed = t;
                 runs.add(
                         pool.submit(
                                 () -> {
-                                    java.util.Random r = new java.util.Random(seed);
+                                    Random r = new Random(seed);
                                     for (int k = 0; k < 40_000; k++) {
                                         int i = r.nextInt(words.length);
                                         String text = "zz" + words[i] + "z";
@@ -76,7 +82,7 @@ class SentencePieceBpeModelTest {
                                     return null;
                                 }));
             }
-            for (java.util.concurrent.Future<?> run : runs) {
+            for (Future<?> run : runs) {
                 run.get();
             }
         } finally {

@@ -19,7 +19,11 @@ import com.qxotic.toknroll.TokenType;
 import com.qxotic.toknroll.Tokenizer;
 import com.qxotic.toknroll.Vocabulary;
 import java.io.ByteArrayOutputStream;
+import java.io.IOException;
+import java.io.InputStream;
+import java.io.OutputStream;
 import java.io.PrintStream;
+import java.io.UncheckedIOException;
 import java.nio.ByteBuffer;
 import java.nio.charset.StandardCharsets;
 import java.time.Duration;
@@ -160,20 +164,20 @@ class TurnTest {
     void brokenStdoutStopsGenerationRatherThanSilentlyDroppingTokens() {
         var broken =
                 new PrintStream(
-                        new java.io.OutputStream() {
-                            public void write(int value) throws java.io.IOException {
-                                throw new java.io.IOException("closed pipe");
+                        new OutputStream() {
+                            public void write(int value) throws IOException {
+                                throw new IOException("closed pipe");
                             }
                         });
         var io =
                 new Main.IO(
-                        java.io.InputStream.nullInputStream(),
+                        InputStream.nullInputStream(),
                         broken,
-                        new PrintStream(java.io.OutputStream.nullOutputStream()));
+                        new PrintStream(OutputStream.nullOutputStream()));
         var turn = new Turn(NEVER_CALLED, options(true, "off"), false, io);
-        assertThrows(java.io.UncheckedIOException.class, () -> turn.on(content("answer")));
+        assertThrows(UncheckedIOException.class, () -> turn.on(content("answer")));
         var inline = new Turn(NEVER_CALLED, options(true, "inline"), false, io);
-        assertThrows(java.io.UncheckedIOException.class, () -> inline.on(reasoning("thought")));
+        assertThrows(UncheckedIOException.class, () -> inline.on(reasoning("thought")));
     }
 
     @Test
@@ -329,7 +333,7 @@ class TurnTest {
         ByteArrayOutputStream out = new ByteArrayOutputStream(), err = new ByteArrayOutputStream();
         Main.IO io =
                 new Main.IO(
-                        java.io.InputStream.nullInputStream(),
+                        InputStream.nullInputStream(),
                         new PrintStream(out, true, StandardCharsets.UTF_8),
                         new PrintStream(err, true, StandardCharsets.UTF_8));
         Turn turn = new Turn(NEVER_CALLED, options, false, io);

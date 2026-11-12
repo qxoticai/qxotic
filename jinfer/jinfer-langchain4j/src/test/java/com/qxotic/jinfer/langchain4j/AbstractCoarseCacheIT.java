@@ -9,6 +9,7 @@ import dev.langchain4j.model.chat.response.ChatResponse;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.List;
+import org.junit.jupiter.api.Assertions;
 import org.junit.jupiter.api.Assumptions;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
@@ -74,7 +75,7 @@ abstract class AbstractCoarseCacheIT {
 
             // coarse: exactly ONE block per defined prompt (one residue, not one per turn),
             // and a served turn must never add another
-            org.junit.jupiter.api.Assertions.assertEquals(1, stats.blocks());
+            Assertions.assertEquals(1, stats.blocks());
         } finally {
             base.close();
         }

@@ -4,8 +4,10 @@ import static java.lang.foreign.ValueLayout.JAVA_FLOAT_UNALIGNED;
 
 import com.qxotic.jam.JAM;
 import com.qxotic.jam.TestPool;
+import com.qxotic.jam.internal.GGMLType;
 import java.lang.foreign.Arena;
 import java.lang.foreign.MemorySegment;
+import java.lang.foreign.ValueLayout;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
@@ -20,18 +22,16 @@ import java.util.Random;
 public final class KernelBench {
 
     public static void main(String[] args) {
-        int tag = com.qxotic.jam.internal.GGMLType.valueOf(args[0]).code();
+        int tag = GGMLType.valueOf(args[0]).code();
         int m = Integer.parseInt(args[1]),
                 n = Integer.parseInt(args[2]),
                 k = Integer.parseInt(args[3]);
         int seconds = args.length > 4 ? Integer.parseInt(args[4]) : 3;
         Random rng = new Random(1);
         Arena arena = Arena.ofAuto();
-        MemorySegment w =
-                arena.allocate(
-                        com.qxotic.jam.internal.GGMLType.byCode(tag).rowBytes((long) m * k), 64);
+        MemorySegment w = arena.allocate(GGMLType.byCode(tag).rowBytes((long) m * k), 64);
         for (long i = 0; i < w.byteSize(); i++)
-            w.set(java.lang.foreign.ValueLayout.JAVA_BYTE, i, (byte) rng.nextInt(256));
+            w.set(ValueLayout.JAVA_BYTE, i, (byte) rng.nextInt(256));
         MemorySegment a = arena.allocate((long) n * k * 4, 64),
                 r = arena.allocate((long) n * m * 4, 64);
         for (long i = 0; i < (long) n * k; i++) a.set(JAVA_FLOAT_UNALIGNED, i * 4, rng.nextFloat());

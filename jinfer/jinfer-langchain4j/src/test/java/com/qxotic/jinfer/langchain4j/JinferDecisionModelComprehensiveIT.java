@@ -12,7 +12,9 @@ import com.qxotic.jinfer.codecs.ImageCodec;
 import com.qxotic.jinfer.media.Media;
 import com.qxotic.jinfer.testkit.TestModels;
 import dev.langchain4j.data.message.ImageContent;
+import dev.langchain4j.data.message.PdfFileContent;
 import dev.langchain4j.data.message.TextContent;
+import dev.langchain4j.data.message.UserMessage;
 import dev.langchain4j.data.message.VideoContent;
 import dev.langchain4j.exception.AsyncNotSupportedException;
 import dev.langchain4j.exception.UnsupportedFeatureException;
@@ -297,8 +299,8 @@ final class JinferDecisionModelComprehensiveIT {
                                 model.decide(
                                         DecisionRequest.builder()
                                                 .inputContents(
-                                                        dev.langchain4j.data.message.PdfFileContent
-                                                                .from(broken, "application/pdf"))
+                                                        PdfFileContent.from(
+                                                                broken, "application/pdf"))
                                                 .question("q", YesNoQuestion.from("?"))
                                                 .build()));
         assertTrue(document.getMessage().contains("is not supported"), document.getMessage());
@@ -423,9 +425,7 @@ final class JinferDecisionModelComprehensiveIT {
                     () ->
                             listened.decide(
                                     DecisionRequest.builder()
-                                            .inputMessages(
-                                                    dev.langchain4j.data.message.UserMessage.from(
-                                                            "hi"))
+                                            .inputMessages(UserMessage.from("hi"))
                                             .question("q", YesNoQuestion.from("?"))
                                             .build()));
             assertEquals(1, errors.get());

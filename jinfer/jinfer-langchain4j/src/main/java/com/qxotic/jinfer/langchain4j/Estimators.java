@@ -1,6 +1,7 @@
 package com.qxotic.jinfer.langchain4j;
 
 import com.qxotic.format.json.Json;
+import com.qxotic.jinfer.chat.Content;
 import com.qxotic.jinfer.chat.Message;
 import com.qxotic.jinfer.codecs.VideoSampler;
 import com.qxotic.jinfer.media.Media;
@@ -75,27 +76,24 @@ final class Estimators implements TokenCountEstimator {
         return sum;
     }
 
-    private int countParts(List<com.qxotic.jinfer.chat.Content> parts) {
+    private int countParts(List<Content> parts) {
         int sum = 0;
-        for (com.qxotic.jinfer.chat.Content part : parts) {
+        for (Content part : parts) {
             sum +=
                     switch (part) {
-                        case com.qxotic.jinfer.chat.Content.Text t ->
-                                estimateTokenCountInText(t.text());
-                        case com.qxotic.jinfer.chat.Content.Media m -> media(m.media());
-                        case com.qxotic.jinfer.chat.Content.ToolCall c ->
+                        case Content.Text t -> estimateTokenCountInText(t.text());
+                        case Content.Media m -> media(m.media());
+                        case Content.ToolCall c ->
                                 estimateTokenCountInText(c.name())
                                         + estimateTokenCountInText(Json.stringify(c.arguments()));
-                        case com.qxotic.jinfer.chat.Content.ToolResult r ->
-                                estimateTokenCountInText(r.text());
-                        case com.qxotic.jinfer.chat.Content.Reasoning ignored ->
-                                0; // not re-prompted by default
+                        case Content.ToolResult r -> estimateTokenCountInText(r.text());
+                        case Content.Reasoning ignored -> 0; // not re-prompted by default
                     };
         }
         return sum;
     }
 
-    private int media(com.qxotic.jinfer.media.Media value) {
+    private int media(Media value) {
         if (mediaPositions == null) {
             throw new UnsupportedFeatureException(
                     "this model cannot ingest media, so media tokens cannot be counted");

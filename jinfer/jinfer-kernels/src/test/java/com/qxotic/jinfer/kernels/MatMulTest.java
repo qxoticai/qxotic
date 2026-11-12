@@ -4,6 +4,7 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
+import com.qxotic.jinfer.Parallel;
 import com.qxotic.jinfer.Views;
 import com.qxotic.jota.DataType;
 import com.qxotic.jota.Shape;
@@ -94,7 +95,7 @@ class MatMulTest {
             var weights = Oracles.q8(arena, 4, 64, 7);
             var input = Oracles.f32(arena, 64, 8);
             var output = Oracles.f32(arena, 4, 9);
-            com.qxotic.jinfer.Parallel.forLoop(
+            Parallel.forLoop(
                     8,
                     i ->
                             assertThrows(

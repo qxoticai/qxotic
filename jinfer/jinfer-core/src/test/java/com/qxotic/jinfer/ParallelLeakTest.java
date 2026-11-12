@@ -14,6 +14,7 @@ import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicReference;
 import java.util.concurrent.locks.LockSupport;
+import java.util.function.BooleanSupplier;
 import org.junit.jupiter.api.Test;
 
 /**
@@ -520,8 +521,7 @@ class ParallelLeakTest {
         return rt.totalMemory() - rt.freeMemory();
     }
 
-    private static void waitUntil(
-            String what, java.util.function.BooleanSupplier condition, long millis) {
+    private static void waitUntil(String what, BooleanSupplier condition, long millis) {
         long until = System.nanoTime() + millis * 1_000_000L;
         while (!condition.getAsBoolean()) {
             if (System.nanoTime() > until) fail(what + ": not within " + millis + " ms");

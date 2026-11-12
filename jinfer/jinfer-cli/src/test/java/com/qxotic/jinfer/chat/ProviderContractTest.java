@@ -7,6 +7,7 @@ import com.qxotic.format.gguf.GGUF;
 import java.lang.reflect.Method;
 import java.nio.file.Path;
 import java.util.ArrayList;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.ServiceLoader;
@@ -100,7 +101,7 @@ class ProviderContractTest {
 
     /** The {@code load*} methods this provider's class declares itself. */
     private static Set<String> implemented(ModelProvider provider) {
-        Set<String> declared = new java.util.HashSet<>();
+        Set<String> declared = new HashSet<>();
         for (Method m : provider.getClass().getDeclaredMethods()) {
             if (KINDS.contains(m.getName())) declared.add(m.getName());
         }

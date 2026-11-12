@@ -5,6 +5,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import com.qxotic.jinfer.testkit.TestModels;
 import java.util.List;
+import org.junit.jupiter.api.Assertions;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 import org.springframework.ai.chat.messages.Message;
@@ -73,7 +74,7 @@ abstract class AbstractCoarseCacheIT {
             assertTrue(cacheRead > 0, "restored nothing: " + cacheRead);
 
             // coarse: exactly ONE block per defined prompt (one residue, not one per turn)
-            org.junit.jupiter.api.Assertions.assertEquals(1, base.engine.cacheSample().blocks());
+            Assertions.assertEquals(1, base.engine.cacheSample().blocks());
         } finally {
             base.close();
         }

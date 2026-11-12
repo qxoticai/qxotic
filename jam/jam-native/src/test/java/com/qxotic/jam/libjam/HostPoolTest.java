@@ -16,10 +16,14 @@ import java.util.List;
 import java.util.Random;
 import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.Future;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.TimeoutException;
 import java.util.concurrent.atomic.AtomicInteger;
+import java.util.concurrent.atomic.AtomicReference;
 import org.junit.jupiter.api.Test;
 
 /**
@@ -283,8 +287,7 @@ class HostPoolTest {
             float[] W = random(m * k, 7), A = random(n * k, 8);
             float[] expected = run(NativeJAM.create(JAM.Parallel.INLINE), ar, W, A, m, n, k);
             Thread[] threads = new Thread[6];
-            java.util.concurrent.atomic.AtomicReference<Throwable> failure =
-                    new java.util.concurrent.atomic.AtomicReference<>();
+            AtomicReference<Throwable> failure = new AtomicReference<>();
             for (int t = 0; t < threads.length; t++) {
                 threads[t] =
                         new Thread(
@@ -312,8 +315,8 @@ class HostPoolTest {
      */
     @Test
     void closeWaitsForTheCallInFlightAndKeepsItsCallbackValid() throws Exception {
-        var inCallback = new java.util.concurrent.CountDownLatch(1);
-        var release = new java.util.concurrent.CountDownLatch(1);
+        var inCallback = new CountDownLatch(1);
+        var release = new CountDownLatch(1);
         JAM.Parallel parking =
                 new JAM.Parallel() {
                     @Override
@@ -354,17 +357,17 @@ class HostPoolTest {
             MemorySegment a = ar.allocate((long) n * k * Float.BYTES);
             MemorySegment c = ar.allocate((long) m * n * Float.BYTES);
             Future<Integer> call = pool.submit(() -> jam.mm(w, a, c, JAM.Q8_0, m, n, k));
-            assertTrue(inCallback.await(5, java.util.concurrent.TimeUnit.SECONDS));
+            assertTrue(inCallback.await(5, TimeUnit.SECONDS));
 
             Future<?> closing = pool.submit(jam::close);
             assertThrows(
-                    java.util.concurrent.TimeoutException.class,
-                    () -> closing.get(300, java.util.concurrent.TimeUnit.MILLISECONDS),
+                    TimeoutException.class,
+                    () -> closing.get(300, TimeUnit.MILLISECONDS),
                     "close returned while a call was in flight");
             try (NativeJAM stranger = NativeJAM.create(throwing)) {
                 release.countDown();
-                assertEquals(JAM.OK, call.get(5, java.util.concurrent.TimeUnit.SECONDS));
-                closing.get(5, java.util.concurrent.TimeUnit.SECONDS);
+                assertEquals(JAM.OK, call.get(5, TimeUnit.SECONDS));
+                closing.get(5, TimeUnit.SECONDS);
                 assertThrows(IllegalStateException.class, () -> jam.mm(w, a, c, JAM.Q8_0, m, n, k));
                 assertThrows(IllegalStateException.class, () -> jam.packSize(JAM.Q4_0, 4, 256));
             }

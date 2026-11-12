@@ -15,6 +15,7 @@ import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.Base64;
 import java.util.List;
 import java.util.Map;
 import org.junit.jupiter.api.Tag;
@@ -117,8 +118,7 @@ final class DecisionServerD3IntegrationTest {
                 try {
                     String video =
                             "data:video/mp4;base64,"
-                                    + java.util.Base64.getEncoder()
-                                            .encodeToString(Files.readAllBytes(clip));
+                                    + Base64.getEncoder().encodeToString(Files.readAllBytes(clip));
                     Reply refused =
                             post(
                                     url + "/v1/systemone",

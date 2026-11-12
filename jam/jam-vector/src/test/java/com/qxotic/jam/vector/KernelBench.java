@@ -4,9 +4,14 @@ import static java.lang.foreign.ValueLayout.JAVA_FLOAT_UNALIGNED;
 
 import com.qxotic.jam.JAM;
 import com.qxotic.jam.TestPool;
+import java.io.PrintStream;
 import java.lang.foreign.Arena;
 import java.lang.foreign.MemorySegment;
+import java.lang.foreign.ValueLayout;
+import java.nio.file.Files;
+import java.nio.file.Path;
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.List;
 import java.util.Random;
 
@@ -154,7 +159,7 @@ final class KernelBench {
                     for (double t : ts) sb.append(String.format(" %.0f", flops / t / 1e9));
                     System.out.println(sb);
                 }
-                java.util.Arrays.sort(ts);
+                Arrays.sort(ts);
                 double best = ts[0], med = ts[reps / 2];
                 System.out.printf(
                         "%-6s %6d %6d %4d %10.1f %10.1f %10.1f%n",
@@ -182,8 +187,7 @@ final class KernelBench {
     static void dumpCodeHeaps() throws Exception {
         long pid = ProcessHandle.current().pid();
         List<long[]> regions = new ArrayList<>();
-        for (String line :
-                java.nio.file.Files.readAllLines(java.nio.file.Path.of("/proc/self/maps"))) {
+        for (String line : Files.readAllLines(Path.of("/proc/self/maps"))) {
             if (!line.contains(" rwxp ")) continue;
             String[] loHi = line.split(" ")[0].split("-");
             regions.add(
@@ -191,16 +195,16 @@ final class KernelBench {
                         Long.parseUnsignedLong(loHi[0], 16), Long.parseUnsignedLong(loHi[1], 16)
                     });
         }
-        try (var out = new java.io.PrintStream("/tmp/selfdump_" + pid + ".map")) {
+        try (var out = new PrintStream("/tmp/selfdump_" + pid + ".map")) {
             for (int i = 0; i < regions.size(); i++) {
                 long[] r = regions.get(i);
                 out.printf("%d %x %x%n", i, r[0], r[1]);
                 MemorySegment heap =
                         MemorySegment.ofAddress(r[0])
                                 .reinterpret(r[1] - r[0], Arena.ofAuto(), null);
-                java.nio.file.Files.write(
-                        java.nio.file.Path.of("/tmp/selfdump_" + pid + "_" + i + ".bin"),
-                        heap.toArray(java.lang.foreign.ValueLayout.JAVA_BYTE));
+                Files.write(
+                        Path.of("/tmp/selfdump_" + pid + "_" + i + ".bin"),
+                        heap.toArray(ValueLayout.JAVA_BYTE));
             }
         }
         System.err.println("selfdump: " + regions.size() + " regions");

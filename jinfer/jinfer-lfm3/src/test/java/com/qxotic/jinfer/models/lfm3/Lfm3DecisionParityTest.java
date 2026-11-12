@@ -19,9 +19,12 @@ import com.qxotic.jinfer.kernels.ModelLoader;
 import com.qxotic.jinfer.testkit.TestModels;
 import com.qxotic.toknroll.Tokenizer;
 import com.qxotic.toknroll.gguf.GGUFTokenizerLoader;
+import java.io.IOException;
 import java.lang.foreign.Arena;
 import java.nio.channels.FileChannel;
+import java.nio.charset.StandardCharsets;
 import java.nio.file.Path;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 import org.junit.jupiter.api.Tag;
@@ -195,7 +198,7 @@ final class Lfm3DecisionParityTest {
                 }
 
                 // a rating's levels are read as digits: ten at most
-                List<Option> eleven = new java.util.ArrayList<>();
+                List<Option> eleven = new ArrayList<>();
                 for (int i = 0; i <= 10; i++) eleven.add(new Option("level " + i));
                 IllegalArgumentException tooMany =
                         assertThrows(
@@ -277,7 +280,7 @@ final class Lfm3DecisionParityTest {
                         each[0], d1.decideTogether(state, text(STATE), List.of(REFUND))[0], 1e-4f);
 
                 // 17 questions: a prompt of 16 and a lone one, in one batch
-                List<Question> many = new java.util.ArrayList<>();
+                List<Question> many = new ArrayList<>();
                 for (int i = 0; i < Lfm3Decision.GROUP + 1; i++) many.add(REFUND);
                 float[][] rows = d1.decideTogether(state, text(STATE), many);
                 assertEquals(Lfm3Decision.GROUP + 1, rows.length);
@@ -314,9 +317,9 @@ final class Lfm3DecisionParityTest {
         }
     }
 
-    private String license() throws java.io.IOException {
+    private String license() throws IOException {
         try (var in = getClass().getResourceAsStream("/d1/long-state.txt")) {
-            return new String(in.readAllBytes(), java.nio.charset.StandardCharsets.UTF_8);
+            return new String(in.readAllBytes(), StandardCharsets.UTF_8);
         }
     }
 

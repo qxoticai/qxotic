@@ -46,6 +46,7 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.Base64;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
@@ -402,7 +403,7 @@ class MappingsTest {
     /** A model may send a null argument; the adapter forwards JSON null instead of failing. */
     @Test
     void aNullToolArgumentIsForwardedAsJsonNull() {
-        Map<String, Object> args = new java.util.LinkedHashMap<>();
+        Map<String, Object> args = new LinkedHashMap<>();
         args.put("origin", "Zurich");
         args.put("flexible", null);
         Message reply =

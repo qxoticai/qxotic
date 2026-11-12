@@ -8,6 +8,7 @@ import com.qxotic.format.gguf.GGUF;
 import com.qxotic.format.gguf.TensorEntry;
 import com.qxotic.jinfer.RuntimeState;
 import com.qxotic.jinfer.Transcription;
+import com.qxotic.jinfer.TranscriptionModel;
 import com.qxotic.jinfer.codecs.AudioCodec;
 import com.qxotic.jinfer.media.Media;
 import com.qxotic.jinfer.testkit.TestModels;
@@ -182,8 +183,7 @@ class JinferTranscriptionModelTest {
 
     // ── doubles ───────────────────────────────────────────────────────────
 
-    private static final class ToyModel
-            implements com.qxotic.jinfer.TranscriptionModel<Void, Void, ToyState> {
+    private static final class ToyModel implements TranscriptionModel<Void, Void, ToyState> {
 
         @Override
         public Void configuration() {

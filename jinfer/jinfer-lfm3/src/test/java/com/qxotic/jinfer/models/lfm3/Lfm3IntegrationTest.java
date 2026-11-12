@@ -23,6 +23,7 @@ import com.qxotic.jinfer.codecs.ImageCodec;
 import com.qxotic.jinfer.llm.Sampling;
 import com.qxotic.jinfer.media.Media;
 import com.qxotic.jinfer.testkit.TestModels;
+import com.qxotic.jota.memory.MemoryAllocators;
 import java.lang.foreign.Arena;
 import java.lang.foreign.MemorySegment;
 import java.time.Duration;
@@ -274,10 +275,7 @@ final class Lfm3IntegrationTest {
                                         state,
                                         Batch.embeddings(
                                                 Views.allocateF32(
-                                                        com.qxotic.jota.memory.MemoryAllocators
-                                                                .ofArena(arena),
-                                                        1,
-                                                        2048),
+                                                        MemoryAllocators.ofArena(arena), 1, 2048),
                                                 1,
                                                 false)));
             }

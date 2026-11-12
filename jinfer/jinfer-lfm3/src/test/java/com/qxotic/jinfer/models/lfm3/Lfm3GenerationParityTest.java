@@ -18,6 +18,7 @@ import java.lang.foreign.Arena;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import org.junit.jupiter.api.Tag;
@@ -59,7 +60,7 @@ final class Lfm3GenerationParityTest {
                                             List.of("city")))));
 
     private static Map<String, Object> ordered(Object... pairs) {
-        Map<String, Object> map = new java.util.LinkedHashMap<>();
+        Map<String, Object> map = new LinkedHashMap<>();
         for (int i = 0; i < pairs.length; i += 2) map.put((String) pairs[i], pairs[i + 1]);
         return map;
     }

@@ -7,7 +7,9 @@ import com.qxotic.jam.JAM;
 import com.qxotic.jam.TestPool;
 import java.lang.foreign.Arena;
 import java.lang.foreign.MemorySegment;
+import java.lang.foreign.ValueLayout;
 import java.util.Random;
+import org.junit.jupiter.api.Assertions;
 import org.junit.jupiter.api.Assumptions;
 import org.junit.jupiter.api.Test;
 
@@ -255,10 +257,10 @@ class VectorKernelTest {
     void aThrowingDequantSurfacesAndDoesNotWedgeThePool() {
         Scratch s = new Scratch(TestPool.of(4));
         int m = 512, n = 64, k = 512;
-        try (java.lang.foreign.Arena ar = java.lang.foreign.Arena.ofShared()) {
-            java.lang.foreign.MemorySegment w = ar.allocate((long) m * k * 34 / 32, 64);
-            java.lang.foreign.MemorySegment a = ar.allocate((long) n * k * 4, 64);
-            java.lang.foreign.MemorySegment o = ar.allocate((long) n * m * 4, 64);
+        try (Arena ar = Arena.ofShared()) {
+            MemorySegment w = ar.allocate((long) m * k * 34 / 32, 64);
+            MemorySegment a = ar.allocate((long) n * k * 4, 64);
+            MemorySegment o = ar.allocate((long) n * m * 4, 64);
             RuntimeException boom = new IllegalStateException("row 100");
             com.qxotic.jam.vector.BandGemm.RowDequant throwing =
                     (seg, row, count, dst, base) -> {
@@ -266,7 +268,7 @@ class VectorKernelTest {
                         Q8Kernel.dequantizeRow(seg, row, count, dst, base);
                     };
             IllegalStateException thrown =
-                    org.junit.jupiter.api.Assertions.assertThrows(
+                    Assertions.assertThrows(
                             IllegalStateException.class,
                             () ->
                                     com.qxotic.jam.vector.BandGemm.gemm(
@@ -283,7 +285,7 @@ class VectorKernelTest {
                                             0L,
                                             s,
                                             throwing));
-            org.junit.jupiter.api.Assertions.assertSame(boom, thrown);
+            Assertions.assertSame(boom, thrown);
             com.qxotic.jam.vector.BandGemm.gemm(
                     w,
                     VectorSupport.vectorSegment(a),
@@ -309,31 +311,25 @@ class VectorKernelTest {
     @Test
     void resultsAreIdenticalAtEveryWidth() {
         int m = 1000, n = 96, k = 1024;
-        try (java.lang.foreign.Arena ar = java.lang.foreign.Arena.ofShared()) {
-            java.lang.foreign.MemorySegment w = ar.allocate((long) m * k * 34 / 32, 64);
-            java.lang.foreign.MemorySegment a = ar.allocate((long) n * k * 4, 64);
-            java.util.Random rng = new java.util.Random(11);
+        try (Arena ar = Arena.ofShared()) {
+            MemorySegment w = ar.allocate((long) m * k * 34 / 32, 64);
+            MemorySegment a = ar.allocate((long) n * k * 4, 64);
+            Random rng = new Random(11);
             for (long b = 0; b < w.byteSize(); b++)
-                w.set(java.lang.foreign.ValueLayout.JAVA_BYTE, b, (byte) rng.nextInt(256));
+                w.set(ValueLayout.JAVA_BYTE, b, (byte) rng.nextInt(256));
             for (int i = 0; i < n * k; i++)
-                a.set(java.lang.foreign.ValueLayout.JAVA_FLOAT, i * 4L, rng.nextFloat() - 0.5f);
+                a.set(ValueLayout.JAVA_FLOAT, i * 4L, rng.nextFloat() - 0.5f);
             for (int pass = 0; pass < 3; pass++) bandGemm(ar, w, a, m, n, k, 1);
             float[] reference = bandGemm(ar, w, a, m, n, k, 1);
             for (int width : new int[] {3, 8})
-                org.junit.jupiter.api.Assertions.assertArrayEquals(
+                Assertions.assertArrayEquals(
                         reference, bandGemm(ar, w, a, m, n, k, width), "width " + width);
         }
     }
 
     private static float[] bandGemm(
-            java.lang.foreign.Arena ar,
-            java.lang.foreign.MemorySegment w,
-            java.lang.foreign.MemorySegment a,
-            int m,
-            int n,
-            int k,
-            int width) {
-        java.lang.foreign.MemorySegment o = ar.allocate((long) n * m * 4, 64);
+            Arena ar, MemorySegment w, MemorySegment a, int m, int n, int k, int width) {
+        MemorySegment o = ar.allocate((long) n * m * 4, 64);
         com.qxotic.jam.vector.BandGemm.gemm(
                 w,
                 VectorSupport.vectorSegment(a),
@@ -348,6 +344,6 @@ class VectorKernelTest {
                 0L,
                 new Scratch(TestPool.of(width)),
                 Q8Kernel::dequantizeRow);
-        return o.toArray(java.lang.foreign.ValueLayout.JAVA_FLOAT);
+        return o.toArray(ValueLayout.JAVA_FLOAT);
     }
 }

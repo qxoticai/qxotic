@@ -2,6 +2,7 @@ package com.qxotic.jam.vector;
 
 import java.lang.foreign.Arena;
 import java.lang.foreign.MemorySegment;
+import java.lang.foreign.ValueLayout;
 import java.nio.ByteOrder;
 import jdk.incubator.vector.FloatVector;
 import jdk.incubator.vector.VectorOperators;
@@ -25,9 +26,9 @@ final class F32Probe {
         MemorySegment a = arena.allocate((long) n * k * 4, 64);
         MemorySegment o = arena.allocate((long) n * m * 4, 64);
         for (long i = 0; i < (long) m * k; i++)
-            w.set(java.lang.foreign.ValueLayout.JAVA_FLOAT_UNALIGNED, i * 4, 1.0f);
+            w.set(ValueLayout.JAVA_FLOAT_UNALIGNED, i * 4, 1.0f);
         for (long i = 0; i < (long) n * k; i++)
-            a.set(java.lang.foreign.ValueLayout.JAVA_FLOAT_UNALIGNED, i * 4, 1.0f);
+            a.set(ValueLayout.JAVA_FLOAT_UNALIGNED, i * 4, 1.0f);
         MemorySegment g = VectorSupport.GLOBAL;
         long wb = w.address(), ab = a.address(), ob = o.address();
 
@@ -42,7 +43,7 @@ final class F32Probe {
             System.out.printf("rep %d: %.1f GF/s%n", i, flops / t / 1e9);
         }
         System.out.printf("BEST %.1f GF/s%n", flops / best / 1e9);
-        System.out.println(o.get(java.lang.foreign.ValueLayout.JAVA_FLOAT_UNALIGNED, 0));
+        System.out.println(o.get(ValueLayout.JAVA_FLOAT_UNALIGNED, 0));
     }
 
     static void gemm(
@@ -112,40 +113,31 @@ final class F32Probe {
             c21 = w2.fma(x1, c21);
             c22 = w2.fma(x2, c22);
         }
+        o.set(ValueLayout.JAVA_FLOAT_UNALIGNED, oOff, c00.reduceLanes(VectorOperators.ADD));
         o.set(
-                java.lang.foreign.ValueLayout.JAVA_FLOAT_UNALIGNED,
-                oOff,
-                c00.reduceLanes(VectorOperators.ADD));
-        o.set(
-                java.lang.foreign.ValueLayout.JAVA_FLOAT_UNALIGNED,
+                ValueLayout.JAVA_FLOAT_UNALIGNED,
                 oOff + 4L * oStride,
                 c01.reduceLanes(VectorOperators.ADD));
         o.set(
-                java.lang.foreign.ValueLayout.JAVA_FLOAT_UNALIGNED,
+                ValueLayout.JAVA_FLOAT_UNALIGNED,
                 oOff + 8L * oStride,
                 c02.reduceLanes(VectorOperators.ADD));
+        o.set(ValueLayout.JAVA_FLOAT_UNALIGNED, oOff + 4, c10.reduceLanes(VectorOperators.ADD));
         o.set(
-                java.lang.foreign.ValueLayout.JAVA_FLOAT_UNALIGNED,
-                oOff + 4,
-                c10.reduceLanes(VectorOperators.ADD));
-        o.set(
-                java.lang.foreign.ValueLayout.JAVA_FLOAT_UNALIGNED,
+                ValueLayout.JAVA_FLOAT_UNALIGNED,
                 oOff + 4L * oStride + 4,
                 c11.reduceLanes(VectorOperators.ADD));
         o.set(
-                java.lang.foreign.ValueLayout.JAVA_FLOAT_UNALIGNED,
+                ValueLayout.JAVA_FLOAT_UNALIGNED,
                 oOff + 8L * oStride + 4,
                 c12.reduceLanes(VectorOperators.ADD));
+        o.set(ValueLayout.JAVA_FLOAT_UNALIGNED, oOff + 8, c20.reduceLanes(VectorOperators.ADD));
         o.set(
-                java.lang.foreign.ValueLayout.JAVA_FLOAT_UNALIGNED,
-                oOff + 8,
-                c20.reduceLanes(VectorOperators.ADD));
-        o.set(
-                java.lang.foreign.ValueLayout.JAVA_FLOAT_UNALIGNED,
+                ValueLayout.JAVA_FLOAT_UNALIGNED,
                 oOff + 4L * oStride + 8,
                 c21.reduceLanes(VectorOperators.ADD));
         o.set(
-                java.lang.foreign.ValueLayout.JAVA_FLOAT_UNALIGNED,
+                ValueLayout.JAVA_FLOAT_UNALIGNED,
                 oOff + 8L * oStride + 8,
                 c22.reduceLanes(VectorOperators.ADD));
     }
