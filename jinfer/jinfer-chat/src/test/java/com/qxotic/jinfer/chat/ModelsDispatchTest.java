@@ -264,9 +264,7 @@ class ModelsDispatchTest {
         assertTrue(
                 unreadable
                         .getMessage()
-                        .contains(
-                                "is a GGUF file this version of jinfer cannot read: Unsupported"
-                                        + " GGUF version 4"),
+                        .contains("cannot be read as GGUF: Unsupported GGUF version 4"),
                 unreadable.getMessage());
         assertThrows(
                 NoSuchFileException.class,

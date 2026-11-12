@@ -394,8 +394,8 @@ public final class Models {
 
     /**
      * Why a GGUF header did not parse: without the magic the file is some other format; cut short,
-     * an unfinished download; otherwise a GGUF this reader cannot read, whose parser detail is the
-     * useful part (a damaged file, or one newer than this version: an unknown type, say).
+     * an unfinished download; otherwise the parser's detail says why (a damaged file, a newer
+     * format version, an unknown type).
      */
     private static String unreadable(Path path, FileChannel fc, Exception failure)
             throws IOException {
@@ -407,9 +407,7 @@ public final class Models {
                     ? path
                             + " ends inside its GGUF header: an unfinished download, so fetch it"
                             + " again"
-                    : path
-                            + " is a GGUF file this version of jinfer cannot read: "
-                            + failure.getMessage();
+                    : path + " cannot be read as GGUF: " + failure.getMessage();
         return path
                 + " is not a GGUF model file; convert a Hugging Face checkpoint (safetensors,"
                 + " PyTorch) with llama.cpp's convert_hf_to_gguf.py";
