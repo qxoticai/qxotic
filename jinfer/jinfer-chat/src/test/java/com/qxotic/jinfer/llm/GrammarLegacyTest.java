@@ -2303,7 +2303,7 @@ public final class GrammarLegacyTest {
         advance(c, v, "1");
         check("cc-opt done", !anyValid(c, v)); // optional consumed -> complete
 
-        // dot star: .*  (any byte, zero or more)
+        // dot star: .*  (any character, zero or more)
         s = Grammar.of("root ::= .*", v);
         c = s.cursor();
         check("dot-star zero", anyValid(c, v));
@@ -2312,14 +2312,14 @@ public final class GrammarLegacyTest {
         advance(c, v, "a");
         check("dot-star two", anyValid(c, v));
 
-        // dot plus: .+  (any byte, one or more)
+        // dot plus: .+  (any character, one or more)
         s = Grammar.of("root ::= .+", v);
         c = s.cursor();
         check("dot-plus 'a'", allows(c, v, "a"));
         advance(c, v, "{");
         check("dot-plus still", anyValid(c, v));
 
-        // dot optional: .?  (any byte, zero or one)
+        // dot optional: .?  (any character, zero or one)
         s = Grammar.of("root ::= .?", v);
         c = s.cursor();
         check("dot-opt zero ok", anyValid(c, v));
