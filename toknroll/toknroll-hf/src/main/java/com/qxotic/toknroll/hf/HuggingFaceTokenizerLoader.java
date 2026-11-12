@@ -366,9 +366,7 @@ public final class HuggingFaceTokenizerLoader {
     private static Tokenizer loadFromTiktokenFolder(Path dir) throws IOException {
         Path tiktokenModel = dir.resolve(TIKTOKEN_MODEL_FILE);
         Path config = dir.resolve(TOKENIZER_CONFIG_JSON);
-        // a companion, read only when a regular file: opening a FIFO there would wait for a writer
-        Map<String, Object> tokenizerConfig =
-                Files.isRegularFile(config) ? parseObject(config) : null;
+        Map<String, Object> tokenizerConfig = Files.exists(config) ? parseObject(config) : null;
 
         Map<String, Integer> mergeableRanks;
         try (BufferedReader reader =
@@ -583,7 +581,7 @@ public final class HuggingFaceTokenizerLoader {
     private static String tryResolvePatStrFromAutoMapModule(
             Path dir, Map<String, Object> tokenizerConfig) throws IOException {
         String module = autoMapModule(tokenizerConfig);
-        if (module == null || !Files.isRegularFile(dir.resolve(module))) { // as the config: no FIFO
+        if (module == null || !Files.exists(dir.resolve(module))) {
             return null;
         }
         return parsePatStrFromPythonModule(

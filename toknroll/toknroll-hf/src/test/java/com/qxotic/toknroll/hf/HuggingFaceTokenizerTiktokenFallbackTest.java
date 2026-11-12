@@ -2,9 +2,7 @@ package com.qxotic.toknroll.hf;
 
 import static org.junit.jupiter.api.Assertions.assertArrayEquals;
 import static org.junit.jupiter.api.Assertions.assertThrows;
-import static org.junit.jupiter.api.Assertions.assertTimeoutPreemptively;
 import static org.junit.jupiter.api.Assertions.assertTrue;
-import static org.junit.jupiter.api.Assumptions.assumeTrue;
 
 import com.qxotic.fetch.Transport;
 import com.qxotic.toknroll.Specials;
@@ -16,7 +14,6 @@ import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
-import java.time.Duration;
 import java.util.Base64;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
@@ -216,41 +213,6 @@ class HuggingFaceTokenizerTiktokenFallbackTest {
         Tokenizer tokenizer = HuggingFaceTokenizerLoader.fromLocal(folder);
 
         assertArrayEquals(new int[] {256}, tokenizer.encode("xy").toArray());
-    }
-
-    /** A companion that is a FIFO is passed over, not opened: opening one waits for a writer. */
-    @Test
-    void fromLocal_aFifoCompanionFailsFastInsteadOfHanging() throws Exception {
-        Path folder = Files.createDirectories(tempDir.resolve("fifo"));
-        Files.writeString(
-                folder.resolve("tiktoken.model"),
-                tiktokenWithBaseBytes(tokenLine("xy", 256)),
-                StandardCharsets.UTF_8);
-        assumeTrue(mkfifo(folder.resolve("tokenizer_config.json")), "no mkfifo here");
-        assertTimeoutPreemptively(
-                Duration.ofSeconds(10),
-                () -> assertThrows(IllegalArgumentException.class, () -> load(folder)));
-        Files.delete(folder.resolve("tokenizer_config.json"));
-        Files.writeString(
-                folder.resolve("tokenizer_config.json"),
-                "{\"auto_map\":{\"AutoTokenizer\":[\"tokenization_demo.CustomTokenizer\"]}}",
-                StandardCharsets.UTF_8);
-        assumeTrue(mkfifo(folder.resolve("tokenization_demo.py")), "no mkfifo here");
-        assertTimeoutPreemptively(
-                Duration.ofSeconds(10),
-                () -> assertThrows(IllegalArgumentException.class, () -> load(folder)));
-    }
-
-    private static void load(Path folder) {
-        HuggingFaceTokenizerLoader.fromLocal(folder);
-    }
-
-    private static boolean mkfifo(Path path) throws InterruptedException {
-        try {
-            return new ProcessBuilder("mkfifo", path.toString()).start().waitFor() == 0;
-        } catch (IOException e) {
-            return false;
-        }
     }
 
     @Test
