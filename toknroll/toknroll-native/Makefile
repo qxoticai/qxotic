@@ -78,6 +78,7 @@ target/unload_test: tests/c/unload_test.c tests/c/fixtures.h
 	$(CC) $(CFLAGS_TEST) -o $@ $< $(if $(filter linux,$(OS)),-ldl)
 
 check-c: target/toknroll_test target/header_test target/unload_test
+	@if command -v clang >/dev/null; then clang $(CFLAGS_TEST) -fsyntax-only tests/c/toknroll_test.c tests/c/unload_test.c; fi   # macOS's compiler warns where gcc does not
 	./target/toknroll_test
 	./target/header_test
 	./target/unload_test $(abspath $(LIB))

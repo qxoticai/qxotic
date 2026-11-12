@@ -45,6 +45,7 @@ target/header_test: tests/c/header_test.cpp $(HEADERS) $(LIB)
 	$(CXX) -std=c++11 -Wall -Wextra -Wpedantic -Werror -Iinclude -I$(TOKNROLL)/include -o $@ $< $(LINK_TEST)
 
 check-c: target/jinfer_test target/toknroll_test target/header_test
+	@if command -v clang >/dev/null; then clang $(CFLAGS_TEST) -fsyntax-only tests/c/jinfer_test.c && clang $(CFLAGS_TEST) -DTEST_LIBJINFER -fsyntax-only $(TOKNROLL)/tests/c/toknroll_test.c; fi   # macOS's compiler warns where gcc does not
 	./target/jinfer_test
 	./target/toknroll_test
 	./target/header_test
