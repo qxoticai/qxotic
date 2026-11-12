@@ -4,8 +4,8 @@
 #   .\build.ps1 check              header vs exports, C tests and example, Python tests
 #   .\build.ps1 python             stage the DLL into python\toknroll\lib\windows-x86-64\
 #   .\build.ps1 wheel              the wheel, tagged win_amd64 -> target\wheel\
-#   .\build.ps1 dist             the release zip, a prefix tree: include\, lib\, bin\ -> target\dist\
 #   .\build.ps1 check-wheel        twine check, a fresh venv, pip install, the tests from outside the tree
+#   .\build.ps1 dist               the release zip, a prefix tree: include\, lib\, bin\ -> target\dist\
 param([Parameter(Position = 0, ValueFromRemainingArguments = $true)][string[]] $Targets = @('help'), [switch] $Quick, [string] $Source = 'Qwen/Qwen3-0.6B')
 $Here = $PSScriptRoot; $Name = 'toknroll'
 $Headers = 'include\toknroll.h'; $Syms = 'toknroll'

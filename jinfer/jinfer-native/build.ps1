@@ -4,8 +4,8 @@
 #   .\build.ps1 check              headers vs exports, C tests and example, Python checks
 #   .\build.ps1 python             stage the DLL into python\jinfer\lib\windows-x86-64\
 #   .\build.ps1 wheel              the wheel, tagged win_amd64 -> target\wheel\
-#   .\build.ps1 dist             the release zip, a prefix tree: include\, lib\, bin\ -> target\dist\
 #   .\build.ps1 check-wheel        twine check, a fresh venv with the toknroll wheel, pip install, the checks from outside the tree
+#   .\build.ps1 dist               the release zip, a prefix tree: include\, lib\, bin\ -> target\dist\
 param([Parameter(Position = 0, ValueFromRemainingArguments = $true)][string[]] $Targets = @('help'), [switch] $Quick)
 $Here = $PSScriptRoot; $Name = 'jinfer'
 $Toknroll = "$PSScriptRoot\..\..\toknroll\toknroll-native"

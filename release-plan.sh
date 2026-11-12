@@ -55,7 +55,7 @@ problem() {
 
 pending=()
 declare -A held # projects with an artifact Central already holds at its version
-printf '%-38s %-8s %-11s %s\n' artifact version 'on Central' code
+printf '%-38s %-10s %-11s %s\n' artifact version 'on Central' code
 while IFS= read -r pom; do
     dir=$(dirname "$pom")
     project=${dir%%/*}
@@ -82,7 +82,7 @@ while IFS= read -r pom; do
         fi
         break
     done
-    printf '%-38s %-8s %-11s %s\n' "$artifact" "$version" "$central" "$code"
+    printf '%-38s %-10s %-11s %s\n' "$artifact" "$version" "$central" "$code"
 
     for where in "$project/pom.xml pom.xml" "$BOM/pom.xml"; do
         # shellcheck disable=SC2086

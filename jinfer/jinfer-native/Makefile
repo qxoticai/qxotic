@@ -12,7 +12,7 @@ EXPORT_HEADERS := $(HEADERS) ../../jam/jam-native/include/jam.h
 SYMS := jinfer|toknroll|jam
 EXTRA_EXPORTS := JNI_OnLoad_jam Java_com_qxotic_jam_libjam_NativeJAM_newJni Java_com_qxotic_jam_libjam_NativeJAM_mmJni Java_com_qxotic_jam_libjam_NativeJAM_freeJni
 WHEEL_DEPS = $(TOKNROLL)/target/wheel/*.whl
-WHEEL_TEST = JINFER_INSTALLED=1 wheelenv/bin/python ../python/test_jinfer.py
+WHEEL_TEST = wheelenv/bin/python ../python/test_jinfer.py
 DESCRIPTION = jinfer, local LLM inference with a C API
 WHEEL_EXAMPLE = examples/c/chat.c
 
@@ -36,7 +36,7 @@ target/chat: examples/c/chat.c $(HEADERS) $(LIB)
 # The C tests (tests/c): jinfer.h's functions on the cached models, and toknroll's tests again, against
 # the toknroll functions libjinfer carries (TEST_LIBJINFER); both headers compiled as C++ too.
 CFLAGS_TEST = -std=c99 -Wall -Wextra -Wpedantic -Werror -Iinclude -I$(TOKNROLL)/include -I$(TOKNROLL)/tests/c
-LINK_TEST = -L target -ljinfer -Wl,-rpath,$(abspath target) -lpthread $(if $(filter Linux,$(shell uname -s)),-lutil)   # forkpty
+LINK_TEST = -L target -ljinfer -Wl,-rpath,$(abspath target) -lpthread $(if $(filter linux,$(OS)),-lutil)   # forkpty
 target/jinfer_test: tests/c/jinfer_test.c $(TOKNROLL)/tests/c/test.h $(HEADERS) $(LIB)
 	$(CC) $(CFLAGS_TEST) -o $@ $< $(LINK_TEST)
 target/toknroll_test: $(TOKNROLL)/tests/c/toknroll_test.c $(TOKNROLL)/tests/c/test.h $(TOKNROLL)/tests/c/fixtures.h $(TOKNROLL)/tests/c/progress.h $(HEADERS) $(LIB)

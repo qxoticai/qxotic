@@ -53,11 +53,20 @@ function Build-Library {   # the pom's optimization unless -Quick (-Ob -march=na
 # The release as the header spells it, 0.4.0, or 0.4.0-rc1 for a release candidate, as native.mk's VERSION;
 # Python's spelling drops the dash (0.4.0rc1, PEP 440's).
 function Get-Version { (Select-String "include\$Name.h" -Pattern "^#define $($Name.ToUpper())_VERSION `"([^`"]+)`"").Matches[0].Groups[1].Value }
+# The version the pom builds with, as native.mk's POM_VERSION and release-plan.sh read it: a pom's own <version>,
+# outside <parent> and before any content, else the nearest enclosing directory's pom's.
+function Get-PomVersion {
+    for ($dir = $Here; Test-Path "$dir\pom.xml"; $dir = Split-Path $dir) {
+        $pom = (Get-Content -Raw "$dir\pom.xml") -replace '(?s)<parent>.*?</parent>', ''
+        $head = ($pom -split '<(?:properties|dependencies|dependencyManagement|build|modules|profiles)>')[0]
+        if ($head -match '(?m)^  <version>([^<]+)</version>') { return $Matches[1] }
+    }
+}
 function Check-Version {   # the header, its numbers, the pom, the wheel and (where it is a literal) the package name the same release
     $h = Get-Version; $y = $h -replace '-', ''
     $n = ((Select-String "include\$Name.h" -Pattern "$($Name.ToUpper())_VERSION_(MAJOR|MINOR|PATCH) (\d+)").Matches | ForEach-Object { $_.Groups[2].Value }) -join '.'
     $w = (Select-String python\pyproject.toml -Pattern '^version = "([^"]+)"').Matches[0].Groups[1].Value
-    $m = (Select-String pom.xml -Pattern '<version>([^<]+)</version>' | Select-Object -First 1).Matches[0].Groups[1].Value
+    $m = Get-PomVersion
     $p = (Select-String "python\$Name\__init__.py" -Pattern '^__version__ = "([^"]+)"' | ForEach-Object { $_.Matches[0].Groups[1].Value } | Select-Object -First 1)
     if ($h -notmatch "^$([regex]::Escape($n))(-rc\d+)?$") { throw "version drift: header $h, its numbers $n" }
     if ($h -ne $m -or $y -ne $w -or ($p -and $y -ne $p)) { throw "version drift: header $h, pom $m, wheel $w, package $p" }
@@ -75,6 +84,7 @@ function Check-Exports {   # every function the headers declare is exported, and
 }
 function Run-Check { Check-Version; Check-Exports; & $Example; & $PyTest }
 function Stage-Python {   # this platform's library, its import library and the headers, as native.mk's python
+    Copy-Item "$Root\LICENSE", NOTICE python\   # pyproject's license-files: a pip install of python\ carries them, as the wheel does
     Remove-Item -Recurse -Force "python\$Name\lib", "python\$Name\include" -ErrorAction Ignore
     New-Item -ItemType Directory -Force "python\$Name\lib\$Platform", "python\$Name\include" | Out-Null
     Copy-Item $Lib, "target\$Name.lib" "python\$Name\lib\$Platform\"; Copy-Item $Headers "python\$Name\include\"
@@ -93,7 +103,6 @@ function Ensure-Tools {   # one venv per Python, as native.mk's: pip builds the 
 }
 function Build-Wheel {   # tagged py3-none-win_amd64 by setup.py: ctypes over a C library, any Python 3
     Stage-Python; Ensure-Tools
-    Copy-Item "$Root\LICENSE", NOTICE python\
     Remove-Item -Recurse -Force target\wheel, python\build -ErrorAction Ignore
     & "$Tools\Scripts\pip" wheel -q --no-deps -w target\wheel .\python; if ($LASTEXITCODE) { throw "pip wheel failed" }
 }

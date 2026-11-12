@@ -23,22 +23,17 @@ WORK=${CANARY_WORK:-$(mktemp -d "${TMPDIR:-/tmp}/release-canary.XXXXXX")}
 if [ -z "${CANARY_WORK:-}" ]; then trap 'rm -rf "$WORK"' EXIT; fi
 REPO=$WORK/repo
 
-# An artifact released alone has a version of its own, so each consumer asks for that one.
-version_of() {
-    $MVN -q -B -f "$ROOT/$1/pom.xml" org.apache.maven.plugins:maven-help-plugin:3.5.2:evaluate \
-        -Dexpression=project.version -DforceStdout 2>/dev/null | tail -1
+# Expression $2 of the POM in directory $1, as the build sees it.
+evaluate() {
+    $MVN -q -B -f "$ROOT/$1/pom.xml" help:evaluate \
+        -Dexpression="$2" -DforceStdout 2>/dev/null | tail -1
 }
-VERSION=$(version_of jinfer)
+# An artifact released alone has a version of its own, so each consumer asks for that one.
+version_of() { evaluate "$1" project.version; }
 # The catalog can have a version of its own.
-BOM_VERSION=$($MVN -q -B -f "$ROOT/jinfer/jinfer-bom/pom.xml" org.apache.maven.plugins:maven-help-plugin:3.5.2:evaluate \
-    -Dexpression=project.version -DforceStdout 2>/dev/null | tail -1)
-LANGCHAIN4J_VERSION=$($MVN -q -B -f "$ROOT/jinfer/pom.xml" org.apache.maven.plugins:maven-help-plugin:3.5.2:evaluate \
-    -Dexpression=langchain4j.version -DforceStdout 2>/dev/null | tail -1)
-SPRING_AI_VERSION=$($MVN -q -B -f "$ROOT/jinfer/pom.xml" org.apache.maven.plugins:maven-help-plugin:3.5.2:evaluate \
-    -Dexpression=spring-ai.version -DforceStdout 2>/dev/null | tail -1)
-case "$VERSION" in
-    ''|*' '*) echo "canary: could not determine project version (got '$VERSION')" >&2; exit 1 ;;
-esac
+BOM_VERSION=$(version_of jinfer/jinfer-bom)
+LANGCHAIN4J_VERSION=$(evaluate jinfer langchain4j.version)
+SPRING_AI_VERSION=$(evaluate jinfer spring-ai.version)
 case "$BOM_VERSION" in
     ''|*' '*) echo "canary: could not determine the BOM version (got '$BOM_VERSION')" >&2; exit 1 ;;
 esac

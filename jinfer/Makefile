@@ -24,7 +24,7 @@ test: ## The jinfer subtree's tests (model-backed suites tag-gated, see pom.xml 
 	$(MAKE) -C $(ROOT) jinfer-test
 
 native: ## GraalVM native image of the CLI -> ../bin/jinfer; PRELOAD_GGUF=model.gguf embeds tokenizer metadata (the others: make -C jinfer-tts native, make -C jinfer-bench native)
-	$(MAKE) -C $(ROOT) native PRELOAD_GGUF=$(PRELOAD_GGUF)
+	$(MAKE) -C $(ROOT) native
 
 clean: ## Wipe the subtree's build output (and the sibling output its closure built), bin/ included
 	$(MAKE) -C $(ROOT) jinfer-clean

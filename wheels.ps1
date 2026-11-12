@@ -10,6 +10,7 @@ $wheels = "$PSScriptRoot\target\wheels"
 if ($Publish) {   # from the release tools' venv, native.ps1's by the same path
     $tools = "$PSScriptRoot\target\pytools\" + (python -c 'import sys, sysconfig; print(sysconfig.get_platform(), *sys.version_info[:2], sep=chr(45))')
     if (-not (Test-Path "$tools\Scripts\twine.exe")) {
+        if (Test-Path $tools) { Remove-Item -Recurse -Force $tools }   # a half-made venv, as native.ps1's Ensure-Tools
         python -m venv $tools; if ($LASTEXITCODE) { throw "venv failed" }
         & "$tools\Scripts\pip" install -q twine; if ($LASTEXITCODE) { throw "pip install twine failed" }
     }

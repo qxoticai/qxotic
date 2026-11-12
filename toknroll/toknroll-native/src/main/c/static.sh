@@ -8,7 +8,7 @@
 set -e
 header=$1; log=$2; out=$3; work=$(dirname "$out")/toknroll_static.o
 darwin=; case $(uname -s) in Darwin) darwin=yes ;; esac
-grep -E '^TOKNROLL_API' "$header" | grep -oE 'toknroll_[a-z_]+\(' | tr -d '(' | sed "s/^/${darwin:+_}/" > "$work.keep"   # Mach-O names carry an underscore
+grep -E '^TOKNROLL_API' "$header" | grep -oE 'toknroll_[a-z0-9_]+\(' | tr -d '(' | sed "s/^/${darwin:+_}/" > "$work.keep"   # Mach-O names carry an underscore
 line=$(grep -- ' -shared ' "$log" | tail -n 1)
 [ -n "$line" ] || { echo "static.sh: no link line in $log" >&2; exit 1; }
 tmp=""; dirs=""; inputs=""; static=""

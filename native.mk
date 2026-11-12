@@ -75,11 +75,16 @@ help::
 	@echo 'make publish-dist TAG=<tag>   the tarball and its checksum as assets of that GitHub release (gh)'
 	@echo 'This machine'"'"'s two wheels from a clean export, and PyPI: make wheels, make publish-wheels at the root.'
 
+# The version the pom builds with, read as release-plan.sh reads it: a pom's own <version>, outside <parent> and
+# before any content, else the nearest enclosing directory's pom's.
+POM_VERSION = $(shell d=$(CURDIR); while [ -f $$d/pom.xml ]; do \
+  v=$$(sed -e '/<parent>/,/<\/parent>/d' $$d/pom.xml | sed -nE -e '/<(properties|dependencies|dependencyManagement|build|modules|profiles)>/q' -e 's|^  <version>(.*)</version>.*|\1|p' | head -1); \
+  [ -z "$$v" ] || { echo $$v; break; }; d=$${d%/*}; done)
+
 check-version:   # the header, its numbers, the pom, the wheel and (where it is a literal) the package name the same release
-	@h=$(VERSION); y=$(PYVERSION); \
+	@h=$(VERSION); y=$(PYVERSION); m=$(POM_VERSION); \
 	 n=$$(grep -oE '$(UPPER)_VERSION_(MAJOR|MINOR|PATCH) [0-9]+' include/$(NAME).h | awk '{print $$2}' | paste -sd. -); \
 	 w=$$(grep -oE '^version = "[^"]+"' python/pyproject.toml | cut -d'"' -f2); \
-	 m=$$(grep -oE '<version>[^<]+</version>' pom.xml | head -1 | sed 's/<[^>]*>//g'); \
 	 p=$$(grep -oE '^__version__ = "[^"]+"' python/$(NAME)/__init__.py | cut -d'"' -f2); \
 	 case "$$h" in "$$n"|"$$n"-rc[0-9]*) ;; *) echo "version drift: header $$h, its numbers $$n"; exit 1 ;; esac; \
 	 [ "$$h" = "$$m" ] && [ "$$y" = "$$w" ] && [ "$$y" = "$${p:-$$y}" ] && echo "version $$h everywhere, $$y for Python" \
@@ -119,12 +124,13 @@ wheel: python $(TOOLS)/bin/twine
 	rm -rf target/wheel python/build && WHEEL_PLAT=$(WHEEL_PLAT) $(TOOLS)/bin/pip wheel -q --no-deps -w target/wheel ./python
 
 # The wheel as a user gets it: metadata as PyPI renders it, installed into a fresh venv with the wheels it
-# depends on, tested from outside the checkout ($(WHEEL_TEST), run in target/ with wheelenv's python).
+# depends on, tested from outside the checkout ($(WHEEL_TEST), run in target/ with wheelenv's python and
+# $(UPPER)_INSTALLED=1, which tells the tests to import the installed package, as native.ps1 sets it).
 check-wheel: wheel
 	$(TOOLS)/bin/twine check --strict target/wheel/*.whl
 	$(if $(filter linux,$(OS)),$(TOOLS)/bin/auditwheel show target/wheel/*.whl)   # "unsupported ISA extensions": native-image's default target, x86-64-v3, the libraries' floor
 	rm -rf target/wheelenv && python3 -m venv target/wheelenv && target/wheelenv/bin/pip install -q target/wheel/*.whl $(WHEEL_DEPS)
-	cd target && $(WHEEL_TEST)
+	cd target && $(UPPER)_INSTALLED=1 $(WHEEL_TEST)
 	@python3 -m zipfile -l target/wheel/*.whl | grep -q LICENSE && python3 -m zipfile -l target/wheel/*.whl | grep -q NOTICE && echo "the wheel carries the license and the notice"
 	@CC="$(CC)" python3 -c 'import os, shlex, subprocess, sys; flags = subprocess.check_output([sys.argv[1], "--cflags", "--libs"], text=True).splitlines(); subprocess.run(shlex.split(os.environ["CC"]) + ["-std=c99", "-o", "target/wheel-example", sys.argv[2], *flags], check=True)' \
 	 "$(abspath target/wheelenv/bin/$(NAME)-config)" "$(WHEEL_EXAMPLE)"

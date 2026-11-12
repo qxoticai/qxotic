@@ -29,7 +29,7 @@ CHECK_ONLY=${2:-}
 POM=$ROOT/$PROJECT/pom.xml
 # unquoted MAVEN_FLAGS: word-splitting intended, same convention as the Makefiles
 MVN="${MAVEN:-mvn} ${MAVEN_FLAGS:-}"
-EVALUATE=org.apache.maven.plugins:maven-help-plugin:3.5.2:evaluate
+EVALUATE=help:evaluate # the version the root POM pins
 
 HELD=""
 if [ "$PROJECT" = . ]; then

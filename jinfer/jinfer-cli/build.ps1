@@ -12,7 +12,7 @@ function Build-Image {   # no clean: the image is linked from the modules' class
     Enter-Toolchain
     Push-Location $Root
     # quoted: PowerShell 5.1 splits an unquoted -argument at its first dot
-    try { mvn -B -Pnative -pl jinfer/jinfer-cli -am package "-DskipTests" "-Djinfer.image.march=x86-64-v3"; if ($LASTEXITCODE) { throw "mvn failed" } }
+    try { mvn -Pnative -pl jinfer/jinfer-cli -am package -DskipTests "-Djinfer.image.march=x86-64-v3"; if ($LASTEXITCODE) { throw "mvn failed" } }
     finally { Pop-Location }
 }
 function Run-Check([string] $Bin = 'target\jinfer.exe') {

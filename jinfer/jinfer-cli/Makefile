@@ -32,13 +32,17 @@ native:
 	$(MAKE) -C $(ROOT) native NATIVE_MODULE=$(notdir $(CURDIR))
 
 image:   # no clean: the image is linked from the modules' classes, not the shaded jar the root's native target cleans for
+	@$(MAKE) -s -C $(ROOT) check-native-image
 	cd $(ROOT) && $(MAVEN) $(MAVEN_FLAGS) -Pnative -pl jinfer/jinfer-cli -am package -DskipTests -Djinfer.image.march=$(MARCH)
 
 check:
 	$(BIN) --version && $(BIN) --help > /dev/null
 	$(BIN) -m $(MODEL) --temp 0 instruct "Reply with the single word ready." > /dev/null
 
-dist:
+$(BIN):
+	@echo "$(BIN) is not built: make image" >&2; exit 1
+
+dist: $(BIN)
 	rm -rf target/dist/$(DIST) && mkdir -p target/dist/$(DIST)/bin
 	cp $(BIN) target/dist/$(DIST)/bin/ && cp README.md ../jinfer-native/NOTICE $(ROOT)/LICENSE target/dist/$(DIST)/   # the notice: the same image, the same terms
 	cd target/dist && rm -f $(DIST).tar.gz && tar -czf $(DIST).tar.gz $(DIST) && sha256sum $(DIST).tar.gz > $(DIST).tar.gz.sha256

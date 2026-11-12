@@ -47,10 +47,10 @@ Linux builds in the manylinux container, so a Linux machine of either architectu
 ```sh
 make wheels REF=<tag>          # Linux (in the container) or macOS -> target/wheels/
 make wheels-linux REF=<tag>    # on a Mac: the Linux aarch64 wheels, in the container
-make publish-wheels            # twine check, then upload target/wheels/, skipping wheels PyPI holds
+make publish-wheels REF=<tag>  # twine check, then upload target/wheels/, skipping wheels PyPI holds
 ```
 
-On Windows, `.\wheels.ps1 -Ref <tag>` builds them and `.\wheels.ps1 -Publish` uploads them.
+On Windows, `.\wheels.ps1 -Ref <tag>` builds them and `.\wheels.ps1 -Publish -Ref <tag>` uploads them.
 Each machine uploads its own wheels; copying every machine's `target/wheels/` to one machine and publishing from there works as well.
 Every build runs the libraries' `check-wheel`: the wheel installed into a fresh venv and its suite run from outside the tree.
 The suites load real models from the machine's cache, offline, and skip the checks of a model not there; the C suites and `test_jinfer.py` fail the run on a skip unless `CTEST_ALLOW_SKIP=1`, so a machine without the cache cannot look covered.
@@ -74,7 +74,7 @@ make dists REF=<tag>           # Linux (in the container) or macOS -> target/dis
 make dists-linux REF=<tag>     # on a Mac: the Linux aarch64 archives, in the container
 ```
 
-On Windows, `.\dists.ps1 -Ref <tag>` builds the two zips into `target\dists\`.
+On Windows, `.\dists.ps1 -Ref <tag>` builds the three zips into `target\dists\`.
 Copying every machine's `target/dists/` to one machine gives the twelve archives and their checksums; the release is created once, `gh release create <tag>`, and the archives uploaded with `gh release upload <tag> target/dists/*`.
 The builds are Oracle GraalVM's, the PGO build, so every archive and wheel carries the module's `NOTICE` with the runtime's terms, the GFTC and its no-fee condition on products that bundle the binary, and the README's License section says so; the release notes link it.
 

@@ -1,8 +1,9 @@
 # All Maven entry points for the repository - `make` (or `make help`) lists them. Maven runs
 # at this root reactor or at a dependency-closed subtree's own: jinfer is NOT closed (it pulls
 # gguf, json, toknroll, jota and jam), so only this reactor resolves it from a clean clone;
-# jota IS closed, so its targets drive jota/pom.xml directly. jinfer/Makefile and
-# jota/Makefile hold thin aliases into here plus their local helpers.
+# jota IS closed, so its targets drive jota/pom.xml directly. jinfer/Makefile holds thin
+# aliases into here plus its local helpers; jota/Makefile drives jota's own reactor, and the
+# jota targets here delegate to it.
 
 # Plain mvn by default: a long-lived mvnd daemon can serve a stale effective pom (observed:
 # tests silently skipped after a pom edit until `mvnd --stop`). Opt in with MAVEN=mvnd.
@@ -51,7 +52,7 @@ jinfer-test: ## Just the jinfer subtree's tests
 	$(MAVEN) $(MAVEN_FLAGS) $(JINFER) test
 
 jota-test: ## jota full suite (closed subtree): core, memory + the tensor suite on the Java backend
-	$(MAVEN) $(MAVEN_FLAGS) -f jota/pom.xml test
+	$(MAKE) -C jota test
 
 jam-test: ## jam and its cross-backend parity suite (NativeJAM included when libjam loads)
 	$(MAVEN) $(MAVEN_FLAGS) -pl jam/jam-vector -am verify
@@ -71,7 +72,7 @@ NATIVE_IMAGE ?= $(if $(JAVA_HOME),$(JAVA_HOME)/bin/native-image,native-image)
 NATIVE_MODULE ?= jinfer-cli
 NATIVE_EXECUTABLE = $(patsubst %-cli,%,$(NATIVE_MODULE))
 
-check-native-image: ## the GraalVM the images build with: native-image >= 25.0.4 (JAVA_HOME picks it); Oracle GraalVM adds PGO to libtoknroll
+check-native-image: ## The GraalVM the images build with: native-image >= 25.0.4 (JAVA_HOME picks it); Oracle GraalVM adds PGO to libtoknroll
 	@v=$$($(NATIVE_IMAGE) --version 2>/dev/null | grep -oE '[0-9]+\.[0-9]+\.[0-9]+' | head -1); \
 	if [ -z "$$v" ]; then \
 		echo "ERROR: native-image not found or version unparseable ($(NATIVE_IMAGE))"; exit 1; \
@@ -89,7 +90,7 @@ native: check-native-image ## GraalVM native image of the CLI for THIS machine (
 	mkdir -p bin && cp jinfer/$(NATIVE_MODULE)/target/$(NATIVE_EXECUTABLE)$(EXE) bin/$(NATIVE_EXECUTABLE)$(EXE)
 
 libjinfer: ## libjinfer.so, jinfer's shared library with a C API (jinfer/jinfer-native); QUICK=1 for the dev loop
-	$(MAKE) -C jinfer/jinfer-native libjinfer $(if $(filter 1,$(QUICK)),QUICK=1)
+	$(MAKE) -C jinfer/jinfer-native libjinfer
 
 ##@ Tidy
 
@@ -105,7 +106,7 @@ jinfer-clean: ## Wipe jinfer plus the sibling output its -am closure built (same
 	rm -rf bin
 
 jota-clean: ## Wipe just the jota subtree's output
-	$(MAVEN) $(MAVEN_FLAGS) -f jota/pom.xml clean
+	$(MAKE) -C jota clean
 
 ##@ CI
 
@@ -139,7 +140,7 @@ ci-release: ## CI gate 4: the release shape, unsigned, no natives
 
 ##@ Release
 
-release-canary: ## Prove the published shape works: install the release build into a throwaway repo, compile a BOM consumer against ONLY it
+release-canary: ## Prove the published shape works: install the release build into a throwaway repo, compile consumers with and without BOMs against ONLY it
 	MAVEN="$(MAVEN)" MAVEN_FLAGS="$(MAVEN_FLAGS)" ./release-canary.sh
 
 release-plan: ## What a release would publish, and whether the versions agree
@@ -152,29 +153,37 @@ jam-natives: ## Build, stage and stamp this host's shipped libjam (Linux x86-64:
 	jam/jam-native/scripts/natives.sh build
 	$(if $(filter Darwin,$(shell uname -s)),$(call in-container,jam-natives))
 
-##@ Wheels
+##@ Wheels and archives
 
-# Each machine builds its own wheels, from a clean export of REF (a tag, a commit, any tree-ish): nothing of
-# the working tree reaches them, and the Linux container never meets the host's build directories. Windows,
-# where make is not native, has wheels.ps1.
+# Each machine builds its own wheels and release archives, from a clean export of REF (a tag, a commit, any
+# tree-ish): nothing of the working tree reaches them, and the Linux container never meets the host's build
+# directories. Windows, where make is not native, has wheels.ps1 and dists.ps1.
 REF ?= HEAD
-EXPORT := target/wheels-src
+WHEELS_SRC := target/wheels-src
+DISTS_SRC := target/dists-src
 
-# The export of REF builds $(1); then each new wheel replaces the package's wheel for its platform in target/wheels/.
-define from-export
-rm -rf $(EXPORT) $(EXPORT).tar && mkdir -p $(EXPORT) target/wheels
-git archive -o $(EXPORT).tar $(REF) && tar -xf $(EXPORT).tar -C $(EXPORT)
-$(MAKE) -C $(EXPORT) $(1)
-for w in $(EXPORT)/toknroll/toknroll-native/target/wheel/*.whl $(EXPORT)/jinfer/jinfer-native/target/wheel/*.whl; do \
+# The export of REF in $(1), where this Makefile's target $(2) runs.
+define export-ref
+rm -rf $(1) $(1).tar && mkdir -p $(1)
+git archive -o $(1).tar $(REF) && tar -xf $(1).tar -C $(1)
+$(MAKE) -C $(1) $(2)
+endef
+
+# The export builds the wheels with target $(1); each new wheel replaces the package's wheel for its platform
+# in target/wheels/.
+define wheels-from-export
+$(call export-ref,$(WHEELS_SRC),$(1))
+mkdir -p target/wheels
+for w in $(WHEELS_SRC)/toknroll/toknroll-native/target/wheel/*.whl $(WHEELS_SRC)/jinfer/jinfer-native/target/wheel/*.whl; do \
   f=$${w##*/}; rm -f target/wheels/$${f%%-*}-*-$${f##*-} && cp $$w target/wheels/; done
 @ls -l target/wheels/*.whl | awk '{printf "%.1f MB %s\n", $$5/1e6, $$9}'
 endef
 
 wheels: ## This machine's two wheels, built and checked from a clean export of REF (HEAD): Linux in the manylinux container, macOS natively -> target/wheels/
-	$(call from-export,$(if $(filter Linux,$(shell uname -s)),wheels-in-container,wheels-here))
+	$(call wheels-from-export,$(if $(filter Linux,$(shell uname -s)),wheels-in-container,wheels-here))
 
 wheels-linux: ## The Linux wheels for this machine's architecture, in the manylinux container: on a Mac, Linux aarch64 (docker through Colima)
-	$(call from-export,wheels-in-container)
+	$(call wheels-from-export,wheels-in-container)
 
 wheels-here: # the two libraries, their checks (C, Python) and their checked wheels, in this tree, on this machine
 	$(MAKE) -C toknroll/toknroll-native libtoknroll check check-wheel
@@ -182,35 +191,35 @@ wheels-here: # the two libraries, their checks (C, Python) and their checked whe
 
 # A target of this Makefile in the manylinux container of this machine's architecture, which pins the glibc
 # floor the wheels promise. It runs as the caller, with the caller's own passwd line (the JVM takes the home
-# directory from it; a Mac's VM has another), and the Maven and model caches at their real paths.
+# directory from it; a Mac's VM has another), and the Maven and model caches at their real paths. The image is
+# built from the Dockerfile alone, with no build context: it copies nothing in.
 define in-container
-docker build -q -f manylinux.Dockerfile --build-arg ARCH=$(shell uname -m | sed s/arm64/aarch64/) -t qxotic-manylinux . >/dev/null
+docker build -q --build-arg ARCH=$(shell uname -m | sed s/arm64/aarch64/) -t qxotic-manylinux - < manylinux.Dockerfile >/dev/null
 mkdir -p target && printf '%s:x:%s:%s::%s:/bin/sh\n' "$$(id -un)" "$$(id -u)" "$$(id -g)" "$$HOME" > target/passwd
-docker run --rm -u "$$(id -u):$$(id -g)" -v "$(CURDIR)/target/passwd:/etc/passwd:ro" -e HOME \
+docker run --rm -u "$$(id -u):$$(id -g)" -v "$(CURDIR)/target/passwd:/etc/passwd:ro" -e HOME -e CTEST_ALLOW_SKIP \
   -v "$$HOME/.m2:$$HOME/.m2" -v "$$HOME/.cache:$$HOME/.cache" -v "$(CURDIR):/src" -w /src qxotic-manylinux make $(1)
 endef
 
 wheels-in-container:
 	$(call in-container,wheels-here)
 
-# The release archives, as the wheels: the two libraries for C and the jinfer command, built and checked from a clean
-# export of REF on each machine, Linux in the manylinux container for the glibc floor, then collected in target/dists/,
-# one per library or command and platform.
-ARCHIVES := target/dists-src
-define archives-from-export
-rm -rf $(ARCHIVES) $(ARCHIVES).tar && mkdir -p $(ARCHIVES) target/dists
-git archive -o $(ARCHIVES).tar $(REF) && tar -xf $(ARCHIVES).tar -C $(ARCHIVES)
-$(MAKE) -C $(ARCHIVES) $(1)
-for a in $(ARCHIVES)/toknroll/toknroll-native/target/dist/*.tar.gz $(ARCHIVES)/jinfer/jinfer-native/target/dist/*.tar.gz $(ARCHIVES)/jinfer/jinfer-cli/target/dist/*.tar.gz; do \
-  f=$${a##*/}; rm -f target/dists/$${f%%-*}-*-$${f#*-*-} target/dists/$${f%%-*}-*-$${f#*-*-}.sha256 && cp $$a $$a.sha256 target/dists/; done
+# The release archives, as the wheels: the two libraries for C and the jinfer command, built and checked by target
+# $(1) in the export, Linux in the manylinux container for the glibc floor, then collected in target/dists/, one per
+# library or command and platform: a new archive replaces the one of any version, a candidate's too, for its platform.
+define dists-from-export
+$(call export-ref,$(DISTS_SRC),$(1))
+mkdir -p target/dists
+for a in $(DISTS_SRC)/toknroll/toknroll-native/target/dist/*.tar.gz $(DISTS_SRC)/jinfer/jinfer-native/target/dist/*.tar.gz $(DISTS_SRC)/jinfer/jinfer-cli/target/dist/*.tar.gz; do \
+  f=$${a##*/}; p=$$(printf %s "$$f" | sed -E 's/.*-((darwin|linux|windows)-)/\1/'); \
+  rm -f target/dists/$${f%%-*}-*-$$p target/dists/$${f%%-*}-*-$$p.sha256 && cp $$a $$a.sha256 target/dists/; done
 @ls -l target/dists/*.tar.gz target/dists/*.zip 2>/dev/null | awk '{printf "%.1f MB %s\n", $$5/1e6, $$9}'
 endef
 
 dists: ## This machine's three release archives, libtoknroll, libjinfer and the jinfer command, built and checked from a clean export of REF (HEAD): Linux in the manylinux container, macOS natively -> target/dists/
-	$(call archives-from-export,$(if $(filter Linux,$(shell uname -s)),dists-in-container,dists-here))
+	$(call dists-from-export,$(if $(filter Linux,$(shell uname -s)),dists-in-container,dists-here))
 
 dists-linux: ## The Linux archives for this machine's architecture, in the manylinux container: on a Mac, Linux aarch64
-	$(call archives-from-export,dists-in-container)
+	$(call dists-from-export,dists-in-container)
 
 dists-here: # the two libraries and the command, their checks, their archives and the archives' checks, in this tree, on this machine
 	$(MAKE) -C toknroll/toknroll-native libtoknroll check dist check-dist

@@ -6,7 +6,7 @@ STATIC := target/libtoknroll.a
 DIST_LIBS = $(LIB) $(STATIC)
 # What the image needs from the system: the shared library carries these as NEEDED, a static consumer links them
 SYSLIBS = -lz -ldl -lpthread -lm $(if $(filter darwin,$(OS)),-framework Foundation,-lrt -lutil)
-WHEEL_TEST = TOKNROLL_INSTALLED=1 TOKNROLL_TEST_GGUF=$(TOKNROLL_TEST_GGUF) wheelenv/bin/python -m unittest discover -s ../python/tests -t ../python/tests
+WHEEL_TEST = wheelenv/bin/python -m unittest discover -s ../python/tests -t ../python/tests
 DESCRIPTION = toknroll, LLM tokenization with a C API
 WHEEL_EXAMPLE = examples/c/tokenize.c
 WHEEL_EXAMPLE_ARGS = $(SOURCE) "Hello, Tok'n'Roll!"
@@ -64,7 +64,7 @@ target/tokenize-static: examples/c/tokenize.c include/toknroll.h $(STATIC)
 # process of its own; the header compiled as C++ too.
 TEST_DEPS = tests/c/toknroll_test.c tests/c/test.h tests/c/fixtures.h tests/c/progress.h include/toknroll.h
 CFLAGS_TEST = -std=c99 -Wall -Wextra -Wpedantic -Werror -Iinclude
-LINK_TEST = -L target -ltoknroll -Wl,-rpath,$(abspath target) -lpthread $(if $(filter Linux,$(shell uname -s)),-lutil)   # forkpty
+LINK_TEST = -L target -ltoknroll -Wl,-rpath,$(abspath target) -lpthread $(if $(filter linux,$(OS)),-lutil)   # forkpty
 STATIC_TEST_FLAGS = $(if $(filter linux,$(OS)),-DTEST_MALLOC_WRAP -Xlinker --wrap=malloc)
 target/toknroll_test: $(TEST_DEPS) $(LIB)
 	$(CC) $(CFLAGS_TEST) -o $@ $< $(LINK_TEST)
