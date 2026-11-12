@@ -62,7 +62,6 @@
     <!-- This POM's version, written out: in an artifact that declares its own,
          ${project.version} would mean that one. -->
     <jinfer.version>0.4.0-rc1</jinfer.version>
-    <jinfer-jinja.version>0.3.1</jinfer-jinja.version>
     <maven.compiler.release>25</maven.compiler.release>
 
     <native-maven-plugin.version>0.10.6</native-maven-plugin.version>
@@ -266,7 +265,7 @@
       <dependency>
         <groupId>com.qxotic</groupId>
         <artifactId>jinfer-jinja</artifactId>
-        <version>${jinfer-jinja.version}</version>
+        <version>${jinfer.version}</version>
       </dependency>
       <dependency>
         <groupId>com.qxotic</groupId>

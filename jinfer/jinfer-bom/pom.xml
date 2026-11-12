@@ -69,7 +69,7 @@
       <dependency>
         <groupId>com.qxotic</groupId>
         <artifactId>jinfer-jinja</artifactId>
-        <version>0.3.1</version>
+        <version>0.4.0-rc1</version>
       </dependency>
 
       <dependency>
@@ -204,12 +204,12 @@
       <dependency>
         <groupId>com.qxotic</groupId>
         <artifactId>json</artifactId>
-        <version>0.2.0</version>
+        <version>0.4.0-rc1</version>
       </dependency>
       <dependency>
         <groupId>com.qxotic</groupId>
         <artifactId>safetensors</artifactId>
-        <version>0.3.1</version>
+        <version>0.4.0-rc1</version>
       </dependency>
       <dependency>
         <groupId>com.qxotic</groupId>

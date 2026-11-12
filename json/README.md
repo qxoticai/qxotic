@@ -36,7 +36,7 @@ reflection-driven mapper is more than the job needs.
 <dependency>
     <groupId>com.qxotic</groupId>
     <artifactId>json</artifactId>
-    <version>0.2.0</version>
+    <version>0.4.0-rc1</version>
 </dependency>
 ```
 

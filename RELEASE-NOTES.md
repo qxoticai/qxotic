@@ -12,6 +12,14 @@ The libraries keep the soname of 0.4.0, `libtoknroll.so.0.4.0` and `libjinfer.so
   `decideIndependently` and `askIndependently` answer each question as if asked alone, as the adapters' `independent(true)` does; the server answers each alone unless vLLM's `"joint": true` asks otherwise.
   `jinfer server` serves `POST /v1/systemone` in llama.cpp's System One shape, and LangChain4j and Spring AI get a `JinferDecisionModel`, with `spring.ai.model.decision=jinfer` in the starter.
   d1 matches Liquid's reference and llama.cpp, and d3 matches llama.cpp.
+- **json 0.4.0-rc1.** A Java string holding a lone surrogate prints it as an escape, `\uD800`, so the JSON can be encoded as UTF-8; a surrogate pair prints as itself.
+  With `decimalsAsBigDecimal(false)`, a decimal past `double`'s range is refused at its first digit instead of read as `Infinity`.
+  Errors count a line at `\r` and `\r\n` as at `\n`, and `unescapeString`'s errors carry line and column too.
+  A duplicate key is reported at the key, and an invalid escape at its backslash.
+  jinfer-jinja, which depends on json, moves to `0.4.0-rc1` with it.
+- **safetensors 0.4.0-rc1.** A file read and written back keeps its own header layout, so its tensor offsets stay valid; writing one used to fail with a header size mismatch.
+  A new file's tensor data starts at a multiple of 8 bytes, as upstream pads it.
+  A header that is not UTF-8, and a shape or offset written as `1.0` or `1e0`, are refused, as upstream refuses them.
 - **PrismML Ternary Bonsai 2.** `Q2_0` and PrismML's `PQ2_0` and `PTQ1_0` load across gguf, jota, jam and jinfer, and the Qwen3.5 port applies Bonsai's `prism.hadamard` rotation, so Ternary Bonsai 2 runs in all three, images included.
   Checkpoints with an MTP head and a Hadamard rotation are refused.
 - **Qwen3.5 fixes.** RoPE rotates NEOX pairs, as llama.cpp's IMROPE does; the port had rotated adjacent pairs, a mild drift that changed some greedy replies against llama.cpp.
