@@ -66,5 +66,10 @@
       <artifactId>jinfer-cache</artifactId>
       <scope>test</scope>
     </dependency>
+    <dependency>
+      <groupId>com.qxotic</groupId>
+      <artifactId>jam-native</artifactId>
+      <scope>test</scope>
+    </dependency>
   </dependencies>
 </project>
