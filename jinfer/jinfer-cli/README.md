@@ -173,6 +173,8 @@ curl -sS http://127.0.0.1:8080/v1/chat/completions \
   -d '{"messages":[{"role":"user","content":"Name the planets."}]}'
 ```
 
+Reasoning is on or off: `"reasoning_effort": "none"` turns it off and any other level turns it on, with no dial between the levels, as in llama.cpp; `chat_template_kwargs.enable_thinking` says the same as a boolean.
+
 A model with a voice, LFM3-Omni with its projector attached through `--with media`, answers in speech when the request asks for it, in OpenAI's shape: `modalities` of `["text", "audio"]` and an `audio` object whose `format` is `wav` or `pcm16`.
 
 ```sh
