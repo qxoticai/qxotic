@@ -6,6 +6,9 @@ package com.qxotic.jinfer.llm;
  * arrives as {@code 0.7f} - compare through the float, not against the double you set.
  */
 public record Sampling(float temperature, float topP, int topK, float minP, Long seed) {
+    /** Always the most likely token: no randomness, so no seed. */
+    public static final Sampling GREEDY = new Sampling(0f, 1f, 0, 0f, null);
+
     public Sampling {
         if (!Float.isFinite(temperature) || temperature < 0)
             throw new IllegalArgumentException("temperature " + temperature);

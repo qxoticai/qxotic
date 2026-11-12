@@ -42,7 +42,6 @@ final class Lfm3IntegrationTest {
     static final String OMNI = "hf.co/LiquidAI/LFM3-Omni-2B-GGUF:Q8_0";
     static final String OMNI_MMPROJ =
             "hf.co/LiquidAI/LFM3-Omni-2B-GGUF/mmproj-LFM3-Omni-2B-F16.gguf";
-    private static final Sampling GREEDY = new Sampling(0f, 1f, 0, 0f, null);
 
     @Test
     void omniLoadsThroughTheProviderWithBothTowers() throws Exception {
@@ -302,7 +301,7 @@ final class Lfm3IntegrationTest {
                 null,
                 null,
                 Duration.ZERO,
-                GREEDY,
+                Sampling.GREEDY,
                 null,
                 null,
                 List.of(),

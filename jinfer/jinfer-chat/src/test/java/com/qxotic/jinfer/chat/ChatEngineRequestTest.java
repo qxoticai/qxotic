@@ -192,6 +192,23 @@ final class ChatEngineRequestTest {
                                 null));
     }
 
+    /** A sink is a lambda away: of() forwards each delta, drops media and never cancels. */
+    @Test
+    void aReplySinkIsALambdaAway() {
+        List<String> said = new ArrayList<>();
+        ChatEngine.ReplySink sink = ChatEngine.ReplySink.of(delta -> said.add(delta.text()));
+        sink.on(new ChatEngine.Delta(Channel.CONTENT, "Paris", IntSequence.empty()));
+        sink.onMedia(null);
+        assertEquals(List.of("Paris"), said);
+        assertFalse(sink.cancelled());
+    }
+
+    /** Greedy is one constant, not a positional trap: temperature 0 and no top-k cut. */
+    @Test
+    void greedyIsTheMostLikelyToken() {
+        assertEquals(new Sampling(0f, 1f, 0, 0f, null), Sampling.GREEDY);
+    }
+
     /** A call names its tool, so two offered tools of one name are refused, whatever the face. */
     @Test
     void aToolNameIsOfferedOnce() {

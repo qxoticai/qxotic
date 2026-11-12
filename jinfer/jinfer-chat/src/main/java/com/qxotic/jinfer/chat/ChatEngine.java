@@ -42,6 +42,7 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
+import java.util.Objects;
 import java.util.Optional;
 import java.util.OptionalInt;
 import java.util.Set;
@@ -55,6 +56,7 @@ import java.util.concurrent.atomic.AtomicReference;
 import java.util.concurrent.locks.ReentrantLock;
 import java.util.concurrent.locks.ReentrantReadWriteLock;
 import java.util.function.BooleanSupplier;
+import java.util.function.Consumer;
 import java.util.random.RandomGenerator;
 
 /**
@@ -1337,6 +1339,19 @@ public final class ChatEngine implements AutoCloseable {
     public interface ReplySink {
 
         ReplySink NONE = new ReplySink() {};
+
+        /**
+         * The reply's text as it arrives, as a lambda: media is dropped, the pass never cancelled.
+         */
+        static ReplySink of(Consumer<? super Delta> onDelta) {
+            Objects.requireNonNull(onDelta, "onDelta");
+            return new ReplySink() {
+                @Override
+                public void on(Delta delta) {
+                    onDelta.accept(delta);
+                }
+            };
+        }
 
         /** One fragment, already past the stop-sequence holdback on the content lane. */
         default void on(Delta delta) {}

@@ -376,8 +376,6 @@ public final class JinferBench {
             String media,
             String peakRssMb) {}
 
-    private static final Sampling GREEDY = new Sampling(0f, 1f, 0, 0f, null);
-
     private static CapRow capabilities(
             BenchModel<?> bench, String name, int promptLen, int gen, Path mediaPath)
             throws Exception {
@@ -392,7 +390,7 @@ public final class JinferBench {
                 PromptCache.Options.DEFAULTS.withRetainedSessions(0).withBlockBudget(0);
         try (ChatEngine engine = new ChatEngine(bench.loaded, name, PromptCache.Options.DEFAULTS);
                 ChatEngine control = new ChatEngine(bench.loaded, name, noCache)) {
-            Sampler greedy = GREEDY.sampler(bench.vocab());
+            Sampler greedy = Sampling.GREEDY.sampler(bench.vocab());
             int[] prompt = fillerTokens(bench.vocab(), promptLen);
 
             // TTFT: a cold request's promptTime is prefill + first-token projection
@@ -506,7 +504,7 @@ public final class JinferBench {
                 null,
                 null,
                 Duration.ZERO,
-                GREEDY,
+                Sampling.GREEDY,
                 null,
                 null,
                 List.of(),
@@ -528,7 +526,7 @@ public final class JinferBench {
                 null,
                 null,
                 Duration.ZERO,
-                GREEDY,
+                Sampling.GREEDY,
                 null,
                 null,
                 List.of(),

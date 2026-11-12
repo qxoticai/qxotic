@@ -271,8 +271,7 @@ class OptionsTest {
                         "512",
                         "--think",
                         "off");
-        var request =
-                Requests.of(List.of(Message.user("hi")), new Sampling(0f, 1f, 0, 0f, null), o);
+        var request = Requests.of(List.of(Message.user("hi")), Sampling.GREEDY, o);
         assertEquals(128, request.maxReasoningTokens());
         assertEquals("Enough.", request.reasoningCutoffMessage());
         assertEquals(512, request.maxOutputTokens());

@@ -37,7 +37,6 @@ import org.junit.jupiter.api.Test;
 final class ChatEngineModelTest {
 
     private static final String REF = "hf.co/LiquidAI/LFM2.5-350M-GGUF:Q8_0";
-    private static final Sampling GREEDY = new Sampling(0f, 1f, 0, 0f, null);
 
     private static ChatEngine.Request request(List<Message> messages) {
         return request(messages, Duration.ZERO);
@@ -45,7 +44,17 @@ final class ChatEngineModelTest {
 
     private static ChatEngine.Request request(List<Message> messages, Duration timeout) {
         return new ChatEngine.Request(
-                messages, List.of(), false, 32, null, null, timeout, GREEDY, null, null, List.of(),
+                messages,
+                List.of(),
+                false,
+                32,
+                null,
+                null,
+                timeout,
+                Sampling.GREEDY,
+                null,
+                null,
+                List.of(),
                 null);
     }
 
@@ -61,10 +70,11 @@ final class ChatEngineModelTest {
             int[] bare = engine.loaded().tokenizer().encode("hello").toArray();
             int[] explicit = IntSequence.of(bos).concat(IntSequence.of(bare)).toArray();
             try (ChatEngine.Prepared prepared =
-                            engine.prepareRaw(bare, GREEDY, 1, Duration.ZERO, null, List.of());
+                            engine.prepareRaw(
+                                    bare, Sampling.GREEDY, 1, Duration.ZERO, null, List.of());
                     ChatEngine.Prepared alreadyStarted =
                             engine.prepareRaw(
-                                    explicit, GREEDY, 1, Duration.ZERO, null, List.of())) {
+                                    explicit, Sampling.GREEDY, 1, Duration.ZERO, null, List.of())) {
                 assertArrayEquals(explicit, Batch.tokenIds(prepared.encoded().prompt()));
                 assertArrayEquals(explicit, Batch.tokenIds(alreadyStarted.encoded().prompt()));
                 assertEquals(explicit.length, prepared.promptTokens());
