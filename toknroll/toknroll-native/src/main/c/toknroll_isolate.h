@@ -31,4 +31,10 @@ const char* jinfer__error_buffer(int32_t allocate);
 /* configure for the public function `who`; error_set reports through that API's own last error */
 int32_t toknroll__configure(const char* const* options, int32_t count, const char* who,
                             void (*error_set)(graal_thread*, int32_t, const char*));
+/* The quarantine of tokenizers an escape may have left half-updated: whether the last call took one (and
+ * forget it); whether a tokenizer is refused, the thread's error then saying so; refuse one; free one. */
+int toknroll__took_escape(void);
+int toknroll__quarantined(const void* tokenizer);
+void toknroll__quarantine(const void* tokenizer);
+void toknroll__release(const void* tokenizer);
 #endif

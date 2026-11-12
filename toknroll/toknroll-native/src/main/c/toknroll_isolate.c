@@ -141,13 +141,57 @@ static const char escaped_other[] = "internal error: an exception escaped the li
  * the entry point past every catch, which also quarantines the call's tokenizer (escaped 1): handlers were
  * skipped, so what the call was updating may be half-written. Allocates nothing that can fail the call: the
  * message buffer is the thread's own, or the static fallback when it cannot have one. */
-const char* toknroll__escaped(int32_t kind, int32_t escaped) {
-    const char* words = kind == 1 ? escaped_out_of_memory : kind == 2 ? escaped_stack_overflow : escaped_other;
+static const char* fail_with(const char* words) {
     char* buffer = (char*) error_buffer(0, 1);
     if (buffer) snprintf(buffer, 1025, "%s", words);
     error_code = TOKNROLL_ERROR;
-    if (escaped) escape_seen = 1;
     return buffer ? buffer : words;
+}
+
+const char* toknroll__escaped(int32_t kind, int32_t escaped) {
+    if (escaped) escape_seen = 1;
+    return fail_with(kind == 1 ? escaped_out_of_memory : kind == 2 ? escaped_stack_overflow : escaped_other);
+}
+
+/* Tokenizers an escape may have left half-updated (toknroll_shim.c): refused until freed. Checked on every
+ * call, so empty, as it nearly always is, costs one load. ponytail: a scan under a lock; a hash set if a
+ * process ever quarantines more than a handful. */
+static port_mutex_t quarantine_lock = PORT_MUTEX_INIT;
+static const void** quarantine;
+static int32_t quarantined, quarantine_room;
+static int quarantine_lost;   /* one could not be kept, out of C memory: every tokenizer is refused */
+static long quarantine_any;   /* port_load: anything above */
+
+int toknroll__quarantined(const void* tokenizer) {
+    if (!port_load(&quarantine_any)) return 0;
+    port_mutex_lock(&quarantine_lock);
+    int found = quarantine_lost;
+    for (int32_t i = 0; i < quarantined && !found; i++) found = quarantine[i] == tokenizer;
+    port_mutex_unlock(&quarantine_lock);
+    if (found) fail_with("this tokenizer may have been left half-updated by an earlier out-of-memory or stack overflow: free it and load it again");
+    return found;
+}
+
+void toknroll__quarantine(const void* tokenizer) {
+    port_mutex_lock(&quarantine_lock);
+    if (quarantined == quarantine_room) {
+        int32_t room = quarantine_room ? 2 * quarantine_room : 8;
+        const void** grown = realloc((void*) quarantine, (size_t) room * sizeof *grown);
+        if (grown) { quarantine = grown; quarantine_room = room; }
+    }
+    if (quarantined < quarantine_room) quarantine[quarantined++] = tokenizer;
+    else quarantine_lost = 1;
+    port_store(&quarantine_any, 1);
+    port_mutex_unlock(&quarantine_lock);
+}
+
+void toknroll__release(const void* tokenizer) {
+    if (!port_load(&quarantine_any)) return;
+    port_mutex_lock(&quarantine_lock);
+    for (int32_t i = 0; i < quarantined; i++)
+        if (quarantine[i] == tokenizer) { quarantine[i] = quarantine[--quarantined]; break; }
+    if (!quarantined && !quarantine_lost) port_store(&quarantine_any, 0);
+    port_mutex_unlock(&quarantine_lock);
 }
 
 /* What toknroll_log_set or jinfer_log_set gave, before the runtime starts; start hands it to Log.java. */

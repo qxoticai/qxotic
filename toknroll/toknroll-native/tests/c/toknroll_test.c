@@ -1451,8 +1451,12 @@ static void heap_too_small(void) {
     toknroll_tokenizer_free(tiny);
 }
 
-/* a heap too small for a batch: the call fails naming the knob, never aborting the process, and the tokenizer
- * goes on working; on too few cores to run out, there is nothing to test */
+/* the words of a quarantined tokenizer's refusal */
+#define RELOAD "may have been left half-updated by an earlier out-of-memory or stack overflow: free it and load it again"
+
+/* a heap too small for a batch: the call fails naming the knob, never hanging or aborting the process; the
+ * tokenizer goes on working, or is quarantined when the error escaped a task; on too few cores to run out,
+ * there is nothing to test */
 static void batch_out_of_heap(void) {
     const char* options[] = {"-Dtoknroll.offline=true", "-XX:MaxHeapSize=192m"};
     CHECK_EQ(toknroll_configure(options, 2), TOKNROLL_OK);
@@ -1476,12 +1480,17 @@ static void batch_out_of_heap(void) {
     CHECK_HAS(message, "out of memory");
     CHECK_HAS(message, "-XX:MaxHeapSize");
     int32_t ids[8];
-    CHECK_EQ(toknroll_encode(t, "Hello, world!", 13, 0, ids, 8), 4);   /* the process, and the tokenizer, go on */
+    int32_t n = toknroll_encode(t, "Hello, world!", 13, 0, ids, 8);   /* caught, it goes on; escaped, it is quarantined */
+    if (n != 4) CHECK_ERROR(n, TOKNROLL_ERROR, LE, RELOAD);
+    toknroll_tokenizer_free(t);
+    t = cached(QWEN);   /* the process goes on */
+    CHECK_EQ(toknroll_encode(t, "Hello, world!", 13, 0, ids, 8), 4);
     toknroll_tokenizer_free(t);
 }
 
 /* An error native image raises where no catch runs, injected (-Dtoknroll.test.escape), reaches the entry
-   point's exception handler: the call fails with static words, nothing allocated, and the process goes on. */
+   point's exception handler: the call fails with static words, nothing allocated, and the process goes on.
+   The tokenizer is quarantined, since what the call was updating may be half-written: refused until freed. */
 static void escape_at_the_boundary(const char* kind, const char* words) {
     char option[64];
     snprintf(option, sizeof option, "-Dtoknroll.test.escape=encode:%s", kind);
@@ -1493,13 +1502,19 @@ static void escape_at_the_boundary(const char* kind, const char* words) {
     int32_t code = 0;
     CHECK_HAS(LE(&code), words);
     CHECK_EQ(code, TOKNROLL_ERROR);
-    toknroll_tokenizer* other = cached(QWEN);   /* the process goes on */
+    toknroll_tokenizer* other = cached(QWEN);   /* the process goes on, and another tokenizer with it */
+    CHECK_EQ(toknroll_vocabulary_size(other), QWEN_VOCAB);
+    CHECK_ERROR(toknroll_vocabulary_size(t), TOKNROLL_ERROR, LE, RELOAD);
+    CHECK_ERROR(toknroll_id(t, "hello", 5), TOKNROLL_ERROR, LE, RELOAD);
     CHECK_EQ(toknroll_vocabulary_size(other), QWEN_VOCAB);
     toknroll_tokenizer_free(other);
-    toknroll_tokenizer_free(t);
+    toknroll_tokenizer_free(t);   /* frees the quarantined one too, and lets it go */
+    toknroll_tokenizer* again = cached(QWEN);
+    CHECK_EQ(toknroll_vocabulary_size(again), QWEN_VOCAB);
+    toknroll_tokenizer_free(again);
 }
 /* A batch task that ends past every catch is counted done in C all the same: the batch fails at once with
-   the task's error, never waits on it, and the process goes on. */
+   the task's error, never waits on it, the tokenizer is quarantined, and the process goes on. */
 static void escape_in_a_batch_task(void) {
     const char* options[] = {"-Dtoknroll.offline=true", "-Dtoknroll.test.escape=task:oom"};
     CHECK_EQ(toknroll_configure(options, 2), TOKNROLL_OK);
@@ -1515,10 +1530,11 @@ static void escape_in_a_batch_task(void) {
         int32_t code = 0;
         CHECK_HAS(LE(&code), "out of memory: the runtime's heap is full");
         CHECK_EQ(code, TOKNROLL_ERROR);
+        CHECK_ERROR(toknroll_encode_batch(t, texts, at, TEXTS, 0, out, TEXTS * 4, offsets), TOKNROLL_ERROR, LE, RELOAD);
+        toknroll_tokenizer_free(t);
+        t = cached(QWEN);
     }
-    toknroll_tokenizer* other = cached(QWEN);   /* the process goes on */
-    CHECK_EQ(toknroll_vocabulary_size(other), QWEN_VOCAB);
-    toknroll_tokenizer_free(other);
+    CHECK_EQ(toknroll_vocabulary_size(t), QWEN_VOCAB);   /* the process goes on */
     toknroll_tokenizer_free(t);
 }
 
