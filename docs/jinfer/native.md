@@ -26,7 +26,7 @@ Three ideas, and the whole API follows from them.
 
 - **A model is whatever the file is.** `jinfer_model_load` takes a hub reference or a path and the model selects its face: language, embedding, reranking, speech or transcription. `jinfer_model_property` says what it can do; `jinfer_model_info` describes it as JSON.
 - **Every generation is a stream, stepped like a statement.** `jinfer_chat`, `jinfer_speak` and `jinfer_transcribe` return a `jinfer_stream`; `jinfer_stream_step` blocks and says whether a chunk is ready, `jinfer_stream_text` or `jinfer_stream_samples` is the chunk, `jinfer_stream_result` the finished result as JSON. `jinfer_stream_cancel` may be called from any thread; the blocked step returns `JINFER_ECANCELLED` and the result still carries the text produced so far and counts what ran, with `finish_reason` `"cancelled"`. Freeing a running stream cancels it. Blocking is `while (jinfer_stream_step(s) == JINFER_OK) {}`.
-- **OpenAI JSON in and out.** `jinfer_speak` takes the `/v1/audio/speech` fields that apply (`input`, `speed`); `jinfer_chat` takes exactly the jinfer server's `/v1/chat/completions` request and returns its response: messages, tools, `response_format` with a JSON schema, images and audio as data URLs. The same code lowers both; a reply constrained to a schema cannot come back malformed.
+- **OpenAI JSON in and out.** `jinfer_speak` takes the OpenAI `/v1/audio/speech` fields that apply (`input`, `speed`); `jinfer_chat` takes exactly the jinfer server's `/v1/chat/completions` request and returns its response: messages, tools, `response_format` with a JSON schema, images and audio as data URLs. The same code lowers both; a reply constrained to a schema cannot come back malformed.
 
 Numbers never travel as JSON: tokens, logits, embeddings, scores and PCM cross as caller buffers that follow `snprintf` (write at most the capacity, named by its unit as in `float_capacity`, and return the count needed).
 Everything returned is borrowed from its handle until the next call on that handle; a model stays alive while any state or stream made from it lives.
@@ -74,7 +74,7 @@ From `jinfer/jinfer-native`, with GraalVM 25.0.4 or newer and a C compiler:
 
 ```sh
 make libjinfer            # -O3 -march=x86-64-v3 (GraalVM's default on x86-64, AVX2): target/libjinfer.so; NATIVE_IMAGE_OPTIONS=-march=x86-64-v4 for AVX-512
-make check                # header vs exports, the C example, the Python test
+make check                # versions agree, headers vs exports, the C suites and example, the Python test
 make python               # stage the library into the Python package; then pip install python/
 ```
 

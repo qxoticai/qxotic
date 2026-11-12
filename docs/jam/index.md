@@ -135,11 +135,11 @@ Requirements: **CMake ≥ 3.16**, a **C11 compiler** (GCC or Clang), **JDK ≥ 2
 **Maven** runs cmake, javac, and tests in one step, from the repository root once a root `mvn install` has built `jam-core` and `jota-core`:
 
 ```sh
-mvn -f jam/jam-native/pom.xml package   # -> jam/jam-native/target/jam-native-0.3.1.jar with this host's library
+mvn -f jam/jam-native/pom.xml package   # -> jam/jam-native/target/jam-native-<version>.jar with this host's library
 mvn -f jam/jam-native/pom.xml test      # configure + build + JUnit
 ```
 
-**Or build just the native library with cmake** (for the C API, or to pre-stage `dist/native/`):
+**Or build just the native library with cmake** from `jam/jam-native` (for the C API, or to pre-stage `dist/native/`):
 
 ```sh
 cmake -B build -DCMAKE_BUILD_TYPE=Release

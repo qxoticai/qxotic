@@ -101,7 +101,8 @@ Matmuls try the jam backends in this order: `native` (C kernels in `libjam`), `v
 If no backend applies, the engine's built-in Java kernels run.
 Prefill uses the first backend that has a kernel for the weight type.
 Decode uses the native gemv only where it is faster: always on AArch64, and on x86 at low thread counts (crossover 4-16 threads depending on quantization).
-`-Djinfer.q4.nativeDecode=true|false` (also `q8`, `mxfp4`, `kq`) forces the choice.
+`MXFP4` and the low-bit `Q2_0`, `PQ2_0` and `PTQ1_0` decode natively on AArch64 only.
+`-Djinfer.q4.nativeDecode=true|false` (also `q8`, `mxfp4`, `kq`, `lowbit`) forces the choice.
 `-Djam.native.disabled=true` (or `vector`, `scalar`) removes a backend before it is probed.
 This is how the Java kernels are compared against the native ones.
 The header line lists the backends that remain.
@@ -120,6 +121,8 @@ A reported number must come from a run without cliffs, or state which cliff it c
 | `SLOW_JIT` | the JIT is C2; the Vector API kernels are compiled conservatively | run on the GraalVM JIT or the native image |
 | `JAM_ABSENT` | no jam backend on the classpath; prefill runs on the Java kernels | use the shaded jar or the image; a custom classpath needs `jam-native` or `jam-vector` |
 | `JAM_DECLINE` | the native kernels declined a matmul shape | the `libjam` build does not match; rebuild the natives and report the cliff if it persists |
+| `THREAD_OVERSUBSCRIPTION` | the compute pool has more threads than the JVM sees processors | lower `-t` to the machine's cores |
+| `NESTED_REGION` | a parallel loop ran inline inside another region of the same pool, on one thread | not a setup problem; report the cliff together with the number |
 | `NATIVE_ACCESS_RESTRICTED` | native access is restricted; vector accesses keep extra checks | add `--enable-native-access=ALL-UNNAMED`; the shaded jar's manifest sets it |
 | `MAMBA2_SCALAR`, `GDN_SCALAR` | the model's recurrent scan has no vector kernel in this build | not a setup problem; report the cliff together with the number |
 

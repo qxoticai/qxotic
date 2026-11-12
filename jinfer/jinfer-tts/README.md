@@ -26,7 +26,7 @@ Both modes use the same cross-platform playback support as `jinfer-cli`:
 All platforms can fall back to `ffplay` if the native player cannot be launched.
 Players must be on `PATH`; a player that launches but fails reports its error.
 
-Build the native executable with GraalVM 25 or later:
+Build the native executable with GraalVM 25.0.4 or later:
 
 ```bash
 make -C jinfer/jinfer-tts native   # -> bin/jinfer-tts
@@ -47,10 +47,10 @@ zip -A jinfer-tts-kokoro
   --with voice=z://voices/af_heart.gguf --play
 ```
 
-The model entry's data offset must be divisible by 4. ZIP does not guarantee this alignment, so
-the packager must add padding when necessary; `jinfer-tts` rejects an unaligned model instead of
-running inference over misaligned weights. Companion entries do not have this restriction because
-they are extracted before loading.
+The model's data must start at a 4-byte aligned offset within the executable, because the weights are read in place.
+ZIP does not align entries, so the packager must pad when necessary.
+`jinfer-tts` refuses a model whose data offset is not 4-byte aligned, naming the offset.
+Companion entries have no such requirement: they are extracted before loading.
 
 Use `--archive <path>` when reading `z://` entries from another executable, including when running
 the CLI through `java -jar`. Run `--help` for all options.
