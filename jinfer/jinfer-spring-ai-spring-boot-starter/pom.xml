@@ -1,5 +1,5 @@
 <?xml version="1.0" encoding="UTF-8"?>
-<project xmlns="http://maven.apache.org/POM/4.0.0" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/xsd/maven-4.0.0.xsd">
+<project xmlns="http://maven.apache.org/POM/4.0.0" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 https://maven.apache.org/xsd/maven-4.0.0.xsd">
   <modelVersion>4.0.0</modelVersion>
 
   <parent>
@@ -9,11 +9,11 @@
   </parent>
 
   <artifactId>jinfer-spring-ai-spring-boot-starter</artifactId>
-  <packaging>jar</packaging>
 
   <name>Jinfer Spring AI Spring Boot Starter</name>
   <description>Spring Boot starter for Jinfer models and the Spring AI ChatClient stack, including
     tools, chat memory, structured output, and reranking.</description>
+
   <properties>
     <maven.deploy.skip>false</maven.deploy.skip>
     <!-- No sources: javadoc has nothing to document, and Maven Central still requires the jar.

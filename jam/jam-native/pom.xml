@@ -1,5 +1,5 @@
 <?xml version="1.0" encoding="UTF-8"?>
-<project xmlns="http://maven.apache.org/POM/4.0.0" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/xsd/maven-4.0.0.xsd">
+<project xmlns="http://maven.apache.org/POM/4.0.0" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 https://maven.apache.org/xsd/maven-4.0.0.xsd">
   <modelVersion>4.0.0</modelVersion>
 
   <parent>
@@ -9,7 +9,6 @@
   </parent>
 
   <artifactId>jam-native</artifactId>
-  <packaging>jar</packaging>
 
   <name>JAM Native Backend</name>
   <description>Native CPU and Apple Metal backend for JAM.</description>
@@ -26,7 +25,7 @@
     <jam.cmake.cc>cc</jam.cmake.cc>
     <jam.native.skip>false</jam.native.skip>
     <jam.native.dir>dist/native</jam.native.dir>
-    <!-- -Djam.native.skip=true reuses a pre-staged dist/native (the release profile forces it) -->
+    <!-- -Djam.native.skip=true reuses a pre-staged dist/native; the release profile skips too, packaging dist/release -->
     <!-- -Djam.natives.check.skip=true bypasses the release gate (the canary, which only checks poms) -->
     <jam.natives.check.skip>false</jam.natives.check.skip>
     <!-- The C suite (ctest) follows surefire's switch: exec runs are not covered by -DskipTests. -->

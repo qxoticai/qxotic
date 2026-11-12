@@ -6,7 +6,6 @@
     <groupId>com.qxotic</groupId>
     <artifactId>jota-aggregator</artifactId>
     <version>0.4.0-rc1</version>
-    <relativePath>../pom.xml</relativePath>
   </parent>
 
   <artifactId>jota-backend-c</artifactId>
@@ -17,8 +16,6 @@
   <properties>
     <c.configure.extraArgs />
     <c.build.extraArgs />
-    <native.dir>${project.basedir}/src/main/native</native.dir>
-    <native.build.dir>${native.dir}/build</native.build.dir>
     <native.library.basename>jota_c</native.library.basename>
     <native.configure.extraArgs>${c.configure.extraArgs}</native.configure.extraArgs>
     <native.build.extraArgs>${c.build.extraArgs}</native.build.extraArgs>
@@ -65,10 +62,6 @@
             </configuration>
           </execution>
         </executions>
-      </plugin>
-      <plugin>
-        <groupId>org.apache.maven.plugins</groupId>
-        <artifactId>maven-resources-plugin</artifactId>
       </plugin>
 
       <plugin>

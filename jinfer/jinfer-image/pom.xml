@@ -1,6 +1,7 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <project xmlns="http://maven.apache.org/POM/4.0.0" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 https://maven.apache.org/xsd/maven-4.0.0.xsd">
   <modelVersion>4.0.0</modelVersion>
+
   <parent>
     <groupId>com.qxotic</groupId>
     <artifactId>jinfer-parent</artifactId>
@@ -8,30 +9,24 @@
   </parent>
 
   <artifactId>jinfer-image</artifactId>
-  <packaging>jar</packaging>
+
   <name>Jinfer Native Image Support</name>
   <description>What every GraalVM native image of jinfer code carries at build time and nothing at run time: the
     feature that pins the kernels' Vector API width to the image's target ISA. A runtime dependency of the image
     modules only, libjinfer, the jinfer command, jinfer-tts and jinfer-bench; it reads the image builder's own
     classes, so it is not published and no library depends on it.</description>
 
-  <properties>
-    <maven.deploy.skip>true</maven.deploy.skip>
-  </properties>
-
   <dependencies>
     <dependency>
       <!-- Feature: the builder supplies it at image build time -->
       <groupId>org.graalvm.sdk</groupId>
       <artifactId>nativeimage</artifactId>
-      <version>${graalvm.sdk.version}</version>
       <scope>provided</scope>
     </dependency>
     <dependency>
       <!-- CPUFeatureAccess, the builder's hosted API for the target's CPU features -->
       <groupId>org.graalvm.nativeimage</groupId>
       <artifactId>svm</artifactId>
-      <version>${graalvm.sdk.version}</version>
       <scope>provided</scope>
     </dependency>
   </dependencies>

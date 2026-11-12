@@ -6,7 +6,6 @@
     <groupId>com.qxotic</groupId>
     <artifactId>jota-aggregator</artifactId>
     <version>0.4.0-rc1</version>
-    <relativePath>../pom.xml</relativePath>
   </parent>
 
   <artifactId>jota-backend-hip</artifactId>
@@ -16,14 +15,11 @@
   <properties>
     <hip.configure.extraArgs />
     <hip.build.extraArgs />
-    <native.dir>${project.basedir}/src/main/native</native.dir>
-    <native.build.dir>${native.dir}/build</native.build.dir>
     <native.library.basename>jota_hip</native.library.basename>
     <native.copy.skip>false</native.copy.skip>
     <native.skip.tests>${skipTests.backend.hip}</native.skip.tests>
     <native.skip.build>${skipNative.backend.hip}</native.skip.build>
-    <rocm.path>${env.ROCM_PATH}</rocm.path>
-    <native.configure.extraArgs>-DROCM_PATH=${rocm.path} ${hip.configure.extraArgs}</native.configure.extraArgs>
+    <native.configure.extraArgs>${hip.configure.extraArgs}</native.configure.extraArgs>
     <native.build.extraArgs>${hip.build.extraArgs}</native.build.extraArgs>
   </properties>
 

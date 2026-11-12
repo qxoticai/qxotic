@@ -6,7 +6,6 @@
     <groupId>com.qxotic</groupId>
     <artifactId>jota-aggregator</artifactId>
     <version>0.4.0-rc1</version>
-    <relativePath>../pom.xml</relativePath>
   </parent>
 
   <artifactId>jota-backend-panama</artifactId>
@@ -52,13 +51,6 @@
             </configuration>
           </execution>
         </executions>
-      </plugin>
-      <plugin>
-        <groupId>org.apache.maven.plugins</groupId>
-        <artifactId>maven-surefire-plugin</artifactId>
-        <configuration>
-          <skipTests>${skipTests.backend.panama}</skipTests>
-        </configuration>
       </plugin>
     </plugins>
   </build>

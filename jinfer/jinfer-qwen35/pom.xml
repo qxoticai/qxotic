@@ -1,18 +1,23 @@
 <?xml version="1.0" encoding="UTF-8"?>
-<project xmlns="http://maven.apache.org/POM/4.0.0" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/xsd/maven-4.0.0.xsd">
+<project xmlns="http://maven.apache.org/POM/4.0.0" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 https://maven.apache.org/xsd/maven-4.0.0.xsd">
   <modelVersion>4.0.0</modelVersion>
+
   <parent>
     <groupId>com.qxotic</groupId>
     <artifactId>jinfer-parent</artifactId>
     <version>0.4.0-rc1</version>
   </parent>
+
   <artifactId>jinfer-qwen35</artifactId>
+
   <name>Jinfer Qwen 3.5+ Provider</name>
   <description>Local chat and vision inference for Alibaba Qwen 3.5 and later models with Jinfer.</description>
+
   <properties>
     <maven.deploy.skip>false</maven.deploy.skip>
     <qxotic.notice.dir>${project.basedir}</qxotic.notice.dir>
   </properties>
+
   <dependencies>
     <dependency>
       <groupId>com.qxotic</groupId>

@@ -44,7 +44,7 @@ Tests run with `--enable-native-access=ALL-UNNAMED`, set once in `jota/pom.xml`,
 Java 25 is required; the root enforcer says so.
 
 Native libraries are packaged under `META-INF/native/<os>/<arch>/`.
-The `os.name` and `os.arch` properties in `jota/pom.xml` are normalised names the loader looks up, set by the platform profiles from the building JVM; `native-aarch64` is what makes Apple Silicon and linux-aarch64 land in the right directory.
+The `jota.native.os` and `jota.native.arch` properties in `jota/pom.xml` are normalised names the loader looks up, set by the platform profiles from the building JVM; `native-aarch64` is what makes Apple Silicon and linux-aarch64 land in the right directory.
 
 ## Architecture
 

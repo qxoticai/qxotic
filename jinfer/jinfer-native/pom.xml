@@ -1,5 +1,5 @@
 <?xml version="1.0" encoding="UTF-8"?>
-<project xmlns="http://maven.apache.org/POM/4.0.0" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/xsd/maven-4.0.0.xsd">
+<project xmlns="http://maven.apache.org/POM/4.0.0" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 https://maven.apache.org/xsd/maven-4.0.0.xsd">
   <modelVersion>4.0.0</modelVersion>
 
   <parent>
@@ -9,7 +9,6 @@
   </parent>
 
   <artifactId>jinfer-native</artifactId>
-  <packaging>jar</packaging>
 
   <name>Jinfer Native Library</name>
   <description>libjinfer: jinfer as a shared library with a C API (include/jinfer.h), built with
@@ -28,7 +27,6 @@
     <shim.wrapper>--native-compiler-path=${maven.multiModuleProjectDirectory}/toknroll/toknroll-native/src/main/c/native-cc.sh</shim.wrapper>
     <!-- the linker line that pulls libjam's archive into the image whole (the windows profile spells it for link.exe) -->
     <jam.link>-H:NativeLinkerOption=-Wl,--whole-archive,${maven.multiModuleProjectDirectory}/jam/jam-native/build/libjam.a,--no-whole-archive</jam.link>
-    <maven.deploy.skip>true</maven.deploy.skip>
   </properties>
 
   <dependencies>
@@ -69,7 +67,6 @@
       <!-- the toknroll_* entry points: libjinfer carries the tokenizer API under toknroll.h -->
       <groupId>com.qxotic</groupId>
       <artifactId>toknroll-native</artifactId>
-      <version>${toknroll.version}</version>
     </dependency>
     <dependency>
       <groupId>com.qxotic</groupId>
@@ -79,7 +76,6 @@
       <!-- the @CEntryPoint annotations and C type views; the image builder supplies them at run time -->
       <groupId>org.graalvm.sdk</groupId>
       <artifactId>nativeimage</artifactId>
-      <version>${graalvm.sdk.version}</version>
       <scope>provided</scope>
     </dependency>
     <dependency>
@@ -108,16 +104,6 @@
       <artifactId>jam-scalar</artifactId>
       <scope>runtime</scope>
     </dependency>
-    <!-- see jinfer-cli: jinfer-kernels' ModelLoader needs both at run time; compile scope keeps
-         them from being shadowed -->
-    <dependency>
-      <groupId>com.qxotic</groupId>
-      <artifactId>jota-core</artifactId>
-    </dependency>
-    <dependency>
-      <groupId>com.qxotic</groupId>
-      <artifactId>jota-memory</artifactId>
-    </dependency>
     <dependency>
       <groupId>com.qxotic</groupId>
       <artifactId>jinfer-testkit</artifactId>
@@ -131,8 +117,8 @@
       <build>
         <plugins>
           <plugin>
-            <!-- The C face of the library is one translation unit, compiled with the platform C
-                 compiler and linked into the image below. -->
+            <!-- The C face of the library, jinfer_shim.c, compiled with the platform C compiler
+                 and linked into the image below. -->
             <groupId>org.codehaus.mojo</groupId>
             <artifactId>exec-maven-plugin</artifactId>
             <executions>
@@ -195,8 +181,9 @@
                 <!-- the shim's jinfer_* symbols are the API; the wrapper adds them to GraalVM's export
                      list, which otherwise names only the image's own entry points -->
                 <buildArg>${shim.wrapper}</buildArg>
-                <!-- native-image runs the compiler in an environment of its own: pass it the soname the
-                     Makefile derives from the version -->
+                <!-- native-image runs the compiler in an environment of its own: name the wrapper's opt-in log -->
+                <buildArg>-ENATIVE_CC_LOG</buildArg>
+                <!-- and the soname the Makefile derives from the version -->
                 <buildArg>-ENATIVE_SONAME</buildArg>
                 <!-- a C library, not a JVM: no JNI_CreateJavaVM and friends in the export table -->
                 <buildArg>-H:-JNIExportSymbols</buildArg>

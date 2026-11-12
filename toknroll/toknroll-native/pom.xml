@@ -1,16 +1,14 @@
 <?xml version="1.0" encoding="UTF-8"?>
-<project xmlns="http://maven.apache.org/POM/4.0.0" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/xsd/maven-4.0.0.xsd">
+<project xmlns="http://maven.apache.org/POM/4.0.0" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 https://maven.apache.org/xsd/maven-4.0.0.xsd">
   <modelVersion>4.0.0</modelVersion>
 
   <parent>
     <groupId>com.qxotic</groupId>
     <artifactId>toknroll-aggregator</artifactId>
     <version>0.4.0-rc1</version>
-    <relativePath>../pom.xml</relativePath>
   </parent>
 
   <artifactId>toknroll-native</artifactId>
-  <packaging>jar</packaging>
 
   <name>Tok'n'Roll Native Library</name>
   <description>libtoknroll: toknroll as a shared library with a C API (include/toknroll.h), built with
@@ -32,9 +30,6 @@
     <shim.out>-o</shim.out>
     <shim.obj>.o</shim.obj>
     <shim.wrapper>--native-compiler-path=${project.basedir}/src/main/c/native-cc.sh</shim.wrapper>
-    <graalvm.sdk.version>25.0.1</graalvm.sdk.version>
-    <native-maven-plugin.version>0.10.6</native-maven-plugin.version>
-    <maven.deploy.skip>true</maven.deploy.skip>
   </properties>
 
   <dependencies>
@@ -62,22 +57,15 @@
       <artifactId>jinfer-hub</artifactId>
     </dependency>
     <dependency>
-      <groupId>org.junit.jupiter</groupId>
-      <artifactId>junit-jupiter</artifactId>
-      <scope>test</scope>
-    </dependency>
-    <dependency>
       <!-- the @CEntryPoint annotations and C type views; the image builder supplies them at run time -->
       <groupId>org.graalvm.sdk</groupId>
       <artifactId>nativeimage</artifactId>
-      <version>${graalvm.sdk.version}</version>
       <scope>provided</scope>
     </dependency>
     <dependency>
       <!-- VectorWidth: the builder's own hosted API (CPUFeatureAccess) -->
       <groupId>org.graalvm.nativeimage</groupId>
       <artifactId>svm</artifactId>
-      <version>${graalvm.sdk.version}</version>
       <scope>provided</scope>
     </dependency>
   </dependencies>
@@ -98,7 +86,6 @@
         <dependency>
           <groupId>com.qxotic</groupId>
           <artifactId>graalvm-annotations</artifactId>
-          <version>${jam.version}</version>
           <scope>provided</scope>
         </dependency>
       </dependencies>
@@ -139,7 +126,6 @@
           <plugin>
             <groupId>org.graalvm.buildtools</groupId>
             <artifactId>native-maven-plugin</artifactId>
-            <version>${native-maven-plugin.version}</version>
             <extensions>true</extensions>
             <configuration>
               <imageName>${toknroll.image.name}</imageName>

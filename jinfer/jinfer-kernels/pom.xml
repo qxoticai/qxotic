@@ -1,5 +1,5 @@
 <?xml version="1.0" encoding="UTF-8"?>
-<project xmlns="http://maven.apache.org/POM/4.0.0" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/xsd/maven-4.0.0.xsd">
+<project xmlns="http://maven.apache.org/POM/4.0.0" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 https://maven.apache.org/xsd/maven-4.0.0.xsd">
   <modelVersion>4.0.0</modelVersion>
 
   <parent>
@@ -9,10 +9,10 @@
   </parent>
 
   <artifactId>jinfer-kernels</artifactId>
-  <packaging>jar</packaging>
 
   <name>Jinfer Kernels</name>
   <description>Compute kernels and GGUF tensor loading for Jinfer model providers.</description>
+
   <properties>
     <maven.deploy.skip>false</maven.deploy.skip>
     <!-- One selection shared by the scalar and both vector-width runs. -->
@@ -69,14 +69,13 @@
              The default runs the whole suite; variants run the affected numerical contracts.
              KernelSelectionTest pins the constants to the requested properties, so a selection
              that silently fell back to the default fails instead of re-testing it. Ordinary
-             executions keep every jam-* jar off the classpath: they test the Java kernels.
+             executions keep every jam backend off the classpath: they test the Java kernels.
              default-test is whatever this machine's compiler selects (jinfer.vectorJit=auto); the
              executions that want the vector kernels to run say vectorJit=fast explicitly, since
              on stock C2 the detection turns them off. -->
         <configuration>
           <reportsDirectory>${project.build.directory}/surefire-reports/default</reportsDirectory>
           <classpathDependencyExcludes>
-            <classpathDependencyExclude>com.qxotic:jam-native</classpathDependencyExclude>
             <classpathDependencyExclude>com.qxotic:jam-vector</classpathDependencyExclude>
             <classpathDependencyExclude>com.qxotic:jam-scalar</classpathDependencyExclude>
           </classpathDependencyExcludes>
@@ -218,8 +217,9 @@
           </execution>
           <execution>
             <!-- jam-rung parity: MatMul.mm (jam-routed) vs MatMul.mmFloor (no jam) needs the
-                 pure-java backends on the classpath; jam-native stays excluded (flaky in the
-                 forked JVM). -->
+                 pure-java backends on the classpath, so neither the classpath nor the test
+                 excludes of the other executions apply; jam-native is not a dependency of
+                 this module. -->
             <id>jam-parity</id>
             <goals>
               <goal>test</goal>
@@ -227,12 +227,8 @@
             <configuration>
               <argLine>@{argLine} ${jinfer.jvm.flags} -Djinfer.kernels.expectJam=vector,scalar</argLine>
               <reportsDirectory>${project.build.directory}/surefire-reports/jam</reportsDirectory>
-              <classpathDependencyExcludes>
-                <classpathDependencyExclude>com.qxotic:jam-native</classpathDependencyExclude>
-              </classpathDependencyExcludes>
-              <excludes>
-                <exclude>none</exclude>
-              </excludes>
+              <classpathDependencyExcludes combine.self="override" />
+              <excludes combine.self="override" />
               <includes>
                 <include>**/MatMulJamParityTest.java</include>
                 <include>**/KernelSelectionTest.java</include>

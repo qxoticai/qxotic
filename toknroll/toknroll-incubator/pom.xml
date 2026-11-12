@@ -6,17 +6,12 @@
     <groupId>com.qxotic</groupId>
     <artifactId>toknroll-aggregator</artifactId>
     <version>0.4.0-rc1</version>
-    <relativePath>../pom.xml</relativePath>
   </parent>
 
   <artifactId>toknroll-incubator</artifactId>
   <name>Tok'n'Roll Incubator</name>
   <description>Experimental Tok'n'Roll tokenizer loaders and
     splitter implementations. Not published to Maven Central.</description>
-
-  <properties>
-    <maven.deploy.skip>true</maven.deploy.skip>
-  </properties>
 
   <dependencies>
     <dependency>
@@ -51,7 +46,6 @@
           <execution>
             <id>default-testCompile</id>
             <configuration>
-              <release>${maven.compiler.testRelease}</release>
               <useModulePath>false</useModulePath>
             </configuration>
           </execution>

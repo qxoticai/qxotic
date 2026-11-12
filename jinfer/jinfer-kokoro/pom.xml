@@ -9,10 +9,10 @@
   </parent>
 
   <artifactId>jinfer-kokoro</artifactId>
-  <packaging>jar</packaging>
 
-  <name>Jinfer Kokoro</name>
-  <description>Native Kokoro text-to-speech inference with Jinfer.</description>
+  <name>Jinfer Kokoro Provider</name>
+  <description>Local text-to-speech inference for hexgrad's Kokoro models with Jinfer.</description>
+
   <properties>
     <maven.deploy.skip>false</maven.deploy.skip>
     <qxotic.notice.dir>${project.basedir}</qxotic.notice.dir>
@@ -57,5 +57,4 @@
       <scope>test</scope>
     </dependency>
   </dependencies>
-
 </project>

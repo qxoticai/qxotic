@@ -6,7 +6,6 @@
     <groupId>com.qxotic</groupId>
     <artifactId>qxotic-parent</artifactId>
     <version>0.2.0</version>
-    <relativePath>../pom.xml</relativePath>
   </parent>
 
   <artifactId>jota-aggregator</artifactId>
@@ -40,7 +39,6 @@
     <jota.test.device>panama</jota.test.device>
     <jota.test.backends>single</jota.test.backends>
     <jota.native.backend>native</jota.native.backend>
-    <jota.cuda.requested>false</jota.cuda.requested>
 
     <!-- Backend test skipping: panama (pure Java, no toolchain) is always on; the native and
          GPU backends stay opt-in via their profiles (-Pc, -Phip, -Pcuda, -Pmojo, -Pmetal,
@@ -48,7 +46,6 @@
          is honored everywhere even when a profile enables a backend. -->
     <skipTests>false</skipTests>
     <skipTests.backend.c>true</skipTests.backend.c>
-    <skipTests.backend.panama>${skipTests}</skipTests.backend.panama>
     <skipTests.backend.hip>true</skipTests.backend.hip>
     <skipTests.backend.cuda>true</skipTests.backend.cuda>
     <skipTests.backend.mojo>true</skipTests.backend.mojo>
@@ -66,16 +63,18 @@
     <!-- Shared native backend build properties (overridden per backend module) -->
     <native.dir>${project.basedir}/src/main/native</native.dir>
     <native.build.dir>${native.dir}/build</native.build.dir>
-    <native.resource.dir>${project.build.outputDirectory}/META-INF/native/${os.name}/${os.arch}</native.resource.dir>
+    <native.resource.dir>${project.build.outputDirectory}/META-INF/native/${jota.native.os}/${jota.native.arch}</native.resource.dir>
     <!-- Normalised names the runtime loader looks up (linux|macos|windows, x86_64|aarch64);
          the platform profiles below set them from the building JVM. -->
-    <os.name>linux</os.name>
-    <os.arch>x86_64</os.arch>
+    <jota.native.os>linux</jota.native.os>
+    <jota.native.arch>x86_64</jota.native.arch>
     <native.cmake.executable>cmake</native.cmake.executable>
     <native.build.type>Release</native.build.type>
     <native.configure.extraArgs />
     <native.build.extraArgs />
-    <native.configure.commandline>-S ${native.dir} -B ${native.build.dir} ${native.configure.extraArgs}</native.configure.commandline>
+    <!-- The build type goes to both steps: single-config generators (Makefiles, Ninja) read it at
+         configure time, multi-config ones (Visual Studio, Xcode) at build time. -->
+    <native.configure.commandline>-S ${native.dir} -B ${native.build.dir} -DCMAKE_BUILD_TYPE=${native.build.type} ${native.configure.extraArgs}</native.configure.commandline>
     <native.build.commandline>--build ${native.build.dir} --config ${native.build.type} --target ${native.library.basename} ${native.build.extraArgs}</native.build.commandline>
     <native.library.basename>unset</native.library.basename>
     <native.copy.skip>true</native.copy.skip>
@@ -158,7 +157,6 @@
         </plugin>
       </plugins>
     </pluginManagement>
-    <plugins />
   </build>
 
   <profiles>
@@ -167,7 +165,6 @@
       <id>c</id>
       <properties>
         <jota.test.device>c</jota.test.device>
-        <jota.test.backends>single</jota.test.backends>
         <jota.native.backend>c</jota.native.backend>
         <skipTests.backend.c>${skipTests}</skipTests.backend.c>
         <skipNative.backend.c>false</skipNative.backend.c>
@@ -212,7 +209,6 @@ exit 1)</argument>
       <id>hip</id>
       <properties>
         <jota.test.device>hip</jota.test.device>
-        <jota.test.backends>single</jota.test.backends>
         <jota.native.backend>panama</jota.native.backend>
         <skipTests.backend.hip>${skipTests}</skipTests.backend.hip>
         <skipNative.backend.hip>false</skipNative.backend.hip>
@@ -256,26 +252,20 @@ exit 1)</argument>
     <profile>
       <id>cuda</id>
       <properties>
-        <jota.cuda.requested>true</jota.cuda.requested>
         <jota.test.device>cuda</jota.test.device>
-        <jota.test.backends>single</jota.test.backends>
         <jota.native.backend>panama</jota.native.backend>
         <skipTests.backend.cuda>${skipTests}</skipTests.backend.cuda>
         <skipNative.backend.cuda>false</skipNative.backend.cuda>
       </properties>
     </profile>
 
-    <!-- CUDA unsupported on macOS: keep profile as no-op -->
+    <!-- CUDA is unsupported on macOS: declared after the cuda profile, so it wins over -Pcuda there -->
     <profile>
       <id>cuda-macos-skip</id>
       <activation>
         <os>
           <family>mac</family>
         </os>
-        <property>
-          <name>jota.cuda.requested</name>
-          <value>true</value>
-        </property>
       </activation>
       <properties>
         <skipTests.backend.cuda>true</skipTests.backend.cuda>
@@ -288,7 +278,6 @@ exit 1)</argument>
       <id>mojo</id>
       <properties>
         <jota.test.device>mojo</jota.test.device>
-        <jota.test.backends>single</jota.test.backends>
         <jota.native.backend>panama</jota.native.backend>
         <skipTests.backend.mojo>${skipTests}</skipTests.backend.mojo>
         <skipNative.backend.mojo>false</skipNative.backend.mojo>
@@ -330,7 +319,6 @@ exit 1)</argument>
       <id>metal</id>
       <properties>
         <jota.test.device>metal</jota.test.device>
-        <jota.test.backends>single</jota.test.backends>
         <jota.native.backend>panama</jota.native.backend>
         <skipTests.backend.metal>${skipTests}</skipTests.backend.metal>
         <skipNative.backend.metal>false</skipNative.backend.metal>
@@ -376,7 +364,6 @@ exit 1)</argument>
       <id>opencl</id>
       <properties>
         <jota.test.device>opencl</jota.test.device>
-        <jota.test.backends>single</jota.test.backends>
         <jota.native.backend>panama</jota.native.backend>
         <skipTests.backend.opencl>${skipTests}</skipTests.backend.opencl>
         <skipNative.backend.opencl>false</skipNative.backend.opencl>
@@ -443,7 +430,7 @@ exit 1)</argument>
         </os>
       </activation>
       <properties>
-        <os.name>windows</os.name>
+        <jota.native.os>windows</jota.native.os>
       </properties>
     </profile>
     <profile>
@@ -454,7 +441,7 @@ exit 1)</argument>
         </os>
       </activation>
       <properties>
-        <os.name>linux</os.name>
+        <jota.native.os>linux</jota.native.os>
       </properties>
     </profile>
     <profile>
@@ -465,7 +452,7 @@ exit 1)</argument>
         </os>
       </activation>
       <properties>
-        <os.name>macos</os.name>
+        <jota.native.os>macos</jota.native.os>
       </properties>
     </profile>
     <profile>
@@ -476,24 +463,7 @@ exit 1)</argument>
         </os>
       </activation>
       <properties>
-        <os.arch>aarch64</os.arch>
-      </properties>
-    </profile>
-
-    <!-- CI profile: native builds expected from matrix artifacts -->
-    <profile>
-      <id>ci-natives</id>
-      <activation>
-        <property>
-          <name>env.CI</name>
-        </property>
-      </activation>
-      <properties>
-        <skipNative.backend.c>true</skipNative.backend.c>
-        <skipNative.backend.hip>true</skipNative.backend.hip>
-        <skipNative.backend.cuda>true</skipNative.backend.cuda>
-        <skipNative.backend.metal>true</skipNative.backend.metal>
-        <skipNative.backend.opencl>true</skipNative.backend.opencl>
+        <jota.native.arch>aarch64</jota.native.arch>
       </properties>
     </profile>
 

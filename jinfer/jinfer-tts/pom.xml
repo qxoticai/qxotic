@@ -1,5 +1,5 @@
 <?xml version="1.0" encoding="UTF-8"?>
-<project xmlns="http://maven.apache.org/POM/4.0.0" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/xsd/maven-4.0.0.xsd">
+<project xmlns="http://maven.apache.org/POM/4.0.0" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 https://maven.apache.org/xsd/maven-4.0.0.xsd">
   <modelVersion>4.0.0</modelVersion>
 
   <parent>
@@ -9,7 +9,6 @@
   </parent>
 
   <artifactId>jinfer-tts</artifactId>
-  <packaging>jar</packaging>
 
   <name>Jinfer Text to Speech</name>
   <description>Generic command line and native executable for Jinfer speech models. Not published to Maven Central.</description>
@@ -17,7 +16,6 @@
   <properties>
     <jinfer.image.name>jinfer-tts</jinfer.image.name>
     <jinfer.image.mainClass>com.qxotic.jinfer.tts.TtsCli</jinfer.image.mainClass>
-    <maven.deploy.skip>true</maven.deploy.skip>
   </properties>
 
   <dependencies>

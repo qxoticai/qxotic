@@ -6,7 +6,6 @@
     <groupId>com.qxotic</groupId>
     <artifactId>qxotic-parent</artifactId>
     <version>0.2.0</version>
-    <relativePath>../pom.xml</relativePath>
   </parent>
 
   <artifactId>toknroll-aggregator</artifactId>
@@ -33,46 +32,21 @@
     <!-- Tok'n'Roll targets Java 11 bytecode -->
     <maven.compiler.release>11</maven.compiler.release>
     <maven.compiler.testRelease>17</maven.compiler.testRelease>
-    <!-- toknroll-core binds surefire's skipTests to this knob (for reactor dependency-module
-         runs). It defaults FROM the standard flag so -DskipTests keeps working, and can still
-         be set directly: -Dtoknroll.skipDependentTests=true. -->
-    <skipTests>false</skipTests>
-    <toknroll.skipDependentTests>${skipTests}</toknroll.skipDependentTests>
     <!-- corpus = needs only the enwik8 corpus (make test-fixtures); CI opts it back in. -->
-    <surefire.baseExcludedGroups>local-external,network,corpus</surefire.baseExcludedGroups>
-    <surefire.excludedGroups>${surefire.baseExcludedGroups}</surefire.excludedGroups>
+    <surefire.excludedGroups>local-external,network,corpus</surefire.excludedGroups>
   </properties>
 
   <dependencyManagement>
     <dependencies>
-      <dependency>
-        <groupId>com.qxotic</groupId>
-        <artifactId>toknroll-core</artifactId>
-        <version>${toknroll.version}</version>
-      </dependency>
+      <!-- The rest of toknroll is managed in the root POM. -->
       <dependency>
         <groupId>com.qxotic</groupId>
         <artifactId>toknroll-vector</artifactId>
-        <version>${project.version}</version>
-      </dependency>
-      <dependency>
-        <groupId>com.qxotic</groupId>
-        <artifactId>toknroll-gguf</artifactId>
-        <version>${toknroll.version}</version>
-      </dependency>
-      <dependency>
-        <groupId>com.qxotic</groupId>
-        <artifactId>toknroll-hf</artifactId>
         <version>${toknroll.version}</version>
       </dependency>
       <dependency>
         <groupId>com.qxotic</groupId>
         <artifactId>toknroll-testkit</artifactId>
-        <version>${toknroll.version}</version>
-      </dependency>
-      <dependency>
-        <groupId>com.qxotic</groupId>
-        <artifactId>toknroll-incubator</artifactId>
         <version>${toknroll.version}</version>
       </dependency>
     </dependencies>

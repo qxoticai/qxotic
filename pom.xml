@@ -108,7 +108,8 @@
     <jmh.version>1.37</jmh.version>
     <jackson-databind.version>2.22.4</jackson-databind.version>
     <commons-compress.version>1.28.0</commons-compress.version>
-    <commons-io.version>2.20.0</commons-io.version>
+    <!-- the GraalVM SDK the image modules compile against (provided; the builder supplies it) -->
+    <graalvm.sdk.version>25.0.1</graalvm.sdk.version>
 
     <!-- Plugin versions -->
     <maven-clean-plugin.version>3.5.0</maven-clean-plugin.version>
@@ -123,7 +124,7 @@
     <maven-help-plugin.version>3.5.2</maven-help-plugin.version>
     <maven-gpg-plugin.version>3.2.7</maven-gpg-plugin.version>
     <maven-enforcer-plugin.version>3.5.0</maven-enforcer-plugin.version>
-    <!-- default-lifecycle plugin; pinned so requirePluginVersions has nothing implicit -->
+    <!-- site-lifecycle plugin; pinned so requirePluginVersions has nothing implicit -->
     <maven-site-plugin.version>3.12.1</maven-site-plugin.version>
     <maven-source-plugin.version>3.3.1</maven-source-plugin.version>
     <maven-javadoc-plugin.version>3.10.1</maven-javadoc-plugin.version>
@@ -134,6 +135,7 @@
     <google-java-format.version>1.27.0</google-java-format.version>
     <jacoco-maven-plugin.version>0.8.14</jacoco-maven-plugin.version>
     <exec-maven-plugin.version>3.4.1</exec-maven-plugin.version>
+    <native-maven-plugin.version>0.10.6</native-maven-plugin.version>
   </properties>
 
   <dependencyManagement>
@@ -195,9 +197,14 @@
         <version>${commons-compress.version}</version>
       </dependency>
       <dependency>
-        <groupId>commons-io</groupId>
-        <artifactId>commons-io</artifactId>
-        <version>${commons-io.version}</version>
+        <groupId>org.graalvm.sdk</groupId>
+        <artifactId>nativeimage</artifactId>
+        <version>${graalvm.sdk.version}</version>
+      </dependency>
+      <dependency>
+        <groupId>org.graalvm.nativeimage</groupId>
+        <artifactId>svm</artifactId>
+        <version>${graalvm.sdk.version}</version>
       </dependency>
 
       <!-- Internal modules -->
@@ -298,6 +305,11 @@
       </dependency>
       <dependency>
         <groupId>com.qxotic</groupId>
+        <artifactId>toknroll-native</artifactId>
+        <version>${toknroll.version}</version>
+      </dependency>
+      <dependency>
+        <groupId>com.qxotic</groupId>
         <artifactId>jam-core</artifactId>
         <version>${jam.version}</version>
       </dependency>
@@ -316,8 +328,8 @@
         <artifactId>jam-vector</artifactId>
         <version>${jam.version}</version>
       </dependency>
-      <!-- Compile-only stub of GraalVM's @AlwaysInline. Always depend on it with <scope>provided</scope>
-           so it is not bundled: on a native-image build the real annotation comes from the builder. -->
+      <!-- Compile-only stub of GraalVM's @AlwaysInline. Its scope is managed here as provided so it is
+           never bundled: on a native-image build the real annotation comes from the builder. -->
       <dependency>
         <groupId>com.qxotic</groupId>
         <artifactId>graalvm-annotations</artifactId>
@@ -423,6 +435,11 @@
           <version>${exec-maven-plugin.version}</version>
         </plugin>
         <plugin>
+          <groupId>org.graalvm.buildtools</groupId>
+          <artifactId>native-maven-plugin</artifactId>
+          <version>${native-maven-plugin.version}</version>
+        </plugin>
+        <plugin>
           <groupId>org.apache.maven.plugins</groupId>
           <artifactId>maven-dependency-plugin</artifactId>
           <version>${maven-dependency-plugin.version}</version>
@@ -506,6 +523,11 @@
                  but every module inherits the same https://qxotic.ai, so the links are wrong, and
                  dependency-only modules have no apidocs to link -->
             <detectOfflineLinks>false</detectOfflineLinks>
+            <!-- doclint checks CORRECTNESS, not presence: broken @link, bad references and
+                 malformed HTML fail the build; a missing @param on a self-evident argument does
+                 not. A doc that says "@param n the n" is noise, and a policy that demands one
+                 produces a hundred of them. -->
+            <doclint>all,-missing</doclint>
             <!-- the standard web fonts are 4 MB of every javadoc jar; readers fall back to system fonts -->
             <additionalOptions>
               <additionalOption>--no-fonts</additionalOption>
@@ -606,9 +628,6 @@
           <plugin>
             <groupId>org.apache.maven.plugins</groupId>
             <artifactId>maven-javadoc-plugin</artifactId>
-            <configuration>
-              <doclint>all,-missing</doclint>
-            </configuration>
             <executions>
               <execution>
                 <id>attach-javadocs</id>
@@ -674,28 +693,6 @@
                   <goal>clean</goal>
                 </goals>
                 <phase>clean</phase>
-              </execution>
-            </executions>
-          </plugin>
-        </plugins>
-      </build>
-    </profile>
-
-    <!-- Format profile: apply formatting -->
-    <profile>
-      <id>format</id>
-      <build>
-        <plugins>
-          <plugin>
-            <groupId>com.diffplug.spotless</groupId>
-            <artifactId>spotless-maven-plugin</artifactId>
-            <executions>
-              <execution>
-                <id>spotless-apply</id>
-                <goals>
-                  <goal>apply</goal>
-                </goals>
-                <phase>process-sources</phase>
               </execution>
             </executions>
           </plugin>

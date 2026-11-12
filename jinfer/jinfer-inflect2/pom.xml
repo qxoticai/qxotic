@@ -9,10 +9,10 @@
   </parent>
 
   <artifactId>jinfer-inflect2</artifactId>
-  <packaging>jar</packaging>
 
   <name>Jinfer Inflect 2 Provider</name>
   <description>Local text-to-speech inference for Owen Song's Inflect 2 models with Jinfer.</description>
+
   <properties>
     <maven.deploy.skip>false</maven.deploy.skip>
     <qxotic.notice.dir>${project.basedir}</qxotic.notice.dir>
@@ -58,5 +58,4 @@
       <scope>test</scope>
     </dependency>
   </dependencies>
-
 </project>

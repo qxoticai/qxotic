@@ -122,9 +122,6 @@ desktop.ini
 
 # Raytracer output
 
-# Shade's dependency-reduced pom (generated at package time)
-**/dependency-reduced-pom.xml
-
 test-fixtures
 
 # Docusaurus

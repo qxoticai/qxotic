@@ -1,5 +1,5 @@
 <?xml version="1.0" encoding="UTF-8"?>
-<project xmlns="http://maven.apache.org/POM/4.0.0" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/xsd/maven-4.0.0.xsd">
+<project xmlns="http://maven.apache.org/POM/4.0.0" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 https://maven.apache.org/xsd/maven-4.0.0.xsd">
   <modelVersion>4.0.0</modelVersion>
 
   <parent>
@@ -59,17 +59,7 @@
   </modules>
 
   <properties>
-    <!-- This POM's version, written out: in an artifact that declares its own,
-         ${project.version} would mean that one. -->
-    <jinfer.version>0.4.0-rc1</jinfer.version>
     <maven.compiler.release>25</maven.compiler.release>
-
-    <native-maven-plugin.version>0.10.6</native-maven-plugin.version>
-
-    <!-- Per-executable knobs for the shared shade + native-image config below. A module that ships a
-         binary overrides jinfer.image.name/mainClass; everything else inherits the defaults. -->
-    <jinfer.image.name>jinfer</jinfer.image.name>
-    <jinfer.image.mainClass>com.qxotic.jinfer.cli.Main</jinfer.image.mainClass>
 
     <!-- native builder opt-in: wide 512-bit register tiles (needs a 32-ZMM Graal, GR-13757) -->
     <jam.wideTiles>false</jam.wideTiles>
@@ -111,7 +101,7 @@
     <jinfer.jvm.flags>--add-modules jdk.incubator.vector,jdk.httpserver --enable-native-access=ALL-UNNAMED</jinfer.jvm.flags>
     <jinfer.preload />
 
-    <!-- Spring provider modules -->
+    <!-- Provider frameworks: LangChain4j and Spring AI -->
     <langchain4j.version>1.23.0</langchain4j.version>
     <spring-ai.version>2.1.0-RC2</spring-ai.version>
     <!-- enforcer pin, see dependencyManagement -->
@@ -123,9 +113,7 @@
     <reactive-streams.version>1.0.4</reactive-streams.version>
     <micrometer.version>1.18.0-RC2</micrometer.version>
 
-    <!-- the GraalVM SDK the image modules compile against (provided; the builder supplies it) -->
-    <graalvm.sdk.version>25.0.1</graalvm.sdk.version>
-    <!-- test libraries shared by the backend modules -->
+    <!-- test libraries shared by the provider modules -->
     <assertj.version>3.27.7</assertj.version>
     <mockito.version>5.23.0</mockito.version>
   </properties>
@@ -249,16 +237,6 @@
       </dependency>
       <dependency>
         <groupId>com.qxotic</groupId>
-        <artifactId>jinfer-bench</artifactId>
-        <version>${jinfer.version}</version>
-      </dependency>
-      <dependency>
-        <groupId>com.qxotic</groupId>
-        <artifactId>jinfer-hub</artifactId>
-        <version>${jinfer.version}</version>
-      </dependency>
-      <dependency>
-        <groupId>com.qxotic</groupId>
         <artifactId>jinfer-testkit</artifactId>
         <version>${jinfer.version}</version>
       </dependency>
@@ -335,7 +313,7 @@
         <version>${mockito.version}</version>
       </dependency>
       <!-- enforcer pin for the Spring AI modules: jsonschema-generator pulls jackson-core
-           3.0.3, spring-ai-model wants 3.1.5 (inert for every other module) -->
+           3.0.3, below what spring-ai-model wants (inert for every other module) -->
       <dependency>
         <groupId>tools.jackson.core</groupId>
         <artifactId>jackson-core</artifactId>
@@ -372,17 +350,12 @@
           <groupId>org.apache.maven.plugins</groupId>
           <artifactId>maven-javadoc-plugin</artifactId>
           <configuration>
-            <!-- doclint checks CORRECTNESS, not presence: broken @link, bad references and
-                 malformed HTML fail the build; a missing @param on a self-evident argument does
-                 not. A doc that says "@param n the n" is noise, and a policy that demands one
-                 produces a hundred of them. Incubator module flags mirror the compiler's, or
-                 javadoc cannot resolve the types it is documenting. -->
-            <doclint>all,-missing</doclint>
+            <!-- Incubator module flags mirror the compiler's, or javadoc cannot resolve the types it
+                 is documenting. -->
             <additionalOptions combine.children="append">
               <additionalOption>--add-modules</additionalOption>
               <additionalOption>jdk.incubator.vector,jdk.httpserver</additionalOption>
             </additionalOptions>
-            <source>${maven.compiler.release}</source>
             <quiet>true</quiet>
           </configuration>
         </plugin>
@@ -443,33 +416,25 @@
                   </transformer>
                   <!-- merge META-INF/services across modules (ModelProvider arch dispatch) -->
                   <transformer implementation="org.apache.maven.plugins.shade.resource.ServicesResourceTransformer" />
-                  <!-- All in-house jars carry the same canonical META-INF/LICENSE and NOTICE from
-                       the qxotic parent; first-wins keeps one copy (appending would duplicate the
-                       identical text once per shaded jar). The .txt/.md variants stay appending
-                       for future third-party cargo. -->
+                  <!-- Third-party LICENSE.txt / LICENSE.md: appended, one section per jar. -->
                   <transformer implementation="org.apache.maven.plugins.shade.resource.AppendingTransformer">
                     <resource>META-INF/LICENSE.txt</resource>
                   </transformer>
                   <transformer implementation="org.apache.maven.plugins.shade.resource.AppendingTransformer">
                     <resource>META-INF/LICENSE.md</resource>
                   </transformer>
-                  <transformer implementation="org.apache.maven.plugins.shade.resource.AppendingTransformer">
-                    <resource>META-INF/NOTICE.txt</resource>
-                  </transformer>
-                  <transformer implementation="org.apache.maven.plugins.shade.resource.AppendingTransformer">
-                    <resource>META-INF/NOTICE.md</resource>
-                  </transformer>
                 </transformers>
                 <!-- A shaded jar is one classpath jar. The JPMS descriptors of the modules it
-                     swallows (jota, jam, toknroll, gguf, json, jinfer-hub) would each declare a
-                     module that no longer exists, so they stay out; so do the manifests the
-                     transformer below regenerates. Every jar of ours embeds the same LICENSE and
+                     swallows (jota, jam, toknroll, gguf, json, fetch, jinfer-hub) would each declare
+                     a module that no longer exists, so they stay out; so do the manifests the
+                     transformer above regenerates. Every jar of ours embeds the same LICENSE and
                      the same jpms.args, so every copy stays out and each comes in once from its
-                     canonical file - the reactor's LICENSE, this module's generated jpms.args. NOTICE
-                     is the exception: six modules
-                     carry attributions of their own (llama.cpp, ggml, llamafile, espeak, Kokoro),
-                     and a fat jar must carry every one of them - merged paragraph by paragraph (the
-                     Apache NOTICE transformer keeps identical text once), never picked. -->
+                     canonical file - the reactor's LICENSE, this module's generated jpms.args.
+                     NOTICE is the exception: six modules carry attributions of their own
+                     (llama.cpp, ggml, llamafile, espeak, Kokoro), and a fat jar must carry every
+                     one of them - merged paragraph by paragraph (the Apache NOTICE transformer,
+                     which also takes NOTICE.txt and NOTICE.md, keeps identical text once), never
+                     picked. -->
                 <filters>
                   <filter>
                     <artifact>*:*</artifact>
@@ -508,7 +473,6 @@
         <plugin>
           <groupId>org.graalvm.buildtools</groupId>
           <artifactId>native-maven-plugin</artifactId>
-          <version>${native-maven-plugin.version}</version>
           <extensions>true</extensions>
           <configuration>
             <imageName>${jinfer.image.name}</imageName>
@@ -521,8 +485,8 @@
               <buildArg>-Djam.vector.wideTiles=${jam.wideTiles}</buildArg>
               <buildArg>-march=${jinfer.image.march}</buildArg>
               <buildArg>-Djinfer.vectorBitSize=${jinfer.image.vectorBits}</buildArg>
-              <buildArg>-EMACOSX_DEPLOYMENT_TARGET</buildArg>
               <!-- the builder filters the environment; the Makefiles export 14.0 on macOS -->
+              <buildArg>-EMACOSX_DEPLOYMENT_TARGET</buildArg>
               <!-- downloads go through curl as a process (fetch's CurlTransport): no TLS stack in the image -->
               <buildArg>-H:+UnlockExperimentalVMOptions</buildArg>
               <buildArg>-H:ServiceLoaderFeatureExcludeServiceProviders=com.qxotic.fetch.JdkTransport</buildArg>

@@ -6,7 +6,6 @@
     <groupId>com.qxotic</groupId>
     <artifactId>jota-aggregator</artifactId>
     <version>0.4.0-rc1</version>
-    <relativePath>../pom.xml</relativePath>
   </parent>
 
   <artifactId>jota-backend-cuda</artifactId>
@@ -16,8 +15,6 @@
   <properties>
     <cuda.configure.extraArgs />
     <cuda.build.extraArgs />
-    <native.dir>${project.basedir}/src/main/native</native.dir>
-    <native.build.dir>${native.dir}/build</native.build.dir>
     <native.library.basename>jota_cuda</native.library.basename>
     <native.copy.skip>false</native.copy.skip>
     <native.skip.tests>${skipTests.backend.cuda}</native.skip.tests>

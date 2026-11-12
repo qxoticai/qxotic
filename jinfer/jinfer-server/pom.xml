@@ -9,6 +9,7 @@
   </parent>
 
   <artifactId>jinfer-server</artifactId>
+
   <name>Jinfer OpenAI-compatible Server</name>
   <description>OpenAI-compatible HTTP server for Jinfer: chat completions, text
     completions, responses, and tokenization over a locally loaded model.</description>

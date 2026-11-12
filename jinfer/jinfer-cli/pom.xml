@@ -1,5 +1,5 @@
 <?xml version="1.0" encoding="UTF-8"?>
-<project xmlns="http://maven.apache.org/POM/4.0.0" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/xsd/maven-4.0.0.xsd">
+<project xmlns="http://maven.apache.org/POM/4.0.0" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 https://maven.apache.org/xsd/maven-4.0.0.xsd">
   <modelVersion>4.0.0</modelVersion>
 
   <parent>
@@ -9,7 +9,6 @@
   </parent>
 
   <artifactId>jinfer-cli</artifactId>
-  <packaging>jar</packaging>
 
   <name>Jinfer CLI</name>
   <description>Command-line applications for Jinfer models: chat, one-shot generation,
@@ -101,18 +100,6 @@
       <artifactId>jinfer-testkit</artifactId>
       <scope>test</scope>
     </dependency>
-    <!-- Not imported by main sources, but jinfer-kernels' ModelLoader needs both on the
-         RUNTIME classpath of the shaded CLI jar and the native image. Compile scope is
-         load-bearing here: a narrower scope would shadow jinfer-kernels' transitive
-         compile edge (nearest-wins) and strip them from the shade. -->
-    <dependency>
-      <groupId>com.qxotic</groupId>
-      <artifactId>jota-core</artifactId>
-    </dependency>
-    <dependency>
-      <groupId>com.qxotic</groupId>
-      <artifactId>jota-memory</artifactId>
-    </dependency>
   </dependencies>
 
   <!-- The shade + native-image configuration lives in jinfer-parent's pluginManagement; this
@@ -124,21 +111,28 @@
         <groupId>org.apache.maven.plugins</groupId>
         <artifactId>maven-shade-plugin</artifactId>
       </plugin>
-      <plugin>
-        <!-- What ships here carries its dependencies, so the published POM must not ask for them
-             again: jbang and Maven would download every jar a second time. -->
-        <groupId>org.codehaus.mojo</groupId>
-        <artifactId>flatten-maven-plugin</artifactId>
-        <configuration>
-          <pomElements>
-            <dependencies>remove</dependencies>
-          </pomElements>
-        </configuration>
-      </plugin>
     </plugins>
   </build>
 
   <profiles>
+    <profile>
+      <id>release</id>
+      <build>
+        <plugins>
+          <plugin>
+            <!-- What ships here carries its dependencies, so the published POM must not ask for
+                 them again: jbang and Maven would download every jar a second time. -->
+            <groupId>org.codehaus.mojo</groupId>
+            <artifactId>flatten-maven-plugin</artifactId>
+            <configuration>
+              <pomElements>
+                <dependencies>remove</dependencies>
+              </pomElements>
+            </configuration>
+          </plugin>
+        </plugins>
+      </build>
+    </profile>
     <profile>
       <id>native</id>
       <build>

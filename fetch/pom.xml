@@ -43,16 +43,7 @@
         <groupId>org.apache.maven.plugins</groupId>
         <artifactId>maven-surefire-plugin</artifactId>
         <configuration>
-          <argLine>--add-modules jdk.httpserver --add-reads com.qxotic.fetch=jdk.httpserver</argLine>
-        </configuration>
-      </plugin>
-      <plugin>
-        <groupId>org.apache.maven.plugins</groupId>
-        <artifactId>maven-javadoc-plugin</artifactId>
-        <configuration>
-          <sourceFileExcludes>
-            <sourceFileExclude>**/module-info.java</sourceFileExclude>
-          </sourceFileExcludes>
+          <argLine>@{argLine} --add-modules jdk.httpserver --add-reads com.qxotic.fetch=jdk.httpserver</argLine>
         </configuration>
       </plugin>
     </plugins>

@@ -6,7 +6,6 @@
     <groupId>com.qxotic</groupId>
     <artifactId>qxotic-parent</artifactId>
     <version>0.2.0</version>
-    <relativePath>../pom.xml</relativePath>
   </parent>
 
   <artifactId>gguf</artifactId>
@@ -18,19 +17,4 @@
   <properties>
     <maven.deploy.skip>false</maven.deploy.skip>
   </properties>
-
-  <build>
-    <plugins>
-      <plugin>
-        <groupId>org.apache.maven.plugins</groupId>
-        <artifactId>maven-javadoc-plugin</artifactId>
-        <configuration>
-          <excludePackageNames>com.qxotic.format.gguf.impl</excludePackageNames>
-          <sourceFileExcludes>
-            <sourceFileExclude>**/module-info.java</sourceFileExclude>
-          </sourceFileExcludes>
-        </configuration>
-      </plugin>
-    </plugins>
-  </build>
 </project>

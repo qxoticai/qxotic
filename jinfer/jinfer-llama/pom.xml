@@ -9,10 +9,10 @@
   </parent>
 
   <artifactId>jinfer-llama</artifactId>
-  <packaging>jar</packaging>
 
   <name>Jinfer Llama Provider</name>
   <description>Local chat inference for Meta Llama, Mistral AI Mistral, OpenBMB MiniCPM, Hugging Face SmolLM, and IBM Granite models with Jinfer.</description>
+
   <properties>
     <maven.deploy.skip>false</maven.deploy.skip>
   </properties>
@@ -66,5 +66,4 @@
       <scope>test</scope>
     </dependency>
   </dependencies>
-
 </project>

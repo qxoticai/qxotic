@@ -9,11 +9,11 @@
   </parent>
 
   <artifactId>jinfer-models-all</artifactId>
-  <packaging>jar</packaging>
 
   <name>Jinfer Model Providers Bundle</name>
   <description>Dependency bundle containing every published Jinfer model provider. Applications can
     instead depend on individual providers to reduce their runtime classpath.</description>
+
   <properties>
     <maven.deploy.skip>false</maven.deploy.skip>
     <!-- No sources: javadoc has nothing to document, and Maven Central still requires the jar.

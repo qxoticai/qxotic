@@ -6,17 +6,12 @@
     <groupId>com.qxotic</groupId>
     <artifactId>toknroll-aggregator</artifactId>
     <version>0.4.0-rc1</version>
-    <relativePath>../pom.xml</relativePath>
   </parent>
 
   <artifactId>toknroll-benchmarks</artifactId>
   <name>Tok'n'Roll Benchmarks</name>
   <description>Benchmark and exploratory tokenizer workloads for
     Tok'n'Roll. Not published to Maven Central.</description>
-
-  <properties>
-    <maven.deploy.skip>true</maven.deploy.skip>
-  </properties>
 
   <dependencies>
     <dependency>
@@ -47,12 +42,6 @@
     <dependency>
       <groupId>org.openjdk.jmh</groupId>
       <artifactId>jmh-core</artifactId>
-      <scope>test</scope>
-    </dependency>
-    <dependency>
-      <groupId>org.openjdk.jmh</groupId>
-      <artifactId>jmh-generator-annprocess</artifactId>
-      <scope>test</scope>
     </dependency>
   </dependencies>
 
@@ -84,7 +73,6 @@
           <execution>
             <id>default-testCompile</id>
             <configuration>
-              <release>${maven.compiler.testRelease}</release>
               <useModulePath>false</useModulePath>
               <annotationProcessorPaths>
                 <path>

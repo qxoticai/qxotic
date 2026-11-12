@@ -13,8 +13,7 @@
        since that is where everything outside safetensors resolves it. -->
   <version>0.4.0-rc1</version>
   <name>Quixotic Safetensors</name>
-  <description>Java library for reading and writing Hugging Face Safetensors tensor
-    files.</description>
+  <description>Java library for reading and writing Hugging Face Safetensors tensor files.</description>
   <properties>
     <maven.deploy.skip>false</maven.deploy.skip>
   </properties>
@@ -25,19 +24,4 @@
       <artifactId>json</artifactId>
     </dependency>
   </dependencies>
-
-  <build>
-    <plugins>
-      <plugin>
-        <groupId>org.apache.maven.plugins</groupId>
-        <artifactId>maven-javadoc-plugin</artifactId>
-        <configuration>
-          <excludePackageNames>com.qxotic.format.safetensors.impl</excludePackageNames>
-          <sourceFileExcludes>
-            <sourceFileExclude>**/module-info.java</sourceFileExclude>
-          </sourceFileExcludes>
-        </configuration>
-      </plugin>
-    </plugins>
-  </build>
 </project>

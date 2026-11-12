@@ -15,6 +15,7 @@
 
   <name>Jinfer BOM</name>
   <description>Version catalog for Jinfer and its Jota, GGUF, Tok'n'Roll, and JAM dependencies.</description>
+
   <properties>
     <maven.deploy.skip>false</maven.deploy.skip>
   </properties>
@@ -213,6 +214,11 @@
       </dependency>
       <dependency>
         <groupId>com.qxotic</groupId>
+        <artifactId>fetch</artifactId>
+        <version>0.1.0</version>
+      </dependency>
+      <dependency>
+        <groupId>com.qxotic</groupId>
         <artifactId>toknroll-core</artifactId>
         <version>0.4.0-rc1</version>
       </dependency>
@@ -224,6 +230,11 @@
       <dependency>
         <groupId>com.qxotic</groupId>
         <artifactId>toknroll-hf</artifactId>
+        <version>0.4.0-rc1</version>
+      </dependency>
+      <dependency>
+        <groupId>com.qxotic</groupId>
+        <artifactId>toknroll-vector</artifactId>
         <version>0.4.0-rc1</version>
       </dependency>
       <dependency>
