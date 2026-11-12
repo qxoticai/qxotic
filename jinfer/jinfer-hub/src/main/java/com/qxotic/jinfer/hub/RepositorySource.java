@@ -211,10 +211,11 @@ class RepositorySource implements ModelSource {
             return Fetch.getString(url, headers(host));
         } catch (Fetch.HttpStatusException e) {
             if (e.status == 401 || e.status == 403) {
-                throw new IllegalArgumentException(denied(ref), e);
+                throw new ModelNotFoundException(ref.toString(), denied(ref), e);
             }
             if (e.status == 404) {
-                throw new IllegalArgumentException(
+                throw new ModelNotFoundException(
+                        ref.toString(),
                         "no repository "
                                 + ref.repoId()
                                 + " at revision "

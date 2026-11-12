@@ -16,6 +16,8 @@
 - **Model references read their repository in any case.** Hugging Face and ModelScope do, so `LiquidAI/d1-2B-gguf` now finds the cache of `LiquidAI/d1-2B-GGUF`, offline too, instead of downloading the model again.
 - **LFM3-Omni answers text requests under its voice prompt.** A text-only reply under "Respond with interleaved text and audio." ended before its first word, reported as a normal stop.
   A text reply now bans every speech-lane token, not only the two lane openers, and answers in text.
+- **A missing model has its own exception.** `ModelNotFoundException` (`jinfer-hub`), an `IllegalArgumentException`, is thrown wherever a source names nothing: a missing local file, a repository that does not exist or is gated, a file or quant it lacks, or an offline miss, which was an `UncheckedIOException` before.
+  `source()` names it; a malformed or ambiguous ref stays a plain `IllegalArgumentException`, and libjinfer and libtoknroll report it as not found by its type.
 - **Tool calls are matched one to one.** A request offering two tools of one name is refused, since a call names its tool, and each tool result in a conversation answers exactly one earlier call, so a memory trim that drops a call but keeps its result is refused for families without call ids too.
 - **EmbeddingGemma 2.** Google EmbeddingGemma 2 (`jinfer-gemma-embedding2`, architecture `gemma-embedding2`) embeds text into 768 dimensions (Matryoshka down to 128), and images, audio and video through its mmproj with `GemmaEmbedding2.withMedia` and `embed`.
   It matches Google's official pipeline (sentence-transformers over `google/embeddinggemma-2`) for every task prompt on the model card, and for images, audio and video: cosine above 0.99999 with F32 weights.

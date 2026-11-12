@@ -1,6 +1,5 @@
 package com.qxotic.jinfer.hub;
 
-import java.io.FileNotFoundException;
 import java.io.IOException;
 import java.io.UncheckedIOException;
 import java.lang.System.Logger.Level;
@@ -296,6 +295,8 @@ public final class ModelStore {
     /**
      * A local path, remote ref, or plain HTTP(S) URL. A ref names its host; an explicit URL names
      * bytes to download; everything else is a file on this machine.
+     *
+     * @throws ModelNotFoundException when it names nothing that exists or can be reached
      */
     public Path resolve(String pathOrRef) {
         return resolve(pathOrRef, Policy.USE_CACHE);
@@ -325,6 +326,8 @@ public final class ModelStore {
             file = select(parsed, serving.getFirst()).path();
         } catch (IOException e) {
             throw new UncheckedIOException("could not resolve " + parsed + ": " + why(e), e);
+        } catch (IllegalArgumentException e) {
+            throw answered(parsed, e);
         }
         remember(parsed, file);
         return file;
@@ -339,12 +342,14 @@ public final class ModelStore {
         }
         Path local = localFile(pathOrRef);
         if (local == null) {
-            throw new IllegalArgumentException(
+            throw new ModelNotFoundException(
+                    pathOrRef,
                     "no such model file: '"
                             + pathOrRef
                             + "'. A model ref is owner/repo[:quant], for example"
                             + " unsloth/gemma-4-E2B-it-GGUF:Q4_K_M, or"
-                            + " modelscope.cn/Qwen/Qwen3-0.6B-GGUF:Q8_0 for another source");
+                            + " modelscope.cn/Qwen/Qwen3-0.6B-GGUF:Q8_0 for another source",
+                    null);
         }
         return local;
     }
@@ -593,19 +598,30 @@ public final class ModelStore {
         return own + " or " + hub;
     }
 
+    /**
+     * A source's "no" ({@link ModelSource}: the repository's answer as the cause) as the store says
+     * it, a ref that names nothing; any other refusal is the ref's own fault and stays as it is.
+     */
+    private static IllegalArgumentException answered(ModelRef ref, IllegalArgumentException e) {
+        return e instanceof ModelNotFoundException || !(e.getCause() instanceof IOException)
+                ? e
+                : new ModelNotFoundException(ref.toString(), e.getMessage(), e.getCause());
+    }
+
     private static void requireOnlineFor(String what, String where, Policy policy) {
         String offline = offlineSource();
         if (offline == null) return;
-        // offline, a cache miss is a missing file: not-found to every caller
+        // offline, a cache miss names nothing reachable: not found to every caller
         if (policy == Policy.USE_CACHE)
-            throw new UncheckedIOException(
-                    new FileNotFoundException(
-                            what
-                                    + " is not cached in "
-                                    + where
-                                    + ", and "
-                                    + offline
-                                    + " forbids downloading"));
+            throw new ModelNotFoundException(
+                    what,
+                    what
+                            + " is not cached in "
+                            + where
+                            + ", and "
+                            + offline
+                            + " forbids downloading",
+                    null);
         throw new IllegalStateException(
                 "cannot refresh " + what + ": " + offline + " forbids remote checks and downloads");
     }
@@ -825,14 +841,15 @@ public final class ModelStore {
                 return path;
             } catch (IllegalArgumentException e) {
                 if (last || !(e.getCause() instanceof Fetch.HttpStatusException)) {
-                    throw e; // the best answer there is: the ref's fault, or the last word
+                    throw answered(ref, e); // the ref's fault, or the last word
                 }
                 warn(source, ref, e);
             } catch (Fetch.HttpStatusException e) {
                 // a download refused with 401/403 is the same "no" as a refused listing
                 Exception failure =
                         e.status == 401 || e.status == 403
-                                ? new IllegalArgumentException(RepositorySource.denied(ref), e)
+                                ? new ModelNotFoundException(
+                                        ref.toString(), RepositorySource.denied(ref), e)
                                 : new UncheckedIOException(
                                         "could not resolve " + ref + ": " + why(e), e);
                 if (last) {
@@ -1028,10 +1045,10 @@ public final class ModelStore {
             try {
                 inside = source.list(ref, location);
             } catch (IOException | IllegalArgumentException notAFolder) {
-                throw new IllegalArgumentException(nothingThere);
+                throw new ModelNotFoundException(ref.toString(), nothingThere, null);
             }
             if (inside.isEmpty()) {
-                throw new IllegalArgumentException(nothingThere);
+                throw new ModelNotFoundException(ref.toString(), nothingThere, null);
             }
             return byQuant(ref, location, inside);
         }
@@ -1058,14 +1075,16 @@ public final class ModelStore {
             return matches.get(0);
         }
         if (matches.isEmpty()) {
-            throw new IllegalArgumentException(
+            throw new ModelNotFoundException(
+                    ref.toString(),
                     "no "
                             + quantOf(ref)
                             + " in "
                             + ref.repoId()
                             + (folder.isEmpty() ? "" : "/" + folder)
                             + "; available: "
-                            + quants(models));
+                            + quants(models),
+                    null);
         }
         throw new IllegalArgumentException(
                 quantOf(ref)

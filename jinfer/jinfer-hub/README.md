@@ -148,6 +148,9 @@ hf.co/unsloth/gemma-4-E2B-it-GGUF is not cached in ~/.cache/jinfer/..., and JINF
 `find(...)` does not access the network. It also checks the Hugging Face hub cache, so files fetched
 by `hf download` or `llama-server -hf` are reused.
 
+A source that names nothing throws `ModelNotFoundException`, an `IllegalArgumentException`: a missing local file, a repository that does not exist or is gated, a file or quant it lacks, or, offline, a miss.
+`source()` is the path or ref; a malformed or ambiguous ref stays a plain `IllegalArgumentException`.
+
 ## From Java
 
 `ModelStore.standard()` is the entry point:

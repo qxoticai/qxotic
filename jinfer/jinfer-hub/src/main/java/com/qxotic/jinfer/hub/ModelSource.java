@@ -22,9 +22,10 @@ import java.util.List;
  *   <li>A source NEVER writes into the store beyond {@code into}, and never reads the store at all.
  *       A read-only store therefore still serves every cache hit; a source works against any root.
  *   <li>Failures are {@link IOException} (the source is at fault: network, refused bytes) or {@link
- *       IllegalArgumentException} caused by a {@code Fetch.HttpStatusException} (the repository
- *       answered, and the answer was "no"). The store falls through to the next source for both,
- *       and lets every other runtime exception propagate - the ref itself is at fault there.
+ *       IllegalArgumentException} caused by an {@link IOException}, the repository's answer (the
+ *       answer was "no"). The store falls through to the next source for both, reports the last
+ *       "no" as a {@link ModelNotFoundException}, and lets every other runtime exception propagate
+ *       - the ref itself is at fault there.
  * </ul>
  *
  * <p>Implementations should carry a readable {@link Object#toString()}: it appears in the store's
