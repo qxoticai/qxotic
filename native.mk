@@ -21,7 +21,7 @@ SONAME := $(if $(filter darwin,$(OS)),lib$(NAME).$(SOVERSION).dylib,lib$(NAME).s
 NATIVE_IMAGE ?= $(if $(JAVA_HOME),$(JAVA_HOME)/bin/native-image,native-image)
 # native-image's options: the caller's (NATIVE_IMAGE_OPTIONS=-march=x86-64-v4 asks for another target than
 # native-image's own default), then QUICK=1's: this machine
-IMAGE_OPTIONS = $(strip $(NATIVE_IMAGE_OPTIONS) $(if $(QUICK),-march=native))
+IMAGE_OPTIONS = $(strip $(NATIVE_IMAGE_OPTIONS) $(if $(filter 1,$(QUICK)),-march=native))
 # What the including Makefile may widen (no trailing comments here: make keeps the spaces before one):
 # SYMS, the prefixes of the functions the headers declare; HEADERS, the headers the release carries;
 # DESCRIPTION, the pkg-config file's line; WHEEL_EXAMPLE and WHEEL_EXAMPLE_ARGS, the C example built against

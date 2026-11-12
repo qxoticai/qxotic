@@ -1,7 +1,7 @@
 # libtoknroll: toknroll as a shared library with the C API in include/toknroll.h. `make help` lists the targets.
 NAME  := toknroll
 # The optimization: the pom's (-O2) unless QUICK=1 or a PGO profile asks for another (Oracle GraalVM compiles a PGO build at -O3)
-OPT    = $(if $(QUICK),-Ob,$(if $(PGO),--pgo=$(abspath $(PROFILE))))
+OPT    = $(if $(filter 1,$(QUICK)),-Ob,$(if $(PGO),--pgo=$(abspath $(PROFILE))))
 STATIC := target/libtoknroll.a
 DIST_LIBS = $(LIB) $(STATIC)
 # What the image needs from the system: the shared library carries these as NEEDED, a static consumer links them
@@ -22,7 +22,7 @@ include ../../native.mk
 # Oracle GraalVM builds what ships optimized for a profile it records first (PGO); GraalVM CE builds without
 # one, and QUICK=1 skips it. The collector is the serial one: NATIVE_IMAGE_OPTIONS=--gc=G1 (Oracle, Linux) runs
 # up to 70% faster on many cores, but a forked child that allocates hangs, its parent's GC threads gone.
-PGO = $(if $(QUICK),,$(shell $(NATIVE_IMAGE) --version 2>/dev/null | grep -q 'Oracle GraalVM' && echo yes))
+PGO = $(if $(filter 1,$(QUICK)),,$(shell $(NATIVE_IMAGE) --version 2>/dev/null | grep -q 'Oracle GraalVM' && echo yes))
 PROFILE := target/pgo/default.iprof
 # The profile's workload: enwik8, where the tests find it, FLORES-200 beside it, and PgoTraining's tokenizers (PGO_SOURCES, if set)
 CORPUS = $(shell python3 -c "import runpy; print(runpy.run_path('$(ROOT)/toknroll/scripts/download_enwik8.py', run_name='lib')['default_corpus_dir']() / 'enwik8')")

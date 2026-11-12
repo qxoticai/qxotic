@@ -1,7 +1,7 @@
 # libjinfer: jinfer as a shared library with the C API in include/jinfer.h. `make help` lists the targets.
 NAME  := jinfer
 # The optimization: the pom's (-O3) unless QUICK=1
-OPT   := $(if $(QUICK),-Ob)
+OPT   := $(if $(filter 1,$(QUICK)),-Ob)
 # The ISA level is native-image's own default, x86-64-v3 (AVX2, 2013) on x86-64, the kernels' floor; their
 # vector width follows it (VectorWidth, at build time). NATIVE_IMAGE_OPTIONS=-march=<target> asks for another.
 TOKNROLL := ../../toknroll/toknroll-native

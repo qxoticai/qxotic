@@ -89,7 +89,7 @@ native: check-native-image ## GraalVM native image of the CLI for THIS machine (
 	mkdir -p bin && cp jinfer/$(NATIVE_MODULE)/target/$(NATIVE_EXECUTABLE)$(EXE) bin/$(NATIVE_EXECUTABLE)$(EXE)
 
 libjinfer: ## libjinfer.so, jinfer's shared library with a C API (jinfer/jinfer-native); QUICK=1 for the dev loop
-	$(MAKE) -C jinfer/jinfer-native libjinfer $(if $(QUICK),QUICK=1)
+	$(MAKE) -C jinfer/jinfer-native libjinfer $(if $(filter 1,$(QUICK)),QUICK=1)
 
 ##@ Tidy
 
