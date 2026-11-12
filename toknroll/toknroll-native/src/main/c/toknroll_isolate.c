@@ -588,14 +588,15 @@ typedef struct job {
     int32_t count;
     int32_t next, done;       /* the next task to claim, and the tasks finished: atomic (port_*32) */
     int32_t escaped;          /* how a task ended past every catch (Escape's kinds), 0 for none: atomic */
-    int32_t workers;          /* the workers on it, under pool_lock: it stays queued until they are off it */
-    struct job* link;
+    int32_t refs;             /* its caller and the workers on it, atomic: the last one frees it */
+    struct job* link;         /* queued, under pool_lock */
 } job;
 
 #define WORKER_STACK ((size_t) 8 << 20)
 static port_mutex_t pool_lock = PORT_MUTEX_INIT;
 static port_cond_t pool_work = PORT_COND_INIT;    /* a job was queued */
-static port_cond_t pool_done = PORT_COND_INIT;    /* a job's last task finished, or its last worker left it */
+static port_mutex_t done_lock = PORT_MUTEX_INIT;  /* its own: the workers just woken crowd pool_lock */
+static port_cond_t pool_done = PORT_COND_INIT;    /* a job's last task finished, under done_lock */
 static job* jobs;                                 /* queued, oldest first: under pool_lock */
 static int pool_started;
 
@@ -612,9 +613,9 @@ static void work(graal_thread* thread, job* j) {
         int32_t escaped = toknroll__task(thread, j->tasks, task);
         if (escaped) port_set_if_zero32(&j->escaped, escaped);
         if (port_fetch_add32(&j->done, 1) + 1 == j->count) {
-            port_mutex_lock(&pool_lock);
+            port_mutex_lock(&done_lock);
             port_cond_broadcast(&pool_done);
-            port_mutex_unlock(&pool_lock);
+            port_mutex_unlock(&done_lock);
         }
     }
 }
@@ -631,19 +632,17 @@ PORT_THREAD(worker, number) {
     if (!c) return PORT_THREAD_END;   /* out of memory: one worker fewer */
     port_mutex_lock(&pool_lock);
     for (;;) {
-        while (!claimable()) port_cond_wait(&pool_work, &pool_lock);
+        job* j;
+        while (!(j = claimable())) port_cond_wait(&pool_work, &pool_lock);
+        (void) port_fetch_add32(&j->refs, 1);   /* queued, so its caller holds it too */
         port_mutex_unlock(&pool_lock);
-        /* through the gate before taking a job, busy until off it: a job's caller waits for its workers,
-           and fork for the caller, so a worker on a job never waits for fork */
+        /* through the gate, busy until its tasks are done: it may wait for a fork here, holding the job
+           but no task of it, and nothing waits for a worker */
         (void) toknroll__enter();
-        port_mutex_lock(&pool_lock);
-        job* j = claimable();
-        if (j) j->workers++;
-        port_mutex_unlock(&pool_lock);
-        if (j) work(thread, j);
+        work(thread, j);
         toknroll__leave();
+        if (port_fetch_add32(&j->refs, -1) == 1) free(j);
         port_mutex_lock(&pool_lock);
-        if (j && --j->workers == 0) port_cond_broadcast(&pool_done);
     }
 }
 
@@ -651,7 +650,18 @@ PORT_THREAD(worker, number) {
  * first batch starts `workers`; returns how a task ended past every catch, 0 for none. Called from inside
  * an entry point, so self already holds its place in the gate. */
 int32_t toknroll__batch(graal_thread* self, void* tasks, int32_t count, int32_t workers) {
-    job j = {tasks, count, 0, 0, 0, 0, NULL};   /* on this stack: dequeued before it returns */
+    job* j = calloc(1, sizeof *j);   /* the heap's, not this stack's: a worker may be on it after the last task */
+    if (!j) {   /* out of C memory: every task here */
+        int32_t escaped = 0;
+        for (int32_t i = 0; i < count; i++) {
+            int32_t e = toknroll__task(self, tasks, i);
+            if (!escaped) escaped = e;
+        }
+        return escaped;
+    }
+    j->tasks = tasks;
+    j->count = count;
+    j->refs = 1;
     port_mutex_lock(&pool_lock);
     if (!pool_started) {
         pool_started = 1;
@@ -659,16 +669,20 @@ int32_t toknroll__batch(graal_thread* self, void* tasks, int32_t count, int32_t 
     }
     job** tail = &jobs;
     while (*tail) tail = &(*tail)->link;
-    *tail = &j;
+    *tail = j;
     port_cond_broadcast(&pool_work);
     port_mutex_unlock(&pool_lock);
-    work(self, &j);   /* the calling thread works on its own batch too */
+    work(self, j);   /* the calling thread works on its own batch too */
+    port_mutex_lock(&done_lock);
+    while (port_load32(&j->done) < count) port_cond_wait(&pool_done, &done_lock);
+    port_mutex_unlock(&done_lock);
     port_mutex_lock(&pool_lock);
-    while (port_load32(&j.done) < count || j.workers) port_cond_wait(&pool_done, &pool_lock);
     for (job** at = &jobs; *at; at = &(*at)->link)
-        if (*at == &j) { *at = j.link; break; }
+        if (*at == j) { *at = j->link; break; }
     port_mutex_unlock(&pool_lock);
-    return port_load32(&j.escaped);
+    int32_t escaped = port_load32(&j->escaped);
+    if (port_fetch_add32(&j->refs, -1) == 1) free(j);
+    return escaped;
 }
 
 int toknroll__created(void) { return port_load(&created) != 0; }
