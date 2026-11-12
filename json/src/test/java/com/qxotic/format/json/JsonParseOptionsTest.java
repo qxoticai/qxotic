@@ -8,7 +8,8 @@ import java.util.List;
 import java.util.Map;
 import org.junit.jupiter.api.Test;
 
-class Json2ParseOptionsTest {
+/** ParseOptions: number modes, depth limits and duplicate keys. */
+class JsonParseOptionsTest {
 
     @Test
     void testDefaultOptionsReturnsDoubleForFloats() {

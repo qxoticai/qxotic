@@ -161,6 +161,37 @@ public class JsonBenchmark {
         bh.consume(jacksonMapper.writeValueAsString(jacksonLargeMap));
     }
 
+    // ==================== STRING ESCAPING BENCHMARKS ====================
+    // A streamed token, as a server escapes one per event, and a paragraph with and without
+    // escapes.
+
+    private final String token = " world";
+    private final String paragraph =
+            "The quick brown fox jumps over the lazy dog, then naps in the warm afternoon sun. "
+                    .repeat(4);
+    private final String escapedParagraph =
+            paragraph.replace(", ", ",\\n").replace("fox", "\\\"fox\\\"");
+
+    @Benchmark
+    public void qxoticEscapeToken(Blackhole bh) {
+        bh.consume(Json.escapeString(token));
+    }
+
+    @Benchmark
+    public void qxoticEscapeParagraph(Blackhole bh) {
+        bh.consume(Json.escapeString(paragraph));
+    }
+
+    @Benchmark
+    public void qxoticUnescapeParagraph(Blackhole bh) {
+        bh.consume(Json.unescapeString(paragraph));
+    }
+
+    @Benchmark
+    public void qxoticUnescapeEscapedParagraph(Blackhole bh) {
+        bh.consume(Json.unescapeString(escapedParagraph));
+    }
+
     // ==================== ROUND-TRIP BENCHMARKS ====================
 
     @Benchmark

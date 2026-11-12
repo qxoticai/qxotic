@@ -266,4 +266,40 @@ class JsonErrorHandlingTest {
                         + "' but got: "
                         + e.getMessage());
     }
+
+    /** A line ends at \\n, \\r or \\r\\n alike: the error's line and column count all three. */
+    @Test
+    void everyLineEndingCountsALine() {
+        for (String end : new String[] {"\n", "\r", "\r\n"}) {
+            Json.ParseException e =
+                    assertThrows(
+                            Json.ParseException.class,
+                            () -> Json.parse("{" + end + "\"a\": 1," + end + "\"b\": x}"));
+            assertEquals(3, e.getLine(), end.replace("\r", "CR").replace("\n", "LF"));
+            assertEquals(6, e.getColumn());
+        }
+    }
+
+    /**
+     * An error points at what is wrong: a duplicate key at the key, a bad escape at its backslash.
+     */
+    @Test
+    void errorsPointAtTheirCause() {
+        Json.ParseOptions strict = Json.ParseOptions.defaults().failOnDuplicateKeys(true);
+        Json.ParseException duplicate =
+                assertThrows(
+                        Json.ParseException.class,
+                        () -> Json.parse("{\"a\": 1, \"a\": [1, 2, 3]}", strict));
+        assertEquals(9, duplicate.getPosition(), "the second \"a\"");
+        assertEquals(10, duplicate.getColumn());
+        assertFalse(Json.isValid("{\"a\": 1, \"a\": 2}", strict));
+
+        Json.ParseException escape =
+                assertThrows(Json.ParseException.class, () -> Json.parse("\"ab\\xcd\""));
+        assertEquals(3, escape.getPosition(), "the backslash");
+        assertEquals(
+                1,
+                assertThrows(Json.ParseException.class, () -> Json.unescapeString("a\\"))
+                        .getPosition());
+    }
 }

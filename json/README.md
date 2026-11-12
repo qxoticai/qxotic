@@ -52,8 +52,10 @@ List<Object> arr        = Json.parseList(json);
 |-----------|-----------|
 | object | `LinkedHashMap<String, Object>` |
 | array | `ArrayList<Object>` |
+| string | `String` |
 | number (integer) | `Long` or `BigInteger` |
-| number (decimal) | `BigDecimal` |
+| number (decimal) | `BigDecimal`, or `Double` with `decimalsAsBigDecimal(false)` |
+| boolean | `Boolean` |
 | null | `Json.NULL` |
 
 ## Print
@@ -78,22 +80,22 @@ catch (Json.ParseException e) {
 ```
 
 Options (depth limits, duplicate-key strictness, decimal handling) and validation without parsing
-(`Json.isValid`) are covered in the [documentation](https://qxotic.ai/json).
+(`Json.isValid`) are covered in the [documentation](https://github.com/qxoticai/qxotic/blob/main/docs/json/index.md).
 
 ## Benchmarks
 
-JMH, typical hardware:
+JMH on an AMD Ryzen 9 9950X3D, JDK 25, both parsing into a `Map`:
 
 | Operation | qxotic | Jackson | Difference |
 |-----------|--------|---------|------------|
-| Parse small (~500 B) | 0.81 µs | 0.88 µs | ~8% faster |
-| Round-trip small | 1.36 µs | 1.70 µs | ~20% faster |
+| Parse small (~500 B) | 0.51 µs | 0.56 µs | ~10% faster |
+| Round-trip small | 0.94 µs | 1.08 µs | ~13% faster |
 
 Reproduce with `cd benchmarks && mvn package && java -jar target/json-benchmarks.jar`.
 
 ## Documentation
 
-[qxotic.ai/json](https://qxotic.ai/json) covers parsing, serialization and error handling.
+[The documentation](https://github.com/qxoticai/qxotic/blob/main/docs/json/index.md) covers parsing, serialization and error handling.
 
 Part of [Quixotic](../README.md), an open stack for local AI on the JVM.
 

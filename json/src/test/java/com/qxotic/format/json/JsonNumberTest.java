@@ -430,4 +430,16 @@ class JsonNumberTest {
         parsed = Json.parse(hugeExp);
         assertInstanceOf(BigDecimal.class, parsed);
     }
+
+    /** A decimal past double's range is refused at its first digit, never read as Infinity. */
+    @Test
+    void aDecimalPastDoubleRangeIsRefused() {
+        Json.ParseOptions doubles = Json.ParseOptions.defaults().decimalsAsBigDecimal(false);
+        Json.ParseException e =
+                assertThrows(Json.ParseException.class, () -> Json.parse("[1, -1e400]", doubles));
+        assertTrue(e.getMessage().contains("Number out of double range"), e.getMessage());
+        assertEquals(4, e.getPosition());
+        assertEquals(0.0, Json.parse("1e-400", doubles), "underflow is zero, not an error");
+        assertEquals(0, new BigDecimal("1E+400").compareTo((BigDecimal) Json.parse("1e400")));
+    }
 }

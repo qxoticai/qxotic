@@ -143,23 +143,15 @@ public final class Json {
      */
     public static String escapeString(CharSequence s) {
         Objects.requireNonNull(s, "s");
-        int start = 0;
-        StringBuilder sb = null;
-        for (int i = 0; i < s.length(); i++) {
-            String escape = escapeFor(s.charAt(i));
-            if (escape != null) {
-                if (sb == null) {
-                    sb = new StringBuilder(s.length() + 16);
-                }
-                sb.append(s, start, i);
-                sb.append(escape);
-                start = i + 1;
-            }
+        int i = 0;
+        while (i < s.length() && plain(s.charAt(i))) {
+            i++;
         }
-        if (sb == null) {
-            return s.toString();
+        if (i == s.length()) {
+            return s.toString(); // nothing to escape
         }
-        sb.append(s, start, s.length());
+        StringBuilder sb = new StringBuilder(s.length() + 16);
+        appendEscaped(sb, s);
         return sb.toString();
     }
 
@@ -170,103 +162,10 @@ public final class Json {
      */
     public static String unescapeString(CharSequence s) {
         Objects.requireNonNull(s, "s");
-        int backslash = (s instanceof String) ? ((String) s).indexOf('\\') : indexOfBackslash(s);
-        if (backslash == -1) {
-            return s.toString();
-        }
-
-        StringBuilder sb = new StringBuilder(s.length());
-        sb.append(s, 0, backslash);
-        int pos = backslash;
-
-        while (pos < s.length()) {
-            char ch = s.charAt(pos++);
-            if (ch != '\\') {
-                sb.append(ch);
-                continue;
-            }
-            if (pos >= s.length()) {
-                throw new ParseException("Invalid escape sequence");
-            }
-            switch (s.charAt(pos++)) {
-                case '"':
-                    sb.append('"');
-                    break;
-                case '\\':
-                    sb.append('\\');
-                    break;
-                case '/':
-                    sb.append('/');
-                    break;
-                case 'b':
-                    sb.append('\b');
-                    break;
-                case 'f':
-                    sb.append('\f');
-                    break;
-                case 'n':
-                    sb.append('\n');
-                    break;
-                case 'r':
-                    sb.append('\r');
-                    break;
-                case 't':
-                    sb.append('\t');
-                    break;
-                case 'u':
-                    int code = parseHex4(s, pos);
-                    pos += 4;
-                    if (Character.isHighSurrogate((char) code)) {
-                        if (pos + 6 > s.length()
-                                || s.charAt(pos) != '\\'
-                                || s.charAt(pos + 1) != 'u') {
-                            throw new ParseException("Lone surrogate");
-                        }
-                        pos += 2;
-                        int low = parseHex4(s, pos);
-                        pos += 4;
-                        if (!Character.isLowSurrogate((char) low)) {
-                            throw new ParseException("Unexpected character after high surrogate");
-                        }
-                        sb.appendCodePoint(Character.toCodePoint((char) code, (char) low));
-                    } else if (Character.isLowSurrogate((char) code)) {
-                        throw new ParseException("Lone surrogate");
-                    } else {
-                        sb.append((char) code);
-                    }
-                    break;
-                default:
-                    throw new ParseException("Invalid escape sequence");
-            }
-        }
-
-        return sb.toString();
+        return new Parser(s, ParseOptions.defaults()).unescapeAll();
     }
 
-    private static int indexOfBackslash(CharSequence s) {
-        for (int i = 0; i < s.length(); i++) {
-            if (s.charAt(i) == '\\') {
-                return i;
-            }
-        }
-        return -1;
-    }
-
-    private static int parseHex4(CharSequence s, int pos) {
-        if (pos + 4 > s.length()) {
-            throw new ParseException("Incomplete Unicode escape");
-        }
-        int result = 0;
-        for (int i = 0; i < 4; i++) {
-            int digit = Character.digit(s.charAt(pos + i), 16);
-            if (digit < 0) {
-                throw new ParseException("Invalid hex digit");
-            }
-            result = (result << 4) | digit;
-        }
-        return result;
-    }
-
+    /** A first capacity for the output: a small document then needs no regrowth (measured). */
     private static int estimateSize(Object value) {
         if (value instanceof Map) {
             return Math.max(64, ((Map<?, ?>) value).size() * 32);
@@ -306,6 +205,38 @@ public final class Json {
         Parser(CharSequence input, ParseOptions options) {
             this.input = input;
             this.options = options;
+        }
+
+        /** The whole input as a string's content: its escapes decoded, everything else kept. */
+        private String unescapeAll() {
+            if (input instanceof String) {
+                pos =
+                        ((String) input)
+                                .indexOf('\\'); // String's own search, much faster than a loop
+                if (pos < 0) {
+                    return (String) input;
+                }
+            }
+            StringBuilder sb = null;
+            int start = 0;
+            while (pos < input.length()) {
+                if (input.charAt(pos) != '\\') {
+                    pos++;
+                    continue;
+                }
+                if (sb == null) {
+                    sb = new StringBuilder(input.length());
+                }
+                sb.append(input, start, pos);
+                if (++pos == input.length()) {
+                    throw errorAt(pos - 1, "Invalid escape sequence", null); // nothing after it
+                }
+                appendEscapedChar(sb); // leaves pos past the escape
+                start = pos;
+            }
+            return sb == null
+                    ? input.toString()
+                    : sb.append(input, start, input.length()).toString();
         }
 
         private String intern(String s) {
@@ -425,7 +356,7 @@ public final class Json {
                     validateUnicodeEscape();
                     break;
                 default:
-                    throw error("Invalid escape sequence");
+                    throw errorAt(pos - 2, "Invalid escape sequence", null); // at its backslash
             }
         }
 
@@ -519,9 +450,10 @@ public final class Json {
                 Set<String> keys = options.failOnDuplicateKeys() ? new HashSet<>() : null;
                 while (true) {
                     if (keys != null) {
+                        int at = pos;
                         String key = parseString();
                         if (!keys.add(key)) {
-                            throw error("Duplicate key: '" + key + "'");
+                            throw errorAt(at, "Duplicate key: '" + key + "'", null);
                         }
                     } else {
                         skipString();
@@ -618,7 +550,7 @@ public final class Json {
                     sb.appendCodePoint(validateUnicodeEscape());
                     break;
                 default:
-                    throw error("Invalid escape sequence");
+                    throw errorAt(pos - 2, "Invalid escape sequence", null); // at its backslash
             }
         }
 
@@ -698,14 +630,14 @@ public final class Json {
                 }
 
                 while (true) {
+                    int at = pos;
                     String key = intern(parseString());
+                    if (options.failOnDuplicateKeys() && map.containsKey(key)) {
+                        throw errorAt(at, "Duplicate key: '" + key + "'", null);
+                    }
                     skipSpace();
                     expect(':');
-                    Object value = parseValue();
-                    if (options.failOnDuplicateKeys() && map.containsKey(key)) {
-                        throw error("Duplicate key: '" + key + "'");
-                    }
-                    map.put(key, value);
+                    map.put(key, parseValue());
                     if (!consumeCommaOrEnd('}')) {
                         break;
                     }
@@ -728,10 +660,14 @@ public final class Json {
                     try {
                         return new BigDecimal(lexeme);
                     } catch (NumberFormatException e) {
-                        throw error("Invalid number", e);
+                        throw errorAt(pos, "Invalid number", e);
                     }
                 }
-                return Double.parseDouble(lexeme);
+                double d = Double.parseDouble(lexeme);
+                if (Double.isInfinite(d)) {
+                    throw errorAt(start, "Number out of double range", null);
+                }
+                return d;
             }
 
             // Integer - inline Long accumulation over validated digits
@@ -829,21 +765,27 @@ public final class Json {
         }
 
         private ParseException error(String msg) {
-            return error(msg, null);
+            return errorAt(pos, msg, null);
         }
 
-        private ParseException error(String msg, Throwable cause) {
-            int[] lc = lineColumnAt(pos);
-            return new ParseException(msg, pos, lc[0], lc[1], input, cause);
+        private ParseException errorAt(int at, String msg, Throwable cause) {
+            int[] lc = lineColumnAt(at);
+            return new ParseException(msg, at, lc[0], lc[1], input, cause);
         }
 
+        /** Line and column of {@code index}: a line ends at \n, \r or \r\n alike. */
         private int[] lineColumnAt(int index) {
             int line = 1;
             int column = 1;
             int end = Math.min(index, input.length());
             for (int i = 0; i < end; i++) {
                 char ch = input.charAt(i);
-                if (ch == '\n') {
+                boolean lineEnd =
+                        ch == '\n'
+                                || (ch == '\r'
+                                        && (i + 1 >= input.length()
+                                                || input.charAt(i + 1) != '\n'));
+                if (lineEnd) {
                     line++;
                     column = 1;
                 } else {
@@ -864,35 +806,24 @@ public final class Json {
 
     // === Printer ===
 
-    private static final String ESCAPE_QUOT = "\\\"";
-    private static final String ESCAPE_BSLASH = "\\\\";
-    private static final String ESCAPE_BS = "\\b";
-    private static final String ESCAPE_FF = "\\f";
-    private static final String ESCAPE_NL = "\\n";
-    private static final String ESCAPE_CR = "\\r";
-    private static final String ESCAPE_TAB = "\\t";
-
     private static String escapeFor(char ch) {
         switch (ch) {
             case '"':
-                return ESCAPE_QUOT;
+                return "\\\"";
             case '\\':
-                return ESCAPE_BSLASH;
+                return "\\\\";
             case '\b':
-                return ESCAPE_BS;
+                return "\\b";
             case '\f':
-                return ESCAPE_FF;
+                return "\\f";
             case '\n':
-                return ESCAPE_NL;
+                return "\\n";
             case '\r':
-                return ESCAPE_CR;
+                return "\\r";
             case '\t':
-                return ESCAPE_TAB;
+                return "\\t";
             default:
-                if (ch < 0x20) {
-                    return unicodeEscape(ch);
-                }
-                return null;
+                return ch < 0x20 ? unicodeEscape(ch) : null;
         }
     }
 
@@ -960,17 +891,39 @@ public final class Json {
 
     private static void printString(StringBuilder sb, CharSequence str) {
         sb.append('"');
+        appendEscaped(sb, str);
+        sb.append('"');
+    }
+
+    /**
+     * Whether {@code ch} is written as itself: not a quote, a backslash, a control or a surrogate.
+     */
+    private static boolean plain(char ch) {
+        return ch >= 0x20 && ch != '"' && ch != '\\' && !Character.isSurrogate(ch);
+    }
+
+    /** {@code s} as a JSON string's content. */
+    private static void appendEscaped(StringBuilder sb, CharSequence s) {
         int start = 0;
-        for (int i = 0; i < str.length(); i++) {
-            String escape = escapeFor(str.charAt(i));
+        for (int i = 0; i < s.length(); i++) {
+            char ch = s.charAt(i);
+            if (plain(ch)) {
+                continue;
+            }
+            if (Character.isHighSurrogate(ch)
+                    && i + 1 < s.length()
+                    && Character.isLowSurrogate(s.charAt(i + 1))) {
+                i++; // a surrogate pair, written as it is
+                continue;
+            }
+            // a lone surrogate has no UTF-8 form: escaped, the text stays encodable
+            String escape = Character.isSurrogate(ch) ? unicodeEscape(ch) : escapeFor(ch);
             if (escape != null) {
-                sb.append(str, start, i);
-                sb.append(escape);
+                sb.append(s, start, i).append(escape);
                 start = i + 1;
             }
         }
-        sb.append(str, start, str.length());
-        sb.append('"');
+        sb.append(s, start, s.length());
     }
 
     private static void printList(
@@ -1037,19 +990,12 @@ public final class Json {
         visiting.remove(container);
     }
 
-    private static final int INDENT_CACHE_SIZE = 32;
-    private static final String[] INDENT_CACHE = new String[INDENT_CACHE_SIZE];
-
-    static {
-        for (int i = 0; i < INDENT_CACHE_SIZE; i++) {
-            INDENT_CACHE[i] = "  ".repeat(i);
-        }
-    }
-
     private static void appendPrettyIndent(StringBuilder sb, boolean enabled, int indent) {
         if (enabled) {
             sb.append('\n');
-            sb.append(indent < INDENT_CACHE_SIZE ? INDENT_CACHE[indent] : "  ".repeat(indent));
+            for (int i = 0; i < indent; i++) {
+                sb.append("  ");
+            }
         }
     }
 

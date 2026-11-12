@@ -9,7 +9,7 @@ import java.util.Optional;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 
-/** Tests for query API and type check methods. */
+/** Query API, type checks and API shortcuts. */
 class JsonQueryTest {
 
     // ============== Query String Tests ==============
@@ -578,15 +578,6 @@ class JsonQueryTest {
     // ============== Integration with Existing API Tests ==============
 
     @Test
-    @DisplayName("query works with parseMap")
-    void testQueryWithParseMap() {
-        Map<String, Object> data = Json.parseMap("{\"name\": \"Alice\"}");
-        Optional<String> result = Json.queryString(data, "name");
-        assertTrue(result.isPresent());
-        assertEquals("Alice", result.get());
-    }
-
-    @Test
     @DisplayName("query works with parseList")
     void testQueryWithParseList() {
         List<Object> data = Json.parseList("[{\"name\": \"Alice\"}]");
@@ -676,5 +667,75 @@ class JsonQueryTest {
                         .orElse(List.of());
 
         assertEquals(List.of("Alice", "Bob"), names);
+    }
+
+    @Test
+    void testOptionsShortcutMatchesDefaults() {
+        Json.ParseOptions options = Json.ParseOptions.defaults();
+        assertTrue(options.decimalsAsBigDecimal());
+        assertEquals(1000, options.maxDepth());
+        assertFalse(options.failOnDuplicateKeys());
+    }
+
+    @Test
+    void testOptionsPresets() {
+        Json.ParseOptions strict = Json.ParseOptions.defaults().failOnDuplicateKeys(true);
+        Json.ParseOptions fast = Json.ParseOptions.defaults().decimalsAsBigDecimal(false);
+
+        assertTrue(strict.failOnDuplicateKeys());
+        assertTrue(strict.decimalsAsBigDecimal());
+        assertFalse(fast.decimalsAsBigDecimal());
+    }
+
+    @Test
+    void testParseBooleanRoot() {
+        assertTrue(Json.parseBoolean("true"));
+        assertFalse(Json.parseBoolean("false"));
+    }
+
+    @Test
+    void testParseBooleanRejectsOtherRoots() {
+        Json.ParseException e =
+                assertThrows(Json.ParseException.class, () -> Json.parseBoolean("1"));
+        assertTrue(e.getMessage().contains("Expected JSON boolean at root"));
+    }
+
+    @Test
+    void testTypedParseForMaps() {
+        Map<?, ?> map = Json.parseMap("{\"a\":1}");
+        assertEquals(1L, map.get("a"));
+    }
+
+    @Test
+    void testTypedParseRespectsOptions() {
+        // isValid() with failOnDuplicateKeys should reject duplicate keys
+        assertFalse(
+                Json.isValid(
+                        "{\"a\":1,\"a\":2}",
+                        Json.ParseOptions.defaults().failOnDuplicateKeys(true)));
+    }
+
+    @Test
+    void testJsonNullHelper() {
+        Object parsed = Json.parse("null");
+        assertSame(Json.NULL, parsed);
+        assertNotNull(Json.NULL);
+    }
+
+    @Test
+    void testParseOptionsImmutability() {
+        Json.ParseOptions defaults = Json.ParseOptions.defaults();
+        Json.ParseOptions shallow = defaults.maxDepth(10);
+        Json.ParseOptions strict = defaults.failOnDuplicateKeys(true);
+
+        // Original must be unchanged
+        assertEquals(1000, defaults.maxDepth());
+        assertFalse(defaults.failOnDuplicateKeys());
+
+        // Derived instances must have new values
+        assertEquals(10, shallow.maxDepth());
+        assertFalse(shallow.failOnDuplicateKeys());
+        assertTrue(strict.failOnDuplicateKeys());
+        assertEquals(1000, strict.maxDepth());
     }
 }

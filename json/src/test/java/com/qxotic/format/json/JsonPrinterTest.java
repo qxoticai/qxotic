@@ -128,4 +128,17 @@ class JsonPrinterTest {
         root.add(child);
         assertEquals("[[1],[1]]", Json.stringify(root, false));
     }
+
+    /**
+     * A lone surrogate has no UTF-8 form: it is escaped, so the text can be encoded; a pair is
+     * kept.
+     */
+    @Test
+    void aLoneSurrogateIsEscapedAndAPairKept() {
+        assertEquals("\"x\\uD800y\"", Json.stringify("x\uD800y"));
+        assertEquals("\"\\uDC00\"", Json.stringify("\uDC00"));
+        assertEquals("\"\\uD800\"", Json.stringify("\uD800"), "a high surrogate at the end");
+        assertEquals("\"\uD83D\uDE00\"", Json.stringify("\uD83D\uDE00"), "a pair, as it is");
+        assertEquals("x\\uD800y", Json.escapeString("x\uD800y"));
+    }
 }
