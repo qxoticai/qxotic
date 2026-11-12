@@ -254,18 +254,17 @@ final class TiktokenModel extends AbstractTokenizationModel {
             out.add(singleByteTokenId[text[start] & 0xFF]);
             return;
         }
-        String key =
-                length <= MEMO_BYTES
-                        ? new String(text, start, length, StandardCharsets.ISO_8859_1)
-                        : null;
-        int slot = key != null ? (key.hashCode() * 0x9E3779B9) >>> (32 - MEMO_BITS) : 0;
-        Word word = key != null ? memo[slot] : null;
         int[] ids;
-        if (word != null && word.key.equals(key)) {
-            ids = word.ids;
-        } else {
+        if (length > MEMO_BYTES) {
             ids = wordIds(text, start, end);
-            if (key != null) {
+        } else {
+            String key = new String(text, start, length, StandardCharsets.ISO_8859_1);
+            int slot = (key.hashCode() * 0x9E3779B9) >>> (32 - MEMO_BITS); // Fibonacci hashing
+            Word word = memo[slot];
+            if (word != null && word.key.equals(key)) {
+                ids = word.ids;
+            } else {
+                ids = wordIds(text, start, end);
                 memo[slot] = new Word(key, ids);
             }
         }

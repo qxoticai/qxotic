@@ -131,20 +131,16 @@ static const char escaped_out_of_memory[] =
 static const char escaped_stack_overflow[] = "stack overflow: the input nests deeper than the calling thread's stack allows";
 static const char escaped_other[] = "internal error: an exception escaped the library; the call failed and the process goes on (please report it)";
 
-/* The thread's error as static words. Allocates nothing that can fail the call: the message buffer is the
- * thread's own, or the static fallback when it cannot have one. */
-static const char* fail_with(const char* words) {
+/* The thread's error as the static words for kind, 1 out of memory, 2 stack overflow, anything else an
+ * escaped exception: Errors.java's, for an error it caught, and every entry point's last resort for one that
+ * reached the entry point past every catch. Allocates nothing that can fail: the message buffer is the
+ * thread's own, or the words themselves when it cannot have one. */
+const char* toknroll__escaped(int32_t kind) {
+    const char* words = kind == 1 ? escaped_out_of_memory : kind == 2 ? escaped_stack_overflow : escaped_other;
     char* buffer = (char*) error_buffer(0, 1);
     if (buffer) snprintf(buffer, 1025, "%s", words);
     error_code = TOKNROLL_ERROR;
     return buffer ? buffer : words;
-}
-
-/* The thread's error for kind, 1 out of memory, 2 stack overflow, anything else an escaped exception:
- * Errors.java's, for an error it caught, and every entry point's last resort for one that reached the entry
- * point past every catch. */
-const char* toknroll__escaped(int32_t kind) {
-    return fail_with(kind == 1 ? escaped_out_of_memory : kind == 2 ? escaped_stack_overflow : escaped_other);
 }
 
 /* What toknroll_log_set or jinfer_log_set gave, before the runtime starts; start hands it to Log.java. */
