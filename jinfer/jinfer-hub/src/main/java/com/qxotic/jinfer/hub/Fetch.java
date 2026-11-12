@@ -1301,21 +1301,16 @@ final class Fetch {
      * them out of the model directory is what lets {@code rm -rf} of a repository stay safe on
      * every platform, including Windows, where an open lock file cannot be deleted at all.
      */
-    private static Path lockFileFor(Path dest) throws IOException {
+    static Path lockFileFor(Path dest) throws IOException {
         // ONE home per host and user, whatever store instance is downloading (the SPI hands a
         // source its destination, not the store's root): two JVMs with different model roots
         // must still exclude each other on the same destination, and a store on a writable
         // volume must not depend on the user's cache directory being writable
         Path locks = lockFolder(Path.of(System.getProperty("java.io.tmpdir")));
-        String key =
-                HexFormat.of()
-                        .formatHex(
-                                sha256Digest()
-                                        .digest(
-                                                dest.toAbsolutePath()
-                                                        .toString()
-                                                        .getBytes(StandardCharsets.UTF_8)))
-                        .substring(0, 32);
+        // one lock for every spelling of a path: macOS and Windows ignore case, a hub id does too
+        String path = dest.toAbsolutePath().toString().toLowerCase(Locale.ROOT);
+        byte[] digest = sha256Digest().digest(path.getBytes(StandardCharsets.UTF_8));
+        String key = HexFormat.of().formatHex(digest).substring(0, 32);
         return locks.resolve(key + ".lock");
     }
 
