@@ -1,13 +1,20 @@
 package com.qxotic.format.gguf;
 
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 
+import java.io.ByteArrayOutputStream;
+import java.nio.channels.Channels;
+import java.nio.file.Files;
+import java.nio.file.Path;
 import java.util.Collection;
 import java.util.Collections;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Set;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.io.TempDir;
 
 class WriterValidationTest extends GGUFTest {
 
@@ -143,6 +150,52 @@ class WriterValidationTest extends GGUFTest {
                         List.of());
 
         assertThrows(IllegalStateException.class, () -> writeToBytes(gguf));
+    }
+
+    /** A GGUF the format refuses is refused whole: no byte reaches the channel, no file is made. */
+    @Test
+    void aRefusedWriteWritesNothing(@TempDir Path dir) {
+        List<Builder> refused =
+                List.of(
+                        Builder.newBuilder()
+                                .putTensor(
+                                        TensorEntry.create(
+                                                "a".repeat(64), new long[] {1}, GGMLType.F32, 0)),
+                        Builder.newBuilder()
+                                .putString("general.name", "x")
+                                .putString("Bad.Key", "y"),
+                        Builder.newBuilder()
+                                .putTensor(
+                                        TensorEntry.create(
+                                                "t", new long[] {1, 1, 1, 1, 1}, GGMLType.F32, 0)));
+        for (int i = 0; i < refused.size(); i++) {
+            GGUF gguf = refused.get(i).build();
+            ByteArrayOutputStream out = new ByteArrayOutputStream();
+            assertThrows(
+                    IllegalArgumentException.class,
+                    () -> GGUF.write(gguf, Channels.newChannel(out)));
+            assertEquals(0, out.size(), "bytes sent for case " + i);
+            Path file = dir.resolve(i + ".gguf");
+            assertThrows(IllegalArgumentException.class, () -> GGUF.write(gguf, file));
+            assertFalse(Files.exists(file), "a file left for case " + i);
+        }
+    }
+
+    /** Version 3 is the only one built or written. */
+    @Test
+    void onlyVersionThreeIsWritten() {
+        assertThrows(IllegalArgumentException.class, () -> Builder.newBuilder().setVersion(2));
+        assertThrows(IllegalArgumentException.class, () -> Builder.newBuilder().setVersion(4));
+        GGUF v2 =
+                fakeGGUF(
+                        2,
+                        32,
+                        32,
+                        new LinkedHashMap<>(),
+                        new LinkedHashMap<>(),
+                        new LinkedHashMap<>(),
+                        List.of());
+        assertThrows(IllegalArgumentException.class, () -> writeToBytes(v2));
     }
 
     private static GGUF fakeGGUF(

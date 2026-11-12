@@ -25,8 +25,12 @@ final class ReaderImpl {
     static final int ALIGNMENT_DEFAULT_VALUE = 32; // must be a power of 2
     static final String ALIGNMENT_KEY = "general.alignment";
 
-    private static final List<Integer> SUPPORTED_GGUF_VERSIONS = List.of(3);
-    private static final int MAX_TENSOR_NAME_BYTES = 64;
+    /** The only version read or written: v2 is found only in files converted in 2023. */
+    static final int GGUF_VERSION = 3;
+
+    /** ggml's GGML_MAX_NAME (64) less the NUL terminator: the longest name llama.cpp loads. */
+    static final int MAX_TENSOR_NAME_BYTES = 63;
+
     private static final int METADATA_VALUE_TYPES = MetadataValueType.values().length;
     private int version;
     private int alignment;
@@ -147,11 +151,14 @@ final class ReaderImpl {
     }
 
     private TensorEntry readTensorEntry(ReadableByteChannel byteChannel) throws IOException {
-        // The name of the tensor. It is a standard GGUF string, with the caveat that
-        // it must be at most 64 bytes long.
+        // The name of the tensor: a standard GGUF string of at most 63 bytes.
         byte[] nameBytes = readStringBytes(byteChannel); // gguf_string_t name;
         if (nameBytes.length > MAX_TENSOR_NAME_BYTES) {
-            throw new GGUFFormatException("Tensor name too long (>64 bytes): " + nameBytes.length);
+            throw new GGUFFormatException(
+                    "Tensor name too long (>"
+                            + MAX_TENSOR_NAME_BYTES
+                            + " bytes): "
+                            + nameBytes.length);
         }
         String name = new String(nameBytes, StandardCharsets.UTF_8);
         // The number of shape in the tensor. Currently at most 4, but this may change in the
@@ -229,18 +236,14 @@ final class ReaderImpl {
                     "Invalid header.magic: " + magic + " expected: " + GGUF_MAGIC);
         }
         // The version of the format implemented.
-        // Must be `3` for version described in this spec.
-        //
-        // This version should only be increased for structural changes to the format.
-        // Changes that do not affect the structure of the file should instead update the metadata
-        // to signify the change.
         this.version = readInt(byteChannel); // uint32_t version;
-        if (!SUPPORTED_GGUF_VERSIONS.contains(version)) {
+        if (version != GGUF_VERSION) {
             throw new GGUFFormatException(
-                    "Unsupported header.version:"
-                            + version
-                            + " expected: "
-                            + SUPPORTED_GGUF_VERSIONS);
+                    "Unsupported GGUF version "
+                            + Integer.toUnsignedString(version)
+                            + ": only version "
+                            + GGUF_VERSION
+                            + " is read");
         }
         // The number of tensors in the file.
         // This is explicit, instead of being included in the metadata, to ensure it is always
@@ -265,14 +268,7 @@ final class ReaderImpl {
             if (key.length() >= (1 << 16)) {
                 throw new GGUFFormatException("Metadata key too long: " + key.length());
             }
-            if (!key.codePoints()
-                    .allMatch(
-                            cp ->
-                                    ('a' <= cp && cp <= 'z')
-                                            || ('0' <= cp && cp <= '9')
-                                            || cp == '_'
-                                            || cp == '-'
-                                            || cp == '.')) {
+            if (!isValidKey(key)) {
                 throw new GGUFFormatException("Invalid metadata key format: " + key);
             }
 
@@ -302,6 +298,23 @@ final class ReaderImpl {
         }
 
         return tensorCount;
+    }
+
+    /** A key of lowercase letters, digits, '_', '-' and '.', as the reader and writer accept. */
+    static boolean isValidKey(String key) {
+        for (int i = 0; i < key.length(); i++) {
+            char c = key.charAt(i);
+            boolean valid =
+                    ('a' <= c && c <= 'z')
+                            || ('0' <= c && c <= '9')
+                            || c == '_'
+                            || c == '-'
+                            || c == '.';
+            if (!valid) {
+                return false;
+            }
+        }
+        return true;
     }
 
     private Object readArray(ReadableByteChannel byteChannel, String key) throws IOException {

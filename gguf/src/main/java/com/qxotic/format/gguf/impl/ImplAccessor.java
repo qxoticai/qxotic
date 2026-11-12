@@ -5,6 +5,7 @@ import com.qxotic.format.gguf.GGUF;
 import java.io.IOException;
 import java.nio.channels.ReadableByteChannel;
 import java.nio.channels.WritableByteChannel;
+import java.nio.file.Path;
 
 public final class ImplAccessor {
     public static Builder newBuilder() {
@@ -28,7 +29,11 @@ public final class ImplAccessor {
     }
 
     public static void write(GGUF gguf, WritableByteChannel byteChannel) throws IOException {
-        WriterImpl.writeImpl(gguf, byteChannel);
+        WriterImpl.write(gguf, byteChannel);
+    }
+
+    public static void write(GGUF gguf, Path path) throws IOException {
+        WriterImpl.write(gguf, path);
     }
 
     public static String toString(GGUF gguf, boolean showKeys, boolean showTensors) {

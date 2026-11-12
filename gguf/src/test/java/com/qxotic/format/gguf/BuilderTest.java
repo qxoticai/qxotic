@@ -620,8 +620,7 @@ public class BuilderTest extends GGUFTest {
         Builder original =
                 Builder.newBuilder()
                         .putString("foo", "bar")
-                        .putTensor(TensorEntry.create("tensor", new long[] {1}, GGMLType.F32, 0))
-                        .setVersion(2);
+                        .putTensor(TensorEntry.create("tensor", new long[] {1}, GGMLType.F32, 0));
 
         // Changes in the copy do not affect the original.
         mutateAndCheck(original.clone(), original);
@@ -639,14 +638,12 @@ public class BuilderTest extends GGUFTest {
         toMutate.putTensor(
                 TensorEntry.create(
                         "new_tensor", new long[] {3, 2, 1}, GGMLType.Q8_0, 0)); // modify mutate
-        toMutate.setVersion(3);
 
         // Modifications to the mutated Builder do not affect copies.
         assertEquals(MetadataValueType.STRING, toCheck.getType("foo"));
         assertEquals("bar", toCheck.getValue(String.class, "foo"));
         assertFalse(toCheck.containsTensor("new_tensor"));
         assertEquals(GGMLType.F32, toCheck.getTensor("tensor").ggmlType());
-        assertEquals(2, toCheck.getVersion());
     }
 
     @Test

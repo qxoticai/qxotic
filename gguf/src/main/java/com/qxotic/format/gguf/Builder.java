@@ -71,7 +71,11 @@ public interface Builder extends Cloneable {
     /** Returns a structural copy; array-valued metadata remains shared. */
     Builder clone();
 
-    /** Sets the GGUF format version; 3 is the current version. */
+    /**
+     * Sets the GGUF format version, which must be 3: the only version read or written.
+     *
+     * @throws IllegalArgumentException for any other version
+     */
     Builder setVersion(int newVersion);
 
     /** GGUF format version. */

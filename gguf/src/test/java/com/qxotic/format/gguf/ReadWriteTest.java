@@ -149,13 +149,14 @@ public class ReadWriteTest extends GGUFTest {
 
     @Test
     public void testUnsupportedVersion() throws IOException {
-        byte[] ggufBytes = writeToBytes(Builder.newBuilder().putString("foo", "bar").build());
-        // Write unsupported version (version 99).
-        ByteBuffer.wrap(ggufBytes).order(ByteOrder.LITTLE_ENDIAN).putInt(4, 99);
-
-        assertThrows(
-                GGUFFormatException.class,
-                () -> GGUF.read(Channels.newChannel(new ByteArrayInputStream(ggufBytes))));
+        // v2 too: only version 3 is read
+        for (int version : new int[] {1, 2, 4, 99}) {
+            byte[] ggufBytes = writeToBytes(Builder.newBuilder().putString("foo", "bar").build());
+            ByteBuffer.wrap(ggufBytes).order(ByteOrder.LITTLE_ENDIAN).putInt(4, version);
+            GGUFFormatException e =
+                    assertThrows(GGUFFormatException.class, () -> readFromBytes(ggufBytes));
+            assertTrue(e.getMessage().contains("version " + version), e.getMessage());
+        }
     }
 
     @Test
@@ -413,8 +414,8 @@ public class ReadWriteTest extends GGUFTest {
     }
 
     @Test
-    public void testTensorNameLongerThan64Fails() {
-        String longName = "a".repeat(65);
+    public void testTensorNameLongerThan63Fails() {
+        String longName = "a".repeat(64);
         byte[] ggufBytes =
                 rawGguf(
                         1,
@@ -425,8 +426,8 @@ public class ReadWriteTest extends GGUFTest {
 
     @Test
     public void testTensorNameLimitCountsUtf8Bytes() throws IOException {
-        // 33 two-byte chars: 33 UTF-16 units but 66 UTF-8 bytes.
-        String wide = "é".repeat(33);
+        // 32 two-byte chars: 32 UTF-16 units but 64 UTF-8 bytes.
+        String wide = "é".repeat(32);
         byte[] tooLong =
                 rawGguf(
                         1,
@@ -434,14 +435,14 @@ public class ReadWriteTest extends GGUFTest {
                         new byte[][] {tensorInfo(wide, new long[] {1}, GGMLType.F32, 0)});
         assertThrows(GGUFFormatException.class, () -> readFromBytes(tooLong));
 
-        // The reader accepts the spec bound of 64 bytes.
-        String atSpecLimit = "a".repeat(64);
+        // The reader accepts llama.cpp's bound, GGML_MAX_NAME less its NUL: 63 bytes.
+        String atLimit = "a".repeat(63);
         byte[] ok =
                 rawGguf(
                         1,
                         new byte[0][],
-                        new byte[][] {tensorInfo(atSpecLimit, new long[] {1}, GGMLType.F32, 0)});
-        assertNotNull(readFromBytes(ok).getTensor(atSpecLimit));
+                        new byte[][] {tensorInfo(atLimit, new long[] {1}, GGMLType.F32, 0)});
+        assertNotNull(readFromBytes(ok).getTensor(atLimit));
     }
 
     @Test

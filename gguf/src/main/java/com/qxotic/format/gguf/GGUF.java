@@ -9,7 +9,6 @@ import java.nio.channels.ReadableByteChannel;
 import java.nio.channels.WritableByteChannel;
 import java.nio.file.Files;
 import java.nio.file.Path;
-import java.nio.file.StandardOpenOption;
 import java.util.Collection;
 import java.util.Objects;
 import java.util.Set;
@@ -227,18 +226,23 @@ public interface GGUF {
         }
     }
 
-    /** Writes GGUF metadata to a {@link WritableByteChannel}. */
+    /**
+     * Writes GGUF metadata to a {@link WritableByteChannel}.
+     *
+     * @throws IllegalArgumentException if the format refuses the GGUF; nothing is written then
+     */
     static void write(GGUF gguf, WritableByteChannel byteChannel) throws IOException {
         ImplAccessor.write(gguf, byteChannel);
     }
 
-    /** Writes a GGUF instance to a file at the specified path. */
+    /**
+     * Writes GGUF metadata to a new file at the specified path.
+     *
+     * @throws IllegalArgumentException if the format refuses the GGUF; no file is created then
+     * @throws java.nio.file.FileAlreadyExistsException if the file exists
+     */
     static void write(GGUF gguf, Path modelPath) throws IOException {
-        try (WritableByteChannel byteChannel =
-                Files.newByteChannel(
-                        modelPath, StandardOpenOption.WRITE, StandardOpenOption.CREATE_NEW)) {
-            write(gguf, byteChannel);
-        }
+        ImplAccessor.write(gguf, modelPath);
     }
 
     /** Detailed string representation with control over what to display. */

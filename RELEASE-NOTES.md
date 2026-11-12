@@ -26,6 +26,9 @@ The libraries keep the soname of 0.4.0, `libtoknroll.so.0.4.0` and `libjinfer.so
   Images are resized as the reference does: the grid rounds half to even, the image is stretched with bicubic weights instead of letterboxed, and the projector's own `image_min_pixels` and `image_max_pixels` bound it.
 - **A GGUF's tensors must fill their slots.** The reader checks every tensor's size, from its shape and type, against the room the file gives it, and refuses a gap or two tensors that cross; a tensor inside another, such as Q and K inside a stacked QK, still loads.
   A type that sizes its tensors wrong, such as the first Ternary Bonsai's `Q2_0` files in a pre-release layout, now fails at load naming the tensors instead of decoding garbage.
+- **gguf reads and writes version 3 only.** `Builder.setVersion` refuses any other version, so gguf no longer writes a file its own reader refuses; v2 is found only in files converted in 2023.
+  A write the format refuses, such as a tensor name past 63 bytes or an uppercase key, now writes nothing: no bytes reach the channel and no file is created.
+  The reader refuses tensor names past 63 bytes too, as llama.cpp does.
 - **Model references read their repository in any case.** Hugging Face and ModelScope do, so `LiquidAI/d1-2B-gguf` now finds the cache of `LiquidAI/d1-2B-GGUF`, offline too, instead of downloading the model again.
 - **LFM3-Omni answers text requests under its voice prompt.** A text-only reply under "Respond with interleaved text and audio." ended before its first word, reported as a normal stop.
   A text reply now bans every speech-lane token, not only the two lane openers, and answers in text.

@@ -18,9 +18,7 @@ import java.util.stream.Collectors;
 
 final class BuilderImpl extends AbstractBuilder {
 
-    private static final int DEFAULT_VERSION = 3;
-
-    private int version = DEFAULT_VERSION;
+    private int version = ReaderImpl.GGUF_VERSION;
     private Map<String, Object> metadata = new LinkedHashMap<>();
     private Map<String, TypeDescriptor> metadataTypes = new LinkedHashMap<>();
     private Map<String, TensorEntry> tensorInfos = new LinkedHashMap<>();
@@ -75,6 +73,13 @@ final class BuilderImpl extends AbstractBuilder {
 
     @Override
     public BuilderImpl setVersion(int newVersion) {
+        if (newVersion != ReaderImpl.GGUF_VERSION) {
+            throw new IllegalArgumentException(
+                    "GGUF version "
+                            + newVersion
+                            + " is not supported: only version "
+                            + ReaderImpl.GGUF_VERSION);
+        }
         this.version = newVersion;
         return this;
     }

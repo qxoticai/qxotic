@@ -1,274 +1,188 @@
 package com.qxotic.format.gguf.impl;
 
-import com.qxotic.format.gguf.GGMLType;
 import com.qxotic.format.gguf.GGUF;
 import com.qxotic.format.gguf.MetadataValueType;
 import com.qxotic.format.gguf.TensorEntry;
+import java.io.ByteArrayOutputStream;
 import java.io.IOException;
 import java.lang.reflect.Array;
 import java.nio.ByteBuffer;
 import java.nio.ByteOrder;
 import java.nio.channels.WritableByteChannel;
 import java.nio.charset.StandardCharsets;
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.nio.file.StandardOpenOption;
 
+/**
+ * Writes a GGUF header in memory first: one the format refuses fails before the channel or the file
+ * gets its first byte, and the channel gets one write instead of one per value.
+ */
 final class WriterImpl {
-    /** ggml's GGML_MAX_NAME (64) minus the NUL terminator. */
-    private static final int MAX_TENSOR_NAME_BYTES = 63;
-
-    private final ByteBuffer BB_8 = ByteBuffer.allocate(Long.BYTES).order(ByteOrder.LITTLE_ENDIAN);
-
+    private final ByteBuffer scratch =
+            ByteBuffer.allocate(Long.BYTES).order(ByteOrder.LITTLE_ENDIAN);
+    private final ByteArrayOutputStream header = new ByteArrayOutputStream();
     private final GGUF gguf;
-    private long totalBytesWritten;
 
     private WriterImpl(GGUF gguf) {
         this.gguf = gguf;
     }
 
-    static void writeImpl(GGUF gguf, WritableByteChannel byteChannel) throws IOException {
-        WriterImpl writer = new WriterImpl(gguf);
-        writer.writeHeader(byteChannel);
-        for (TensorEntry tensorEntry : gguf.getTensors()) {
-            writer.writeTensorEntry(byteChannel, tensorEntry);
+    static void write(GGUF gguf, WritableByteChannel byteChannel) throws IOException {
+        ByteBuffer bytes = ByteBuffer.wrap(serialize(gguf));
+        while (bytes.hasRemaining()) {
+            byteChannel.write(bytes);
         }
-        // Always align, even if there are no tensors.
-        writer.writePaddingForAlignment(byteChannel);
+    }
 
-        if (writer.totalBytesWritten != gguf.getTensorDataOffset()) {
+    static void write(GGUF gguf, Path path) throws IOException {
+        Files.write(path, serialize(gguf), StandardOpenOption.CREATE_NEW);
+    }
+
+    /** The header, up to {@link GGUF#getTensorDataOffset()}; refused as a whole or not at all. */
+    private static byte[] serialize(GGUF gguf) {
+        WriterImpl writer = new WriterImpl(gguf);
+        writer.writeHeader();
+        for (TensorEntry tensorEntry : gguf.getTensors()) {
+            writer.writeTensorEntry(tensorEntry);
+        }
+        // padding up to the tensor data, even when there are no tensors
+        writer.header.writeBytes(
+                new byte[(int) GGUFImpl.padding(writer.header.size(), gguf.getAlignment())]);
+        if (writer.header.size() != gguf.getTensorDataOffset()) {
             throw new IllegalStateException(
-                    "tensorDataOffset mismatch: wrote "
-                            + writer.totalBytesWritten
-                            + " expected "
+                    "tensorDataOffset mismatch: the header takes "
+                            + writer.header.size()
+                            + " bytes, the GGUF says "
                             + gguf.getTensorDataOffset());
         }
+        return writer.header.toByteArray();
     }
 
-    private void writeFully(WritableByteChannel byteChannel, ByteBuffer byteBuffer)
-            throws IOException {
-        while (byteBuffer.hasRemaining()) {
-            this.totalBytesWritten += byteChannel.write(byteBuffer);
+    private void writeHeader() {
+        if (gguf.getVersion() != ReaderImpl.GGUF_VERSION) {
+            throw new IllegalArgumentException(
+                    "GGUF version "
+                            + gguf.getVersion()
+                            + " cannot be written: only version "
+                            + ReaderImpl.GGUF_VERSION);
+        }
+        writeInt(ReaderImpl.GGUF_MAGIC); // uint32_t magic: "GGUF" little-endian
+        writeInt(gguf.getVersion()); // uint32_t version
+        writeLong(gguf.getTensors().size()); // uint64_t tensor_count
+        writeLong(gguf.getMetadataKeys().size()); // uint64_t metadata_kv_count
+        for (String key : gguf.getMetadataKeys()) {
+            if (key.length() >= (1 << 16)) {
+                throw new IllegalArgumentException("Metadata key too long: " + key.length());
+            }
+            if (!ReaderImpl.isValidKey(key)) {
+                throw new IllegalArgumentException("Invalid metadata key format: " + key);
+            }
+            Object value = gguf.getValue(Object.class, key);
+            if (value == null) {
+                throw new IllegalStateException("Missing metadata value for key: " + key);
+            }
+            MetadataValueType valueType = gguf.getType(key);
+            if (valueType == null) {
+                throw new IllegalStateException("Missing metadata type for key: " + key);
+            }
+            writeString(key);
+            if (valueType == MetadataValueType.ARRAY) {
+                writeArray(gguf.getComponentType(key), value);
+            } else {
+                writeValueType(valueType);
+                writeValue(valueType, value);
+            }
         }
     }
 
-    private void writePaddingForAlignment(WritableByteChannel byteChannel) throws IOException {
-        int padding = (int) GGUFImpl.padding(this.totalBytesWritten, gguf.getAlignment());
-        writeFully(byteChannel, ByteBuffer.allocate(padding));
-    }
-
-    private void writeLong(WritableByteChannel byteChannel, long value) throws IOException {
-        writeFully(byteChannel, BB_8.clear().putLong(value).flip());
-    }
-
-    private void writeDouble(WritableByteChannel byteChannel, double value) throws IOException {
-        writeLong(byteChannel, Double.doubleToRawLongBits(value));
-    }
-
-    private void writeInt(WritableByteChannel byteChannel, int value) throws IOException {
-        writeFully(byteChannel, BB_8.clear().putInt(value).flip());
-    }
-
-    private void writeFloat(WritableByteChannel byteChannel, float value) throws IOException {
-        writeInt(byteChannel, Float.floatToRawIntBits(value));
-    }
-
-    private void writeByte(WritableByteChannel byteChannel, byte value) throws IOException {
-        writeFully(byteChannel, BB_8.clear().put(value).flip());
-    }
-
-    private void writeBoolean(WritableByteChannel byteChannel, boolean value) throws IOException {
-        writeByte(byteChannel, value ? (byte) 1 : (byte) 0);
-    }
-
-    private void writeShort(WritableByteChannel byteChannel, short value) throws IOException {
-        writeFully(byteChannel, BB_8.clear().putShort(value).flip());
-    }
-
-    private void writeBytes(WritableByteChannel byteChannel, byte[] bytes) throws IOException {
-        writeFully(byteChannel, ByteBuffer.wrap(bytes));
-    }
-
-    private void writeString(WritableByteChannel byteChannel, String string) throws IOException {
-        byte[] bytes = string.getBytes(StandardCharsets.UTF_8);
-        // A string in GGUF.
-        // The length of the string, in bytes.
-        writeLong(byteChannel, bytes.length); // uint64_t len;
-        // The string as a UTF-8 non-null-terminated string.
-        writeBytes(byteChannel, bytes);
-    }
-
-    private void writeTensorEntry(WritableByteChannel byteChannel, TensorEntry tensorEntry)
-            throws IOException {
-        // The name of the tensor. It is a standard GGUF string, with the caveat that
-        // it must be at most 64 bytes long; ggml loads at most 63 (see MAX_TENSOR_NAME_BYTES).
+    private void writeTensorEntry(TensorEntry tensorEntry) {
         String name = tensorEntry.name();
-        int nameBytes = name.getBytes(StandardCharsets.UTF_8).length;
-        if (nameBytes > MAX_TENSOR_NAME_BYTES) {
+        byte[] nameBytes = name.getBytes(StandardCharsets.UTF_8);
+        if (nameBytes.length > ReaderImpl.MAX_TENSOR_NAME_BYTES) {
             throw new IllegalArgumentException(
-                    "Tensor name too long (>63 bytes): "
-                            + nameBytes
+                    "Tensor name too long (>"
+                            + ReaderImpl.MAX_TENSOR_NAME_BYTES
+                            + " bytes): "
+                            + nameBytes.length
                             + " for tensor '"
                             + name
                             + "'");
         }
-        writeString(byteChannel, name); // gguf_string_t name;
-        // The number of shape in the tensor.
-        // Currently at most 4, but this may change in the future.
-        int n_dimensions = tensorEntry.shape().length;
-        if (n_dimensions > 4) {
+        long[] shape = tensorEntry.shape();
+        if (shape.length > 4) {
             throw new IllegalArgumentException(
                     "Tensor has too many dimensions: "
-                            + n_dimensions
+                            + shape.length
                             + " for tensor '"
                             + name
                             + "'");
         }
-        writeInt(byteChannel, n_dimensions); // uint32_t n_dimensions;
-        // The shape of the tensor.
-        long[] dimensions = tensorEntry.shape(); // uint64_t shape[n_dimensions];
-        for (int i = 0; i < n_dimensions; ++i) {
-            writeLong(byteChannel, dimensions[i]);
-        }
-        // The type of the tensor.
-        GGMLType ggmlType = tensorEntry.ggmlType();
-        writeGGMLType(byteChannel, ggmlType); // ggml_type type;
-        // The offset of the tensor's data in this file in bytes.
-        // This offset is relative to `tensor_data`, not to the start
-        // of the file, to make it easier for writers to write the file.
-        // Readers should consider exposing this offset relative to the
-        // file to make it easier to read the data.
-        // Must be a multiple of `ALIGNMENT`.
-        long offset = tensorEntry.offset();
-        writeLong(byteChannel, offset); // uint64_t offset;
-        if (offset % gguf.getAlignment() != 0) {
+        if (tensorEntry.offset() % gguf.getAlignment() != 0) {
             throw new IllegalArgumentException(
                     "Tensor offset "
-                            + offset
+                            + tensorEntry.offset()
                             + " is not aligned to "
                             + gguf.getAlignment()
                             + " for tensor '"
                             + name
                             + "'");
         }
-    }
-
-    @SuppressWarnings("EnumOrdinal")
-    private void writeGGMLType(WritableByteChannel byteChannel, GGMLType ggmlType)
-            throws IOException {
-        writeInt(byteChannel, ggmlType.getId());
-    }
-
-    private void writeHeader(WritableByteChannel byteChannel) throws IOException {
-        // Magic number to announce that this is a GGUF file.
-        // Must be `GGUF` at the byte level: `0x47` `0x47` `0x55` `0x46`.
-        // Your executor might do little-endian byte order, so it might be
-        // check for 0x46554747 and letting the endianness cancel out.
-        // Consider being *very* explicit about the byte order here.
-        writeInt(byteChannel, ReaderImpl.GGUF_MAGIC); //    uint32_t magic;
-        // The version of the format implemented.
-        // Must be `3` for version described in this spec.
-        //
-        // This version should only be increased for structural changes to the format.
-        // Changes that do not affect the structure of the file should instead update the metadata
-        // to signify the change.
-        writeInt(byteChannel, gguf.getVersion()); // uint32_t version;
-        // The number of tensors in the file.
-        // This is explicit, instead of being included in the metadata, to ensure it is always
-        // present
-        // for loading the tensors.
-        writeLong(byteChannel, gguf.getTensors().size()); // uint64_t tensor_count;
-        // The number of metadata key-value pairs.
-        writeLong(byteChannel, gguf.getMetadataKeys().size()); // uint64_t metadata_kv_count;
-        // The metadata key-value pairs.
-        // gguf_metadata_kv_t metadata_kv[metadata_kv_count];
-        for (String key : gguf.getMetadataKeys()) {
-            // The key of the metadata. It is a standard GGUF string, with the following caveats:
-            // - It must be a valid ASCII string.
-            // - It must be a hierarchical key, where each segment is `lower_snake_case` and
-            // separated by
-            // a `.`.
-            // - It must be at most 2^16-1/65535 bytes long.
-            // Any keys that do not follow these rules are invalid.
-            if (key.length() >= (1 << 16)) {
-                throw new IllegalArgumentException("Metadata key too long: " + key.length());
-            }
-            if (!key.codePoints()
-                    .allMatch(
-                            cp ->
-                                    ('a' <= cp && cp <= 'z')
-                                            || ('0' <= cp && cp <= '9')
-                                            || cp == '_'
-                                            || cp == '-'
-                                            || cp == '.')) {
-                throw new IllegalArgumentException("Invalid metadata key format: " + key);
-            }
-            writeString(byteChannel, key);
-            Object value = gguf.getValue(Object.class, key);
-            if (value == null) {
-                throw new IllegalStateException("Missing metadata value for key: " + key);
-            }
-
-            MetadataValueType valueType = gguf.getType(key);
-            if (valueType == null) {
-                throw new IllegalStateException("Missing metadata type for key: " + key);
-            }
-
-            if (valueType == MetadataValueType.ARRAY) {
-                MetadataValueType componentType = gguf.getComponentType(key);
-                writeTypedArrayOf(byteChannel, componentType, value);
-            } else {
-                writeTypedValue(byteChannel, valueType, value);
-            }
+        writeLong(nameBytes.length); // gguf_string_t name
+        header.writeBytes(nameBytes);
+        writeInt(shape.length); // uint32_t n_dimensions
+        for (long dimension : shape) {
+            writeLong(dimension); // uint64_t shape[n_dimensions]
         }
+        writeInt(tensorEntry.ggmlType().getId()); // ggml_type type
+        writeLong(tensorEntry.offset()); // uint64_t offset, relative to the tensor data
     }
 
-    private void writeTypedArrayOf(
-            WritableByteChannel byteChannel, MetadataValueType componentType, Object value)
-            throws IOException {
-        int arrayLength = Array.getLength(value);
-        writeValueType(byteChannel, MetadataValueType.ARRAY);
-        writeValueType(byteChannel, componentType);
-        writeLong(byteChannel, arrayLength);
+    private void writeArray(MetadataValueType componentType, Object value) {
+        writeValueType(MetadataValueType.ARRAY);
+        writeValueType(componentType);
+        writeLong(Array.getLength(value)); // number of elements, not bytes
         switch (componentType) {
             case UINT8: // fall-through
             case INT8:
-                writeBytes(byteChannel, (byte[]) value);
+                header.writeBytes((byte[]) value);
                 break;
             case UINT16: // fall-through
             case INT16:
                 for (short s : (short[]) value) {
-                    writeShort(byteChannel, s);
+                    writeShort(s);
                 }
                 break;
             case UINT32: // fall-through
             case INT32:
                 for (int i : (int[]) value) {
-                    writeInt(byteChannel, i);
-                }
-                break;
-            case BOOL:
-                for (boolean b : (boolean[]) value) {
-                    writeBoolean(byteChannel, b);
-                }
-                break;
-            case STRING:
-                String[] stringArray = (String[]) value;
-                for (String s : stringArray) {
-                    writeString(byteChannel, s);
+                    writeInt(i);
                 }
                 break;
             case UINT64: // fall-through
             case INT64:
                 for (long n : (long[]) value) {
-                    writeLong(byteChannel, n);
+                    writeLong(n);
                 }
                 break;
             case FLOAT32:
                 for (float f : (float[]) value) {
-                    writeFloat(byteChannel, f);
+                    writeInt(Float.floatToRawIntBits(f));
                 }
                 break;
             case FLOAT64:
                 for (double d : (double[]) value) {
-                    writeDouble(byteChannel, d);
+                    writeLong(Double.doubleToRawLongBits(d));
+                }
+                break;
+            case BOOL:
+                for (boolean b : (boolean[]) value) {
+                    header.write(b ? 1 : 0);
+                }
+                break;
+            case STRING:
+                for (String s : (String[]) value) {
+                    writeString(s);
                 }
                 break;
             case ARRAY:
@@ -276,50 +190,61 @@ final class WriterImpl {
         }
     }
 
-    private void writeTypedValue(
-            WritableByteChannel byteChannel, MetadataValueType valueType, Object value)
-            throws IOException {
-        if (valueType == MetadataValueType.ARRAY) {
-            throw new IllegalArgumentException("use writeArrayOf instead");
-        }
-        writeValueType(byteChannel, valueType);
+    private void writeValue(MetadataValueType valueType, Object value) {
         switch (valueType) {
             case UINT8: // fall-through
             case INT8:
-                writeByte(byteChannel, (byte) value);
+                header.write((byte) value);
                 break;
             case UINT16: // fall-through
             case INT16:
-                writeShort(byteChannel, (short) value);
+                writeShort((short) value);
                 break;
             case UINT32: // fall-through
             case INT32:
-                writeInt(byteChannel, (int) value);
+                writeInt((int) value);
                 break;
-            case FLOAT32:
-                writeFloat(byteChannel, (float) value);
-                break;
-            case BOOL:
-                writeBoolean(byteChannel, (boolean) value);
-                break;
-            case STRING:
-                writeString(byteChannel, (String) value);
-                break;
-            case ARRAY:
-                throw new IllegalArgumentException("use writeArrayOf instead");
             case UINT64: // fall-through
             case INT64:
-                writeLong(byteChannel, (long) value);
+                writeLong((long) value);
+                break;
+            case FLOAT32:
+                writeInt(Float.floatToRawIntBits((float) value));
                 break;
             case FLOAT64:
-                writeDouble(byteChannel, (double) value);
+                writeLong(Double.doubleToRawLongBits((double) value));
                 break;
+            case BOOL:
+                header.write((boolean) value ? 1 : 0);
+                break;
+            case STRING:
+                writeString((String) value);
+                break;
+            case ARRAY:
+                throw new IllegalArgumentException("an array is written by writeArray");
         }
     }
 
+    private void writeString(String string) {
+        byte[] bytes = string.getBytes(StandardCharsets.UTF_8);
+        writeLong(bytes.length); // uint64_t len, in bytes
+        header.writeBytes(bytes); // UTF-8, not NUL-terminated
+    }
+
     @SuppressWarnings("EnumOrdinal")
-    private void writeValueType(WritableByteChannel byteChannel, MetadataValueType valueType)
-            throws IOException {
-        writeInt(byteChannel, valueType.ordinal());
+    private void writeValueType(MetadataValueType valueType) {
+        writeInt(valueType.ordinal());
+    }
+
+    private void writeShort(short value) {
+        header.write(scratch.clear().putShort(value).array(), 0, Short.BYTES);
+    }
+
+    private void writeInt(int value) {
+        header.write(scratch.clear().putInt(value).array(), 0, Integer.BYTES);
+    }
+
+    private void writeLong(long value) {
+        header.write(scratch.clear().putLong(value).array(), 0, Long.BYTES);
     }
 }
