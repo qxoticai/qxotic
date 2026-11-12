@@ -14,7 +14,7 @@
 - Public API: `src/main/java/com/qxotic/format/gguf/`
 - Internal IO: `src/main/java/com/qxotic/format/gguf/impl/`
 - Tests: `src/test/java/com/qxotic/format/gguf/`
-- Docs: `README.md`, `docs/`
+- Docs: `README.md`, `docs/gguf/`
 
 ## Build & Test
 
@@ -50,7 +50,7 @@ mvnd -pl gguf -am test
 mvnd -pl gguf -am -Prelease -Dgpg.skip=true -DskipTests verify
 ```
 
-Real deploy uses `-Prelease` **without** `-Dgpg.skip=true`.
+Releases deploy with `make release-deploy PROJECT=gguf` (or `PROJECT=.` for everything pending); see `RELEASING.md`.
 
 ## Code Conventions
 
