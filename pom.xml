@@ -464,6 +464,8 @@
                 <expandEmptyElements>false</expandEmptyElements>
                 <spaceBeforeCloseEmptyElement>true</spaceBeforeCloseEmptyElement>
               </sortPom>
+              <!-- as the java format: outside a git checkout the default is the platform's, CRLF on Windows -->
+              <lineEndings>UNIX</lineEndings>
             </pom>
           </configuration>
         </plugin>
