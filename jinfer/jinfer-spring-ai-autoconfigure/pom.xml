@@ -120,6 +120,12 @@
       <artifactId>jinfer-lfm3</artifactId>
       <scope>test</scope>
     </dependency>
+    <!-- JinferEmbeddingAutoConfigurationIT serves EmbeddingGemma 2's width and projector knobs. -->
+    <dependency>
+      <groupId>com.qxotic</groupId>
+      <artifactId>jinfer-gemma-embedding2</artifactId>
+      <scope>test</scope>
+    </dependency>
     <dependency>
       <groupId>com.qxotic</groupId>
       <artifactId>jinfer-testkit</artifactId>

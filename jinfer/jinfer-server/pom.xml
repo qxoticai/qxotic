@@ -67,6 +67,12 @@
       <artifactId>jinfer-qwen35</artifactId>
       <scope>test</scope>
     </dependency>
+    <!-- RetrievalServerMediaEmbeddingIT serves EmbeddingGemma 2's media embeddings. -->
+    <dependency>
+      <groupId>com.qxotic</groupId>
+      <artifactId>jinfer-gemma-embedding2</artifactId>
+      <scope>test</scope>
+    </dependency>
   </dependencies>
 
   <build>
