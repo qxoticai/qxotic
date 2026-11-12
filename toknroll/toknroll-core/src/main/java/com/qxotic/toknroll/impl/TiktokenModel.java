@@ -19,7 +19,6 @@ import java.util.Map;
 import java.util.NoSuchElementException;
 import java.util.Objects;
 import java.util.ServiceLoader;
-import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.atomic.AtomicReference;
 import java.util.concurrent.atomic.AtomicReferenceArray;
 
@@ -38,7 +37,9 @@ final class TiktokenModel extends AbstractTokenizationModel {
     /** Words of up to this many bytes are remembered, up to {@link #MEMO_WORDS} of them. */
     private static final int MEMO_BYTES = 32;
 
-    private static final int MEMO_WORDS = 1 << 16;
+    private static final int MEMO_BITS = 16;
+
+    private static final int MEMO_WORDS = 1 << MEMO_BITS;
 
     private static final List<TiktokenEngine> ENGINES = engines();
 
@@ -54,7 +55,24 @@ final class TiktokenModel extends AbstractTokenizationModel {
     // its length, or 0 for a longer token, which decode copies
     private final byte[] shortLengths;
     private final boolean ignoreMerges;
-    private final Map<String, int[]> memo = new ConcurrentHashMap<>();
+
+    /**
+     * Remembered words, one per slot by hash, a newer word replacing an older. Read and written
+     * without locks or atomics, on purpose: a {@link Word}'s fields are final, so a thread sees a
+     * slot's word whole or an older one, never half of one, and nothing a failed call leaves here
+     * can hold up or mislead the next.
+     */
+    private final Word[] memo = new Word[MEMO_WORDS];
+
+    private static final class Word {
+        final String key;
+        final int[] ids;
+
+        Word(String key, int[] ids) {
+            this.key = key;
+            this.ids = ids;
+        }
+    }
 
     /** An entry of {@link #encoders}: no engine encodes the rule set. */
     private static final Object NO_ENCODER = new Object();
@@ -240,14 +258,15 @@ final class TiktokenModel extends AbstractTokenizationModel {
                 length <= MEMO_BYTES
                         ? new String(text, start, length, StandardCharsets.ISO_8859_1)
                         : null;
-        int[] ids = key != null ? memo.get(key) : null;
-        if (ids == null) {
+        int slot = key != null ? (key.hashCode() * 0x9E3779B9) >>> (32 - MEMO_BITS) : 0;
+        Word word = key != null ? memo[slot] : null;
+        int[] ids;
+        if (word != null && word.key.equals(key)) {
+            ids = word.ids;
+        } else {
             ids = wordIds(text, start, end);
             if (key != null) {
-                if (memo.size() >= MEMO_WORDS) {
-                    memo.clear();
-                }
-                memo.put(key, ids);
+                memo[slot] = new Word(key, ids);
             }
         }
         for (int id : ids) {
@@ -422,6 +441,8 @@ final class TiktokenModel extends AbstractTokenizationModel {
                 if (Arrays.equals(want, got.build().toArray())) {
                     return candidate;
                 }
+            } catch (VirtualMachineError e) {
+                throw e; // out of memory or stack: this call fails, the next one tries again
             } catch (Throwable e) {
                 // passed over like an encoder that disagrees
             }
@@ -440,6 +461,8 @@ final class TiktokenModel extends AbstractTokenizationModel {
                 if (candidate != null && agrees(candidate, splitter)) {
                     return candidate;
                 }
+            } catch (VirtualMachineError e) {
+                throw e; // out of memory or stack: this call fails, the next one tries again
             } catch (Throwable e) {
                 // passed over like one that disagrees: say, the Vector API module is not enabled
             }
