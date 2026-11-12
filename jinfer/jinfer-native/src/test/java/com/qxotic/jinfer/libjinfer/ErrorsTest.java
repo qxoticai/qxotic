@@ -41,4 +41,21 @@ class ErrorsTest {
         assertEquals(
                 Errors.ERROR, Errors.code(new UncheckedIOException("io", new IOException("disk"))));
     }
+
+    /**
+     * A ref the hub refuses is coded as libtoknroll codes it: a missing repository is not found.
+     */
+    @Test
+    void aHubRefusalIsNotFoundAndAMalformedRefInvalid() {
+        IllegalArgumentException missing =
+                new IllegalArgumentException(
+                        "acme/nothing does not exist, or is gated or private",
+                        new java.io.IOException("HTTP 404"));
+        assertEquals(Errors.ENOTFOUND, Model.refusal(missing).code);
+        assertEquals(
+                Errors.ENOTFOUND,
+                Model.refusal(new IllegalArgumentException("no such model file: 'x'")).code);
+        assertEquals(
+                Errors.EINVAL, Model.refusal(new IllegalArgumentException("bad ref: a//b")).code);
+    }
 }

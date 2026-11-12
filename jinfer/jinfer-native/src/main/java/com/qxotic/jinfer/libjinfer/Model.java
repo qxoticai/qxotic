@@ -135,6 +135,17 @@ final class Model {
         return Errors.invalid("context_capacity " + message.substring("contextCapacity ".length()));
     }
 
+    /**
+     * The hub's refusal of a ref, coded as libtoknroll codes it: a source that answered no (an HTTP
+     * status, the cause) or a "no ..." miss is ENOTFOUND, a malformed ref EINVAL.
+     */
+    static Errors.Failure refusal(IllegalArgumentException e) {
+        String message = e.getMessage() == null ? e.toString() : e.getMessage();
+        return e.getCause() != null || message.startsWith("no ")
+                ? Errors.notFound(message)
+                : Errors.invalid(message);
+    }
+
     static Model load(String ref, Options.Values options) throws IOException {
         LOG.log(
                 System.Logger.Level.DEBUG,
@@ -158,7 +169,12 @@ final class Model {
             if (pathShaped && !Files.exists(Path.of(r)))
                 throw new NoSuchFileException(r, null, "no such file");
         }
-        List<Path> paths = ModelStore.standard().resolveAll(refs);
+        List<Path> paths;
+        try {
+            paths = ModelStore.standard().resolveAll(refs);
+        } catch (IllegalArgumentException refused) {
+            throw refusal(refused);
+        }
         Path path = paths.get(0);
         Map<String, Path> companions = new LinkedHashMap<>();
         int at = 1;

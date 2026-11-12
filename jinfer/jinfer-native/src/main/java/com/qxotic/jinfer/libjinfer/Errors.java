@@ -45,6 +45,10 @@ final class Errors {
         return new Failure(EUNSUPPORTED, message);
     }
 
+    static Failure notFound(String message) {
+        return new Failure(ENOTFOUND, message);
+    }
+
     /** The thread's last result code; message storage belongs to native TLS. */
     private static final class Last {
         int code = OK;
