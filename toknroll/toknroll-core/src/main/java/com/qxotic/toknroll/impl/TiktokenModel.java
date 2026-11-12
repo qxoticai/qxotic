@@ -77,6 +77,13 @@ final class TiktokenModel extends AbstractTokenizationModel {
     /** An entry of {@link #encoders}: no engine encodes the rule set. */
     private static final Object NO_ENCODER = new Object();
 
+    /**
+     * An entry of {@link #encoders} or {@link #words} while one thread looks for the engine: the
+     * others encode with this model meanwhile, the same ids, rather than each building an engine's
+     * tables at a first batch and dropping all but one.
+     */
+    private static final Object SEARCHING = new Object();
+
     /** The engine's encoder per rule set, or {@link #NO_ENCODER}; null until first used. */
     private final AtomicReferenceArray<Object> encoders =
             new AtomicReferenceArray<>(TiktokenSplitter.RULE_SETS);
@@ -397,13 +404,17 @@ final class TiktokenModel extends AbstractTokenizationModel {
             return null;
         }
         Object encoder = encoders.get(rules);
-        if (encoder == null) {
-            // checked against the scanner the engine's rules stand for, without the cuts core makes
-            encoder = findEncoder(rules, splitter.coreCuts() ? splitter.base() : splitter);
-            Object first = encoders.compareAndExchange(rules, null, encoder);
-            encoder = first != null ? first : encoder;
+        if (encoder == null && encoders.compareAndSet(rules, null, SEARCHING)) {
+            try {
+                // checked against the scanner its rules stand for, without core's cuts
+                encoder = findEncoder(rules, splitter.coreCuts() ? splitter.base() : splitter);
+            } catch (VirtualMachineError e) {
+                encoders.set(rules, null); // the next call looks again
+                throw e;
+            }
+            encoders.set(rules, encoder);
         }
-        return encoder != NO_ENCODER ? (TiktokenEngine.Encoder) encoder : null;
+        return encoder instanceof TiktokenEngine.Encoder ? (TiktokenEngine.Encoder) encoder : null;
     }
 
     /** The engine's word encoder, or {@link #NO_ENCODER}; null until first used. */
@@ -411,12 +422,18 @@ final class TiktokenModel extends AbstractTokenizationModel {
 
     private TiktokenEngine.WordEncoder words(TiktokenSplitter splitter) {
         Object words = this.words.get();
-        if (words == null) {
-            words = findWords(splitter);
-            Object first = this.words.compareAndExchange(null, words);
-            words = first != null ? first : words;
+        if (words == null && this.words.compareAndSet(null, SEARCHING)) {
+            try {
+                words = findWords(splitter);
+            } catch (VirtualMachineError e) {
+                this.words.set(null); // the next call looks again
+                throw e;
+            }
+            this.words.set(words);
         }
-        return words != NO_ENCODER ? (TiktokenEngine.WordEncoder) words : null;
+        return words instanceof TiktokenEngine.WordEncoder
+                ? (TiktokenEngine.WordEncoder) words
+                : null;
     }
 
     /** The first engine's word encoder that merges the sample's words as this model does. */
