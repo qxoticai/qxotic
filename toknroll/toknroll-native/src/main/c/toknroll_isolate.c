@@ -123,10 +123,11 @@ static PORT_THREAD_LOCAL int32_t error_code;
 int32_t toknroll__error_code(void) { return error_code; }
 void toknroll__error_code_set(int32_t code) { error_code = code; }
 
-/* Set by toknroll__escaped, read and cleared by toknroll__took_escape: the C shim quarantines the call's
- * tokenizer when its call ended so (toknroll_shim.c). */
+/* Whether the thread's current call escaped (toknroll__escaped): the C shim then quarantines the call's
+ * tokenizer (toknroll_shim.c). Swapped, not cleared: a log callback may call in during a call, and the
+ * inner call must hand the outer one its flag back. */
 static PORT_THREAD_LOCAL int escape_seen;
-int toknroll__took_escape(void) { int seen = escape_seen; escape_seen = 0; return seen; }
+int toknroll__escape_swap(int value) { int seen = escape_seen; escape_seen = value; return seen; }
 
 /* The words for an error that escaped the runtime's own handlers, an OutOfMemoryError or a StackOverflowError
  * that native image raised where no catch ran: static, so nothing is allocated to say it. */
@@ -136,11 +137,8 @@ static const char escaped_out_of_memory[] =
 static const char escaped_stack_overflow[] = "stack overflow: the input nests deeper than the calling thread's stack allows";
 static const char escaped_other[] = "internal error: an exception escaped the library; the call failed and the process goes on (please report it)";
 
-/* The thread's error as the static words for kind, 1 out of memory, 2 stack overflow, anything else an escaped
- * exception: Errors.java's, for an error it caught, and every entry point's last resort for one that reached
- * the entry point past every catch, which also quarantines the call's tokenizer (escaped 1): handlers were
- * skipped, so what the call was updating may be half-written. Allocates nothing that can fail the call: the
- * message buffer is the thread's own, or the static fallback when it cannot have one. */
+/* The thread's error as static words. Allocates nothing that can fail the call: the message buffer is the
+ * thread's own, or the static fallback when it cannot have one. */
 static const char* fail_with(const char* words) {
     char* buffer = (char*) error_buffer(0, 1);
     if (buffer) snprintf(buffer, 1025, "%s", words);
@@ -148,6 +146,10 @@ static const char* fail_with(const char* words) {
     return buffer ? buffer : words;
 }
 
+/* The thread's error for kind, 1 out of memory, 2 stack overflow, anything else an escaped exception:
+ * Errors.java's, for an error it caught, and every entry point's last resort for one that reached the entry
+ * point past every catch, which also quarantines the call's tokenizer (escaped 1): handlers were skipped, so
+ * what the call was updating may be half-written. */
 const char* toknroll__escaped(int32_t kind, int32_t escaped) {
     if (escaped) escape_seen = 1;
     return fail_with(kind == 1 ? escaped_out_of_memory : kind == 2 ? escaped_stack_overflow : escaped_other);
@@ -651,13 +653,10 @@ PORT_THREAD(worker, number) {
  * an entry point, so self already holds its place in the gate. */
 int32_t toknroll__batch(graal_thread* self, void* tasks, int32_t count, int32_t workers) {
     job* j = calloc(1, sizeof *j);   /* the heap's, not this stack's: a worker may be on it after the last task */
-    if (!j) {   /* out of C memory: every task here */
-        int32_t escaped = 0;
-        for (int32_t i = 0; i < count; i++) {
-            int32_t e = toknroll__task(self, tasks, i);
-            if (!escaped) escaped = e;
-        }
-        return escaped;
+    if (!j) {   /* out of C memory: every task on this thread, the job never queued */
+        job alone = {tasks, count, 0, 0, 0, 1, NULL};
+        work(self, &alone);
+        return alone.escaped;
     }
     j->tasks = tasks;
     j->count = count;

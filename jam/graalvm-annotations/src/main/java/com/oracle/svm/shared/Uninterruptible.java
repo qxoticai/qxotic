@@ -1,8 +1,8 @@
 /*
  * A compile-only declaration matching the NAME of GraalVM's svm-shared @Uninterruptible: native-image
  * binds the annotation by its fully qualified name at image build time, and HotSpot never sees this
- * type. Its elements are the builder's, with the builder's defaults. Written here; no GraalVM source is
- * included, and this module is never published.
+ * type, so it declares only the element this repository sets; the builder's own has more, with defaults.
+ * Written here; no GraalVM source is included, and this module is never published.
  */
 package com.oracle.svm.shared;
 
@@ -19,10 +19,4 @@ import java.lang.annotation.Target;
 @Target({ElementType.METHOD, ElementType.CONSTRUCTOR})
 public @interface Uninterruptible {
     String reason();
-
-    boolean callerMustBe() default false;
-
-    boolean calleeMustBe() default true;
-
-    boolean mayBeInlined() default false;
 }

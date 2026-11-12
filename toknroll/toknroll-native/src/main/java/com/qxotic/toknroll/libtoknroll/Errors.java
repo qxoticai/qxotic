@@ -91,9 +91,10 @@ final class Errors {
     private static final int LIMIT = 1024; // ponytail: a fixed bound
 
     static int set(Throwable t) {
+        if (t == Escape.BATCH) return ERROR; // its words are said
+        // out of memory or stack: no heap to build words with, or no stack; C's static ones instead
         int kind = Escape.kind(t);
-        if (kind
-                != Escape.OTHER) { // nothing left to build words with, or no stack to build them on
+        if (kind != Escape.OTHER) {
             Escape.words(kind, 0);
             return ERROR;
         }

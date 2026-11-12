@@ -7,19 +7,20 @@ final class Runs {
     private Runs() {}
 
     /**
-     * Text indexes, from 0 to {@code count}, that cut a batch into at most {@code k} runs of about
-     * equal bytes, text i spanning {@code [starts[i], starts[i + 1])}. A run is empty only when the
-     * batch is; empty texts ride along with their neighbours.
+     * Text indexes, from {@code first} to {@code last}, that cut texts {@code [first, last)} into
+     * at most {@code k} runs of about equal bytes, text i spanning {@code [starts[i], starts[i +
+     * 1])}. A run is empty only when the range is; empty texts ride along with their neighbours.
      */
-    static int[] of(long[] starts, int count, int k) {
-        int m = Math.max(1, Math.min(k, count));
-        long total = starts[count];
+    static int[] of(long[] starts, int first, int last, int k) {
+        int m = Math.max(1, Math.min(k, last - first));
+        long total = starts[last] - starts[first];
         int[] cuts = new int[m + 1];
+        cuts[0] = first;
         int r = 1;
-        for (int i = 1; i < count && r < m; i++) {
-            if (starts[i] * m >= total * r) cuts[r++] = i; // text i starts past share r
+        for (int i = first + 1; i < last && r < m; i++) {
+            if ((starts[i] - starts[first]) * m >= total * r) cuts[r++] = i; // past share r
         }
-        cuts[r] = count;
+        cuts[r] = last;
         return Arrays.copyOf(cuts, r + 1);
     }
 }

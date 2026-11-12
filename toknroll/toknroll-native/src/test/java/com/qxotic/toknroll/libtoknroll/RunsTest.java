@@ -18,17 +18,23 @@ class RunsTest {
 
     @Test
     void anEmptyBatchIsOneEmptyRun() {
-        assertArrayEquals(new int[] {0, 0}, Runs.of(new long[] {0}, 0, 8));
+        assertArrayEquals(new int[] {0, 0}, Runs.of(new long[] {0}, 0, 0, 8));
     }
 
     @Test
     void fewTextsAreOneRunEach() {
-        assertArrayEquals(new int[] {0, 1, 2, 3}, Runs.of(starts(5, 5, 5), 3, 8));
+        assertArrayEquals(new int[] {0, 1, 2, 3}, Runs.of(starts(5, 5, 5), 0, 3, 8));
+    }
+
+    @Test
+    void aRangeIsCutOnItsOwnBytes() {
+        assertArrayEquals(new int[] {2, 3, 4}, Runs.of(starts(100, 100, 5, 5, 100), 2, 4, 8));
+        assertArrayEquals(new int[] {1, 4}, Runs.of(starts(100, 5, 5, 5, 100), 1, 4, 1));
     }
 
     @Test
     void emptyTextsRideAlong() {
-        int[] runs = Runs.of(starts(0, 0, 0, 0), 4, 2);
+        int[] runs = Runs.of(starts(0, 0, 0, 0), 0, 4, 2);
         assertEquals(0, runs[0]);
         assertEquals(4, runs[runs.length - 1]);
     }
@@ -46,7 +52,7 @@ class RunsTest {
                                 : random.nextInt(random.nextBoolean() ? 50 : 5000);
             long[] starts = starts(lengths);
             int k = 1 + random.nextInt(64);
-            int[] runs = Runs.of(starts, count, k);
+            int[] runs = Runs.of(starts, 0, count, k);
             assertEquals(0, runs[0]);
             assertEquals(count, runs[runs.length - 1]);
             assertTrue(runs.length - 1 <= k, "at most k runs");

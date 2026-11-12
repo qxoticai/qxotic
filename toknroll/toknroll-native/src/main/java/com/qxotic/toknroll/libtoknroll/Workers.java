@@ -27,18 +27,6 @@ final class Workers {
     /** The process the runtime started in. */
     private static final long PROCESS = ProcessProperties.getProcessID();
 
-    /**
-     * An escaped task's error, made once, while there is a heap to make it in, thrown each time.
-     */
-    private static final OutOfMemoryError OUT_OF_MEMORY =
-            new OutOfMemoryError("a batch task ran out of memory");
-
-    private static final StackOverflowError STACK_OVERFLOW =
-            new StackOverflowError("a batch task overflowed its stack");
-
-    private static final IllegalStateException ESCAPED =
-            new IllegalStateException("a batch task failed past every catch");
-
     @CFunction("toknroll__batch")
     private static native int batch(IsolateThread self, ObjectHandle tasks, int count, int workers);
 
@@ -66,14 +54,14 @@ final class Workers {
         } finally {
             HANDLES.destroy(handle);
         }
-        if (escaped != 0) Escape.words(escaped, 1); // the call's tokenizer is quarantined
+        if (escaped != 0) {
+            Escape.words(escaped, 1); // the error, in C's words, and the tokenizer quarantined
+            throw Escape.BATCH;
+        }
         Throwable failure = list.failure;
         if (failure instanceof RuntimeException e) throw e;
         if (failure instanceof Error e) throw e;
         if (failure != null) throw new IllegalStateException(failure);
-        if (escaped == Escape.OUT_OF_MEMORY) throw OUT_OF_MEMORY;
-        if (escaped == Escape.STACK_OVERFLOW) throw STACK_OVERFLOW;
-        if (escaped != 0) throw ESCAPED;
     }
 
     /** One task of a batch, on a worker or the calling thread: 0, or the handler's escape. */

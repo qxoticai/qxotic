@@ -21,6 +21,12 @@ final class Escape {
     static final int OUT_OF_MEMORY = 1, STACK_OVERFLOW = 2, OTHER = 3;
 
     /**
+     * Thrown to end a batch whose task escaped, its words already said (Workers): made once, at
+     * build time, so a full heap can still throw it; {@link Errors#set} leaves the words be.
+     */
+    static final IllegalStateException BATCH = new IllegalStateException("a batch task escaped");
+
+    /**
      * The thread's error as C's static words for kind, and its message as it now is; {@code
      * escaped} 1 also quarantines the call's tokenizer. No transition: C neither blocks nor calls
      * back.

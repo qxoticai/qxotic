@@ -16,9 +16,9 @@ void toknroll__error_set(T, int32_t, const char*);
    every catch (an escape: what it was updating may be half-written) */
 #define CALL_ON(tk, type, fail, call) { \
     T t = toknroll__enter(); \
-    (void) toknroll__took_escape(); \
+    int outer = toknroll__escape_swap(0); \
     type r = !t || toknroll__quarantined(tk) ? (fail) : (call); \
-    if (toknroll__took_escape()) toknroll__quarantine(tk); \
+    if (toknroll__escape_swap(outer)) toknroll__quarantine(tk); \
     toknroll__leave(); \
     return r; }
 
