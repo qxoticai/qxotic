@@ -436,7 +436,7 @@ final class Canary {
 
     static com.qxotic.jinfer.decision.Decisions decisions(
             com.qxotic.jinfer.chat.DecisionModel model) {
-        return com.qxotic.jinfer.decision.Decisions.over(model, 2048);
+        return com.qxotic.jinfer.decision.Decisions.of(model);
     }
 }
 EOF
