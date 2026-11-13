@@ -51,7 +51,7 @@
  * <p>Builders accept a local path, a model reference, or an already loaded model. Each chat,
  * embedding, or reranking adapter is one serial inference pipeline. Speech requests use independent
  * synthesis states and may run concurrently; closing the speech model waits for them to finish.
- * Chat caching stays intentionally small: {@code retainSessions} keeps recent conversations live,
+ * Chat caching stays intentionally small: {@code retainedSessions} keeps recent conversations live,
  * {@code promptCache} mounts one persisted catalog, and {@code withCachedPrompt} defines a reusable
  * prefix.
  */

@@ -6,6 +6,7 @@
   These keywords were ignored before, so the model could produce documents the schema forbids.
   Annotations (`title`, `description`, an unknown `format`) and non-standard keywords are still ignored, as the JSON Schema spec asks.
 - **GBNF's `.` is one UTF-8 character,** as in llama.cpp, where it was one byte: a grammar written for llama.cpp means the same here, and `.{n}` cannot end inside a character.
+- **`retainedSessions(n)` on both chat-model builders,** the knob's name on every face (the core's `withRetainedSessions`, Boot's `spring.ai.jinfer.chat.retained-sessions`); `retainSessions(n)` still works, deprecated, and goes in 0.5.0.
 - **A first batch no longer allocates once per core.** Its first call built a SentencePiece tokenizer's 24 MB word cache, or a tiktoken tokenizer's fast engine, on every core at once and kept one; one thread builds it now, so a first batch fits the heap a single one does.
 
 ## 0.4.0-rc1

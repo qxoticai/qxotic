@@ -220,7 +220,7 @@ A state still permits only one operation at a time.
 
 Every restore stops one position short and re-ingests the last token, so logits stay fresh. Misses recompute. Incompatible model identities cannot match.
 
-Framework users need only `retainSessions(n)`, `promptCache(path)`, and `withCachedPrompt(...)`; see the [LangChain4j](/jinfer/langchain4j#cached-prompts) and [Spring AI](/jinfer/spring-ai#prompt-caching) guides. The CLI exposes `--cache file.jkv` (growing) and `--cache-ro file.jkv` (read-only).
+Framework users need only `retainedSessions(n)`, `promptCache(path)`, and `withCachedPrompt(...)`; see the [LangChain4j](/jinfer/langchain4j#cached-prompts) and [Spring AI](/jinfer/spring-ai#prompt-caching) guides. The CLI exposes `--cache file.jkv` (growing) and `--cache-ro file.jkv` (read-only).
 
 ## Copying a context
 

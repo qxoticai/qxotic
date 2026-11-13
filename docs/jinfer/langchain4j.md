@@ -541,7 +541,7 @@ JinferChatModel support2 = base2.withCachedPrompt(
 ```
 
 The model retains one completed conversation by default, so append-only follow-ups resume live state.
-`.retainSessions(0)` closes state after every request; higher values retain that many conversations.
+`.retainedSessions(0)` closes state after every request; higher values retain that many conversations.
 This is process-local acceleration, not identity: jinfer matches rendered prompt content.
 
 Views are immutable and composable.

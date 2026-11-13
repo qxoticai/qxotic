@@ -147,14 +147,14 @@ For speech in a set language, LFM3-Omni's text-to-speech instruction takes the l
 
 Three separate controls:
 
-- `retainSessions(n)`: keep up to `n` finished states in RAM for append-only reuse
+- `retainedSessions(n)`: keep up to `n` finished states in RAM for append-only reuse
 - `withCachedPrompt(messages, tools)`: define a reusable, content-addressed prefix
 - `promptCache(path)` / `saveCachedPrompts(path)`: mount or export a persisted catalog
 
 ```java
 JinferChatModel base = JinferChatModel.builder()
         .modelPath(gguf)
-        .retainSessions(2)
+        .retainedSessions(2)
         .build();
 
 JinferChatModel support = base.withCachedPrompt(

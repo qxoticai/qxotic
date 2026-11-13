@@ -103,7 +103,7 @@ class CachedPromptIT {
 
     @Test
     void retainedSessionsResumeMultiTurn() {
-        // retainSessions(1): turn 2 strictly extends turn 1's retained state - possible only
+        // retainedSessions(1): turn 2 strictly extends turn 1's retained state - possible only
         // because the echoed reply restores its verbatim ids through REPLY_KEY metadata, so
         // the re-encode is the exact generated tokens (the round-trip law, spring edition)
         // pinned seed: an unlucky random seed can spend the whole budget on a think span
@@ -111,7 +111,7 @@ class CachedPromptIT {
                 JinferChatModel.builder()
                         .modelPath(MODEL)
                         .contextCapacity(4096)
-                        .retainSessions(1)
+                        .retainedSessions(1)
                         .options(JinferChatOptions.builder().maxTokens(128).seed(7L).build())
                         .build();
         try {

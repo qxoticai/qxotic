@@ -69,7 +69,7 @@ class CachedPromptIT {
 
     @Test
     void retainedSessionsResumeMultiTurn() {
-        // retainSessions(1): turn 2 strictly extends turn 1's retained state (the echoed reply
+        // retainedSessions(1): turn 2 strictly extends turn 1's retained state (the echoed reply
         // restores its verbatim ids through the wire attribute, so the re-encode is the exact
         // generated tokens). BYTE-IDENTITY LAW, proven on ONE engine: the same turn-2 request
         // served from the pool (hit) and cold (the pool no longer matches after it grew past
@@ -82,7 +82,7 @@ class CachedPromptIT {
                         .modelPath(TestModels.require(REF))
                         .contextCapacity(4096)
                         .maxOutputTokens(128)
-                        .retainSessions(1)
+                        .retainedSessions(1)
                         .seed(7L)
                         .build();
         UserMessage first = UserMessage.from("Remember the codeword PELICAN. Acknowledge briefly.");

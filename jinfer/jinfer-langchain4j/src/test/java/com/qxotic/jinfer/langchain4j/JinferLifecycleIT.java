@@ -144,7 +144,7 @@ class JinferLifecycleIT {
                         .contextCapacity(2048)
                         .maxOutputTokens(1)
                         .temperature(0.0)
-                        .retainSessions(0)
+                        .retainedSessions(0)
                         .build()) {
             model.chat(UserMessage.from("say hi"));
             model.chat(UserMessage.from("say bye"));

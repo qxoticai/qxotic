@@ -20,7 +20,8 @@ class JinferChatModelTest {
     @Test
     void cacheSettingsRejectBeforeLoadingTheModel() {
         assertThrows(
-                IllegalArgumentException.class, () -> JinferChatModel.builder().retainSessions(-1));
+                IllegalArgumentException.class,
+                () -> JinferChatModel.builder().retainedSessions(-1));
         IllegalArgumentException missing =
                 assertThrows(
                         IllegalArgumentException.class,

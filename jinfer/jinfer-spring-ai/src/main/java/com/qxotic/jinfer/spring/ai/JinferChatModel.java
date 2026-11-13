@@ -73,8 +73,8 @@ import reactor.core.publisher.FluxSink;
  *
  * <p>Three cache controls with distinct jobs: {@code withCachedPrompt} defines a shared prefix
  * (prefilled once, restored per request - the system-prompt/tools/few-shot case); {@code
- * Builder.retainSessions} keeps finished CONVERSATION states warm for append-only multi-turn reuse
- * (in-RAM, gone at close); {@code saveCachedPrompts}/{@code Builder.promptCache} persist the
+ * Builder.retainedSessions} keeps finished CONVERSATION states warm for append-only multi-turn
+ * reuse (in-RAM, gone at close); {@code saveCachedPrompts}/{@code Builder.promptCache} persist the
  * defined prompts as an immutable artifact that mounts zero-prefill in later processes. None
  * changes output - byte-identity to a cold run is the law.
  *
@@ -778,11 +778,20 @@ public final class JinferChatModel implements ChatModel, AutoCloseable {
          * when the request ends and the next request allocates a fresh one. This does not disable
          * the separate block cache.
          */
-        public Builder retainSessions(int retainedSessions) {
+        public Builder retainedSessions(int retainedSessions) {
             if (retainedSessions < 0)
                 throw new IllegalArgumentException("retainedSessions " + retainedSessions);
             this.retainedSessions = retainedSessions;
             return this;
+        }
+
+        /**
+         * @deprecated renamed {@link #retainedSessions}, the knob's name on every face (the core's
+         *     {@code withRetainedSessions}, Boot's {@code retained-sessions}); removed in 0.5.0
+         */
+        @Deprecated(since = "0.4.0", forRemoval = true)
+        public Builder retainSessions(int retainedSessions) {
+            return retainedSessions(retainedSessions);
         }
 
         /**

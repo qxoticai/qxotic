@@ -45,7 +45,7 @@ public class JinferChatAutoConfiguration {
         }
         JinferChatModel.Builder builder =
                 JinferChatModel.builder()
-                        .retainSessions(properties.retainedSessions())
+                        .retainedSessions(properties.retainedSessions())
                         .options(properties.toOptions())
                         .speculationDepth(properties.speculationDepth());
         builder.contextCapacity(properties.contextCapacity());
