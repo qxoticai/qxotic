@@ -1,7 +1,7 @@
 package com.qxotic.toknroll.hf;
 
-import com.qxotic.fetch.Transport;
 import com.qxotic.format.json.Json;
+import com.qxotic.jinfer.fetch.Transport;
 import com.qxotic.toknroll.*;
 import com.qxotic.toknroll.impl.ImplAccessor;
 import java.io.BufferedReader;

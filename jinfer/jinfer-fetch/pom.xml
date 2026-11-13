@@ -4,36 +4,42 @@
 
   <parent>
     <groupId>com.qxotic</groupId>
-    <artifactId>qxotic-parent</artifactId>
-    <version>0.2.0</version>
+    <artifactId>jinfer-parent</artifactId>
+    <version>0.4.0-rc1</version>
   </parent>
 
-  <artifactId>fetch</artifactId>
-  <!-- This project's own release version; move fetch.version in the root POM with it,
-       since that is where everything outside fetch resolves it. -->
-  <version>0.1.0</version>
-  <name>Quixotic Fetch</name>
+  <artifactId>jinfer-fetch</artifactId>
+
+  <name>Jinfer Fetch</name>
   <description>One HTTP GET, two ways to make it: the JDK client, or curl as a process. The hub
     downloaders run on it, and a native image that leaves the JDK client out carries no TLS stack.</description>
+
   <properties>
     <maven.deploy.skip>false</maven.deploy.skip>
+    <!-- Java 11, below jinfer's 25: toknroll-hf and toknroll-gguf download through it -->
+    <maven.compiler.release>11</maven.compiler.release>
+    <maven.compiler.testRelease>11</maven.compiler.testRelease>
   </properties>
 
   <build>
     <plugins>
       <plugin>
-        <!-- the test's local server lives in jdk.httpserver, which the module does not read -->
+        <!-- none of jinfer's incubator flags: the test's local server lives in jdk.httpserver,
+             which the module does not read -->
         <groupId>org.apache.maven.plugins</groupId>
         <artifactId>maven-compiler-plugin</artifactId>
+        <configuration>
+          <compilerArgs combine.self="override" />
+        </configuration>
         <executions>
           <execution>
             <id>default-testCompile</id>
             <configuration>
-              <compilerArgs>
+              <compilerArgs combine.self="override">
                 <arg>--add-modules</arg>
                 <arg>jdk.httpserver</arg>
                 <arg>--add-reads</arg>
-                <arg>com.qxotic.fetch=jdk.httpserver</arg>
+                <arg>com.qxotic.jinfer.fetch=jdk.httpserver</arg>
               </compilerArgs>
             </configuration>
           </execution>
@@ -41,9 +47,16 @@
       </plugin>
       <plugin>
         <groupId>org.apache.maven.plugins</groupId>
+        <artifactId>maven-javadoc-plugin</artifactId>
+        <configuration>
+          <additionalOptions combine.self="override" />
+        </configuration>
+      </plugin>
+      <plugin>
+        <groupId>org.apache.maven.plugins</groupId>
         <artifactId>maven-surefire-plugin</artifactId>
         <configuration>
-          <argLine>@{argLine} --add-modules jdk.httpserver --add-reads com.qxotic.fetch=jdk.httpserver</argLine>
+          <argLine>@{argLine} --add-modules jdk.httpserver --add-reads com.qxotic.jinfer.fetch=jdk.httpserver</argLine>
         </configuration>
       </plugin>
     </plugins>

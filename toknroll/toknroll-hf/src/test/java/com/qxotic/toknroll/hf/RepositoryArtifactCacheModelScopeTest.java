@@ -2,7 +2,7 @@ package com.qxotic.toknroll.hf;
 
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
-import com.qxotic.fetch.Transport;
+import com.qxotic.jinfer.fetch.Transport;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;

@@ -1,6 +1,6 @@
 package com.qxotic.jinfer.hub;
 
-import com.qxotic.fetch.Transport;
+import com.qxotic.jinfer.fetch.Transport;
 import java.io.IOException;
 import java.io.InputStream;
 import java.io.OutputStream;
@@ -69,8 +69,8 @@ final class Fetch {
 
     private Fetch() {}
 
-    /* HTTP is com.qxotic.fetch.Transport's: the JDK client on a JVM, curl as a process in a native
-     * image, which so carries no TLS stack. Redirects are followed here (see the class note). */
+    /* HTTP is com.qxotic.jinfer.fetch.Transport's: the JDK client on a JVM, curl as a process in a
+     * native image, which so carries no TLS stack. Redirects are followed here (see the class note). */
 
     private static final int MAX_REDIRECTS = 5;
     private static final int MAX_ATTEMPTS = 3;

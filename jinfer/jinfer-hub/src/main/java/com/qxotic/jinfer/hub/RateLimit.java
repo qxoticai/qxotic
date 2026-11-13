@@ -1,6 +1,6 @@
 package com.qxotic.jinfer.hub;
 
-import com.qxotic.fetch.Transport;
+import com.qxotic.jinfer.fetch.Transport;
 import java.time.DateTimeException;
 import java.time.Duration;
 import java.time.LocalDateTime;

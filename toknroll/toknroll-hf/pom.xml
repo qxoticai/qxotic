@@ -27,7 +27,7 @@
     </dependency>
     <dependency>
       <groupId>com.qxotic</groupId>
-      <artifactId>fetch</artifactId>
+      <artifactId>jinfer-fetch</artifactId>
     </dependency>
     <dependency>
       <groupId>com.qxotic</groupId>

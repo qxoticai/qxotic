@@ -50,6 +50,7 @@
     <module>jinfer-bench</module>
     <module>jinfer-native</module>
     <module>jinfer-image</module>
+    <module>jinfer-fetch</module>
     <module>jinfer-hub</module>
     <module>jinfer-jinja</module>
     <module>jinfer-langchain4j</module>
@@ -487,9 +488,9 @@
               <buildArg>-Djinfer.vectorBitSize=${jinfer.image.vectorBits}</buildArg>
               <!-- the builder filters the environment; the Makefiles export 14.0 on macOS -->
               <buildArg>-EMACOSX_DEPLOYMENT_TARGET</buildArg>
-              <!-- downloads go through curl as a process (fetch's CurlTransport): no TLS stack in the image -->
+              <!-- downloads go through curl as a process (jinfer-fetch's CurlTransport): no TLS stack in the image -->
               <buildArg>-H:+UnlockExperimentalVMOptions</buildArg>
-              <buildArg>-H:ServiceLoaderFeatureExcludeServiceProviders=com.qxotic.fetch.JdkTransport</buildArg>
+              <buildArg>-H:ServiceLoaderFeatureExcludeServiceProviders=com.qxotic.jinfer.fetch.JdkTransport</buildArg>
               <!-- Correctness flags (Vector/FFM support, add-modules, native-access,
                    build-time init policy and per-class run-time exemptions) come from each module's
                    jar-resident native-image.properties; this recipe only adds the optimization and

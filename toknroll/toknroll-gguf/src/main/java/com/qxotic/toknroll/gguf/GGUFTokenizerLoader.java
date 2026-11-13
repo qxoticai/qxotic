@@ -1,7 +1,7 @@
 package com.qxotic.toknroll.gguf;
 
-import com.qxotic.fetch.Transport;
 import com.qxotic.format.gguf.GGUF;
+import com.qxotic.jinfer.fetch.Transport;
 import com.qxotic.toknroll.Normalizer;
 import com.qxotic.toknroll.Splitter;
 import com.qxotic.toknroll.TokenizationModel;

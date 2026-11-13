@@ -33,6 +33,8 @@ The libraries keep the soname of 0.4.0, `libtoknroll.so.0.4.0` and `libjinfer.so
 - **safetensors 0.4.0-rc1.** A file read and written back keeps its own header layout, so its tensor offsets stay valid; writing one used to fail with a header size mismatch.
   A new file's tensor data starts at a multiple of 8 bytes, as upstream pads it.
   A header that is not UTF-8, and a shape or offset written as `1.0` or `1e0`, are refused, as upstream refuses them.
+- **jinfer-fetch, new.** `com.qxotic:jinfer-fetch` is the HTTP GET jinfer-hub, toknroll-hf and toknroll-gguf download through, on Java 11 with no dependencies: the JDK's `HttpClient`, or `curl` as a process in native images, which then carry no TLS stack.
+  It follows `HTTP_PROXY`, `HTTPS_PROXY` and `NO_PROXY`, and a redirect to another host drops the `Authorization` header.
 - **PrismML Ternary Bonsai 2.** `Q2_0` and PrismML's `PQ2_0` and `PTQ1_0` load across gguf, jota, jam and jinfer, and the Qwen3.5 port applies Bonsai's `prism.hadamard` rotation, so Ternary Bonsai 2 runs in all three, images included.
   Checkpoints with an MTP head and a Hadamard rotation are refused.
 - **Qwen3.5 fixes.** RoPE rotates NEOX pairs, as llama.cpp's IMROPE does; the port had rotated adjacent pairs, a mild drift that changed some greedy replies against llama.cpp.

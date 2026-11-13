@@ -7,9 +7,9 @@ import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTimeoutPreemptively;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
-import com.qxotic.fetch.Transport;
 import com.qxotic.format.gguf.Builder;
 import com.qxotic.format.gguf.GGUF;
+import com.qxotic.jinfer.fetch.Transport;
 import com.sun.net.httpserver.HttpExchange;
 import com.sun.net.httpserver.HttpServer;
 import java.io.IOException;

@@ -4,7 +4,7 @@ import static org.junit.jupiter.api.Assertions.assertArrayEquals;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
-import com.qxotic.fetch.Transport;
+import com.qxotic.jinfer.fetch.Transport;
 import com.qxotic.toknroll.Tokenizer;
 import com.qxotic.toknroll.TokenizerLoadException;
 import com.qxotic.toknroll.testkit.TestSystemProperties;

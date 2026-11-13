@@ -1,7 +1,7 @@
 package com.qxotic.toknroll.gguf;
 
-import com.qxotic.fetch.Transport;
 import com.qxotic.format.gguf.GGUF;
+import com.qxotic.jinfer.fetch.Transport;
 import java.io.BufferedInputStream;
 import java.io.BufferedOutputStream;
 import java.io.IOException;

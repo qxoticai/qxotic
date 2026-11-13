@@ -27,7 +27,7 @@
     </dependency>
     <dependency>
       <groupId>com.qxotic</groupId>
-      <artifactId>fetch</artifactId>
+      <artifactId>jinfer-fetch</artifactId>
     </dependency>
     <dependency>
       <!-- test-only: reads the committed reference-token goldens -->

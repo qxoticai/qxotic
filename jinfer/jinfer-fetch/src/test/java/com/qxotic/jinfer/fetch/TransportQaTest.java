@@ -1,4 +1,4 @@
-package com.qxotic.fetch;
+package com.qxotic.jinfer.fetch;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNull;

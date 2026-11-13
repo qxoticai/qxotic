@@ -2,7 +2,7 @@ package com.qxotic.toknroll.hf;
 
 import static java.nio.charset.StandardCharsets.UTF_8;
 
-import com.qxotic.fetch.Transport;
+import com.qxotic.jinfer.fetch.Transport;
 import java.io.FileNotFoundException;
 import java.io.IOException;
 import java.net.URI;

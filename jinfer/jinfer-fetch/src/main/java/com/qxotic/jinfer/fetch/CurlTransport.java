@@ -1,4 +1,4 @@
-package com.qxotic.fetch;
+package com.qxotic.jinfer.fetch;
 
 import java.io.BufferedInputStream;
 import java.io.ByteArrayOutputStream;

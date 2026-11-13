@@ -1,4 +1,4 @@
-package com.qxotic.fetch;
+package com.qxotic.jinfer.fetch;
 
 import java.io.Closeable;
 import java.io.IOException;
@@ -19,8 +19,8 @@ import java.util.concurrent.TimeUnit;
  *
  * <p>{@link #system()} is the transport a program should use: the JDK client when it is on the
  * class path, otherwise {@code curl} on the PATH. A native image excludes the JDK client with
- * {@code -H:ServiceLoaderFeatureExcludeServiceProviders=com.qxotic.fetch.JdkTransport} and carries
- * no TLS stack of its own; the system's does the work.
+ * {@code -H:ServiceLoaderFeatureExcludeServiceProviders=com.qxotic.jinfer.fetch.JdkTransport} and
+ * carries no TLS stack of its own; the system's does the work.
  */
 public interface Transport {
     /** A response: the body is read by the caller and closed with the response. */
