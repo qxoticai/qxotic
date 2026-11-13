@@ -59,8 +59,8 @@ class HubTest {
         var listing = new CliFixtures.Capture("");
         assertEquals(0, Main.run(new String[] {"list"}, listing.io, store));
         // each name is the shortest ref that loads the file, ready to paste back
-        assertTrue(listing.out().contains("  " + a + "\n"), listing.out());
-        assertTrue(listing.out().contains("  " + b + "\n"), listing.out());
+        assertTrue(listing.out().replace("\r\n", "\n").contains("  " + a + "\n"), listing.out());
+        assertTrue(listing.out().replace("\r\n", "\n").contains("  " + b + "\n"), listing.out());
         assertEquals(3, fetches.get(), "listing never fetches");
 
         var found = new CliFixtures.Capture("");
@@ -70,7 +70,7 @@ class HubTest {
 
         var removed = new CliFixtures.Capture("");
         assertEquals(0, Main.run(new String[] {"remove", a}, removed.io, store), removed.err());
-        assertEquals("removed model-Q8_0.gguf (4 B)\n", removed.out());
+        assertEquals("removed model-Q8_0.gguf (4 B)\n", removed.out().replace("\r\n", "\n"));
         assertFalse(Files.exists(Path.of(paths.get(0))));
         assertTrue(Files.exists(Path.of(paths.get(1))), "remove deletes only what it names");
         var missing = new CliFixtures.Capture("");
@@ -81,7 +81,7 @@ class HubTest {
         Path local = Files.writeString(elsewhere.resolve("local.gguf"), "mine");
         var mixed = new CliFixtures.Capture("");
         assertEquals(1, Main.run(new String[] {"remove", a, local.toString(), b}, mixed.io, store));
-        assertEquals("removed model-Q8_0.gguf (4 B)\n", mixed.out());
+        assertEquals("removed model-Q8_0.gguf (4 B)\n", mixed.out().replace("\r\n", "\n"));
         assertTrue(mixed.err().contains("not cached: " + a), mixed.err());
         assertTrue(mixed.err().contains("is not in the model cache"), mixed.err());
         assertTrue(Files.exists(local), "a file outside the cache is never deleted");

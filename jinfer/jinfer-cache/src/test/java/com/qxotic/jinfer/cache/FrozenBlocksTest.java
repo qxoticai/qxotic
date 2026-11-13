@@ -11,6 +11,7 @@ import java.lang.foreign.MemorySegment;
 import java.nio.ByteBuffer;
 import java.nio.ByteOrder;
 import java.nio.channels.FileChannel;
+import java.nio.file.FileSystemException;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.StandardCopyOption;
@@ -434,6 +435,11 @@ public final class FrozenBlocksTest {
         ContentKey seed = ContentKey.sha256(new byte[] {16});
         Path file = artifactWithTwoBlocks(seed);
         FrozenBlocks mounted = FrozenBlocks.open(file, seed);
+        if (System.getProperty("os.name").startsWith("Windows")) {
+            // Windows refuses to replace a mapped file: the rebuild cannot happen under a mount
+            assertThrows(FileSystemException.class, () -> FrozenBlocks.createEmpty(file, seed));
+            return;
+        }
         FrozenBlocks.createEmpty(file, seed); // the mounted blocks are gone from disk
         var refused =
                 assertThrows(IOException.class, () -> mounted.append(List.of(child(mounted, 13))));

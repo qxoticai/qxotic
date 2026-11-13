@@ -211,16 +211,18 @@ class ParallelTest {
     void largeCountsUseTheWholePool() {
         try (Parallel pool = Parallel.of(8)) {
             Set<Thread> threads = ConcurrentHashMap.newKeySet();
+            CountDownLatch everyone = new CountDownLatch(8);
             AtomicLong sum = new AtomicLong();
             pool.loop(
                     1 << 16,
                     i -> {
-                        threads.add(Thread.currentThread());
+                        // each participant's first item waits for the others: only a pool that
+                        // hands work to all 8 gets past it, however late a busy host wakes them
+                        if (threads.add(Thread.currentThread())) awaitAll(everyone);
                         sum.addAndGet(i);
-                        spin(2_000);
                     });
             assertEquals((1L << 16) * ((1L << 16) - 1) / 2, sum.get());
-            assertEquals(8, threads.size(), "65k 2-microsecond items spread over all 8");
+            assertEquals(8, threads.size(), "65k items spread over all 8");
             assertTrue(threads.contains(Thread.currentThread()), "the caller participates");
         }
     }
@@ -1084,15 +1086,23 @@ class ParallelTest {
             int n = 256;
             AtomicIntegerArray visits = new AtomicIntegerArray(n);
             Set<Integer> slots = ConcurrentHashMap.newKeySet();
+            CountDownLatch everyone = new CountDownLatch(4);
+            CountDownLatch theRest = new CountDownLatch(n - 1);
+            AtomicBoolean restRanMeanwhile = new AtomicBoolean();
             pool.run(
                     n,
                     (i, slot) -> {
                         visits.incrementAndGet(i);
-                        slots.add(slot);
-                        spin(50_000); // 256 x 50 us: with one index per claim every slot is busy
+                        // a slot's first job waits until every slot holds one
+                        if (slots.add(slot)) awaitAll(everyone);
+                        // job 0 keeps its slot until the other 255 are done: only claims of one
+                        // index let the other slots take them all, a chunk would strand its tail
+                        if (i == 0) restRanMeanwhile.set(await(theRest, 30));
+                        else theRest.countDown();
                     });
             for (int i = 0; i < n; i++) assertEquals(1, visits.get(i));
             assertEquals(4, slots.size(), "every participant claimed items");
+            assertTrue(restRanMeanwhile.get(), "the other jobs ran while job 0 held its slot");
             AtomicInteger visited = new AtomicInteger();
             Parallel.shared().run(10, (i, slot) -> visited.incrementAndGet());
             assertEquals(10, visited.get());
@@ -1554,5 +1564,11 @@ class ParallelTest {
     @SuppressWarnings("unchecked")
     private static <T extends Throwable> void sneaky(Throwable t) throws T {
         throw (T) t;
+    }
+
+    /** Counts this participant in and waits, bounded, for the rest: a short count fails after. */
+    private static void awaitAll(CountDownLatch everyone) {
+        everyone.countDown();
+        await(everyone);
     }
 }
