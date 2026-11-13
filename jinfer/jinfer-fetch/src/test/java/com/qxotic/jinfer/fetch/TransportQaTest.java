@@ -2,7 +2,6 @@ package com.qxotic.jinfer.fetch;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNull;
-import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.junit.jupiter.api.Assumptions.assumeTrue;
@@ -279,6 +278,40 @@ class TransportQaTest {
         }
     }
 
+    @Test
+    void anotherPortIsAnotherOriginAndNeverSeesTheToken() throws IOException {
+        HttpServer elsewhere = HttpServer.create(new InetSocketAddress("127.0.0.1", 0), 0);
+        elsewhere.createContext(
+                "/auth",
+                exchange -> {
+                    authSeen.set(exchange.getRequestHeaders().getFirst("Authorization"));
+                    exchange.sendResponseHeaders(204, -1);
+                    exchange.close();
+                });
+        elsewhere.start();
+        try {
+            URI other =
+                    URI.create("http://127.0.0.1:" + elsewhere.getAddress().getPort() + "/auth");
+            server.createContext(
+                    "/port",
+                    exchange -> {
+                        exchange.getResponseHeaders().add("Location", other.toString());
+                        exchange.sendResponseHeaders(302, -1);
+                        exchange.close();
+                    });
+            for (Transport t : transports()) {
+                authSeen.set("unset");
+                try (Transport.Response r =
+                        t.follow(base.resolve("/port"), Map.of("Authorization", "Bearer p"), T)) {
+                    assertEquals(204, r.status());
+                }
+                assertNull(authSeen.get(), t.getClass().getSimpleName() + ": another port");
+            }
+        } finally {
+            elsewhere.stop(0);
+        }
+    }
+
     // ---- 1xx, which the JDK's server cannot send: a raw socket, for the parser curl's output
     // feeds ----
 
@@ -342,10 +375,5 @@ class TransportQaTest {
                 NoSuchFileException.class,
                 () -> Transport.offline().follow(base.resolve("/multi"), Map.of(), T));
         assertEquals(before, hits.get(), "nothing was sent");
-    }
-
-    @Test
-    void theSystemTransportIsChosenOnce() {
-        assertSame(Transport.system(), Transport.system());
     }
 }

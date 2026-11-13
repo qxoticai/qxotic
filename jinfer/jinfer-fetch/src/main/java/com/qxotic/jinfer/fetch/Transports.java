@@ -8,7 +8,7 @@ import java.util.Map;
 import java.util.ServiceLoader;
 import java.util.concurrent.ScheduledThreadPoolExecutor;
 
-/** The process-wide choices behind {@link Transport}, made lazily: at first use, not class load. */
+/** The process-wide choices behind {@link Transport}, made once, when this class first loads. */
 final class Transports {
     static final Transport SYSTEM = choose();
     static final Transport OFFLINE =

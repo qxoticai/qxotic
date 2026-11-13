@@ -63,6 +63,8 @@ final class CurlTransport implements Transport {
                                 "-",
                                 "-D",
                                 "-",
+                                // behind a proxy, -D would also print the tunnel's own 200 block
+                                "--suppress-connect-headers",
                                 "--",
                                 url.toString()));
         Process process = new ProcessBuilder(command).start();

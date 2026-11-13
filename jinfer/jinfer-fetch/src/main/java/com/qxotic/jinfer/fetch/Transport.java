@@ -47,7 +47,8 @@ public interface Transport {
 
     /**
      * A GET that follows up to five redirects. The Authorization header does not follow a redirect
-     * to another host: the CDN URL is signed, and some CDNs refuse a credential alongside it.
+     * to another origin (host, scheme or port): the CDN URL is signed, and some CDNs refuse a
+     * credential alongside it.
      */
     default Response follow(URI uri, Map<String, String> headers, Duration timeout)
             throws IOException {
@@ -70,7 +71,10 @@ public interface Transport {
             } catch (IllegalArgumentException e) {
                 throw new IOException("bad Location '" + location + "' from " + current, e);
             }
-            if (!Objects.equals(current.getHost(), next.getHost())) {
+            // another origin, a plain-http hop or another port included, never sees the token
+            if (!Objects.equals(current.getScheme(), next.getScheme())
+                    || !Objects.equals(current.getHost(), next.getHost())
+                    || current.getPort() != next.getPort()) {
                 Map<String, String> stripped = new LinkedHashMap<>();
                 currentHeaders.forEach(
                         (k, v) -> {
