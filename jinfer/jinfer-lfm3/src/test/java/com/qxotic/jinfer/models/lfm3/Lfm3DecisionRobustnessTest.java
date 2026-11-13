@@ -214,8 +214,9 @@ final class Lfm3DecisionRobustnessTest {
     }
 
     /**
-     * The batch splits past 1024 tokens a prompt: each answer is still the one asked alone. The JIT
-     * is warmed first - the very first pass runs colder code that rounds a few bits apart.
+     * The batch splits past 1024 tokens a prompt: each answer is still the one asked alone. One
+     * pass warms the JIT first: the first call runs code not yet compiled, whose arithmetic differs
+     * slightly (0.0595 against 0.0619 on the first question).
      */
     @Test
     void longPromptsAnsweredEachOnTheirOwnMatchTheIndividualAsks() throws Exception {
