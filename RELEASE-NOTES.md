@@ -11,6 +11,7 @@
 - **Cache management without the network: `list`, `find` and `remove`.**
   `jinfer list` names each cached model by the shortest reference that loads it (`LiquidAI/LFM2.5-350M-GGUF:Q8_0`), alphabetically, so a line pastes into `-m`, `pull`, `find` or `remove`.
   `jinfer find <ref>...` prints the file `-m` would load, without a request or a hash: `llama-server -m "$(jinfer find <ref>)"`.
+  A model pulled at a branch or tag lists by it (`owner/repo@dev:Q8_0`), and is counted in the total.
   `jinfer remove <ref>...` deletes the one file `find` prints for each reference, a path `list` prints included, and names it with its size; a repository holding several cached files is refused with their names, never guessed.
   A model in the shared Hugging Face cache takes its blob along unless another snapshot links it, and a repository folder goes once it is empty.
   `ModelStore.evict(ref)` is `ModelStore.remove(ref)`, the command's name.

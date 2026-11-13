@@ -422,6 +422,35 @@ class ModelRefTest {
     }
 
     @Test
+    void everySnapshotARefNamesIsListedByThatRef(@TempDir Path hub) throws IOException {
+        Path repo = hub.resolve("models--a--b");
+        String main = "a".repeat(40), dev = "b".repeat(40), pr = "c".repeat(40);
+        Hub.writeRef(repo.resolve("refs/main"), main);
+        Hub.writeRef(repo.resolve("refs/v1"), main); // a tag on main's commit: listed once
+        Hub.writeRef(repo.resolve("refs/dev"), dev);
+        Hub.writeRef(repo.resolve("refs/pr/1"), pr);
+        for (String commit : List.of(main, dev, pr)) {
+            Path file = repo.resolve("snapshots/" + commit + "/m-Q8_0.gguf");
+            Files.createDirectories(file.getParent());
+            Files.writeString(file, "weights");
+        }
+        // no main: the branch there is still named, never passed off as the default
+        Path other = hub.resolve("models--c--d");
+        Hub.writeRef(other.resolve("refs/dev"), dev);
+        Files.createDirectories(other.resolve("snapshots/" + dev));
+        Files.writeString(other.resolve("snapshots/" + dev + "/m-Q8_0.gguf"), "weights");
+
+        assertEquals(
+                List.of(
+                        "hf.co/a/b/m-Q8_0.gguf",
+                        "hf.co/a/b@" + pr + "/m-Q8_0.gguf",
+                        "hf.co/a/b@dev/m-Q8_0.gguf",
+                        "hf.co/c/d@dev/m-Q8_0.gguf"),
+                Hub.cached(hub).stream().map(ModelStore.Cached::ref).toList());
+        assertEquals(List.of(), Hub.detached(hub), "a version a ref names is never pruned");
+    }
+
+    @Test
     void removeSparesABlobStillLinkedElsewhereThenTheFolder(@TempDir Path hub) throws IOException {
         Path repo = hub.resolve("models--a--b");
         Hub.writeRef(repo.resolve("refs/main"), "d".repeat(40));

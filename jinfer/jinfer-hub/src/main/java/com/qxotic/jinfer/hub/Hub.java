@@ -11,6 +11,7 @@ import java.util.Arrays;
 import java.util.Collection;
 import java.util.Comparator;
 import java.util.HashSet;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
@@ -64,22 +65,33 @@ final class Hub {
                 : Path.of(ModelStore.home(), ".cache", "huggingface", "hub");
     }
 
-    /** GGUFs in the hub cache's CURRENT snapshots ({@code main}'s, else a branch's), as refs. */
+    /**
+     * GGUFs in every snapshot a ref names, as refs that load them: {@code main}'s as {@code
+     * hf.co/owner/repo/path}, another branch's or tag's as {@code hf.co/owner/repo@name/path}, and
+     * one under a nested ref ({@code refs/pr/1}) by its commit. A commit two refs name is listed
+     * once, {@code main} first.
+     */
     static List<ModelStore.Cached> cached(Path hubCache) {
         List<ModelStore.Cached> found = new ArrayList<>();
         try {
             for (Path repo : repos(hubCache)) {
                 Map<String, String> refs = refs(repo);
-                String commit =
-                        refs.getOrDefault("main", refs.values().stream().findFirst().orElse(null));
-                if (commit == null) continue;
-                Path snapshot = repo.resolve("snapshots").resolve(commit);
-                visitGgufs(
-                        snapshot,
-                        (file, size) ->
-                                found.add(
-                                        new ModelStore.Cached(
-                                                ref(repo, "", snapshot, file), size)));
+                Map<String, String> named = new LinkedHashMap<>(); // commit -> how a ref names it
+                if (refs.containsKey("main")) named.put(refs.get("main"), "");
+                refs.forEach(
+                        (name, commit) ->
+                                named.putIfAbsent(
+                                        commit, "@" + (name.contains("/") ? commit : name)));
+                for (var entry : named.entrySet()) {
+                    Path snapshot = repo.resolve("snapshots").resolve(entry.getKey());
+                    visitGgufs(
+                            snapshot,
+                            (file, size) ->
+                                    found.add(
+                                            new ModelStore.Cached(
+                                                    ref(repo, entry.getValue(), snapshot, file),
+                                                    size)));
+                }
             }
         } catch (IOException e) {
             throw unreadable(hubCache, e);
@@ -158,7 +170,8 @@ final class Hub {
                     (file, attrs) -> {
                         try {
                             String commit = Files.readString(file, StandardCharsets.UTF_8).strip();
-                            if (isCommit(commit)) refs.put(dir.relativize(file).toString(), commit);
+                            String name = dir.relativize(file).toString().replace('\\', '/');
+                            if (isCommit(commit)) refs.put(name, commit);
                         } catch (IOException unreadable) {
                             // a ref no one can read names nothing
                         }
