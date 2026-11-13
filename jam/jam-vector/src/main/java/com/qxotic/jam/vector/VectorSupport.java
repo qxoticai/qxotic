@@ -12,6 +12,8 @@ import java.lang.foreign.MemorySegment;
 import java.lang.management.ManagementFactory;
 import java.nio.ByteOrder;
 import java.util.Locale;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 import jdk.incubator.vector.ByteVector;
 import jdk.incubator.vector.FloatVector;
 import jdk.incubator.vector.VectorShape;
@@ -184,11 +186,11 @@ final class VectorSupport {
     /**
      * MEASURED gate for the {@link BandGemm} 4x4 default (its only consumer; the Q8_0 register tile
      * has its own JIT-aware default, see {@link #autoTileCode}). The 4x4 band holds 16 accumulators
-     * and needs all 32 zmm registers: GraalVM CE 25.4 is the first Graal JIT to allocate zmm16-31,
-     * and there 4x4 beats 3x3 on every band dtype (9-36% kernel, 16-23% pp512 on Gemma 4 E2B,
-     * Qwen3.5-4B and LFM2.5-2.6B Q8_0, Zen 5 16T); older and Oracle Graal JITs spill it (Oracle
-     * 25.2.4: -58%). OpenJDK 27 C2 loses 14-24% with 4x4 on every dtype, so C2 takes 3x3.
-     * Native-image keeps the wide-tile compilability opt-in.
+     * and needs all 32 zmm registers: GraalVM 25.4, CE and Oracle, is the first Graal JIT to
+     * allocate zmm16-31, and there 4x4 beats 3x3 on every band dtype (9-36% kernel, 16-23% pp512 on
+     * Gemma 4 E2B, Qwen3.5-4B and LFM2.5-2.6B Q8_0, Zen 5 16T; Oracle 25.4.4 +15 to +30% kernel);
+     * older Graal JITs spill it (Oracle 25.2.4: -58%). OpenJDK 27 C2 loses 14-24% with 4x4 on every
+     * dtype, so C2 takes 3x3. Native-image keeps the wide-tile compilability opt-in.
      */
     static final boolean WIDE_TILE = bandWideDefault();
 
@@ -197,16 +199,14 @@ final class VectorSupport {
         return wideBand(GRAAL_JIT, System.getProperty("java.vendor.version", ""));
     }
 
-    /** A 4x4 band only under a Graal JIT that allocates all 32 zmm: GraalVM CE 25.4 or newer. */
+    /** A 4x4 band only under a Graal JIT that allocates all 32 zmm: GraalVM 25.4 or newer. */
     static boolean wideBand(boolean graalJit, String vendorVersion) {
-        if (!graalJit || !vendorVersion.startsWith("GraalVM CE ")) return false;
-        String[] v = vendorVersion.substring("GraalVM CE ".length()).split("[.+]");
-        try {
-            int major = Integer.parseInt(v[0]), minor = v.length > 1 ? Integer.parseInt(v[1]) : 0;
-            return major > 25 || (major == 25 && minor >= 4);
-        } catch (NumberFormatException unknown) {
-            return false;
-        }
+        if (!graalJit) return false;
+        Matcher m =
+                Pattern.compile("GraalVM (?:CE )?(\\d{1,4})\\.(\\d{1,4})").matcher(vendorVersion);
+        if (!m.find()) return false;
+        int major = Integer.parseInt(m.group(1)), minor = Integer.parseInt(m.group(2));
+        return major > 25 || (major == 25 && minor >= 4);
     }
 
     private static int autoTileCode() {

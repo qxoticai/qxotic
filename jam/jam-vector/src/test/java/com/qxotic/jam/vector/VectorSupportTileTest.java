@@ -31,6 +31,7 @@ class VectorSupportTileTest {
         assertTrue(VectorSupport.wideBand(true, "GraalVM CE 26.0.1+3.1"));
         assertFalse(VectorSupport.wideBand(true, "GraalVM CE 25.2.4+7.1"));
         assertFalse(VectorSupport.wideBand(true, "Oracle GraalVM 25.2.4+7.1"));
+        assertTrue(VectorSupport.wideBand(true, "Oracle GraalVM 25.4.4.1.1+1.1"));
         assertFalse(VectorSupport.wideBand(false, "GraalVM CE 25.4.4.1.1+1.1"), "C2 on a CE build");
         assertFalse(VectorSupport.wideBand(false, ""), "OpenJDK C2");
     }
