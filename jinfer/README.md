@@ -93,7 +93,7 @@ Import the BOM once:
     <dependency>
       <groupId>com.qxotic</groupId>
       <artifactId>jinfer-bom</artifactId>
-      <version>0.3.1</version>
+      <version>0.4.0</version>
       <type>pom</type>
       <scope>import</scope>
     </dependency>
