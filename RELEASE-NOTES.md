@@ -1,36 +1,10 @@
 # Release notes
 
-## Unreleased
-
-- **A JSON Schema is enforced whole, or refused.** `Grammar.fromSchema`, structured output in the server and the LangChain4j and Spring AI adapters refuse a schema using a constraint the grammar cannot enforce (numeric bounds, `pattern`, `allOf`, `uniqueItems`, `additionalProperties` other than `false`, …), naming the keyword; the server answers 400.
-  These keywords were ignored before, so the model could produce documents the schema forbids.
-  Annotations (`title`, `description`, an unknown `format`) and non-standard keywords are still ignored, as the JSON Schema spec asks.
-- **GBNF's `.` is one UTF-8 character,** as in llama.cpp, where it was one byte: a grammar written for llama.cpp means the same here, and `.{n}` cannot end inside a character.
-- **`retainSessions(n)` is `retainedSessions(n)`** on both chat-model builders, the knob's name on every face (the core's `withRetainedSessions`, Boot's `spring.ai.jinfer.chat.retained-sessions`).
-- **A first batch no longer allocates once per core.** Its first call built a SentencePiece tokenizer's 24 MB word cache, or a tiktoken tokenizer's fast engine, on every core at once and kept one; one thread builds it now, so a first batch fits the heap a single one does.
-- **Cache management without the network: `list`, `find` and `remove`.**
-  `jinfer list` names each cached model by the shortest reference that loads it (`LiquidAI/LFM2.5-350M-GGUF:Q8_0`), alphabetically, so a line pastes into `-m`, `pull`, `find` or `remove`.
-  `jinfer find <ref>...` prints the file `-m` would load, without a request or a hash: `llama-server -m "$(jinfer find <ref>)"`.
-  A model pulled at a branch or tag lists by it (`owner/repo@dev:Q8_0`), and is counted in the total.
-  `jinfer remove <ref>...` deletes the one file `find` prints for each reference, a path `list` prints included, and names it with its size; a repository holding several cached files is refused with their names, never guessed.
-  A model in the shared Hugging Face cache takes its blob along unless another snapshot links it, and a repository folder goes once it is empty.
-  `ModelStore.evict(ref)` is `ModelStore.remove(ref)`, the command's name.
-- **`jinfer prune` frees the space older versions take.** A pull that updates a model keeps the version it replaced in the Hugging Face cache; `list` now ends with how much that is, and `prune` deletes them, as `hf cache prune` does. `ModelStore.detached()` lists them with what removing each frees.
-- **Errors say what went wrong, once.** A server that cannot be reached reads `cannot connect to <host>` or `cannot find host <host>`, where it read `ConnectException: ClosedChannelException`; an empty `:` or `@` quotes the reference; a bare word given as a model (`-m LiquidAI`) is shown the reference shape; and a cause is no longer repeated after a message that already says it.
-- **Native images download behind an HTTPS proxy.** curl printed the proxy tunnel's own `200 Connection established` block ahead of the response, so headers read as body; it now skips it.
-  A redirect to another scheme or port drops the `Authorization` header, as one to another host did.
-- **Windows without symlinks shares the Hugging Face cache by hard links.** Outside Developer Mode a snapshot entry was a full copy of its blob: twice the disk, a full copy again on every up-to-date `pull` (refused while a server held the model), and a blob `remove` could not find, left behind for good. It is a hard link now, kept as it is when current, and `remove` frees its blob.
-- **A throttled ModelScope reads as busy.** ModelScope answers a burst of requests with 403, which read as "does not exist, or is gated or private"; it reads `modelscope.cn is limiting requests from this machine: try again in a minute` now.
-- **`jinfer remove` takes the browser URLs `jinfer find` takes.**
-- **`ModelStore.cached()` lists GGUF files only,** as `jinfer list` showed them: the store's own bookkeeping (a remembered quant) no longer appears as a cached model.
-- **`jinfer transcribe --raw-pcm` no longer warms the JIT before listening;** on the JVM the first second of audio may decode a little later.
-- **`jinfer pull` of a cached model no longer reads it whole.** A blob in the shared Hugging Face cache is named by its verified SHA-256, so name and size say it is current: 0.75 s instead of 17 s for a 25 GB model.
-  A fresh download is checked once, not twice. Bytes damaged after download are replaced by `pull --force`.
-
 ## 0.4.0-rc1
 
 A release candidate for 0.4.0: Maven Central `0.4.0-rc1`, PyPI `0.4.0rc1` (`pip install --pre`), the native libraries and their archives `0.4.0-rc1`.
 The libraries keep the soname of 0.4.0, `libtoknroll.so.0.4.0` and `libjinfer.so.0.4.0`, so a program built against the candidate runs on the release.
+The native libraries, the jinfer command and the wheels are built with Oracle GraalVM and carry its runtime under the GraalVM Free Terms and Conditions: free to use, commercially too, but a product sold for a fee that bundles them is not covered; see the [libtoknroll](toknroll/toknroll-native/README.md#license) and [libjinfer](jinfer/jinfer-native/README.md#license) License sections and their NOTICE files.
 
 - **Decisions.** A decision model answers yes/no, choice and rating questions about an input with probabilities, in one forward pass and without generating text: Liquid AI's d1 and d1-Omni (`jinfer-lfm3`) and vLLM Semantic Router's d3 (`jinfer-qwen35`).
   `Models.loadDecisionModel` loads one, `DecisionModel` answers in probabilities, and `jinfer-decision` puts typed questions over it (`Decisions`, `Question.predicate`, `choice` and `rating`).
@@ -95,6 +69,29 @@ The libraries keep the soname of 0.4.0, `libtoknroll.so.0.4.0` and `libjinfer.so
   Against the official towers, Gemma 4 E2B's projected image and audio rows now agree to cosine 0.99998 and better.
   Gemma 4 chat encodes video frames at the reference's 70 tokens again, not at a still image's 280, so a 32-frame video fits a prompt about four times smaller.
   Audio handed in at another rate is resampled to 16 kHz with miniaudio's filter (`AudioCodec` still decodes files to 16 kHz itself).
+- **A JSON Schema is enforced whole, or refused.** `Grammar.fromSchema`, structured output in the server and the LangChain4j and Spring AI adapters refuse a schema using a constraint the grammar cannot enforce (numeric bounds, `pattern`, `allOf`, `uniqueItems`, `additionalProperties` other than `false`, …), naming the keyword; the server answers 400.
+  These keywords were ignored before, so the model could produce documents the schema forbids.
+  Annotations (`title`, `description`, an unknown `format`) and non-standard keywords are still ignored, as the JSON Schema spec asks.
+- **GBNF's `.` is one UTF-8 character,** as in llama.cpp, where it was one byte: a grammar written for llama.cpp means the same here, and `.{n}` cannot end inside a character.
+- **`retainSessions(n)` is `retainedSessions(n)`** on both chat-model builders, the knob's name on every face (the core's `withRetainedSessions`, Boot's `spring.ai.jinfer.chat.retained-sessions`).
+- **A first batch no longer allocates once per core.** Its first call built a SentencePiece tokenizer's 24 MB word cache, or a tiktoken tokenizer's fast engine, on every core at once and kept one; one thread builds it now, so a first batch fits the heap a single one does.
+- **Cache management without the network: `list`, `find` and `remove`.**
+  `jinfer list` names each cached model by the shortest reference that loads it (`LiquidAI/LFM2.5-350M-GGUF:Q8_0`), alphabetically, so a line pastes into `-m`, `pull`, `find` or `remove`.
+  `jinfer find <ref>...` prints the file `-m` would load, without a request or a hash: `llama-server -m "$(jinfer find <ref>)"`.
+  A model pulled at a branch or tag lists by it (`owner/repo@dev:Q8_0`), and is counted in the total.
+  `jinfer remove <ref>...` deletes the one file `find` prints for each reference, a browser URL or a path `list` prints included, and names it with its size; a repository holding several cached files is refused with their names, never guessed.
+  A model in the shared Hugging Face cache takes its blob along unless another snapshot links it, and a repository folder goes once it is empty.
+  `ModelStore.evict(ref)` is `ModelStore.remove(ref)`, the command's name.
+- **`jinfer prune` frees the space older versions take.** A pull that updates a model keeps the version it replaced in the Hugging Face cache; `list` now ends with how much that is, and `prune` deletes them, as `hf cache prune` does. `ModelStore.detached()` lists them with what removing each frees.
+- **Errors say what went wrong, once.** A server that cannot be reached reads `cannot connect to <host>` or `cannot find host <host>`, where it read `ConnectException: ClosedChannelException`; an empty `:` or `@` quotes the reference; a bare word given as a model (`-m LiquidAI`) is shown the reference shape; and a cause is no longer repeated after a message that already says it.
+- **Native images download behind an HTTPS proxy.** curl printed the proxy tunnel's own `200 Connection established` block ahead of the response, so headers read as body; it now skips it.
+  A redirect to another scheme or port drops the `Authorization` header, as one to another host did.
+- **Windows without symlinks shares the Hugging Face cache by hard links.** Outside Developer Mode a snapshot entry was a full copy of its blob: twice the disk, a full copy again on every up-to-date `pull` (refused while a server held the model), and a blob `remove` could not find, left behind for good. It is a hard link now, kept as it is when current, and `remove` frees its blob.
+- **A throttled ModelScope reads as busy.** ModelScope answers a burst of requests with 403, which read as "does not exist, or is gated or private"; it reads `modelscope.cn is limiting requests from this machine: try again in a minute` now.
+- **`ModelStore.cached()` lists GGUF files only,** as `jinfer list` showed them: the store's own bookkeeping (a remembered quant) no longer appears as a cached model.
+- **`jinfer transcribe --raw-pcm` no longer warms the JIT before listening;** on the JVM the first second of audio may decode a little later.
+- **`jinfer pull` of a cached model no longer reads it whole.** A blob in the shared Hugging Face cache is named by its verified SHA-256, so name and size say it is current: 0.75 s instead of 17 s for a 25 GB model.
+  A fresh download is checked once, not twice. Bytes damaged after download are replaced by `pull --force`.
 
 ## 0.3.1
 
