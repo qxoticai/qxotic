@@ -22,9 +22,11 @@ import java.security.NoSuchAlgorithmException;
 import java.time.Duration;
 import java.util.Arrays;
 import java.util.HexFormat;
+import java.util.List;
 import java.util.Map;
 import java.util.Random;
 import java.util.concurrent.Callable;
+import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.Executors;
 import java.util.concurrent.TimeUnit;
@@ -70,6 +72,35 @@ class FetchDownloadTest {
             Fetch.download(server.url("/model"), dest, 6, null, Map.of());
             assertEquals("after!", Files.readString(dest));
             assertTrue(Files.exists(dir.resolve("model.gguf.part.map/keep")));
+        }
+    }
+
+    /**
+     * A host's listener (ModelStore.progressListener, the embedding API) hears a download from
+     * start to done, by the file's name, while nothing reaches stderr; cleared, it hears no more.
+     */
+    @Test
+    void aHostsListenerHearsTheDownloadInsteadOfTheTerminal(@TempDir Path dir) throws Exception {
+        List<String> heard = new CopyOnWriteArrayList<>();
+        var stderr = new java.io.ByteArrayOutputStream();
+        java.io.PrintStream original = System.err;
+        try (FileServer server = FileServer.start().serve("/model", "after!")) {
+            ModelStore.progressListener(
+                    (file, done, total) -> heard.add(file + " " + done + "/" + total));
+            System.setErr(new java.io.PrintStream(stderr, true, StandardCharsets.UTF_8));
+            try {
+                Fetch.download(server.url("/model"), dir.resolve("model.gguf"), 6, null, Map.of());
+            } finally {
+                System.setErr(original);
+                ModelStore.progressListener(null);
+            }
+            assertEquals("model.gguf 0/6", heard.getFirst(), "started: nothing yet, of the total");
+            assertEquals("model.gguf 6/6", heard.getLast(), "finished: done == total");
+            assertEquals("", stderr.toString(StandardCharsets.UTF_8), "the host renders, not us");
+
+            int before = heard.size();
+            Fetch.download(server.url("/model"), dir.resolve("again.gguf"), 6, null, Map.of());
+            assertEquals(before, heard.size(), "cleared: the listener hears nothing more");
         }
     }
 
