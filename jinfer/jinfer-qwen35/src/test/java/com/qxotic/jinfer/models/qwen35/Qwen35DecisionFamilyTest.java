@@ -17,6 +17,7 @@ import com.qxotic.jinfer.chat.Models;
 import com.qxotic.jinfer.codecs.ImageCodec;
 import com.qxotic.jinfer.testkit.TestModels;
 import java.lang.foreign.Arena;
+import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.List;
@@ -310,10 +311,9 @@ final class Qwen35DecisionFamilyTest {
                                                             new Content.Media(
                                                                     com.qxotic.jinfer.codecs
                                                                             .AudioCodec.decode(
-                                                                            java.nio.file.Files
-                                                                                    .readAllBytes(
-                                                                                            Path.of(
-                                                                                                    "../../test-fixtures/parakeet/ls0.wav")))),
+                                                                            Files.readAllBytes(
+                                                                                    Path.of(
+                                                                                            "../../test-fixtures/parakeet/ls0.wav")))),
                                                             new Content.Text("A recording.")),
                                                     REFUND),
                                     variant.name());

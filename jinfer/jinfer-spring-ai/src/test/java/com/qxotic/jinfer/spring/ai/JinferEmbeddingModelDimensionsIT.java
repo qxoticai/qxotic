@@ -4,9 +4,11 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
+import com.qxotic.jinfer.chat.LoadedEmbedder;
 import com.qxotic.jinfer.chat.Models;
 import com.qxotic.jinfer.testkit.TestModels;
 import java.lang.foreign.Arena;
+import java.util.List;
 import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Tag;
@@ -29,7 +31,7 @@ final class JinferEmbeddingModelDimensionsIT {
     static final int NATIVE = 768, MINIMUM = 128;
 
     static final Arena ARENA = Arena.ofShared();
-    static com.qxotic.jinfer.chat.LoadedEmbedder<?> weights;
+    static LoadedEmbedder<?> weights;
 
     @BeforeAll
     static void load() throws Exception {
@@ -48,8 +50,7 @@ final class JinferEmbeddingModelDimensionsIT {
             assertEquals(256, model.dimensions(), "reported, so a store sizes its table from it");
 
             // the default path a vector store uses: no options
-            EmbeddingResponse response =
-                    model.call(new EmbeddingRequest(java.util.List.of("hello"), null));
+            EmbeddingResponse response = model.call(new EmbeddingRequest(List.of("hello"), null));
             assertEquals(256, response.getResults().get(0).getOutput().length);
 
             // the shortcut accessors go through the same width
@@ -78,7 +79,7 @@ final class JinferEmbeddingModelDimensionsIT {
             EmbeddingResponse narrow =
                     model.call(
                             new EmbeddingRequest(
-                                    java.util.List.of("hello"),
+                                    List.of("hello"),
                                     EmbeddingOptions.builder().dimensions(MINIMUM).build()));
             assertEquals(MINIMUM, narrow.getResults().get(0).getOutput().length);
             // and the next call is back at the builder's width
@@ -113,7 +114,7 @@ final class JinferEmbeddingModelDimensionsIT {
     private static float[] embedAt(JinferEmbeddingModel model, String text, int width) {
         return model.call(
                         new EmbeddingRequest(
-                                java.util.List.of(text),
+                                List.of(text),
                                 EmbeddingOptions.builder().dimensions(width).build()))
                 .getResults()
                 .getFirst()

@@ -10,6 +10,7 @@ import com.sun.net.httpserver.HttpServer;
 import java.io.IOException;
 import java.net.InetSocketAddress;
 import java.net.URI;
+import java.nio.charset.StandardCharsets;
 import java.nio.file.Path;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
@@ -59,7 +60,7 @@ class ModelNotFoundTest {
     void aThrottledModelScopeIsBusyNotMissing() throws IOException {
         byte[] body =
                 "{\"Code\":10013201001,\"Message\":\"\u64cd\u4f5c\u8fc7\u4e8e\u9891\u7e41\",\"Success\":false}"
-                        .getBytes(java.nio.charset.StandardCharsets.UTF_8);
+                        .getBytes(StandardCharsets.UTF_8);
         HttpServer server = HttpServer.create(new InetSocketAddress("127.0.0.1", 0), 0);
         server.createContext(
                 "/",

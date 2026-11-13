@@ -19,6 +19,7 @@ import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 import org.springframework.ai.chat.messages.part.MediaPart;
 import org.springframework.ai.chat.messages.part.TextPart;
+import org.springframework.ai.content.Media;
 import org.springframework.ai.decision.DecisionResponse;
 import org.springframework.ai.decision.input.DecisionInput;
 import org.springframework.ai.decision.question.ChoiceQuestion;
@@ -67,8 +68,8 @@ final class JinferDecisionModelShapesIT {
         return questions;
     }
 
-    private static org.springframework.ai.content.Media png(String name) throws Exception {
-        return new org.springframework.ai.content.Media(
+    private static Media png(String name) throws Exception {
+        return new Media(
                 MimeType.valueOf("image/png"),
                 new ByteArrayResource(
                         Files.readAllBytes(
@@ -93,7 +94,7 @@ final class JinferDecisionModelShapesIT {
     /** Parts in every order: the media are read first whatever their place, as the family says. */
     @Test
     void partsInAnyOrderAreRead() throws Exception {
-        org.springframework.ai.content.Media cat = png("cat");
+        Media cat = png("cat");
         DecisionResponse afterText =
                 model.call(
                         DecisionInput.content(TextPart.of(TICKET), MediaPart.of(cat)),

@@ -9,6 +9,7 @@ import com.qxotic.jinfer.chat.Models;
 import com.qxotic.jinfer.testkit.TestModels;
 import dev.langchain4j.data.message.AiMessage;
 import dev.langchain4j.data.message.ImageContent;
+import dev.langchain4j.data.message.PdfFileContent;
 import dev.langchain4j.data.message.TextContent;
 import dev.langchain4j.exception.UnsupportedFeatureException;
 import dev.langchain4j.model.decision.request.ChoiceQuestion;
@@ -23,6 +24,7 @@ import java.util.Base64;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.function.BiFunction;
 import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Tag;
@@ -87,7 +89,7 @@ final class JinferDecisionModelShapesIT {
     @Test
     void contentsInAnyOrderAreRead() throws Exception {
         String cat = base64("cat");
-        java.util.function.BiFunction<String, String, DecisionRequest> request =
+        BiFunction<String, String, DecisionRequest> request =
                 (first, second) ->
                         DecisionRequest.builder()
                                 .inputContents(
@@ -153,10 +155,8 @@ final class JinferDecisionModelShapesIT {
                                 model.decide(
                                         DecisionRequest.builder()
                                                 .inputContents(
-                                                        dev.langchain4j.data.message.PdfFileContent
-                                                                .from(
-                                                                        base64("cat"),
-                                                                        "application/pdf"))
+                                                        PdfFileContent.from(
+                                                                base64("cat"), "application/pdf"))
                                                 .question("q", YesNoQuestion.from("?"))
                                                 .build()));
         assertTrue(refused.getMessage().contains("not supported"), refused.getMessage());

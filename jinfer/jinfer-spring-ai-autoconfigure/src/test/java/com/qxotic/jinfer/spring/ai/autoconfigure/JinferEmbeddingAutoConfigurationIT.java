@@ -2,6 +2,7 @@ package com.qxotic.jinfer.spring.ai.autoconfigure;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
+import com.qxotic.jinfer.spring.ai.JinferEmbeddingModel;
 import com.qxotic.jinfer.testkit.TestModels;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
@@ -70,9 +71,8 @@ class JinferEmbeddingAutoConfigurationIT {
                 .run(
                         context -> {
                             assertThat(context).hasNotFailed();
-                            com.qxotic.jinfer.spring.ai.JinferEmbeddingModel model =
-                                    context.getBean(
-                                            com.qxotic.jinfer.spring.ai.JinferEmbeddingModel.class);
+                            JinferEmbeddingModel model =
+                                    context.getBean(JinferEmbeddingModel.class);
                             // the towers are attached: the media content types are advertised
                             assertThat(model.dimensions()).isEqualTo(768);
                         });

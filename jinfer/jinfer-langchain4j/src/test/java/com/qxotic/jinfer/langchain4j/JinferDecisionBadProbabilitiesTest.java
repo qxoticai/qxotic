@@ -6,6 +6,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import com.qxotic.jinfer.ContextState;
 import com.qxotic.jinfer.chat.Content;
+import com.qxotic.jinfer.chat.DecisionModel;
 import com.qxotic.jinfer.chat.DecisionModel.Question;
 import com.qxotic.jota.memory.MemoryAllocators;
 import dev.langchain4j.model.decision.request.ChoiceQuestion;
@@ -26,7 +27,7 @@ import org.junit.jupiter.api.Test;
 final class JinferDecisionBadProbabilitiesTest {
 
     /** Answers with whatever {@link #rows} says, as it says it. */
-    static class Hostile implements com.qxotic.jinfer.chat.DecisionModel {
+    static class Hostile implements DecisionModel {
         Function<Question, float[]> rows = q -> new float[q.options().size()];
 
         @Override

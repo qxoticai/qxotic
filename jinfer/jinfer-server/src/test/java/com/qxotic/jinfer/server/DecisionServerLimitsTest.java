@@ -18,6 +18,7 @@ import java.time.Duration;
 import java.util.Arrays;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.ExecutorService;
@@ -266,7 +267,7 @@ final class DecisionServerLimitsTest {
     @Test
     void theApiKeyGuardsTheWorkRoute() throws Exception {
         ServerConfig.Access keyed =
-                new ServerConfig.Access("secret-token", java.util.Set.of("https://app.example"));
+                new ServerConfig.Access("secret-token", Set.of("https://app.example"));
         try (var server =
                 DecisionServer.start(stub, 0, "d1", ServerConfig.local(0).withAccess(keyed))) {
             String base = base(server);
