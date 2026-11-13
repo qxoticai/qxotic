@@ -98,22 +98,6 @@ public final class JinferChatOptions extends DefaultToolCallingChatOptions
         return reasoningCutoffMessage;
     }
 
-    /**
-     * @deprecated use {@link #getMaxReasoningTokens()}, named like the builder and the property
-     */
-    @Deprecated
-    public Integer getReasoningBudget() {
-        return getMaxReasoningTokens();
-    }
-
-    /**
-     * @deprecated use {@link #getReasoningCutoffMessage()}, named like the builder and the property
-     */
-    @Deprecated
-    public String getReasoningBudgetMessage() {
-        return getReasoningCutoffMessage();
-    }
-
     /** Wall-clock generation deadline; null = none. */
     public Duration getTimeout() {
         return timeout;
