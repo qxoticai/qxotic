@@ -305,6 +305,8 @@ class ArgumentMatrixTest {
                     {"list", "--threads", "2"},
                     {"pull", "owner/repo:Q8_0", "--temp", "0"},
                     {"remove"},
+                    {"find"},
+                    {"find", "owner/repo:Q8_0", "--force"},
                     {"remove", "owner/repo:Q8_0", "--force"},
                     {"chat", "--model="},
                     {"server", "-m", "m", "--host="}

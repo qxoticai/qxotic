@@ -317,24 +317,33 @@ Set `JINFER_MODELS` to choose a different model-cache directory.
 Update checks and forced downloads require network access.
 An exact cached file pinned to a full commit can be pulled offline.
 
-## Cached models: `list`
+## Cached models: `list`, `find` and `remove`
 
-Show cached model references and their disk usage:
+These three never touch the network.
+`list` shows every cached model with its size, each by the shortest reference that loads it:
 
 ```sh
-jinfer list
+$ jinfer list
+    362 MB  LiquidAI/LFM2.5-350M-GGUF:Q8_0
+    209 MB  LiquidAI/LFM2.5-350M-GGUF:QAD-Q4_0
+    556 MB  LiquidAI/LFM2.5-VL-3B-GGUF/mmproj-LFM2.5-VL-3B-Q8_0.gguf
 ```
 
-## Removing models: `remove`
-
-Remove cached models by the references `list` prints:
+`find` prints the file `-m` would load, for scripts and other tools; a model that is not cached fails:
 
 ```sh
-jinfer remove "$LM"
+llama-server -m "$(jinfer find LiquidAI/LFM2.5-350M-GGUF:Q8_0)"
+```
+
+`remove` deletes what `list` shows; `owner/repo` alone removes every cached file of that repository:
+
+```sh
+jinfer remove LiquidAI/LFM2.5-350M-GGUF:Q8_0
+jinfer remove LiquidAI/LFM2.5-VL-3B-GGUF
 ```
 
 A file in the shared Hugging Face cache is removed together with its blob, unless another snapshot still links that blob.
-Files passed by path are never deleted.
+Files outside the cache are never deleted.
 
 ## Prompt caches: `cache-info`
 

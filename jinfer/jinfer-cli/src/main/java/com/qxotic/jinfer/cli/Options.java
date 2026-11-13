@@ -133,7 +133,7 @@ final class Options {
                     default -> name;
                 };
         if (!MODEL_COMMANDS.contains(selected)
-                && !Set.of("pull", "list", "remove", "cache-info").contains(selected))
+                && !Set.of("pull", "list", "find", "remove", "cache-info").contains(selected))
             throw usageHelp("unknown command: " + name);
         command = selected;
     }
@@ -605,6 +605,7 @@ final class Options {
                   transcribe    turn audio into text
                   pull          download model files
                   list          show cached models
+                  find          print the path of a cached model
                   remove        remove cached models
                   cache-info    inspect a prompt cache
 

@@ -19,7 +19,7 @@ class HubTest {
     @TempDir Path dir;
 
     @Test
-    void pullCachesInArgumentOrderAndForceRefreshes() throws Exception {
+    void pullCachesInArgumentOrderAndForceRefreshes(@TempDir Path elsewhere) throws Exception {
         AtomicInteger fetches = new AtomicInteger();
         String sha256 =
                 HexFormat.of()
@@ -58,24 +58,74 @@ class HubTest {
 
         var listing = new CliFixtures.Capture("");
         assertEquals(0, Main.run(new String[] {"list"}, listing.io, store));
-        assertTrue(listing.out().contains("first"));
-        assertTrue(listing.out().contains("second"));
+        // each name is the shortest ref that loads the file, ready to paste back
+        assertTrue(listing.out().contains("  " + a + "\n"), listing.out());
+        assertTrue(listing.out().contains("  " + b + "\n"), listing.out());
         assertEquals(3, fetches.get(), "listing never fetches");
+
+        var found = new CliFixtures.Capture("");
+        assertEquals(0, Main.run(new String[] {"find", b, a}, found.io, store), found.err());
+        assertEquals(List.of(paths.get(1), paths.get(0)), found.out().lines().toList());
+        assertEquals(3, fetches.get(), "find never fetches");
 
         var removed = new CliFixtures.Capture("");
         assertEquals(0, Main.run(new String[] {"remove", a}, removed.io, store), removed.err());
         assertEquals("removed " + a + "\n", removed.out());
         assertFalse(Files.exists(Path.of(paths.get(0))));
         assertTrue(Files.exists(Path.of(paths.get(1))), "remove deletes only what it names");
-        // one missing or path-shaped argument fails the command, yet the others still go
-        Path local = Files.writeString(dir.resolve("local.gguf"), "mine");
+        var missing = new CliFixtures.Capture("");
+        assertEquals(1, Main.run(new String[] {"find", a}, missing.io, store));
+        assertEquals("", missing.out());
+        assertTrue(missing.err().contains("not cached: " + a), missing.err());
+        // one missing or outside argument fails the command, yet the others still go
+        Path local = Files.writeString(elsewhere.resolve("local.gguf"), "mine");
         var mixed = new CliFixtures.Capture("");
         assertEquals(1, Main.run(new String[] {"remove", a, local.toString(), b}, mixed.io, store));
         assertEquals("removed " + b + "\n", mixed.out());
         assertTrue(mixed.err().contains("not cached: " + a), mixed.err());
-        assertTrue(mixed.err().contains("is not a model reference"), mixed.err());
-        assertTrue(Files.exists(local), "a file passed by path is never deleted");
+        assertTrue(mixed.err().contains("is not in the model cache"), mixed.err());
+        assertTrue(Files.exists(local), "a file outside the cache is never deleted");
         assertFalse(Files.exists(Path.of(paths.get(1))));
+    }
+
+    /** A repository named alone is every cached file of it, and find shows them on a miss. */
+    @Test
+    void aRepositoryAloneNamesAllOfItsCachedFiles() throws Exception {
+        for (String name : List.of("m-Q4_0.gguf", "m-QAD-Q4_0.gguf", "m-Q8_0.gguf")) {
+            Path file = dir.resolve("hf.co/acme/m/" + name);
+            Files.createDirectories(file.getParent());
+            Files.writeString(file, "GGUF");
+        }
+        // one file: its tail past the model's name, not the shortest quant that also loads it
+        Path qad = dir.resolve("hf.co/acme/Solo-GGUF/Solo-UD-Q4_K_M.gguf");
+        Files.createDirectories(qad.getParent());
+        Files.writeString(qad, "GGUF");
+        assertEquals(
+                "acme/Solo-GGUF:UD-Q4_K_M",
+                Hub.name(ModelStore.of(dir), "hf.co/acme/Solo-GGUF/Solo-UD-Q4_K_M.gguf"));
+        Files.delete(qad);
+        Files.delete(qad.getParent());
+        var store = ModelStore.of(dir);
+        assertEquals("acme/m:Q8_0", Hub.name(store, "hf.co/acme/m/m-Q8_0.gguf"));
+        assertEquals(
+                "acme/m:QAD-Q4_0",
+                Hub.name(store, "hf.co/acme/m/m-QAD-Q4_0.gguf"),
+                "Q4_0 alone would pick two files");
+        assertEquals(
+                "acme/m/m-Q4_0.gguf",
+                Hub.name(store, "hf.co/acme/m/m-Q4_0.gguf"),
+                "no quant names it alone: the path does");
+
+        var miss = new CliFixtures.Capture("");
+        assertEquals(1, Main.run(new String[] {"find", "acme/m"}, miss.io, store));
+        assertTrue(
+                miss.err().contains("acme/m/m-Q4_0.gguf\n  acme/m:Q8_0\n  acme/m:QAD-Q4_0"),
+                miss.err());
+
+        var removed = new CliFixtures.Capture("");
+        assertEquals(0, Main.run(new String[] {"remove", "acme/m"}, removed.io, store));
+        assertEquals("removed acme/m\n", removed.out());
+        assertTrue(Files.notExists(dir.resolve("hf.co")), "nothing left behind");
     }
 
     @Test
@@ -114,11 +164,12 @@ class HubTest {
     void emptyListAndBadHubArgumentsArePredictable() {
         var capture = new CliFixtures.Capture("");
         var store = ModelStore.of(dir);
-        Hub.list(List.of(), dir, capture.io.out());
+        Hub.list(List.of(), ref -> ref, dir, capture.io.out());
         assertTrue(capture.out().contains("no models cached"));
         for (String[] args :
-                new String[][] {{"pull"}, {"pull", "--wat"}, {"list", "extra"}, {"cache-info"}})
-            assertEquals(2, Main.run(args, capture.io, store));
+                new String[][] {
+                    {"pull"}, {"pull", "--wat"}, {"list", "extra"}, {"find"}, {"cache-info"}
+                }) assertEquals(2, Main.run(args, capture.io, store));
     }
 
     @Test
@@ -185,6 +236,7 @@ class HubTest {
                         new ModelStore.Cached("/models/Édouard's café.gguf", 1),
                         new ModelStore.Cached("/cache/sherpa/model.int8.onnx", 9),
                         new ModelStore.Cached("/cache/sherpa/tokens.txt", 9)),
+                ref -> ref,
                 dir,
                 capture.io.out());
         List<String> lines = capture.out().replace("\r\n", "\n").lines().toList();
@@ -193,8 +245,10 @@ class HubTest {
             assertTrue(line.substring(0, 10).matches(" *[0-9.]+ [KMGT]?B"), line);
             assertEquals("  ", line.substring(10, 12), line);
         }
-        assertTrue(lines.get(0).endsWith("  owner/small/model.gguf"), lines.get(0));
-        assertTrue(lines.get(2).endsWith("  hf.co/団体/モデル/量子化-Q4_0.gguf"), lines.get(2));
+        // alphabetical, ignoring case
+        assertTrue(lines.get(0).endsWith("  /models/Édouard's café.gguf"), lines.get(0));
+        assertTrue(lines.get(1).endsWith("  hf.co/団体/モデル/量子化-Q4_0.gguf"), lines.get(1));
+        assertTrue(lines.get(3).endsWith("  owner/small/model.gguf"), lines.get(3));
         assertTrue(capture.out().contains("2.0 GB"), capture.out());
         assertTrue(lines.getLast().endsWith("  total"), lines.getLast());
         assertFalse(capture.out().contains("sherpa"), "only loadable GGUFs are models");

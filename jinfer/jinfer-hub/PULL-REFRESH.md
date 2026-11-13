@@ -19,7 +19,7 @@ Linux checks are recorded below; Windows publication validation is pending.
 | Inference / `resolve` / `resolveAll` | Use installed files without network access or rehashing; download on a miss |
 | `pull` / `pullAll(inputs, false)` | Check upstream and reuse matching content; download changed or missing files |
 | `pull --force` / `pullAll(inputs, true)` | Bypass completed-file reuse and fetch a replacement |
-| `find` / `list` | Inspect local state without network access |
+| `find` / `list` / `remove` | Inspect or delete local state without network access |
 | Existing local path | Return the path; force does not transfer ownership or authorize deletion |
 
 Mutable-reference pull first selects a file from the remote repository.

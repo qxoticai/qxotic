@@ -142,18 +142,40 @@ class ModelStoreCacheTest {
     }
 
     @Test
-    void removeNeverTouchesALocalPathOrAnAmbiguousCache(@TempDir Path root) throws IOException {
-        Path local = Files.writeString(root.resolve("mine.gguf"), "weights");
+    void removeTakesAWholeRepositoryOrAFileInsideTheRoot(@TempDir Path root) throws IOException {
+        Path q4 = root.resolve("hf.co/acme/thing/thing-Q4_K_M.gguf");
+        Path q8 = root.resolve("hf.co/acme/thing/thing-Q8_0.gguf");
+        Path other = root.resolve("hf.co/acme/other/other-Q8_0.gguf");
+        Path loose = root.resolve("loose/model.gguf");
+        for (Path file : List.of(q4, q8, other, loose)) {
+            Files.createDirectories(file.getParent());
+            Files.writeString(file, "weights");
+        }
+        ModelStore store = ModelStore.of(root);
+
+        assertTrue(store.remove("acme/thing"), "a repository named alone is all of it");
+        assertTrue(Files.notExists(root.resolve("hf.co/acme/thing")));
+        assertTrue(Files.exists(other));
+        assertFalse(store.remove("acme/thing"));
+        assertTrue(store.remove(loose.toString()), "list prints this path; remove takes it");
+        assertTrue(Files.notExists(root.resolve("loose")));
+    }
+
+    @Test
+    void removeNeverTouchesALocalPathOrAnAmbiguousCache(@TempDir Path dir) throws IOException {
+        Path root = dir.resolve("cache");
+        Path local = Files.writeString(dir.resolve("mine.gguf"), "weights");
         assertFalse(ModelStore.of(root).remove(local.toString()));
-        assertTrue(Files.exists(local), "a file passed by path is the caller's, not the cache's");
+        assertTrue(
+                Files.exists(local), "a file outside the cache is the caller's, not the cache's");
 
         // two files one quant could mean: no cache-side answer, so no removal either
-        Path dir = root.resolve("hf.co/acme/thing");
-        Files.createDirectories(dir);
-        Files.writeString(dir.resolve("a-Q8_0.gguf"), "a");
-        Files.writeString(dir.resolve("b-Q8_0.gguf"), "b");
+        Path repo = root.resolve("hf.co/acme/thing");
+        Files.createDirectories(repo);
+        Files.writeString(repo.resolve("a-Q8_0.gguf"), "a");
+        Files.writeString(repo.resolve("b-Q8_0.gguf"), "b");
         assertFalse(ModelStore.of(root).remove("hf.co/acme/thing:Q8_0"));
-        assertTrue(Files.exists(dir.resolve("a-Q8_0.gguf")));
+        assertTrue(Files.exists(repo.resolve("a-Q8_0.gguf")));
     }
 
     // ---- the offline gate ----

@@ -760,14 +760,50 @@ public final class ModelStore {
     }
 
     /**
-     * Explicitly deletes the cached file a ref resolves to, and the folders it leaves empty. For a
-     * non-destructive refresh, use {@link #pullAll}; a pull never removes anything.
+     * Deletes what {@code pathOrRef} names in the cache, and the folders that leaves empty: the
+     * file a ref resolves to, every cached file of a repository named alone ({@code owner/repo}),
+     * or a file by path inside this store's root. A file anywhere else is the caller's and never
+     * deleted. False when nothing was removed; {@link #pullAll} refreshes without removing.
      */
     public boolean remove(String pathOrRef) {
         if (!ModelRef.isRef(pathOrRef)) {
-            return false; // a file you passed by path is yours; this cache never deletes it
+            return removeOwnFile(pathOrRef);
         }
         ModelRef ref = ModelRef.parse(pathOrRef);
+        if (ref.path().isEmpty() && ref.quant() == null && ref.revision() == null) {
+            boolean removed = false;
+            for (Cached entry : cached()) {
+                if (ModelRef.isRef(entry.ref())) {
+                    ModelRef file = ModelRef.parse(entry.ref());
+                    if (file.host().equals(ref.host())
+                            && file.repoId().equalsIgnoreCase(ref.repoId())) {
+                        removed |= removeRef(file);
+                    }
+                }
+            }
+            return removed;
+        }
+        return removeRef(ref);
+    }
+
+    private boolean removeOwnFile(String path) {
+        Path file;
+        try {
+            file = Path.of(path).toAbsolutePath().normalize();
+        } catch (InvalidPathException notAPath) {
+            return false;
+        }
+        if (!file.startsWith(root) || !Files.isRegularFile(file)) return false;
+        try {
+            Files.delete(file);
+            pruneEmpty(file.getParent(), root);
+            return true;
+        } catch (IOException e) {
+            throw new UncheckedIOException("could not remove " + path + ": " + why(e), e);
+        }
+    }
+
+    private boolean removeRef(ModelRef ref) {
         try {
             Path cached = cachedFile(ref);
             if (cached == null) {

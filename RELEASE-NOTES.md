@@ -8,8 +8,12 @@
 - **GBNF's `.` is one UTF-8 character,** as in llama.cpp, where it was one byte: a grammar written for llama.cpp means the same here, and `.{n}` cannot end inside a character.
 - **`retainSessions(n)` is `retainedSessions(n)`** on both chat-model builders, the knob's name on every face (the core's `withRetainedSessions`, Boot's `spring.ai.jinfer.chat.retained-sessions`).
 - **A first batch no longer allocates once per core.** Its first call built a SentencePiece tokenizer's 24 MB word cache, or a tiktoken tokenizer's fast engine, on every core at once and kept one; one thread builds it now, so a first batch fits the heap a single one does.
-- **`jinfer remove <ref>...` deletes cached models,** by the references `jinfer list` prints; a model in the shared Hugging Face cache takes its blob along unless another snapshot links it, and a repository folder goes once it is empty.
-  `ModelStore.evict(ref)` is `ModelStore.remove(ref)`, the command's name.
+- **Cache management without the network: `list`, `find` and `remove`.**
+  `jinfer list` names each cached model by the shortest reference that loads it (`LiquidAI/LFM2.5-350M-GGUF:Q8_0`), alphabetically, so a line pastes into `-m`, `pull`, `find` or `remove`.
+  `jinfer find <ref>...` prints the file `-m` would load, without a request or a hash: `llama-server -m "$(jinfer find <ref>)"`.
+  `jinfer remove <ref>...` deletes cached models; `owner/repo` alone removes every cached file of the repository, and a path `list` prints is taken too.
+  A model in the shared Hugging Face cache takes its blob along unless another snapshot links it, and a repository folder goes once it is empty.
+  `ModelStore.evict(ref)` is `ModelStore.remove(ref)`, the command's name, and removes a whole repository the same way.
 - **`jinfer pull` of a cached model no longer reads it whole.** A blob in the shared Hugging Face cache is named by its verified SHA-256, so name and size say it is current: 0.75 s instead of 17 s for a 25 GB model.
   A fresh download is checked once, not twice. Bytes damaged after download are replaced by `pull --force`.
 

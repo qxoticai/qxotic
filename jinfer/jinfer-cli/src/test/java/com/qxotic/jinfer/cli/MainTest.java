@@ -33,6 +33,7 @@ class MainTest {
                 "transcribe",
                 "pull",
                 "list",
+                "find",
                 "remove",
                 "cache-info"
             })
@@ -67,6 +68,7 @@ class MainTest {
                 "transcribe",
                 "pull",
                 "list",
+                "find",
                 "remove",
                 "cache-info"
             })
