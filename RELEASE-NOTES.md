@@ -19,6 +19,9 @@
 - **Errors say what went wrong, once.** A server that cannot be reached reads `cannot connect to <host>` or `cannot find host <host>`, where it read `ConnectException: ClosedChannelException`; an empty `:` or `@` quotes the reference; a bare word given as a model (`-m LiquidAI`) is shown the reference shape; and a cause is no longer repeated after a message that already says it.
 - **Native images download behind an HTTPS proxy.** curl printed the proxy tunnel's own `200 Connection established` block ahead of the response, so headers read as body; it now skips it.
   A redirect to another scheme or port drops the `Authorization` header, as one to another host did.
+- **Windows without symlinks shares the Hugging Face cache by hard links.** Outside Developer Mode a snapshot entry was a full copy of its blob: twice the disk, a full copy again on every up-to-date `pull` (refused while a server held the model), and a blob `remove` could not find, left behind for good. It is a hard link now, kept as it is when current, and `remove` frees its blob.
+- **A throttled ModelScope reads as busy.** ModelScope answers a burst of requests with 403, which read as "does not exist, or is gated or private"; it reads `modelscope.cn is limiting requests from this machine: try again in a minute` now.
+- **`jinfer remove` takes the browser URLs `jinfer find` takes.**
 - **`ModelStore.cached()` lists GGUF files only,** as `jinfer list` showed them: the store's own bookkeeping (a remembered quant) no longer appears as a cached model.
 - **`jinfer transcribe --raw-pcm` no longer warms the JIT before listening;** on the JVM the first second of audio may decode a little later.
 - **`jinfer pull` of a cached model no longer reads it whole.** A blob in the shared Hugging Face cache is named by its verified SHA-256, so name and size say it is current: 0.75 s instead of 17 s for a 25 GB model.
