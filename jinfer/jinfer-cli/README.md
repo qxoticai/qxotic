@@ -335,12 +335,14 @@ $ jinfer list
 llama-server -m "$(jinfer find LiquidAI/LFM2.5-350M-GGUF:Q8_0)"
 ```
 
-`remove` deletes what `list` shows; `owner/repo` alone removes every cached file of that repository:
+`remove` deletes the one file `find` prints for each reference, and says which:
 
 ```sh
-jinfer remove LiquidAI/LFM2.5-350M-GGUF:Q8_0
-jinfer remove LiquidAI/LFM2.5-VL-3B-GGUF
+$ jinfer remove LiquidAI/LFM2.5-350M-GGUF:Q8_0
+removed LFM2.5-350M-Q8_0.gguf (362 MB)
 ```
+
+A repository holding several cached files is never a guess: `remove owner/repo` then lists them, and you name the ones to delete.
 
 A file in the shared Hugging Face cache is removed together with its blob, unless another snapshot still links that blob.
 Files outside the cache are never deleted.

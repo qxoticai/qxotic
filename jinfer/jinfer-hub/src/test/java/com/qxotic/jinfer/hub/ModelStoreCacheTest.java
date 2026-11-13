@@ -142,7 +142,8 @@ class ModelStoreCacheTest {
     }
 
     @Test
-    void removeTakesAWholeRepositoryOrAFileInsideTheRoot(@TempDir Path root) throws IOException {
+    void removeDeletesTheFileFindReturnsOrAFileInsideTheRoot(@TempDir Path root)
+            throws IOException {
         Path q4 = root.resolve("hf.co/acme/thing/thing-Q4_K_M.gguf");
         Path q8 = root.resolve("hf.co/acme/thing/thing-Q8_0.gguf");
         Path other = root.resolve("hf.co/acme/other/other-Q8_0.gguf");
@@ -153,10 +154,10 @@ class ModelStoreCacheTest {
         }
         ModelStore store = ModelStore.of(root);
 
-        assertTrue(store.remove("acme/thing"), "a repository named alone is all of it");
-        assertTrue(Files.notExists(root.resolve("hf.co/acme/thing")));
+        assertTrue(store.remove("acme/thing"), "the default quant, as find returns it");
+        assertTrue(Files.notExists(q4));
+        assertTrue(Files.exists(q8), "one file, never the whole repository");
         assertTrue(Files.exists(other));
-        assertFalse(store.remove("acme/thing"));
         assertTrue(store.remove(loose.toString()), "list prints this path; remove takes it");
         assertTrue(Files.notExists(root.resolve("loose")));
     }

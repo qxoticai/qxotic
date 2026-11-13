@@ -70,7 +70,7 @@ class HubTest {
 
         var removed = new CliFixtures.Capture("");
         assertEquals(0, Main.run(new String[] {"remove", a}, removed.io, store), removed.err());
-        assertEquals("removed " + a + "\n", removed.out());
+        assertEquals("removed model-Q8_0.gguf (4 B)\n", removed.out());
         assertFalse(Files.exists(Path.of(paths.get(0))));
         assertTrue(Files.exists(Path.of(paths.get(1))), "remove deletes only what it names");
         var missing = new CliFixtures.Capture("");
@@ -81,16 +81,16 @@ class HubTest {
         Path local = Files.writeString(elsewhere.resolve("local.gguf"), "mine");
         var mixed = new CliFixtures.Capture("");
         assertEquals(1, Main.run(new String[] {"remove", a, local.toString(), b}, mixed.io, store));
-        assertEquals("removed " + b + "\n", mixed.out());
+        assertEquals("removed model-Q8_0.gguf (4 B)\n", mixed.out());
         assertTrue(mixed.err().contains("not cached: " + a), mixed.err());
         assertTrue(mixed.err().contains("is not in the model cache"), mixed.err());
         assertTrue(Files.exists(local), "a file outside the cache is never deleted");
         assertFalse(Files.exists(Path.of(paths.get(1))));
     }
 
-    /** A repository named alone is every cached file of it, and find shows them on a miss. */
+    /** A repository holding several cached files is never a guess: both commands list them. */
     @Test
-    void aRepositoryAloneNamesAllOfItsCachedFiles() throws Exception {
+    void aRepositoryWithSeveralCachedFilesAsksForOne() throws Exception {
         for (String name : List.of("m-Q4_0.gguf", "m-QAD-Q4_0.gguf", "m-Q8_0.gguf")) {
             Path file = dir.resolve("hf.co/acme/m/" + name);
             Files.createDirectories(file.getParent());
@@ -122,9 +122,18 @@ class HubTest {
                 miss.err().contains("acme/m/m-Q4_0.gguf\n  acme/m:Q8_0\n  acme/m:QAD-Q4_0"),
                 miss.err());
 
+        var refused = new CliFixtures.Capture("");
+        assertEquals(1, Main.run(new String[] {"remove", "acme/m"}, refused.io, store));
+        assertEquals("", refused.out());
+        assertTrue(
+                refused.err().contains("acme/m holds 3 cached files; name the one to remove:"),
+                refused.err());
+        assertEquals(3, store.cached().stream().filter(c -> c.ref().contains("acme/m")).count());
+
         var removed = new CliFixtures.Capture("");
-        assertEquals(0, Main.run(new String[] {"remove", "acme/m"}, removed.io, store));
-        assertEquals("removed acme/m\n", removed.out());
+        String[] each = {"remove", "acme/m/m-Q4_0.gguf", "acme/m:Q8_0", "acme/m:QAD-Q4_0"};
+        assertEquals(0, Main.run(each, removed.io, store), removed.err());
+        assertEquals(3, removed.out().lines().count(), removed.out());
         assertTrue(Files.notExists(dir.resolve("hf.co")), "nothing left behind");
     }
 

@@ -6,6 +6,7 @@ import com.qxotic.jinfer.hub.ModelStore;
 import java.io.IOException;
 import java.io.PrintStream;
 import java.io.UncheckedIOException;
+import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.Comparator;
@@ -84,21 +85,74 @@ final class Hub {
         return status;
     }
 
-    /** Why find came back empty, naming what the repository does have cached, if anything. */
+    /**
+     * Deletes, for each argument, the one file {@code find} prints for it, and says which. A
+     * repository named alone while it holds several cached files is refused with their names:
+     * deleting is never a guess. A miss is reported and the rest go on.
+     */
+    static int remove(List<String> refs, ModelStore store, PrintStream out, PrintStream err) {
+        int status = 0;
+        for (String ref : refs) {
+            try {
+                Optional<Path> file = store.find(ref);
+                List<String> siblings = cachedFrom(store, ref);
+                if (isRepository(ref) && siblings.size() > 1) {
+                    err.println(
+                            "jinfer remove: "
+                                    + ref
+                                    + " holds "
+                                    + siblings.size()
+                                    + " cached files; name the one to remove:"
+                                    + menu(siblings));
+                } else if (file.isEmpty()) {
+                    err.println("jinfer remove: " + miss(store, ref));
+                } else {
+                    long bytes = Files.size(file.get());
+                    if (store.remove(ref)) {
+                        out.println(
+                                "removed "
+                                        + file.get().getFileName()
+                                        + " ("
+                                        + humanBytes(bytes)
+                                        + ")");
+                        continue;
+                    }
+                    err.println("jinfer remove: " + ref + " is not in the model cache");
+                }
+            } catch (IOException | IllegalArgumentException | UncheckedIOException refused) {
+                err.println("jinfer remove: " + Options.rootMessage(refused));
+            }
+            status = 1;
+        }
+        return status;
+    }
+
+    /** Why nothing was found, naming what the repository does have cached, if anything. */
     private static String miss(ModelStore store, String ref) {
         if (!ModelStore.isRef(ref)) return "no such file: " + ref;
+        List<String> cached = cachedFrom(store, ref);
+        return "not cached: "
+                + ref
+                + (cached.isEmpty() ? "" : "; cached from its repository:" + menu(cached));
+    }
+
+    /** {@code owner/repo} with neither a path nor a quant. */
+    private static boolean isRepository(String ref) {
+        if (!ModelStore.isRef(ref)) return false;
+        ModelRef parsed = ModelRef.parse(ref);
+        return parsed.path().isEmpty() && parsed.quant() == null;
+    }
+
+    /** The cached models of {@code ref}'s repository, by the names {@code list} prints. */
+    private static List<String> cachedFrom(ModelStore store, String ref) {
+        if (!ModelStore.isRef(ref)) return List.of();
         ModelRef repo = ModelRef.parse(ref);
-        List<String> cached =
-                store.cached().stream()
-                        .map(ModelStore.Cached::ref)
-                        .filter(c -> c.toLowerCase(Locale.ROOT).endsWith(".gguf") && isIn(c, repo))
-                        .map(c -> name(store, c))
-                        .sorted(String.CASE_INSENSITIVE_ORDER)
-                        .toList();
-        String miss = "not cached: " + ref;
-        return cached.isEmpty()
-                ? miss + " ('jinfer pull' downloads it)"
-                : miss + "; cached from its repository:\n  " + String.join("\n  ", cached);
+        return store.cached().stream()
+                .map(ModelStore.Cached::ref)
+                .filter(c -> c.toLowerCase(Locale.ROOT).endsWith(".gguf") && isIn(c, repo))
+                .map(c -> name(store, c))
+                .sorted(String.CASE_INSENSITIVE_ORDER)
+                .toList();
     }
 
     private static boolean isIn(String ref, ModelRef repo) {
@@ -107,27 +161,8 @@ final class Hub {
         return file.host().equals(repo.host()) && file.repoId().equalsIgnoreCase(repo.repoId());
     }
 
-    /**
-     * Removes each argument: a model, every cached file of a repository named alone, or a path
-     * {@code list} printed. One that is not cached is reported and the rest still go.
-     */
-    static int remove(List<String> refs, ModelStore store, PrintStream out, PrintStream err) {
-        int status = 0;
-        for (String ref : refs) {
-            if (store.remove(ref)) {
-                out.println("removed " + ref);
-                continue;
-            }
-            status = 1;
-            err.println(
-                    "jinfer remove: "
-                            + (ModelStore.isRef(ref)
-                                    ? "not cached: " + ref
-                                    : ref
-                                            + " is not in the model cache: remove deletes only"
-                                            + " what 'jinfer list' shows"));
-        }
-        return status;
+    private static String menu(List<String> names) {
+        return "\n  " + String.join("\n  ", names);
     }
 
     /**
@@ -263,9 +298,9 @@ final class Hub {
                             Usage: jinfer remove <ref>...
                             Example: jinfer remove LiquidAI/LFM2.5-350M-GGUF:Q8_0
 
-                            Takes what 'jinfer list' prints; owner/repo alone removes every
-                            cached file of that repository. Files outside the cache are never
-                            deleted.
+                            Deletes the one file 'jinfer find' prints for each reference. A
+                            repository holding several cached files asks for one of their names.
+                            Files outside the cache are never deleted.
                             """;
                     case "cache-info" ->
                             """
