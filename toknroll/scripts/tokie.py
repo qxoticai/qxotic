@@ -17,7 +17,7 @@ import tokie
 def main() -> None:
     parser = argparse.ArgumentParser(description="Tokenize text with tokie")
     parser.add_argument(
-        "-s", "--source", required=True, help="HuggingFace repo (e.g. unsloth/Gemma-4-E2B-it)"
+        "-s", "--source", required=True, help="Hugging Face repo (e.g. unsloth/Gemma-4-E2B-it)"
     )
     parser.add_argument("-t", "--text", help="Text to tokenize (reads stdin by default)")
     mode = parser.add_mutually_exclusive_group()

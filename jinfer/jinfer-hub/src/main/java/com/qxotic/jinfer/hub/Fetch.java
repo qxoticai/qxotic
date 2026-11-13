@@ -39,9 +39,9 @@ import java.util.regex.Pattern;
  * One file, off the network, onto disk, correctly and fast.
  *
  * <p>FAST is parallel ranged GETs. A single HTTP stream leaves most of a fast link idle, which is
- * why every serious model downloader is multi-connection (HuggingFace's own transfer layer defaults
- * to 16 concurrent range reads). Both hosts here answer {@code Range} with 206 from their CDN, so a
- * large file is cut into chunks, fetched concurrently, and written positionally into a
+ * why every serious model downloader is multi-connection (Hugging Face's own transfer layer
+ * defaults to 16 concurrent range reads). Both hosts here answer {@code Range} with 206 from their
+ * CDN, so a large file is cut into chunks, fetched concurrently, and written positionally into a
  * pre-allocated file.
  *
  * <p>CORRECT is four separate hazards, each of which someone WILL hit on a download that runs for

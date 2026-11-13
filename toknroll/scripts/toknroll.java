@@ -23,7 +23,7 @@ import picocli.CommandLine.Option;
 @Command(
         name = "toknroll",
         version = "toknroll 0.4.0-rc1",
-        description = "Tokenize text or decode token IDs with HuggingFace / ModelScope / GGUF tokenizers")
+        description = "Tokenize text or decode token IDs with Hugging Face / ModelScope / GGUF tokenizers")
 class toknroll implements Callable<Integer> {
 
     private static GGUFTokenizerLoader ggufLoader;
@@ -57,8 +57,8 @@ class toknroll implements Callable<Integer> {
             paramLabel = "SOURCE",
             description = {
                 "Tokenizer source.",
-                "  user/repo                HuggingFace tokenizer (default)",
-                "  user/repo/quant          GGUF metadata from HuggingFace",
+                "  user/repo                Hugging Face tokenizer (default)",
+                "  user/repo/quant          GGUF metadata from Hugging Face",
                 "  hf:user/repo[/quant]     Same as above (huggingface: alias)",
                 "  ms:user/repo[/quant]     ModelScope (modelscope: alias)",
                 "  https://...              Full URL (hf.co / huggingface.co)",

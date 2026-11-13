@@ -20,7 +20,7 @@ import java.util.concurrent.atomic.AtomicLong;
 import java.util.function.BiConsumer;
 
 /**
- * The shared HuggingFace hub cache ({@code models--owner--repo/blobs/<sha256>} plus a {@code
+ * The shared Hugging Face hub cache ({@code models--owner--repo/blobs/<sha256>} plus a {@code
  * snapshots/<commit>} symlink), as something jinfer READS and - on the default root - WRITES, so
  * the bytes are immediately visible to llama.cpp, {@code hf download} and everything else that
  * reads that layout, and theirs to us. Package-visible: the hub cache is an interop detail of the
@@ -205,7 +205,7 @@ final class Hub {
 
     private static UncheckedIOException unreadable(Path hubCache, IOException e) {
         return new UncheckedIOException(
-                "could not read the HuggingFace hub cache at "
+                "could not read the Hugging Face hub cache at "
                         + hubCache
                         + ": "
                         + ModelStore.why(e),

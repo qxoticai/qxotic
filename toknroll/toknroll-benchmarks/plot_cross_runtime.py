@@ -32,10 +32,10 @@ IMPL_ORDER = ["fast", "classic"]
 PREFERRED_COMPARISONS = [
     ("gpt2", "tiktoken", "Tok'n'Roll vs tiktoken"),
     ("gpt2", "tokie", "Tok'n'Roll vs tokie"),
-    ("gpt2", "hf-tokenizers", "Tok'n'Roll vs HuggingFace"),
-    ("llama3", "hf-tokenizers", "Tok'n'Roll vs HuggingFace"),
-    ("qwen35", "hf-tokenizers", "Tok'n'Roll vs HuggingFace"),
-    ("mistral-tekken", "hf-tokenizers", "Tok'n'Roll vs HuggingFace"),
+    ("gpt2", "hf-tokenizers", "Tok'n'Roll vs Hugging Face"),
+    ("llama3", "hf-tokenizers", "Tok'n'Roll vs Hugging Face"),
+    ("qwen35", "hf-tokenizers", "Tok'n'Roll vs Hugging Face"),
+    ("mistral-tekken", "hf-tokenizers", "Tok'n'Roll vs Hugging Face"),
     ("mistral-tekken", "mistral-common", "Tok'n'Roll vs Mistral"),
 ]
 

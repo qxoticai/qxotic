@@ -91,7 +91,7 @@ class RepositorySource implements ModelSource {
     /**
      * The commit this ref's revision names, or null when the repository's refs do not name it. The
      * hub layout keys snapshots by commit, so joining it starts here; a ref already pinned to a
-     * commit needs no request. HuggingFace only - ModelScope has no shared cache layout to join. A
+     * commit needs no request. Hugging Face only - ModelScope has no shared cache layout to join. A
      * failed request fails the load, as the listing after it would: a rate limit waited out here is
      * not waited out again there.
      */
@@ -239,7 +239,7 @@ class RepositorySource implements ModelSource {
     }
 
     /**
-     * Credentials for {@code host}: its token variable, and for HuggingFace the token {@code hf
+     * Credentials for {@code host}: its token variable, and for Hugging Face the token {@code hf
      * auth login} leaves behind - someone who has logged in once should not have to export
      * anything.
      */

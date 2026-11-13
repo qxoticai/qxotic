@@ -20,7 +20,7 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
 /**
- * Live against both hosts. {@code ggml-org/stories15M_MOE} exists on HuggingFace AND ModelScope
+ * Live against both hosts. {@code ggml-org/stories15M_MOE} exists on Hugging Face AND ModelScope
  * with byte-identical files, which is what makes it the right fixture here: the same ref through
  * two different listing APIs and two different CDNs must produce the same sha256 on disk.
  *

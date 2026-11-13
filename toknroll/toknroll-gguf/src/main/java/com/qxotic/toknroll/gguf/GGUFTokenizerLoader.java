@@ -379,8 +379,8 @@ public final class GGUFTokenizerLoader {
      * Fetches a GGUF file from Hugging Face and builds a tokenizer. Uses the default branch,
      * downloads if not cached, and does not force-refresh.
      *
-     * @param user repository owner/namespace on HuggingFace
-     * @param repository repository name on HuggingFace
+     * @param user repository owner/namespace on Hugging Face
+     * @param repository repository name on Hugging Face
      * @param ggufPath path to the GGUF file within the repository
      * @return loaded tokenizer
      */
@@ -391,8 +391,8 @@ public final class GGUFTokenizerLoader {
     /**
      * Fetches a GGUF file from Hugging Face with full parameter control.
      *
-     * @param user repository owner/namespace on HuggingFace
-     * @param repository repository name on HuggingFace
+     * @param user repository owner/namespace on Hugging Face
+     * @param repository repository name on Hugging Face
      * @param ggufPath path to the GGUF file within the repository
      * @param useCacheOnly if {@code true}, does not fetch over the network
      * @param forceRefresh if {@code true}, ignores cached data and re-fetches

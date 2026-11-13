@@ -20,7 +20,7 @@ COLORS = {
     "Java": "#00758F",  # Blue for Tok'n'Roll (from GraalVM badge)
     "Tiktoken": "#74AA9C",  # OpenAI green
     "Tokie": "#8B4513",  # Brown
-    "HF": "#FFD700",  # HuggingFace yellow
+    "HF": "#FFD700",  # Hugging Face yellow
 }
 
 # Raw data: time in seconds for 100 MB (enwik8)
@@ -72,7 +72,7 @@ def create_single_chart(operation: str, output_path: Path | None = None) -> None
         "Java": "toknroll (Java)",
         "Tiktoken": "tiktoken",
         "Tokie": "tokie",
-        "HF": "HuggingFace\ntokenizers",
+        "HF": "Hugging Face\ntokenizers",
     }
 
     # For each implementation, we'll have a group of 3 bars (one per encoding)

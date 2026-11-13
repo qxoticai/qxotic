@@ -73,7 +73,7 @@ mvn"com.qxotic:safetensors:0.4.0-rc1"
 ```snippet path="safetensors/src/test/java/com/qxotic/format/safetensors/Snippets.java" tag="read-channel"
 ```
 
-### From HuggingFace
+### From Hugging Face
 
 ```snippet path="safetensors/src/test/java/com/qxotic/format/safetensors/Snippets.java" tag="read-from-huggingface"
 ```

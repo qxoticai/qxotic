@@ -19,7 +19,7 @@ import java.nio.file.Path;
 Tokenizer t = HuggingFaceTokenizerLoader
     .fromLocal(Path.of("/models/gemma-4-e2b-it"));
 
-// From HuggingFace
+// From Hugging Face
 Tokenizer t2 = HuggingFaceTokenizerLoader
     .fromHuggingFace("google", "gemma-4-e2b-it");
 
@@ -34,7 +34,7 @@ String decoded = t.decode(tokens);
 
 ## Sources
 
-Local filesystem, [HuggingFace](https://huggingface.co), or [ModelScope](https://modelscope.cn).
+Local filesystem, [Hugging Face](https://huggingface.co), or [ModelScope](https://modelscope.cn).
 
 Remote loading fetches the `tokenizer.json` (and optional `tokenizer_config.json`, `special_tokens_map.json`, `added_tokens.json`). If `tokenizer.json` is not found, the loader falls back to `tiktoken.model` reconstruction.
 
@@ -82,7 +82,7 @@ Automatic SentencePiece BPE detection when:
 - A `Metaspace` pre-tokenizer is configured
 
 ```java
-// Gemma 4 tokenizer via HuggingFace (SentencePiece BPE)
+// Gemma 4 tokenizer via Hugging Face (SentencePiece BPE)
 Tokenizer gemma = HuggingFaceTokenizerLoader
     .fromHuggingFace("google", "gemma-4-e2b-it");
 ```
@@ -92,7 +92,7 @@ Tokenizer gemma = HuggingFaceTokenizerLoader
 | Key | Purpose |
 |-----|---------|
 | `toknroll.cache.root` / `TOKNROLL_CACHE_ROOT` | Cache directory for downloaded artifacts |
-| `toknroll.huggingface.token` / `HF_TOKEN` | HuggingFace authentication token |
+| `toknroll.huggingface.token` / `HF_TOKEN` | Hugging Face authentication token |
 | `toknroll.modelscope.token` / `MODELSCOPE_TOKEN` | ModelScope authentication token |
 | `toknroll.hf.connectTimeoutSeconds` | HTTP connect timeout (default 120) |
 | `toknroll.downloadTimeoutSeconds` | Artifact download deadline in seconds (default 300) |

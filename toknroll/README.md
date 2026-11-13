@@ -25,7 +25,7 @@ Remote loading fetches tokenizer metadata only, never model weights, and caches 
 ## Or from the command line
 
 A [JBang CLI](https://github.com/qxoticai/qxotic/blob/main/toknroll/scripts/toknroll.java) encodes,
-decodes and counts from any source: HuggingFace, ModelScope, GGUF or local files.
+decodes and counts from any source: Hugging Face, ModelScope, GGUF or local files.
 
 ```bash
 jbang toknroll@qxoticai --source google/gemma-4-e2b-it --input "Hello, Tok'n'Roll 🎸"
@@ -52,7 +52,7 @@ See [toknroll-native](toknroll-native/).
 - **Token-perfect.** Byte-exact parity with each model's own tokenizer, for [18 model vendors](#tested-implementations) and with the [known divergences](#known-divergences), not "close enough".
 - **Fast.** Guaranteed worst-case `O(n log n)` BPE merging, optimized fast paths per model family,
   and zero-allocation, zero-copy APIs (`encodeInto`, `decodeBytesInto`) for hot loops.
-- **Loads existing files.** HuggingFace `tokenizer.json`, ModelScope, and GGUF model files.
+- **Loads existing files.** Hugging Face `tokenizer.json`, ModelScope, and GGUF model files.
 - **Composable.** Assemble tokenizers from reusable parts (vocabulary, splitter, model), or build
   one from scratch.
 
@@ -101,7 +101,7 @@ Token-perfect against each model's own tokenizer, with the [known divergences](#
 - **Mistral AI**: Tekken
 - **IBM**: Granite 4+
 - **Meta**: Llama 3+
-- **HuggingFace**: SmolLM3
+- **Hugging Face**: SmolLM3
 - **NVIDIA**: Nemotron 3
 - **Z.ai**: GLM 5.1
 - **MiniMax**: M2.7

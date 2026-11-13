@@ -1,5 +1,5 @@
 /**
- * Safetensors format library for reading and writing HuggingFace model files.
+ * Safetensors format library for reading and writing Hugging Face model files.
  *
  * <p>This package provides:
  *

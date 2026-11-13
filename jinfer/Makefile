@@ -44,7 +44,7 @@ run-jar-command: ## Print the full java invocation for running the jar by hand
 	@echo $(JAVA) $(JAVA_RUNTIME_OPTIONS) -jar $(JAR_FILE)
 
 # Two identical greedy runs off the jar must be byte-identical. MODEL is a reference, resolved as
-# `jinfer pull` resolves it (the local store or the HuggingFace hub cache serve it offline, else it
+# `jinfer pull` resolves it (the local store or the Hugging Face hub cache serve it offline, else it
 # is downloaded), or a path to a GGUF.
 MODEL ?= hf.co/LiquidAI/LFM2.5-8B-A1B-GGUF:Q8_0
 GOLDEN_RUN = $(JAVA) $(JAVA_RUNTIME_OPTIONS) -jar $(JAR_FILE) instruct --model $(MODEL) "List the planets." --temp 0 --max-output-tokens 64

@@ -5,7 +5,7 @@
 #   HF_TOKEN=hf_xxx scripts/download-models.sh [--only <substring>] [--list] [--root <dir>]
 #
 # Root: --root > $JINFER_MODELS > ../models next to the git checkout. Present files are
-# skipped; hf.co files already in the HuggingFace hub cache ($HF_HOME) are symlinked instead
+# skipped; hf.co files already in the Hugging Face hub cache ($HF_HOME) are symlinked instead
 # of re-downloaded; interrupted downloads resume (curl -C -).
 set -euo pipefail
 
@@ -40,7 +40,7 @@ url_for() { # source user repo file
   esac
 }
 
-# A file already in the HuggingFace hub cache (hf download, jinfer pull, from_pretrained - all
+# A file already in the Hugging Face hub cache (hf download, jinfer pull, from_pretrained - all
 # write it) is reused, not re-downloaded: ModelStore resolves through both layouts, the link
 # just makes it visible in this tree too.
 hub_cache="${HF_HOME:-$HOME/.cache/huggingface}/hub"

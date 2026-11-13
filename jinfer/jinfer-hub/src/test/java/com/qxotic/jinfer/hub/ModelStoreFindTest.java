@@ -19,7 +19,7 @@ import org.junit.jupiter.api.io.TempDir;
  */
 class ModelStoreFindTest {
 
-    // an owner that exists nowhere: find() also reads the developer's real HuggingFace hub cache,
+    // an owner that exists nowhere: find() also reads the developer's real Hugging Face hub cache,
     // where a real download of the ggml-org repo once turned three misses into hits
     private static final String REF = "hf.co/jinfer-tests/stories15M_MOE:Q8_0";
 

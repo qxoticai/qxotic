@@ -17,8 +17,8 @@ import org.opentest4j.TestAbortedException;
  * file ({@code unsloth/gemma-4-E2B-it-GGUF/mmproj-F32.gguf} - the hub keeps companions out of quant
  * matching on purpose). LOOKUP ONLY: a test never downloads; an absent model aborts the test with
  * the fix in the message. Resolution is {@link ModelStore#find}: jinfer's own cache ({@code
- * -Djinfer.models} / {@code JINFER_MODELS}) first, then the HuggingFace hub cache, then the fixture
- * tree next to the git checkout that {@code scripts/download-models.sh} fills.
+ * -Djinfer.models} / {@code JINFER_MODELS}) first, then the Hugging Face hub cache, then the
+ * fixture tree next to the git checkout that {@code scripts/download-models.sh} fills.
  *
  * <p>The per-model override: {@code -Djinfer.testModel.<last-ref-segment>=<path>} makes that file
  * serve the ref - e.g. {@code -Djinfer.testModel.LFM2.5-8B-A1B-Q8_0.gguf=/models/my-Q4_K_M.gguf}
@@ -53,7 +53,7 @@ public final class TestModels {
                                             + " - fetch it with scripts/download-models.sh"
                                             + " (adding a line to scripts/models.txt if"
                                             + " it's missing) into ../models next to the"
-                                            + " checkout, with any HuggingFace client into"
+                                            + " checkout, with any Hugging Face client into"
                                             + " the hub cache, or point -Djinfer.models /"
                                             + " JINFER_MODELS at a cache that has it";
                             if (Boolean.parseBoolean(props.apply("jinfer.test.requireModels")))

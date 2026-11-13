@@ -18,7 +18,7 @@ GGUFTokenizerLoader loader = GGUFTokenizerLoader.createBuilderWithBuiltins().bui
 // From a local .gguf file
 Tokenizer t = loader.fromLocal(Path.of("/models/model.gguf"));
 
-// From HuggingFace
+// From Hugging Face
 Tokenizer t2 = loader.fromHuggingFace(
     "unsloth", "Llama-3.2-1B-Instruct-GGUF",
     "Llama-3.2-1B-Instruct-Q8_0.gguf");
@@ -125,7 +125,7 @@ Only GGUF header and metadata is downloaded (not tensor data). Cache location is
 | Key | Purpose |
 |-----|---------|
 | `toknroll.cache.root` / `TOKNROLL_CACHE_ROOT` | Cache directory |
-| `toknroll.huggingface.token` / `HF_TOKEN` | HuggingFace auth token |
+| `toknroll.huggingface.token` / `HF_TOKEN` | Hugging Face auth token |
 | `toknroll.modelscope.token` / `MODELSCOPE_TOKEN` | ModelScope auth token |
 | `toknroll.gguf.maxMetadataBytes` | Max metadata bytes to read (default 1 GiB) |
 | `toknroll.gguf.connectTimeoutSeconds` | HTTP connect timeout (default 120) |

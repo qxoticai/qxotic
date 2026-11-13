@@ -5,7 +5,7 @@ import java.util.LinkedHashMap;
 import java.util.Map;
 
 /**
- * Shared test fixture helpers for HuggingFace tokenizer tests. Reduces duplication of JSON builder
+ * Shared test fixture helpers for Hugging Face tokenizer tests. Reduces duplication of JSON builder
  * methods across test classes.
  */
 final class HuggingFaceTokenizerTestFixtures {

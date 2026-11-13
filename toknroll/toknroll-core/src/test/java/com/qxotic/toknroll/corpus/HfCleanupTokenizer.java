@@ -8,7 +8,7 @@ import java.nio.charset.StandardCharsets;
 import java.util.Objects;
 
 /**
- * Wrapper that applies HuggingFace-style {@code clean_up_tokenization_spaces} post-processing to
+ * Wrapper that applies Hugging Face-style {@code clean_up_tokenization_spaces} post-processing to
  * decoded text.
  *
  * <p>This makes the tokenizer output match HF Transformers' default behavior without modifying the

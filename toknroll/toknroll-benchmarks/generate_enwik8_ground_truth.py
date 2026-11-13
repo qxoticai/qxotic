@@ -8,7 +8,7 @@ Usage:
 This script:
 1. Loads enwik8 corpus (downloads if needed)
 2. Generates chunks of various sizes
-3. Tokenizes each chunk using both tiktoken and HuggingFace tokenizers
+3. Tokenizes each chunk using both tiktoken and Hugging Face tokenizers
 4. Saves ground truth JSON files for Java comparison tests
 
 Requirements:
@@ -112,7 +112,7 @@ def tokenize_with_tiktoken(text: str, encoding) -> Tuple[List[int], str]:
 def get_hf_tokenizer(
     model_name: str, revision: Optional[str] = None, cache_root: Optional[Path] = None
 ):
-    """Get HuggingFace tokenizer using raw assets only."""
+    """Get Hugging Face tokenizer using raw assets only."""
     json_error: Optional[Exception] = None
     try:
         return load_tokenizer_from_json(model_name, revision, cache_root)
@@ -331,7 +331,7 @@ def _parse_pat_str_from_python_module(source: str) -> Optional[str]:
 
 
 def tokenize_with_hf(text: str, tokenizer) -> Tuple[List[int], str]:
-    """Tokenize text using HuggingFace tokenizer and return tokens + decoded."""
+    """Tokenize text using Hugging Face tokenizer and return tokens + decoded."""
     tokens = tokenizer.encode(text, add_special_tokens=False)
     # Use clean_up_tokenization_spaces=False to get raw BPE output,
     # matching llama.cpp behavior and avoiding model-specific post-processing differences.
@@ -423,9 +423,9 @@ def generate_ground_truth(
                 f"  Saved {enc_name} ground truth ({len(results)} chunks) to {output_file}"
             )
 
-    # HuggingFace ground truth
+    # Hugging Face ground truth
     if hf_models:
-        print("\nGenerating HuggingFace ground truth...")
+        print("\nGenerating Hugging Face ground truth...")
 
         for family_id, (model_name, revision) in hf_models.items():
             print(f"  Loading {family_id} ({model_name})...")

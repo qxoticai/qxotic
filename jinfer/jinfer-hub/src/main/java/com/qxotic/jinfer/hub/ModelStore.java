@@ -55,7 +55,7 @@ import java.util.regex.Pattern;
  * would have given - with every earlier failure loud in the log.
  *
  * <p>ONE exception to the flat layout, for sharing: with the DEFAULT root (by value - {@code
- * of(standard().root())} keeps it), an {@code hf.co} download is written into the HuggingFace hub
+ * of(standard().root())} keeps it), an {@code hf.co} download is written into the Hugging Face hub
  * cache in its own layout, so the bytes are immediately visible to llama.cpp, {@code hf download}
  * and everything else that reads that layout - and theirs to us, which the read side always does.
  * An EXPLICIT root opts out: it says "my cache lives here, all of it", and it is also the
@@ -108,7 +108,7 @@ public final class ModelStore {
 
     /**
      * The ambient store: the root from {@code -Djinfer.models} / {@code $JINFER_MODELS} / the
-     * platform cache directory, with HuggingFace and ModelScope as sources. Built FRESH on every
+     * platform cache directory, with Hugging Face and ModelScope as sources. Built FRESH on every
      * call - the ambient lookups (property, env) happen now, so a test that sets {@code
      * jinfer.models} gets a store that honors it.
      */
@@ -528,11 +528,11 @@ public final class ModelStore {
 
     /**
      * {@link #resolve} without the download: the cached file this ref or path names, or empty. Same
-     * lookup order as resolve - jinfer's own cache first, then the HuggingFace hub cache - so a hit
-     * here is exactly the file resolve would return without fetching. Never touches the network,
-     * which is what makes it safe to call from a test or a {@code list} command. A browser URL of a
-     * known host is the ref it spells; a plain URL is refused: it carries no checksum, so finding
-     * one in the cache would vouch for bytes nothing verified.
+     * lookup order as resolve - jinfer's own cache first, then the Hugging Face hub cache - so a
+     * hit here is exactly the file resolve would return without fetching. Never touches the
+     * network, which is what makes it safe to call from a test or a {@code list} command. A browser
+     * URL of a known host is the ref it spells; a plain URL is refused: it carries no checksum, so
+     * finding one in the cache would vouch for bytes nothing verified.
      */
     public Optional<Path> find(String pathOrRef) {
         if (ModelRef.isRef(pathOrRef)) {
@@ -639,7 +639,7 @@ public final class ModelStore {
      * {@code --model} arguments, and neither is guessed: this never invents a ref for a file that
      * has none. Sorted; the cache's own scaffolding is never a GGUF.
      *
-     * <p>GGUF files in the shared HuggingFace hub cache are listed too, as refs - they resolve
+     * <p>GGUF files in the shared Hugging Face hub cache are listed too, as refs - they resolve
      * without a download, whichever tool put them there, and with the default root that tool may
      * well have been jinfer itself. Only {@code .gguf} files: that cache also holds every tokenizer
      * and config the Python stack ever fetched, none of which is a {@code --model}.
@@ -1229,8 +1229,8 @@ public final class ModelStore {
      * The cached file this ref selects, or null - checked BEFORE the network, so a warm resolve
      * costs no request, which is also what makes {@code JINFER_OFFLINE} usable.
      *
-     * <p>Looks in jinfer's own cache first, then in the HuggingFace hub cache, so a file fetched by
-     * {@code hf download}, {@code llama-server -hf} or anything else that writes that layout is
+     * <p>Looks in jinfer's own cache first, then in the Hugging Face hub cache, so a file fetched
+     * by {@code hf download}, {@code llama-server -hf} or anything else that writes that layout is
      * found rather than downloaded again - and with the default root, jinfer's own downloads land
      * there too ({@link Hub#fetchInto}).
      */

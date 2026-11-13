@@ -27,14 +27,14 @@ import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
 /**
- * Builds a Tok'n'Roll {@link Tokenizer} from HuggingFace tokenizer-format assets.
+ * Builds a Tok'n'Roll {@link Tokenizer} from Hugging Face tokenizer-format assets.
  *
  * <p>Supported loading modes:
  *
  * <ul>
  *   <li>Local: load from a model directory containing {@code tokenizer.json} or from a direct
  *       {@code tokenizer.json} path.
- *   <li>Remote HuggingFace: fetch tokenizer artifacts from HuggingFace repositories.
+ *   <li>Remote Hugging Face: fetch tokenizer artifacts from Hugging Face repositories.
  *   <li>Remote ModelScope: fetch tokenizer artifacts from ModelScope repositories.
  * </ul>
  *
@@ -87,20 +87,20 @@ public final class HuggingFaceTokenizerLoader {
             return loadUnchecked(modelDirOrTokenizerJson.toAbsolutePath().normalize());
         } catch (IOException e) {
             throw new TokenizerLoadException(
-                    "[local] Failed to load HuggingFace tokenizer from " + modelDirOrTokenizerJson,
+                    "[local] Failed to load Hugging Face tokenizer from " + modelDirOrTokenizerJson,
                     e);
         }
     }
 
     /**
-     * Loads a tokenizer from a remote HuggingFace repository at the default revision ({@code
+     * Loads a tokenizer from a remote Hugging Face repository at the default revision ({@code
      * main}).
      *
      * <p>Equivalent to calling {@link #fromHuggingFace(String, String, String, boolean, boolean)}
      * with {@code revision="main"}, {@code useCacheOnly=false}, and {@code forceRefresh=false}.
      *
-     * @param user repository owner/namespace on HuggingFace
-     * @param repository repository name on HuggingFace
+     * @param user repository owner/namespace on Hugging Face
+     * @param repository repository name on Hugging Face
      * @return loaded tokenizer
      */
     public static Tokenizer fromHuggingFace(String user, String repository) {
@@ -124,14 +124,14 @@ public final class HuggingFaceTokenizerLoader {
     }
 
     /**
-     * Loads a tokenizer from a remote HuggingFace repository.
+     * Loads a tokenizer from a remote Hugging Face repository.
      *
      * <p>The loader first attempts {@code tokenizer.json}. If it is not found (HTTP 404), it falls
      * back to {@code tiktoken.model} reconstruction plus optional metadata from {@code
      * tokenizer_config.json}.
      *
-     * @param user repository owner/namespace on HuggingFace
-     * @param repository repository name on HuggingFace
+     * @param user repository owner/namespace on Hugging Face
+     * @param repository repository name on Hugging Face
      * @param revision git revision, tag, or branch; {@code null} defaults to {@code main}
      * @param useCacheOnly when {@code true}, only cached artifacts are used
      * @param forceRefresh when {@code true}, cached files are re-downloaded

@@ -25,7 +25,7 @@ GGUFTokenizerLoader loader = GGUFTokenizerLoader.createBuilderWithBuiltins().bui
 // From a local .gguf file
 Tokenizer t = loader.fromLocal(Path.of("/models/model.gguf"));
 
-// From HuggingFace
+// From Hugging Face
 Tokenizer hf = loader.fromHuggingFace("unsloth", "Llama-3.2-1B-Instruct-GGUF",
     "Llama-3.2-1B-Instruct-Q8_0.gguf");
 
@@ -85,7 +85,7 @@ Use `createEmptyBuilder()` to start with an empty registry and register only wha
 | Key | Purpose |
 |---|---|
 | `toknroll.cache.root` / `TOKNROLL_CACHE_ROOT` | Cache directory for downloaded GGUF metadata |
-| `toknroll.huggingface.token` / `HF_TOKEN` | HuggingFace authentication token |
+| `toknroll.huggingface.token` / `HF_TOKEN` | Hugging Face authentication token |
 | `toknroll.modelscope.token` / `MODELSCOPE_TOKEN` | ModelScope authentication token |
 
 ## Tested Models
@@ -102,7 +102,7 @@ Token-perfect against each model's own tokenizer, with the [known divergences](#
 - **Mistral AI** - Tekken
 - **IBM** - Granite 4+
 - **Meta** - Llama 3+
-- **HuggingFace** - SmolLM3
+- **Hugging Face** - SmolLM3
 - **NVIDIA** - Nemotron 3
 - **Z.ai** - GLM 5.1
 - **MiniMax** - M2.7

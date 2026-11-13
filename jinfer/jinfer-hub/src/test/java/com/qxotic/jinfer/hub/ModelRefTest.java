@@ -337,7 +337,7 @@ class ModelRefTest {
 
     @Test
     void aFileAnotherToolDownloadedIsFound(@TempDir Path hub) throws IOException {
-        // the HuggingFace hub layout, exactly as `hf download` or `llama-server -hf` leaves it:
+        // the Hugging Face hub layout, exactly as `hf download` or `llama-server -hf` leaves it:
         // blobs by hash, snapshots per commit, and refs/<branch> naming the commit
         Path repo = hub.resolve("models--ggml-org--stories15M_MOE");
         Files.createDirectories(repo.resolve("snapshots/abc123def"));

@@ -12,7 +12,7 @@ Runs on Java 11+, needs no native bindings, and compiles to GraalVM native image
 Key properties:
 
 - **Token-perfect parity.** Matches each model's own tokenizer, with the [known divergences](#known-divergences).
-- **Compatible with industry standards.** Spawn Tok'n'Roll tokenizers from HuggingFace's `tokenizer.json` and llama.cpp's GGUF model files.
+- **Compatible with industry standards.** Spawn Tok'n'Roll tokenizers from Hugging Face's `tokenizer.json` and llama.cpp's GGUF model files.
 - **Zero-allocation, zero-copy APIs.** `encodeInto(...)`, `decodeBytesInto(...)`, and `IntSequence` support low-GC hot paths.
 - **Fast and efficient.** Performant BPE implementations, with strong algorithmic guarantees and optimized fast-paths, competitive with native alternatives.
 - **Portable.** Pure Java, 11+, GraalVM's Native Image compatible.
@@ -22,7 +22,7 @@ Key properties:
 | Module | Artifact | Purpose |
 |--------|----------|---------|
 | [Core](/toknroll/core) | `toknroll-core` | Extensible tokenizer API with efficient Tiktoken and SentencePiece BPE implementations |
-| [HuggingFace](/toknroll/hf) | `toknroll-hf` | Load tokenizers from `tokenizer.json` (HuggingFace / ModelScope) |
+| [Hugging Face](/toknroll/hf) | `toknroll-hf` | Load tokenizers from `tokenizer.json` (Hugging Face / ModelScope) |
 | [GGUF](/toknroll/gguf) | `toknroll-gguf` | Load tokenizers from GGUF files (llama.cpp format) |
 
 ## Installation
@@ -41,7 +41,7 @@ import TabItem from '@theme/TabItem';
   <version>0.4.0-rc1</version>
 </dependency>
 
-<!-- HuggingFace tokenizer.json loading -->
+<!-- Hugging Face tokenizer.json loading -->
 <dependency>
   <groupId>com.qxotic</groupId>
   <artifactId>toknroll-hf</artifactId>
@@ -105,7 +105,7 @@ import com.qxotic.toknroll.hf.HuggingFaceTokenizerLoader;
 import com.qxotic.toknroll.gguf.GGUFTokenizerLoader;
 import java.nio.file.Path;
 
-// HuggingFace tokenizer.json format
+// Hugging Face tokenizer.json format
 Tokenizer t = HuggingFaceTokenizerLoader
     .fromHuggingFace("google", "gemma-4-e2b-it");
 
@@ -173,7 +173,7 @@ int[] tokens = tokenizer.encodeToArray("Hello world");
 ## toknroll@qxoticai CLI
 
 The [toknroll CLI](https://github.com/qxoticai/qxotic/blob/main/toknroll/scripts/toknroll.java) encodes, decodes and counts tokens.
-It loads tokenizers from HuggingFace or ModelScope repositories, from full URLs on huggingface.co, hf.co or modelscope.cn, and from GGUF files, local or remote.
+It loads tokenizers from Hugging Face or ModelScope repositories, from full URLs on huggingface.co, hf.co or modelscope.cn, and from GGUF files, local or remote.
 
 ```bash
 # Pass input directly with --input
@@ -195,7 +195,7 @@ echo 'Hello, World!' | jbang toknroll@qxoticai --source Qwen/Qwen3.6-35B-A3B
 # 4196
 # 0
 
-# Any source: HuggingFace, ModelScope, GGUF, local
+# Any source: Hugging Face, ModelScope, GGUF, local
 jbang toknroll@qxoticai \
     --source modelscope:deepseek-ai/DeepSeek-V4-Pro \
     --input "Hello, DeepSeek-V4-Pro 🐋"
@@ -256,7 +256,7 @@ Token-perfect against each model's own tokenizer, with the [known divergences](#
 - **Mistral AI**: Tekken
 - **IBM**: Granite 4+
 - **Meta**: Llama 3+
-- **HuggingFace**: SmolLM3
+- **Hugging Face**: SmolLM3
 - **NVIDIA**: Nemotron 3
 - **Z.ai**: GLM 5.1
 - **MiniMax**: M2.7
@@ -292,5 +292,5 @@ See the module pages for exact feature support and known limitations:
 | Key | Purpose |
 |-----|---------|
 | `toknroll.cache.root` / `TOKNROLL_CACHE_ROOT` | Cache directory for downloaded artifacts |
-| `toknroll.huggingface.token` / `HF_TOKEN` | HuggingFace authentication token |
+| `toknroll.huggingface.token` / `HF_TOKEN` | Hugging Face authentication token |
 | `toknroll.modelscope.token` / `MODELSCOPE_TOKEN` | ModelScope authentication token |

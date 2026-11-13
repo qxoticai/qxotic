@@ -39,7 +39,7 @@ import org.openjdk.jmh.infra.Blackhole;
  *
  * <ul>
  *   <li>{@code jtokkit}: JTokkit reference implementation (GPT-2 only)
- *   <li>{@code hf-transformers}: HuggingFace Transformers reference (model-native families)
+ *   <li>{@code hf-transformers}: Hugging Face Transformers reference (model-native families)
  *   <li>{@code toknroll-bpe}: Tok'n'Roll native tokenizer with default splitter
  *   <li>{@code toknroll-fast}: Tok'n'Roll with optimized fast splitter
  * </ul>

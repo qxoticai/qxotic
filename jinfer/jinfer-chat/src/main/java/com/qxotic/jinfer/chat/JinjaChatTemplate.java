@@ -210,7 +210,7 @@ final class JinjaChatTemplate {
     }
 
     /**
-     * HuggingFace {@code apply_chat_template} pre-processes tool-call arguments from JSON strings
+     * Hugging Face {@code apply_chat_template} pre-processes tool-call arguments from JSON strings
      * into dicts so Jinja templates can call {@code .items()} on them. This mirrors that
      * normalization: every {@code tool_calls[*].function.arguments} string is parsed into a {@code
      * Map<String,Object>} (non-strings and null are left alone).

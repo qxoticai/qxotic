@@ -12,7 +12,7 @@ Zero dependencies, Java 11+, GraalVM's Native Image ready.
 
 ## Peek inside a GGUF model without downloading it
 
-The example [JBang script](scripts/gguf.java) reads GGUF metadata from HuggingFace, or any arbitrary URL, and
+The example [JBang script](scripts/gguf.java) reads GGUF metadata from Hugging Face, or any arbitrary URL, and
 never pulls GBs of tensor data:
 
 ```bash

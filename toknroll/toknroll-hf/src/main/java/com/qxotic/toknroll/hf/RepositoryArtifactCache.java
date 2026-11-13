@@ -73,7 +73,7 @@ final class RepositoryArtifactCache {
                 Transport.system());
     }
 
-    /** Test seam: HuggingFace files resolve against {@code huggingFaceEndpoint}. */
+    /** Test seam: Hugging Face files resolve against {@code huggingFaceEndpoint}. */
     static RepositoryArtifactCache create(Path cacheRoot, Transport transport) {
         return new RepositoryArtifactCache(
                 cacheRoot.toAbsolutePath().normalize(),
@@ -99,7 +99,7 @@ final class RepositoryArtifactCache {
         return fetchToPath("url", url, target, false, headers, forceRefresh);
     }
 
-    /** Fetches and caches one file from a HuggingFace repository revision. */
+    /** Fetches and caches one file from a Hugging Face repository revision. */
     Path fetchHuggingFace(
             String user, String repository, String revision, String file, boolean forceRefresh)
             throws IOException {

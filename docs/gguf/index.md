@@ -107,7 +107,7 @@ mvn"com.qxotic:gguf:0.4.0-rc1"
 ```snippet path="gguf/src/test/java/com/qxotic/format/gguf/snippets/ReadingSnippets.java" tag="read-channel"
 ```
 
-### From HuggingFace
+### From Hugging Face
 
 ```snippet path="gguf/src/test/java/com/qxotic/format/gguf/snippets/UtilitySnippets.java" tag="read-from-huggingface"
 ```

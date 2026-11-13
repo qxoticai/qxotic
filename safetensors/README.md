@@ -1,6 +1,6 @@
 # Safetensors
 
-**Safetensors for the JVM.** Read and write HuggingFace's model format in pure Java. One
+**Safetensors for the JVM.** Read and write Hugging Face's model format in pure Java. One
 dependency (`com.qxotic:json`, itself dependency-free), Java 11+, GraalVM native-image ready.
 
 [![Java](https://img.shields.io/badge/Java-11+-blue)](https://openjdk.org/projects/jdk/11/)

@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Tokenize text with a HuggingFace tokenizer. Outputs one token ID per line.
+"""Tokenize text with a Hugging Face tokenizer. Outputs one token ID per line.
 
 Usage:
   python scripts/hf.py -s unsloth/Gemma-4-E2B-it -t "Hello World"
@@ -13,7 +13,7 @@ import time
 
 
 def main() -> None:
-    parser = argparse.ArgumentParser(description="Tokenize text with a HuggingFace tokenizer")
+    parser = argparse.ArgumentParser(description="Tokenize text with a Hugging Face tokenizer")
     parser.add_argument(
         "-s", "--source", required=True, help="Model: org/repo or hf:org/repo"
     )
