@@ -22,7 +22,7 @@ import picocli.CommandLine.Option;
 
 @Command(
         name = "toknroll",
-        version = "toknroll 0.3.1",
+        version = "toknroll 0.4.0-rc1",
         description = "Tokenize text or decode token IDs with HuggingFace / ModelScope / GGUF tokenizers")
 class toknroll implements Callable<Integer> {
 

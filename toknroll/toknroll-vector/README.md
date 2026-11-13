@@ -9,7 +9,7 @@ Same API, same token ids, several times the speed of core's own encoder.
 <dependency>
   <groupId>com.qxotic</groupId>
   <artifactId>toknroll-vector</artifactId>
-  <version>0.2.0</version>
+  <version>0.4.0-rc1</version>
   <scope>runtime</scope>
 </dependency>
 ```
