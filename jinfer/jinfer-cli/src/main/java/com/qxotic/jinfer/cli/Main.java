@@ -119,8 +119,7 @@ public final class Main {
             io.err().println(name(options) + ": " + Options.rootMessage(e));
             return Thread.currentThread().isInterrupted() ? 130 : 1;
         } catch (ExceptionInInitializerError e) {
-            // a -Djinfer.* value RuntimeFlags refused: the cause is the message, the class is now
-            // unusable
+            // a -Djinfer.* value RuntimeFlags refused: the cause is the message, the class unusable
             io.err().println(name(options) + ": " + Options.rootMessage(e));
             return 2;
         } catch (RuntimeException e) {
@@ -174,7 +173,7 @@ public final class Main {
 
     static ChatEngine openText(Options options, Options.Files files, Arena arena, IO io)
             throws IOException {
-        try (var spinner = LoadSpinner.start("Loading model", io)) {
+        try (var spinner = LoadSpinner.start(io)) {
             return loadText(options, files, arena);
         }
     }

@@ -74,7 +74,7 @@ final class Turn implements ChatEngine.ReplySink, AutoCloseable {
      * As {@link #start} over raw tokens - the {@code --raw-prompt} lane, whose prompt is the CLI's
      * own. Raw deltas carry NO parser, so control tokens (the family's end-of-turn, which the
      * generator feeds to its listener before the stop check) arrive as literal spellings; this lane
-     * filters them from display, exactly like the old CLI's printer did.
+     * filters them from display.
      */
     static Turn startRaw(Tokenizer tokenizer, int[] promptTokens, Options options, Main.IO io) {
         Turn turn = new Turn(tokenizer, options, true, io);

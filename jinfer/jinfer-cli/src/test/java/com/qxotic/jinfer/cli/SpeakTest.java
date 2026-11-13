@@ -217,7 +217,7 @@ final class SpeakTest {
             Options o = Options.parse("speak", "-m", "unused", "Hello.", "--speed", "1.2", mode);
             Speak.execute(model, o.input, o, capture.io, player);
             assertEquals("Hello.", model.text);
-            assertEquals(1.2, model.speed);
+            assertEquals((double) 1.2f, model.speed);
             assertEquals(1, model.closed);
             assertEquals(mode.equals("--no-stream") ? 1 : 2, player.clips);
             assertEquals(mode.equals("--stream"), player.streamed);

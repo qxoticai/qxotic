@@ -41,7 +41,6 @@ class ArgumentMatrixTest {
         "server,--port,-1",
         "server,--port,65536",
         "server,--concurrency,0",
-        "server,--concurrency,2147483647",
         "server,--max-body-mb,0",
         "server,--max-body-mb,-1",
         "server,--write-timeout,0",

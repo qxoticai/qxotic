@@ -42,7 +42,7 @@ class LoadSpinnerTest {
 
     public static class ShutdownProbe {
         public static void main(String[] args) throws Exception {
-            LoadSpinner.start("Loading model", System.err, true);
+            LoadSpinner.start(System.err, true);
             if (args.length > 0) {
                 System.out.println("ready");
                 System.in.read();
@@ -74,7 +74,7 @@ class LoadSpinnerTest {
                         lineEnded.complete(null);
                     }
                 };
-        try (var spinner = LoadSpinner.start("Loading model", out, true)) {
+        try (var spinner = LoadSpinner.start(out, true)) {
             assertTrue(pending.await(5, TimeUnit.SECONDS));
             Thread.currentThread().interrupt();
             spinner.close();
@@ -92,7 +92,7 @@ class LoadSpinnerTest {
     @Test
     void redirectedOutputKeepsOnePlainLine() {
         var capture = new CliFixtures.Capture("");
-        try (var spinner = LoadSpinner.start("Loading model", capture.io)) {
+        try (var spinner = LoadSpinner.start(capture.io)) {
             assertEquals("Loading model ...\n", capture.err().replace("\r\n", "\n"));
         }
         assertEquals("Loading model ...\n", capture.err().replace("\r\n", "\n"));
@@ -111,7 +111,7 @@ class LoadSpinnerTest {
                         if (value == '.') frames.countDown();
                     }
                 };
-        var spinner = LoadSpinner.start("Loading model", out, true);
+        var spinner = LoadSpinner.start(out, true);
         try (spinner) {
             assertTrue(bytes.toString(StandardCharsets.UTF_8).startsWith("Loading model ..."));
             assertTrue(frames.await(5, TimeUnit.SECONDS), "loading dots did not advance");

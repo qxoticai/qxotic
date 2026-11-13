@@ -204,10 +204,7 @@ class WorkflowTest {
             assertEquals(0, run(capture, args), capture.err());
             assertEquals("hello done\n", capture.out().replace("\r\n", "\n"));
             assertEquals(1, CliModelProvider.transcription.finished);
-            assertEquals(
-                    2,
-                    CliModelProvider.transcription.closed,
-                    "warm-up and actual transcription each own a state");
+            assertEquals(1, CliModelProvider.transcription.closed);
             assertFalse(CliModelProvider.weights.scope().isAlive());
         }
     }

@@ -89,12 +89,6 @@ final class Server {
         Options.require(!s.host.isBlank(), "--host must not be blank; got '%s'", s.host);
         Options.require(
                 s.concurrency > 0, "--concurrency must be at least 1; got %s", s.concurrency);
-        // Retry-After is 2*N seconds, represented as an int.
-        Options.require(
-                s.concurrency <= Integer.MAX_VALUE / 2,
-                "--concurrency must not exceed %d; got %s",
-                Integer.MAX_VALUE / 2,
-                s.concurrency);
         Options.require(
                 s.maxBodyBytes > 0, "--max-body-mb must be positive; got %s", s.maxBodyBytes >> 20);
         Options.require(
@@ -217,7 +211,7 @@ final class Server {
         Arena arena = Arenas.newCrossThread();
         try {
             ChatEngine engine;
-            try (var spinner = LoadSpinner.start("Loading model", io)) {
+            try (var spinner = LoadSpinner.start(io)) {
                 try {
                     engine = Main.loadText(options, files, arena);
                 } catch (ModelProvider.IncompatibleModelException notLanguage) {

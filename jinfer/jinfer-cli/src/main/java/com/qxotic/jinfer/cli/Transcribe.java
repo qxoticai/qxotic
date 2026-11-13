@@ -83,11 +83,8 @@ final class Transcribe {
         Arena arena = Arenas.newCrossThread();
         try {
             TranscriptionModel<?, ?, ?> model;
-            try (var spinner = LoadSpinner.start("Loading model", io)) {
+            try (var spinner = LoadSpinner.start(io)) {
                 model = Models.loadTranscription(files.model(), arena, files.companions());
-                if (options.transcription.rawPcm
-                        && System.getProperty("org.graalvm.nativeimage.imagecode") == null)
-                    warmUp(model);
             }
             execute(model, audio, options, io);
             return Thread.currentThread().isInterrupted() ? 130 : 0;
@@ -115,8 +112,7 @@ final class Transcribe {
             result = model.transcribe(audio);
             printSummary(audioSeconds, System.nanoTime() - start, io.err());
         }
-        // The interactive view has already settled the transcript; redirected stdout always gets
-        // it.
+        // the live view has already shown the transcript; redirected stdout always gets it
         if (terminal == null || !io.isTerminal(1) || result.tokens().isEmpty())
             io.out().println(result.text());
     }
@@ -151,18 +147,6 @@ final class Transcribe {
                 Completion reports audio duration, elapsed time and RTFx on stderr.
                 """);
         Options.modelHelp(out);
-    }
-
-    /**
-     * On the JVM the first decodes run cold while the JIT compiles them, seconds on a busy machine;
-     * paid here, behind the load spinner, they never hold up live audio.
-     */
-    private static <S extends RuntimeState> void warmUp(TranscriptionModel<?, ?, S> model) {
-        try (S state = model.newState();
-                TranscriptionStream stream = model.stream(state)) {
-            stream.feed(new float[5 * model.sampleRate()]); // past a chunk commit
-            stream.partial();
-        }
     }
 
     /**

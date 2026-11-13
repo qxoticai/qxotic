@@ -117,7 +117,7 @@ final class Instruct {
                 engine.savePrompts();
             } catch (UnsupportedOperationException noCodec) {
                 // cached prompts are a prefix-stability bet only a native codec can honor; a
-                // Jinja-only model warns and serves without appending, exactly like the old CLI
+                // Jinja-only model warns and serves without appending
                 io.err().println("cache: " + noCodec.getMessage() + " - serving read-only");
             }
             int added = engine.cacheSample().blocks() - before;

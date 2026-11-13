@@ -13,7 +13,7 @@ class TerminalTest {
     void capturedOutputIsNoTerminal() {
         assertFalse(Terminal.isTerminal(1), "the test runner captures stdout");
         assertFalse(Terminal.isTerminal(2), "the test runner captures stderr");
-        assertNull(Terminal.stderr(), "no live view without a terminal");
+        assertNull(Terminal.stderr(System.err, "auto"), "no live view without a terminal");
     }
 
     @Test

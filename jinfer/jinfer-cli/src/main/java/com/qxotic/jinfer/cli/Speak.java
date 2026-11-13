@@ -22,20 +22,13 @@ final class Speak {
 
     static final class Settings {
         Path output;
-        Double speed;
+        Float speed;
     }
 
     static boolean read(Options o, Options.Args a) {
         switch (a.name) {
             case "--output", "-o" -> o.speech.output = Path.of(a.value());
-            case "--speed" -> {
-                String value = a.value();
-                try {
-                    o.speech.speed = Double.parseDouble(value);
-                } catch (NumberFormatException e) {
-                    throw new Options.UsageException("--speed expects a number, got " + value);
-                }
-            }
+            case "--speed" -> o.speech.speed = a.decimal();
             default -> {
                 return false;
             }
@@ -50,9 +43,7 @@ final class Speak {
                 "speak requires non-blank text or '-' for stdin");
         Settings s = o.speech;
         Options.require(
-                s.speed == null || (Double.isFinite(s.speed) && s.speed > 0),
-                "--speed must be positive and finite; got %s",
-                s.speed);
+                s.speed == null || s.speed > 0, "--speed must be positive; got %s", s.speed);
         Options.require(s.output == null || !o.stream, "--output cannot combine with --stream");
     }
 
@@ -90,7 +81,7 @@ final class Speak {
         Arena arena = Arenas.newCrossThread();
         try {
             SpeechSynthesisModel<?, ?, ?> model;
-            try (var spinner = LoadSpinner.start("Loading model", io)) {
+            try (var spinner = LoadSpinner.start(io)) {
                 model = Models.loadSpeech(files.model(), arena, files.companions());
             }
             execute(model, text, options, io, PLAYER);

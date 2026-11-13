@@ -17,11 +17,12 @@ final class LoadSpinner implements AutoCloseable {
         if (shutdown != null) Runtime.getRuntime().addShutdownHook(shutdown);
     }
 
-    static LoadSpinner start(String label, Main.IO io) {
-        return start(label, io.err(), io.isTerminal(2) && !"dumb".equals(System.getenv("TERM")));
+    static LoadSpinner start(Main.IO io) {
+        return start(io.err(), io.isTerminal(2) && !"dumb".equals(System.getenv("TERM")));
     }
 
-    static LoadSpinner start(String label, PrintStream out, boolean animate) {
+    static LoadSpinner start(PrintStream out, boolean animate) {
+        String label = "Loading model";
         if (!animate) {
             out.println(label + " ...");
             out.flush();

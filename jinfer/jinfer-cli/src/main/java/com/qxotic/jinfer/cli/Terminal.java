@@ -8,10 +8,6 @@ record Terminal(PrintStream out, boolean unicode, TranscriptHud.ColorDepth depth
 
     private static final boolean WINDOWS = System.getProperty("os.name").startsWith("Windows");
 
-    static Terminal stderr() {
-        return stderr(System.err, "auto");
-    }
-
     static Terminal stderr(PrintStream out, String color) {
         if ("dumb".equals(System.getenv("TERM")) || !TerminalSupport.enableAnsi(2)) return null;
         TranscriptHud.ColorDepth depth =
