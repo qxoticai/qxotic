@@ -23,10 +23,9 @@
     <!-- -O2, the builder's default, and on GraalVM CE the same code as -O3.
          What ships replaces it: Oracle GraalVM's PGO build, which compiles at -O3 the paths the profile ran -->
     <toknroll.image.opt>-O2</toknroll.image.opt>
-    <!-- the serial collector with one survivor space: a loaded tokenizer's tables (Gemma 4's, 230 MB) are copied
-         once on their way to the old generation, not at each young collection until they age out, 50 ms pauses
-         that held a batch's threads idle through the first few hundred MB encoded. The Makefile says how to
-         build with G1 instead -->
+    <!-- the collector: the serial one, with one survivor space. A loaded tokenizer's tables (Gemma 4's: 230 MB) then
+         spend one young collection there on their way to the old generation, not up to fifteen, each a copy: 50 ms
+         pauses that idled a batch's threads through its first few hundred MB. The Makefile says how to build with G1 -->
     <toknroll.image.gc>-H:MaxSurvivorSpaces=1</toknroll.image.gc>
     <toknroll.image.skip>false</toknroll.image.skip>
     <!-- the shims' C compiler, cc with GCC spellings; the windows profile swaps in cl, whose -D -I -c read the same -->

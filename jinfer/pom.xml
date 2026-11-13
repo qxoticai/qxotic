@@ -71,6 +71,9 @@
     <!-- The kernels' Vector API width in bits, empty = what the target ISA (-march) can execute, which jinfer-image's
          VectorWidth feature pins at build time in every image. Set it only to build narrower than the target. -->
     <jinfer.image.vectorBits />
+    <!-- The collector of every image, libjinfer and the executables: the serial one with one survivor space, as
+         libtoknroll's (toknroll-native's pom says why). -->
+    <jinfer.image.gc>-H:MaxSurvivorSpaces=1</jinfer.image.gc>
 
     <!-- Convolutions' register tile. A BUILD-time knob for the image, not a run-time one: the
          image initializes com.qxotic.* at build time, so Convolutions.TILE_CODE is frozen here
@@ -490,6 +493,7 @@
               <buildArg>-EMACOSX_DEPLOYMENT_TARGET</buildArg>
               <!-- downloads go through curl as a process (jinfer-fetch's CurlTransport): no TLS stack in the image -->
               <buildArg>-H:+UnlockExperimentalVMOptions</buildArg>
+              <buildArg>${jinfer.image.gc}</buildArg>
               <buildArg>-H:ServiceLoaderFeatureExcludeServiceProviders=com.qxotic.jinfer.fetch.JdkTransport</buildArg>
               <!-- Correctness flags (Vector/FFM support, add-modules, native-access,
                    build-time init policy and per-class run-time exemptions) come from each module's

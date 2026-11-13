@@ -175,6 +175,7 @@
                 <!-- first, so the -H: options below that are experimental are unlocked -->
                 <buildArg>-H:+UnlockExperimentalVMOptions</buildArg>
                 <buildArg>${jinfer.image.opt}</buildArg>
+                <buildArg>${jinfer.image.gc}</buildArg>
                 <buildArg>-H:NativeLinkerOption=${project.build.directory}/jinfer_shim${shim.obj}</buildArg>
                 <buildArg>-H:NativeLinkerOption=${project.build.directory}/toknroll_shim${shim.obj}</buildArg>
                 <buildArg>-H:NativeLinkerOption=${project.build.directory}/toknroll_isolate${shim.obj}</buildArg>
