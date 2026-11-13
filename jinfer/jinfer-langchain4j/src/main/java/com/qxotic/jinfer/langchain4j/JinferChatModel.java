@@ -644,15 +644,6 @@ public final class JinferChatModel implements ChatModel, AutoCloseable {
         }
 
         /**
-         * @deprecated renamed {@link #retainedSessions}, the knob's name on every face (the core's
-         *     {@code withRetainedSessions}, Boot's {@code retained-sessions}); removed in 0.5.0
-         */
-        @Deprecated(since = "0.4.0", forRemoval = true)
-        public Builder retainSessions(int retainedSessions) {
-            return retainedSessions(retainedSessions);
-        }
-
-        /**
          * Upper bound on the context available to each conversation, in tokens. {@code 0}, the
          * default, is min(4096, the model's {@code maxContextLength}), deliberately bounded because
          * a full-context state can consume substantial memory; {@link
