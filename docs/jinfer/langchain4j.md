@@ -13,7 +13,7 @@ Ports use jinfer's hand-written, oracle-validated chat-template codecs; unported
 
 ## Installation
 
-These examples target jinfer **0.4.0**, LangChain4j **1.23.0**, and Java **25**.
+These examples target jinfer **0.4.0-rc1**, LangChain4j **1.23.0**, and Java **25**.
 For an unreleased checkout, first install the artifacts locally from the repository root:
 
 ```bash
@@ -24,12 +24,12 @@ mvn -pl jinfer/jinfer-bom,jinfer/jinfer-langchain4j,jinfer/jinfer-gemma-embeddin
 <dependency>
   <groupId>com.qxotic</groupId>
   <artifactId>jinfer-langchain4j</artifactId>
-  <version>0.4.0</version>
+  <version>0.4.0-rc1</version>
 </dependency>
 <dependency>
   <groupId>com.qxotic</groupId>
   <artifactId>jinfer-lfm2</artifactId>
-  <version>0.4.0</version>
+  <version>0.4.0-rc1</version>
 </dependency>
 ```
 
@@ -294,7 +294,7 @@ Applications already using `jinfer-models-all` have this provider.
 <dependency>
   <groupId>com.qxotic</groupId>
   <artifactId>jinfer-gemma-embedding2</artifactId>
-  <version>0.4.0</version>
+  <version>0.4.0-rc1</version>
 </dependency>
 ```
 

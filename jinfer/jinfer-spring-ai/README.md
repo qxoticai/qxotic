@@ -97,7 +97,7 @@ The [translation table](https://github.com/qxoticai/qxotic/blob/main/docs/jinfer
 
 ## Add the provider
 
-These examples target jinfer **0.4.0**.
+These examples target jinfer **0.4.0-rc1**.
 For an unreleased checkout, first install the artifacts locally from the repository root:
 
 ```bash
@@ -121,7 +121,7 @@ Import the Spring AI and jinfer BOMs, then add the starter and model providers:
     <dependency>
       <groupId>com.qxotic</groupId>
       <artifactId>jinfer-bom</artifactId>
-      <version>0.4.0</version>
+      <version>0.4.0-rc1</version>
       <type>pom</type>
       <scope>import</scope>
     </dependency>
@@ -143,7 +143,7 @@ Import the Spring AI and jinfer BOMs, then add the starter and model providers:
 `jinfer-models-all` includes the providers used by the examples below, not model weights.
 Only the models you load are downloaded.
 The BOMs manage versions; they do not add dependencies.
-Without them, pin the versions `jinfer-bom` 0.4.0 lists on each jinfer dependency and `2.1.0-RC2` on each Spring AI one.
+Without them, pin the versions `jinfer-bom` 0.4.0-rc1 lists on each jinfer dependency and `2.1.0-RC2` on each Spring AI one.
 
 Optional runtime backends are `jam-native` (hand-tuned SIMD) and `jam-vector` (Panama Vector API):
 
@@ -171,7 +171,7 @@ For scripts that use the core Spring AI provider without Spring Boot:
 //JAVA 25
 //JAVAC_OPTIONS -parameters
 //RUNTIME_OPTIONS --add-modules jdk.incubator.vector --enable-native-access=ALL-UNNAMED
-//DEPS com.qxotic:jinfer-bom:0.4.0@pom
+//DEPS com.qxotic:jinfer-bom:0.4.0-rc1@pom
 //DEPS com.qxotic:jinfer-spring-ai com.qxotic:jinfer-models-all
 //DEPS org.springframework.ai:spring-ai-client-chat:2.1.0-RC2
 //DEPS org.springframework.ai:spring-ai-rag:2.1.0-RC2
@@ -350,7 +350,7 @@ For speech in a set language, LFM3-Omni's text-to-speech instruction takes the l
 ### EmbeddingGemma 2 text
 
 An embedding-only application needs `jinfer-spring-ai` and the Gemma provider below; it can omit `spring-ai-client-chat` and replace `jinfer-models-all` with this provider.
-Their versions come from `jinfer-bom:0.4.0`.
+Their versions come from `jinfer-bom:0.4.0-rc1`.
 Keep the starter instead of `jinfer-spring-ai` when Spring Boot manages the model.
 
 ```xml
@@ -458,7 +458,7 @@ For media, set `spring.ai.jinfer.embedding.companions.media` to the projector pa
 
 ### Reranking
 
-The Qwen embedding/reranking example below needs `jinfer-qwen3:0.4.0`, or the `jinfer-models-all` dependency from the installation section.
+The Qwen embedding/reranking example below needs `jinfer-qwen3:0.4.0-rc1`, or the `jinfer-models-all` dependency from the installation section.
 When using reranking without the Spring Boot starter, add the RAG API.
 Its version comes from the Spring AI BOM:
 

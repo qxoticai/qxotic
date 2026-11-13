@@ -39,7 +39,7 @@ GGUF.write(modified, Path.of("output.gguf"));
 <dependency>
     <groupId>com.qxotic</groupId>
     <artifactId>gguf</artifactId>
-    <version>0.4.0</version>
+    <version>0.4.0-rc1</version>
 </dependency>
 ```
 

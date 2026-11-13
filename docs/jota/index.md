@@ -6,7 +6,7 @@ sidebar_position: 2
 
 **One tensor API, every backend.** A tensor library with pluggable CPU/GPU backends and first-class GraalVM Native Image support. Write tensor code once, run it on Panama, C, CUDA, HIP, Metal, OpenCL or Mojo by adding a jar.
 
-**On Maven Central at 0.4.0:** `jota-core` and `jota-memory`, the layers jinfer builds on. The tensor engine (`jota-tensor`) and the backends build from the [repository](https://github.com/qxoticai/qxotic) with `mvn -f jota/pom.xml install` and are not published yet.
+**On Maven Central at 0.4.0-rc1:** `jota-core` and `jota-memory`, the layers jinfer builds on. The tensor engine (`jota-tensor`) and the backends build from the [repository](https://github.com/qxoticai/qxotic) with `mvn -f jota/pom.xml install` and are not published yet.
 
 jota's IRs are simple and MLIR-like; no data-dependent control flow:
 
@@ -41,7 +41,7 @@ Memory-only applications need one dependency:
 <dependency>
     <groupId>com.qxotic</groupId>
     <artifactId>jota-memory</artifactId>
-    <version>0.4.0</version>
+    <version>0.4.0-rc1</version>
 </dependency>
 ```
 
@@ -51,7 +51,7 @@ Tensor applications use `jota-tensor`, after a source build (`mvn -f jota/pom.xm
 <dependency>
     <groupId>com.qxotic</groupId>
     <artifactId>jota-tensor</artifactId>
-    <version>0.4.0</version>
+    <version>0.4.0-rc1</version>
 </dependency>
 ```
 
@@ -64,42 +64,42 @@ Put the backend JAR on the classpath; it becomes available on supported platform
 <dependency>
     <groupId>com.qxotic</groupId>
     <artifactId>jota-backend-panama</artifactId>
-    <version>0.4.0</version>
+    <version>0.4.0-rc1</version>
 </dependency>
 
 <!-- C backend (CPU via JNI) -->
 <dependency>
     <groupId>com.qxotic</groupId>
     <artifactId>jota-backend-c</artifactId>
-    <version>0.4.0</version>
+    <version>0.4.0-rc1</version>
 </dependency>
 
 <!-- AMD GPU -->
 <dependency>
     <groupId>com.qxotic</groupId>
     <artifactId>jota-backend-hip</artifactId>
-    <version>0.4.0</version>
+    <version>0.4.0-rc1</version>
 </dependency>
 
 <!-- NVIDIA GPU (Linux/Windows) -->
 <dependency>
     <groupId>com.qxotic</groupId>
     <artifactId>jota-backend-cuda</artifactId>
-    <version>0.4.0</version>
+    <version>0.4.0-rc1</version>
 </dependency>
 
 <!-- Apple GPU (macOS) -->
 <dependency>
     <groupId>com.qxotic</groupId>
     <artifactId>jota-backend-metal</artifactId>
-    <version>0.4.0</version>
+    <version>0.4.0-rc1</version>
 </dependency>
 
 <!-- Cross-platform GPU -->
 <dependency>
     <groupId>com.qxotic</groupId>
     <artifactId>jota-backend-opencl</artifactId>
-    <version>0.4.0</version>
+    <version>0.4.0-rc1</version>
 </dependency>
 ```
 

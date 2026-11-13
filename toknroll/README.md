@@ -62,7 +62,7 @@ See [toknroll-native](toknroll-native/).
 <dependency>
   <groupId>com.qxotic</groupId>
   <artifactId>toknroll-hf</artifactId>    <!-- tokenizer.json loading (HF / ModelScope) -->
-  <version>0.4.0</version>
+  <version>0.4.0-rc1</version>
 </dependency>
 ```
 

@@ -10,7 +10,7 @@ No server, no HTTP hop.
 
 ## Installation
 
-These examples target jinfer **0.4.0**, Spring AI **2.1.0-RC2**, and Java **25**; the starter targets Spring Boot **4.2.0-RC2**.
+These examples target jinfer **0.4.0-rc1**, Spring AI **2.1.0-RC2**, and Java **25**; the starter targets Spring Boot **4.2.0-RC2**.
 For an unreleased checkout, first install the artifacts locally from the repository root:
 
 ```bash
@@ -21,12 +21,12 @@ mvn -pl jinfer/jinfer-bom,jinfer/jinfer-spring-ai-spring-boot-starter,jinfer/jin
 <dependency>
   <groupId>com.qxotic</groupId>
   <artifactId>jinfer-spring-ai</artifactId>
-  <version>0.4.0</version>
+  <version>0.4.0-rc1</version>
 </dependency>
 <dependency>
   <groupId>com.qxotic</groupId>
   <artifactId>jinfer-lfm2</artifactId>
-  <version>0.4.0</version>
+  <version>0.4.0-rc1</version>
 </dependency>
 ```
 
@@ -187,7 +187,7 @@ Applications already using `jinfer-models-all` have this provider.
 <dependency>
   <groupId>com.qxotic</groupId>
   <artifactId>jinfer-gemma-embedding2</artifactId>
-  <version>0.4.0</version>
+  <version>0.4.0-rc1</version>
 </dependency>
 ```
 
@@ -290,7 +290,7 @@ For media, set `spring.ai.jinfer.embedding.companions.media` to the projector pa
 ### Reranking
 
 `JinferDocumentPostProcessor` reranks retrieved documents as a Spring AI `DocumentPostProcessor`.
-Reranking needs a separate model provider, such as `jinfer-qwen3:0.4.0` for Qwen3-Reranker, and the Spring AI RAG API.
+Reranking needs a separate model provider, such as `jinfer-qwen3:0.4.0-rc1` for Qwen3-Reranker, and the Spring AI RAG API.
 The starter brings in the RAG API; without it, add:
 
 ```xml

@@ -107,7 +107,7 @@ The headers carry it as text, `PREFIX_VERSION "0.4.0-rc1"`, beside the numbers 0
 The soname takes the numbers alone, so the candidate and its release share it, and a candidate may not change the API or the ABI: a change makes the next release `0.4.1`.
 Its GitHub release is a pre-release, `gh release create v0.4.0-rc1 --prerelease`; PyPI and pip know it as one by its version, and pip installs it only with `--pre` or an exact `==0.4.0rc1`.
 The release after it changes the versions to `0.4.0` everywhere, its release notes' heading too, and rebuilds every binary from its own tag: a candidate's binaries are never promoted.
-The docs and the jbang scripts name the release, `0.4.0`, throughout, and are right once it is on Central.
+The docs and the jbang scripts name the version being published, `0.4.0-rc1` for the candidate, and the release changes them to `0.4.0` with everything else.
 
 ## Before publishing
 

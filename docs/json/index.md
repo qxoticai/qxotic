@@ -20,7 +20,7 @@ import TabItem from '@theme/TabItem';
 <dependency>
     <groupId>com.qxotic</groupId>
     <artifactId>json</artifactId>
-    <version>0.4.0</version>
+    <version>0.4.0-rc1</version>
 </dependency>
 ```
 
@@ -28,14 +28,14 @@ import TabItem from '@theme/TabItem';
   <TabItem value="gradle" label="Gradle">
 
 ```groovy
-implementation 'com.qxotic:json:0.4.0'
+implementation 'com.qxotic:json:0.4.0-rc1'
 ```
 
   </TabItem>
   <TabItem value="mill" label="Mill">
 
 ```scala
-mvn"com.qxotic:json:0.4.0"
+mvn"com.qxotic:json:0.4.0-rc1"
 ```
 
   </TabItem>
