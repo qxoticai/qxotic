@@ -139,7 +139,10 @@ class ModelStoreCacheTest {
         assertTrue(Files.notExists(model.getParent()), "the emptied repository folder goes");
         assertTrue(Files.exists(other), "its neighbours stay");
         assertFalse(store.remove("hf.co/acme/thing:Q8_0"), "the second remove is a miss");
-        assertTrue(store.remove("hf.co/acme/other:Q8_0"));
+        assertTrue(
+                store.remove("https://huggingface.co/acme/other/blob/main/other-Q8_0.gguf"),
+                "a browser URL is the ref it spells, as find reads it");
+        assertTrue(Files.notExists(other));
         assertTrue(Files.exists(root), "the root itself is never removed");
         assertTrue(Files.notExists(root.resolve("hf.co")));
     }

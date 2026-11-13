@@ -176,7 +176,7 @@ List<Path> updated = ModelStore.standard().pullAll(List.of(ref), false);
 List<Path> repaired = ModelStore.standard().pullAll(List.of(ref), true);
 ```
 
-`ModelStore.isRef(...)` and `requireRef(...)` implement the grammar; `find(...)` is the offline lookup; `remove(...)` explicitly deletes the one cached file `find(...)` returns; `detached()` lists the Hugging Face cache versions no branch names, with what removing each frees.
+`ModelStore.isRef(...)` and `requireRef(...)` implement the grammar; `find(...)` is the offline lookup; `remove(...)` explicitly deletes the one cached file `find(...)` returns; `detached()` lists the Hugging Face cache versions no branch or tag names, with what removing each frees.
 The CLI's `jinfer pull`, `list`, `find`, `remove` and `prune` run over the same store.
 
 Resolution happens before loading, and inference never fetches: the path returned here is what

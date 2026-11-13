@@ -761,6 +761,10 @@ public final class ModelStore {
      * caller's. False when nothing was cached; {@link #pullAll} refreshes without removing.
      */
     public boolean remove(String pathOrRef) {
+        if (isHttpUrl(pathOrRef)) { // a browser URL is the ref it spells, as find reads it
+            String ref = repositoryRef(URI.create(pathOrRef));
+            return ref != null && remove(ref);
+        }
         if (!ModelRef.isRef(pathOrRef)) {
             return removeOwnFile(pathOrRef);
         }

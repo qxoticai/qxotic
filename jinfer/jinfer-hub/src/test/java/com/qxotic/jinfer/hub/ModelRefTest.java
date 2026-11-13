@@ -476,6 +476,37 @@ class ModelRefTest {
         assertFalse(Files.exists(repo), "nothing left: the repository folder goes");
     }
 
+    /**
+     * Where symlinks need a privilege (Windows outside Developer Mode) a snapshot entry is a hard
+     * link: still its blob, so removing the last one frees it, and a named version's link counts.
+     */
+    @Test
+    void aHardLinkedEntryIsItsBlob(@TempDir Path hub) throws IOException {
+        Path repo = hub.resolve("models--a--b");
+        String main = "a".repeat(40), old = "b".repeat(40);
+        Hub.writeRef(repo.resolve("refs/main"), main);
+        Path blob = repo.resolve("blobs").resolve("1".repeat(64));
+        Files.createDirectories(blob.getParent());
+        Files.writeString(blob, "weights");
+        Path current = repo.resolve("snapshots/" + main + "/m-Q8_0.gguf");
+        Path replaced = repo.resolve("snapshots/" + old + "/m-Q8_0.gguf");
+        for (Path entry : List.of(current, replaced)) {
+            Files.createDirectories(entry.getParent());
+            Files.createLink(entry, blob);
+        }
+
+        Hub.link(blob, current);
+        assertFalse(Files.isSymbolicLink(current), "already the blob: kept, not redone");
+        assertEquals(
+                0,
+                Hub.detached(hub).stream().mapToLong(ModelStore.Cached::sizeBytes).sum(),
+                "main still holds those bytes");
+        assertTrue(Hub.remove(replaced, hub));
+        assertTrue(Files.exists(blob), "main's entry still links it");
+        assertTrue(Hub.remove(current, hub));
+        assertFalse(Files.exists(repo), "the last link took the blob, then the folder");
+    }
+
     @Test
     void removeSparesABlobStillLinkedElsewhereThenTheFolder(@TempDir Path hub) throws IOException {
         Path repo = hub.resolve("models--a--b");

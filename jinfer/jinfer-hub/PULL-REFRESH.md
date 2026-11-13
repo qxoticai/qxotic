@@ -23,7 +23,8 @@ Linux checks are recorded below; Windows publication validation is pending.
 | Existing local path | Return the path; force does not transfer ownership or authorize deletion |
 
 Mutable-reference pull first selects a file from the remote repository.
-When a SHA-256 is published, a shared HF blob is reused when its name is that SHA-256 and its size matches: blobs are published under their hash only after verification, so reuse reads no payload.
+When a SHA-256 is published, a shared HF blob is reused when its name is that SHA-256 and its size matches, so reuse reads no payload.
+Jinfer names a blob by its hash only after verifying it; other HF clients check its size, and reuse extends them the same trust they extend each other.
 A flat-cache entry has no such name, so it is stream-hashed and size-checked before reuse, a sequential local read.
 Bytes damaged after publication are not detected by an ordinary pull; `pull --force` replaces them.
 Without a published checksum, explicit pull downloads again; size or modification time alone cannot establish equality.
@@ -121,7 +122,8 @@ lock logical revision
 Acquire the logical publication lock before selecting the revision, so an older selection cannot wait behind a newer publisher and then roll it back.
 Metadata uses unique temporary names, since unrelated clients do not use Jinfer's locks.
 An unchanged branch ref is not rewritten.
-Without symlink support, snapshot entries are copies; a shared blob is never moved out from under another link.
+Without symlink support (Windows outside Developer Mode) snapshot entries are hard links, and copies only where hard links are refused too; an entry already linking its blob is kept as it is, and a shared blob is never moved out from under another link.
+A copy cannot be traced back to its blob, so removing one leaves the blob behind.
 A failed selector update may leave an unreferenced complete new blob or snapshot, which is preferable to breaking the old active entry.
 Moving a branch does not prefetch unrequested files from its new revision.
 

@@ -120,7 +120,8 @@ final class Hub {
                 Set<Path> counted = new HashSet<>(); // what a named snapshot keeps is not freed
                 for (Path snapshot : all) {
                     if (named.contains(snapshot.getFileName().toString())) {
-                        ModelStore.visitFiles(snapshot, (file, attrs) -> counted.add(real(file)));
+                        ModelStore.visitFiles(
+                                snapshot, (file, attrs) -> counted.add(identity(file, repo)));
                     }
                 }
                 for (Path snapshot : all) {
@@ -132,7 +133,7 @@ final class Hub {
                                     found.add(
                                             new ModelStore.Cached(
                                                     ref(repo, "@" + commit, snapshot, file),
-                                                    counted.add(real(file)) ? size : 0)));
+                                                    counted.add(identity(file, repo)) ? size : 0)));
                 }
             }
         } catch (IOException e) {
@@ -211,12 +212,29 @@ final class Hub {
                 e);
     }
 
-    /** Where a snapshot entry's bytes live: its blob, or the entry itself when it is a copy. */
-    private static Path real(Path file) {
+    /**
+     * The blob a snapshot entry is: a symlink's target, or the file in {@code blobs/} a hard link
+     * shares; null for a copy, which cannot tell.
+     */
+    private static Path blobOf(Path entry, Path repo) throws IOException {
+        if (Files.isSymbolicLink(entry)) return target(entry);
+        Path blobs = repo.resolve("blobs");
+        if (!Files.isRegularFile(entry) || !Files.isDirectory(blobs)) return null;
+        try (var all = Files.list(blobs)) {
+            for (Path blob : all.toList()) {
+                if (Files.isSameFile(entry, blob)) return blob.toAbsolutePath().normalize();
+            }
+        }
+        return null;
+    }
+
+    /** The bytes a snapshot entry holds, as one key per blob: the entry itself for a copy. */
+    private static Path identity(Path entry, Path repo) {
         try {
-            return file.toRealPath();
-        } catch (IOException gone) {
-            return file;
+            Path blob = blobOf(entry, repo);
+            return blob != null ? blob : entry;
+        } catch (IOException unreadable) {
+            return entry;
         }
     }
 
@@ -233,7 +251,7 @@ final class Hub {
      */
     static boolean remove(Path cached, Path hubCache) throws IOException {
         Path repo = hubCache.resolve(hubCache.relativize(cached).getName(0));
-        Path blob = Files.isSymbolicLink(cached) ? target(cached) : null;
+        Path blob = blobOf(cached, repo);
         if (!Files.deleteIfExists(cached)) return false;
         if (blob != null && Files.isRegularFile(blob) && !referenced(blob)) {
             Files.deleteIfExists(blob);
@@ -270,7 +288,8 @@ final class Hub {
         }
         try (var walk = Files.walk(snapshots)) {
             for (Path entry : walk.toList()) {
-                if (Files.isSymbolicLink(entry) && target(entry).equals(blob)) {
+                if (Files.isRegularFile(entry)
+                        && Files.isSameFile(entry, blob)) { // either link kind
                     return true;
                 }
             }
@@ -298,9 +317,9 @@ final class Hub {
         Path repo = repoFolder(ref, hubCache);
         Path blob = repo.resolve("blobs").resolve(file.sha256());
         Path dest = ModelStore.under(repo.resolve("snapshots").resolve(commit), file.path());
-        // a blob is published under its sha256 only once verified, by jinfer or any HF client:
-        // name and size say it is current without reading it. Repairing bytes that rotted after
-        // publication is what force is for.
+        // a blob is named by its sha256 once verified (by jinfer) or once its size checks (other HF
+        // clients): name and size say it is current, as every HF client takes them, without a
+        // read. Repairing bytes that rotted after publication is what force is for.
         boolean reuse =
                 !force
                         && Files.isRegularFile(blob)
@@ -337,13 +356,15 @@ final class Hub {
     }
 
     /**
-     * Publishes {@code blob} at {@code dest} as a relative symlink, the hub cache's own idiom. On a
-     * filesystem that refuses symlinks the entry is a copy. Never move a shared blob out from under
-     * another snapshot's link. Publish before changing the branch ref (PULL-REFRESH.md).
+     * Publishes {@code blob} at {@code dest} as a relative symlink, the hub cache's own idiom.
+     * Where symlinks are refused (Windows outside Developer Mode) the entry is a hard link, and a
+     * copy only where hard links are refused too. An entry already linking the blob is kept. Never
+     * move a shared blob out from under another snapshot's link. Publish before changing the branch
+     * ref (PULL-REFRESH.md).
      */
     static Path link(Path blob, Path dest) throws IOException {
-        if (Files.isSymbolicLink(dest) && target(dest).equals(blob.toAbsolutePath().normalize())) {
-            return dest;
+        if (Files.exists(dest) && Files.isSameFile(dest, blob)) {
+            return dest; // a link to it, either kind: nothing to redo, nothing a reader holds moved
         }
         Files.createDirectories(dest.getParent());
         Path tmp = staging(dest.getParent(), ".jinfer-link-");
@@ -353,7 +374,11 @@ final class Hub {
             try {
                 Files.createSymbolicLink(tmp, target);
             } catch (IOException | UnsupportedOperationException noSymlinks) {
-                Files.copy(blob, tmp, StandardCopyOption.REPLACE_EXISTING);
+                try { // Windows outside Developer Mode: a hard link needs no privilege
+                    Files.createLink(tmp, blob);
+                } catch (IOException | UnsupportedOperationException noHardLinks) {
+                    Files.copy(blob, tmp, StandardCopyOption.REPLACE_EXISTING);
+                }
             }
             Fetch.publish(tmp, dest);
         } finally {
