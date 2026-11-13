@@ -30,6 +30,7 @@ import java.util.concurrent.Executors;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicReference;
+import java.util.concurrent.locks.ReentrantLock;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
@@ -275,9 +276,11 @@ class FetchDownloadTest {
 
     @AfterEach
     void pathLocksAreReleased() throws ReflectiveOperationException {
-        Field registry = Fetch.class.getDeclaredField("LOCK_REGISTRY");
-        registry.setAccessible(true);
-        assertTrue(((Map<?, ?>) registry.get(null)).isEmpty());
+        Field locks = Fetch.class.getDeclaredField("LOCKS");
+        locks.setAccessible(true);
+        for (Object lock : ((Map<?, ?>) locks.get(null)).values()) {
+            assertFalse(((ReentrantLock) lock).isLocked(), "a download left its lock held");
+        }
     }
 
     private static String sha256(String value) {

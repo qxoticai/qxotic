@@ -19,7 +19,6 @@ import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
 import java.time.Duration;
 import java.util.ArrayList;
-import java.util.HashMap;
 import java.util.HexFormat;
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -91,15 +90,11 @@ final class Fetch {
     /** A metadata call must not hang a startup; a download has no business timing out at all. */
     private static final Duration LISTING_TIMEOUT = Duration.ofSeconds(20);
 
-    /** Two threads of one JVM cannot both hold a {@link FileLock}, so they queue here first. */
-    private static final ReentrantLock LOCK_REGISTRY_GUARD = new ReentrantLock();
-
-    private static final Map<Path, PathLock> LOCK_REGISTRY = new HashMap<>();
-
-    private static final class PathLock {
-        final ReentrantLock lock = new ReentrantLock();
-        int users;
-    }
+    /**
+     * Two threads of one JVM cannot both hold a {@link FileLock}, so they queue here first: one
+     * lock per path, kept for the process (a handful of paths, a few bytes each).
+     */
+    private static final Map<Path, ReentrantLock> LOCKS = new ConcurrentHashMap<>();
 
     /**
      * The terminal's live region, docker-pull shaped: one row per transfer, repainted in place as
@@ -312,7 +307,7 @@ final class Fetch {
 
     /** {@code downloadThreads=1} plainly means ONE connection at a time - files included. */
     static boolean oneAtATime() {
-        return threads() <= 1;
+        return THREADS <= 1;
     }
 
     private static int threads() {
@@ -449,9 +444,9 @@ final class Fetch {
     /** One lock implementation for payloads and the references publishing them. */
     static <T> T locked(Path dest, IOCall<T> operation) throws IOException {
         Path path = dest.toAbsolutePath().normalize();
-        PathLock local = retain(path);
+        ReentrantLock local = LOCKS.computeIfAbsent(path, ignored -> new ReentrantLock());
         try {
-            local.lock.lockInterruptibly();
+            local.lockInterruptibly();
             try {
                 Path lockFile = lockFileFor(path);
                 // Never delete-on-close: Windows refuses another opener while deletion is pending.
@@ -464,13 +459,11 @@ final class Fetch {
                     return operation.run();
                 }
             } finally {
-                local.lock.unlock();
+                local.unlock();
             }
         } catch (InterruptedException e) {
             Thread.currentThread().interrupt();
             throw new IOException("interrupted waiting for " + dest, e);
-        } finally {
-            release(path, local);
         }
     }
 
@@ -540,28 +533,6 @@ final class Fetch {
                     System.Logger.Level.WARNING,
                     "could not remove download staging file " + file,
                     e);
-        }
-    }
-
-    private static PathLock retain(Path path) {
-        LOCK_REGISTRY_GUARD.lock();
-        try {
-            PathLock retained = LOCK_REGISTRY.computeIfAbsent(path, ignored -> new PathLock());
-            retained.users++;
-            return retained;
-        } finally {
-            LOCK_REGISTRY_GUARD.unlock();
-        }
-    }
-
-    private static void release(Path path, PathLock released) {
-        LOCK_REGISTRY_GUARD.lock();
-        try {
-            if (--released.users == 0) {
-                LOCK_REGISTRY.remove(path, released);
-            }
-        } finally {
-            LOCK_REGISTRY_GUARD.unlock();
         }
     }
 
@@ -641,7 +612,6 @@ final class Fetch {
 
     private static Map<String, String> downloadHeaders(Map<String, String> headers) {
         Map<String, String> result = new LinkedHashMap<>(headers);
-        result.keySet().removeIf(name -> name.equalsIgnoreCase("Accept-Encoding"));
         result.put("Accept-Encoding", "identity");
         return result;
     }
@@ -766,7 +736,7 @@ final class Fetch {
             Stall stall = null;
             try {
                 Transport.Response response = send(URI.create(url), ranged, headerTimeout());
-                try (InputStream in = body(response, url, true)) {
+                try (InputStream in = body(response, url)) {
                     if (response.status() == 200) {
                         throw new SingleStreamRequired("server ignored Range: " + url);
                     }
@@ -1010,7 +980,7 @@ final class Fetch {
         }
         Transport.Response response = send(URI.create(url), ranged, headerTimeout());
         Stall stall = null;
-        try (InputStream in = body(response, url, true)) {
+        try (InputStream in = body(response, url)) {
             if (have > 0 && response.status() == 200) {
                 // the server ignored the range, or the file changed: start over rather than append
                 have = 0;
@@ -1245,10 +1215,9 @@ final class Fetch {
     }
 
     /** The response body, or the response's own explanation of why there is not one. */
-    private static InputStream body(Transport.Response response, String url, boolean ranged)
-            throws IOException {
+    private static InputStream body(Transport.Response response, String url) throws IOException {
         int status = response.status();
-        if (status == 200 || (ranged && status == 206)) {
+        if (status == 200 || status == 206) {
             return response.body();
         }
         try (InputStream in = response.body()) {
@@ -1341,6 +1310,11 @@ final class Fetch {
             String trimmed = body.strip().replaceAll("\\s+", " ");
             return trimmed.length() > 200 ? trimmed.substring(0, 200) + "..." : trimmed;
         }
+    }
+
+    /** Bytes per second, or 0 before any time has passed. */
+    private static long rate(long bytes, double seconds) {
+        return seconds > 0 ? (long) (bytes / seconds) : 0;
     }
 
     /** The Board's canvas: a terminal, and only ever a terminal. */
@@ -1499,7 +1473,7 @@ final class Fetch {
             if (now <= tenth || now >= 10) return null;
             tenth = now;
             double seconds = (System.nanoTime() - startNanos) / 1e9;
-            long rate = seconds > 0 ? (long) ((written - startBytes) / seconds) : 0;
+            long rate = rate(written - startBytes, seconds);
             return String.format(
                     Locale.ROOT,
                     "%s  %d%%  %s/%s (%s/s)",
@@ -1517,7 +1491,7 @@ final class Fetch {
          */
         void verifying() {
             double seconds = (System.nanoTime() - startNanos) / 1e9;
-            downloadRate = seconds > 0 ? (long) ((total - startBytes) / seconds) : 0;
+            downloadRate = rate(total - startBytes, seconds);
             phase = "sha256";
             startBytes = 0;
             startNanos = System.nanoTime();
@@ -1543,7 +1517,7 @@ final class Fetch {
                             label,
                             size(total),
                             seconds,
-                            size(seconds > 0 ? (long) (moved / seconds) : 0)));
+                            size(rate(moved, seconds))));
         }
 
         /**
@@ -1554,7 +1528,7 @@ final class Fetch {
         void fail() {
             if (done) return;
             double seconds = (System.nanoTime() - startNanos) / 1e9; // the rate it got, frozen
-            downloadRate = seconds > 0 ? (long) ((lastWritten - startBytes) / seconds) : 0;
+            downloadRate = rate(lastWritten - startBytes, seconds);
             phase = "failed";
             failed = true;
             done = true;
@@ -1590,10 +1564,7 @@ final class Fetch {
          */
         private String render(long written, long now) {
             double seconds = (now - startNanos) / 1e9;
-            long rate =
-                    phase.isEmpty()
-                            ? (seconds > 0 ? (long) ((written - startBytes) / seconds) : 0)
-                            : downloadRate;
+            long rate = phase.isEmpty() ? (rate(written - startBytes, seconds)) : downloadRate;
             StringBuilder line = new StringBuilder(" ");
             if (total > 0) {
                 line.append(UNICODE ? '\u2595' : '[');
