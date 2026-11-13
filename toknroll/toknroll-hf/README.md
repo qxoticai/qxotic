@@ -1,6 +1,6 @@
-# Tok'n'Roll HuggingFace Loader
+# Tok'n'Roll Hugging Face Loader
 
-Loads a Tok'n'Roll `Tokenizer` from a HuggingFace `tokenizer.json`.
+Loads a Tok'n'Roll `Tokenizer` from a Hugging Face `tokenizer.json`.
 
 Unsupported features fail fast instead of introducing silent incompatibilities: an unknown model, normalizer or pre-tokenizer, an added token Hugging Face would match other than by its exact text (`lstrip`, `rstrip`, `single_word`, or `normalized` under a normalizer that changes it), a SentencePiece pre-tokenizer stage or decoder step toknroll cannot reproduce.
 The `post_processor` is not read: encoding is pure tokenization, with no BOS or EOS added.

@@ -9,7 +9,7 @@
   </parent>
 
   <artifactId>toknroll-hf</artifactId>
-  <name>Tok'n'Roll Hugging Face Utilities</name>
+  <name>Tok'n'Roll Hugging Face Loader</name>
   <description>Loads Tok'n'Roll tokenizers from Hugging Face
     tokenizer.json files.</description>
   <properties>

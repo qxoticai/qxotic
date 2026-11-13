@@ -2,9 +2,9 @@
 sidebar_position: 4
 ---
 
-# HuggingFace Loader
+# Hugging Face Loader
 
-Loads a Tok'n'Roll `Tokenizer` from a HuggingFace `tokenizer.json`.
+Loads a Tok'n'Roll `Tokenizer` from a Hugging Face `tokenizer.json`.
 
 Unsupported features (e.g. `post_processor`, custom `decoders`) fail fast instead of introducing silent incompatibilities.
 
