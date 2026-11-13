@@ -20,8 +20,9 @@ help::
 	@echo 'make check                 header vs exports, C tests and examples (shared and static), Python tests'
 include ../../scripts/native.mk
 # Oracle GraalVM builds what ships optimized for a profile it records first (PGO); GraalVM CE builds without
-# one, and QUICK=1 skips it. The collector is the serial one: NATIVE_IMAGE_OPTIONS=--gc=G1 (Oracle, Linux) runs
-# up to 70% faster on many cores, but a forked child that allocates hangs, its parent's GC threads gone.
+# one, and QUICK=1 skips it. The collector is the serial one, tuned in the pom (toknroll.image.gc):
+# MAVEN_FLAGS=-Dtoknroll.image.gc=--gc=G1 (Oracle, Linux) runs about 5% faster on many cores, but a forked child
+# that allocates hangs, its parent's GC threads gone.
 PGO = $(if $(filter 1,$(QUICK)),,$(shell $(NATIVE_IMAGE) --version 2>/dev/null | grep -q 'Oracle GraalVM' && echo yes))
 PROFILE := target/pgo/default.iprof
 # The profile's workload: enwik8, where the tests find it, FLORES-200 beside it, and PgoTraining's tokenizers (PGO_SOURCES, if set)
