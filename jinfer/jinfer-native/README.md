@@ -70,7 +70,7 @@ The library is a Java runtime compiled ahead of time; it starts at `jinfer_confi
 
 Downloads go through `curl` on the PATH, so the image carries no TLS stack of its own; local models need nothing.
 An image or an audio file given to a chat is decoded with `ffmpeg` on the PATH, and speech synthesis with Kokoro voices needs `espeak-ng` (or `espeak`); a WAV file for transcription needs nothing.
-[C-API.md](../../C-API.md#configuration) has the rules behind the table.
+[The C API convention](../../docs/c-api.md#configuration) has the rules behind the table.
 
 ## Build and check
 
@@ -95,7 +95,7 @@ make publish-dist TAG=<tag> # the tarball and its checksum as assets of that Git
 On Windows, `.\build.ps1` in this directory has the same targets.
 `pip install python/` after `make python` installs the package from the checkout, and `JINFER_LIBRARY=/path/to/libjinfer.so` points an installed package at any build.
 The checks need the models they name cached, `make cache-models` at the root fetches them, and the network for the C suites' progress scenarios.
-This machine's wheels from a clean export of a ref, and the upload to PyPI, are `make wheels` and `make publish-wheels` at the repository root (`wheels.ps1` on Windows; [RELEASING.md](../../RELEASING.md)).
+This machine's wheels from a clean export of a ref, and the upload to PyPI, are `make wheels` and `make publish-wheels` at the repository root (`scripts\wheels.ps1` on Windows; [RELEASING.md](../../RELEASING.md)).
 
 ## Inside
 

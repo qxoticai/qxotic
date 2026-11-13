@@ -19,7 +19,7 @@
 
 set -euo pipefail
 
-ROOT=$(cd "$(dirname "$0")" && pwd)
+ROOT=$(cd "$(dirname "$0")/.." && pwd)
 PROJECT=${1:-}
 [ -n "$PROJECT" ] && [ -f "$ROOT/$PROJECT/pom.xml" ] || {
     echo "usage: $(basename "$0") <project> [--check]   (a directory with a pom.xml: jinfer, jota, gguf, ...)" >&2
@@ -35,7 +35,7 @@ HELD=""
 if [ "$PROJECT" = . ]; then
     # release-plan already asked Central about each artifact at its own version, and fails on any
     # version that disagrees or on changed code under a version Central holds
-    HELD=$("$ROOT/release-plan.sh" --held) || { echo "deploy: make release-plan reports problems" >&2; exit 1; }
+    HELD=$("$ROOT/scripts/release-plan.sh" --held) || { echo "deploy: make release-plan reports problems" >&2; exit 1; }
     VERSION="each project's own version"
 else
     # shellcheck disable=SC2086

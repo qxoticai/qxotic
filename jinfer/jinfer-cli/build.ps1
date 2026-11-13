@@ -6,7 +6,7 @@
 param([Parameter(Position = 0, ValueFromRemainingArguments = $true)][string[]] $Targets = @('help'), [string] $Model = 'LiquidAI/LFM2.5-350M-GGUF:Q8_0')
 $ErrorActionPreference = 'Stop'
 $Root = (Resolve-Path "$PSScriptRoot\..\..").Path
-. "$Root\toolchain.ps1"
+. "$Root\scripts\toolchain.ps1"
 Push-Location $PSScriptRoot
 function Build-Image {   # no clean: the image is linked from the modules' classes, not the shaded jar
     Enter-Toolchain

@@ -2,7 +2,7 @@
 # platform, the wheel's tag, the Python release tools, and the targets that read the same for both. The
 # including Makefile sets NAME first (its library is lib$(NAME), its header include/$(NAME).h, its Python
 # package python/$(NAME)) and defines lib$(NAME), check and its own help:: lines.
-ROOT  := $(abspath $(dir $(lastword $(MAKEFILE_LIST))))
+ROOT  := $(abspath $(dir $(lastword $(MAKEFILE_LIST)))..)
 MAVEN ?= mvn
 OS    := $(shell uname -s | tr A-Z a-z)
 ARCH  := $(shell uname -m | sed -e 's/x86_64/x86-64/' -e 's/arm64/aarch64/')

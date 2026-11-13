@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
 # What a release would publish, and whether the versions agree (RELEASING.md):
 #
-#   ./release-plan.sh
-#   ./release-plan.sh --held   # only the module directories Central already holds, for release-deploy
+#   scripts/release-plan.sh
+#   scripts/release-plan.sh --held   # only the module directories Central already holds, for release-deploy
 #
 # Lists every artifact that opts into publication with its version, whether Maven Central holds
 # it, and whether its code changed since the tag it was released under. Fails when code changed
@@ -11,7 +11,7 @@
 
 set -euo pipefail
 
-cd "$(dirname "$0")"
+cd "$(dirname "$0")/.."
 # --held: the table goes away and stdout carries only the held module directories
 HELD_ONLY=
 if [ "${1:-}" = --held ]; then HELD_ONLY=1; exec 3>&1 1>/dev/null; fi

@@ -2,14 +2,15 @@
 # the jinfer command, built and checked
 # from a clean export of a ref (a tag, a commit, any tree-ish) -> target\dists\. Upload them to the release with
 # gh release upload <tag> target\dists\*.zip target\dists\*.sha256.
-#   .\dists.ps1 [-Ref <tag>]
+#   .\scripts\dists.ps1 [-Ref <tag>]
 param([string] $Ref = 'HEAD')
 $ErrorActionPreference = 'Stop'
-$export = "$PSScriptRoot\target\dists-src"
-$dists = "$PSScriptRoot\target\dists"
+$Root = Split-Path $PSScriptRoot   # the repository, this script's parent
+$export = "$Root\target\dists-src"
+$dists = "$Root\target\dists"
 foreach ($stale in $export, "$export.tar") { if (Test-Path $stale) { Remove-Item -Recurse -Force $stale } }
 New-Item -ItemType Directory -Force $export, $dists | Out-Null
-git -C $PSScriptRoot -c core.autocrlf=false archive -o "$export.tar" $Ref; if ($LASTEXITCODE) { throw "git archive failed" }   # the files as committed
+git -C $Root -c core.autocrlf=false archive -o "$export.tar" $Ref; if ($LASTEXITCODE) { throw "git archive failed" }   # the files as committed
 & "$env:SystemRoot\System32\tar.exe" -xf "$export.tar" -C $export; if ($LASTEXITCODE) { throw "tar failed" }   # Windows' own tar
 & "$export\toknroll\toknroll-native\build.ps1" library check dist
 & "$export\jinfer\jinfer-native\build.ps1" library check dist

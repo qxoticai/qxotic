@@ -1,4 +1,4 @@
-# libtoknroll on Windows: the Makefile's targets, in PowerShell (the shared half is ..\..\native.ps1).
+# libtoknroll on Windows: the Makefile's targets, in PowerShell (the shared half is ..\..\scripts\native.ps1).
 #   .\build.ps1 library            what ships (Oracle GraalVM: PGO at -O3, a profile recorded first; CE: -O2), native-image's default target -> target\toknroll.dll (+ toknroll.lib)
 #   .\build.ps1 library -Quick     this machine, quick build (-Ob -march=native)
 #   .\build.ps1 check              header vs exports, C tests and example, Python tests
@@ -49,4 +49,4 @@ $WheelDeps = { }
 $WheelExample = 'examples\c\tokenize.c'; $WheelExampleArgs = @($Source, "Hello, Tok'n'Roll!")
 $Description = 'toknroll, LLM tokenization with a C API'
 $WheelTest = { & wheelenv\Scripts\python -m unittest discover -s ..\python\tests -t ..\python\tests; if ($LASTEXITCODE) { throw "tests failed" } }
-. "$PSScriptRoot\..\..\native.ps1"
+. "$PSScriptRoot\..\..\scripts\native.ps1"

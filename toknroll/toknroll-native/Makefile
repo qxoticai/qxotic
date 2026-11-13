@@ -18,7 +18,7 @@ help::
 	@echo '                           Oracle GraalVM: PGO at -O3, from a profile recorded first (pgo-profile); CE: -O2'
 	@echo 'make libtoknroll QUICK=1   this machine, quick build (-Ob -march=native)'
 	@echo 'make check                 header vs exports, C tests and examples (shared and static), Python tests'
-include ../../native.mk
+include ../../scripts/native.mk
 # Oracle GraalVM builds what ships optimized for a profile it records first (PGO); GraalVM CE builds without
 # one, and QUICK=1 skips it. The collector is the serial one: NATIVE_IMAGE_OPTIONS=--gc=G1 (Oracle, Linux) runs
 # up to 70% faster on many cores, but a forked child that allocates hangs, its parent's GC threads gone.

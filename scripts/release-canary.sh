@@ -15,7 +15,7 @@
 
 set -euo pipefail
 
-ROOT=$(cd "$(dirname "$0")" && pwd)
+ROOT=$(cd "$(dirname "$0")/.." && pwd)
 # unquoted MAVEN_FLAGS: word-splitting intended, same convention as the Makefiles
 MVN="${MAVEN:-mvn} ${MAVEN_FLAGS:-}"
 

@@ -21,7 +21,7 @@ help::
 	@echo 'make libjinfer QUICK=1     this machine, quick build (-Ob -march=native): runs, kernels unoptimized, never measure it'
 	@echo 'make check                 headers vs exports, C tests and example, Python test'
 	@echo 'make qa                    the corner cases: threads, exit, soak, offline, tools'
-include ../../native.mk
+include ../../scripts/native.mk
 
 libjinfer:
 	@$(MAKE) -s -C $(ROOT) check-native-image

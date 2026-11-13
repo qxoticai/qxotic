@@ -141,13 +141,13 @@ ci-release: ## CI gate 4: the release shape, unsigned, no natives
 ##@ Release
 
 release-canary: ## Prove the published shape works: install the release build into a throwaway repo, compile consumers with and without BOMs against ONLY it
-	MAVEN="$(MAVEN)" MAVEN_FLAGS="$(MAVEN_FLAGS)" ./release-canary.sh
+	MAVEN="$(MAVEN)" MAVEN_FLAGS="$(MAVEN_FLAGS)" scripts/release-canary.sh
 
 release-plan: ## What a release would publish, and whether the versions agree
-	./release-plan.sh
+	scripts/release-plan.sh
 
 release-deploy: ## Stage for Central what it does not hold yet: PROJECT=. for everything in one bundle, PROJECT=jinfer for one project (CHECK=--check to only look)
-	MAVEN="$(MAVEN)" MAVEN_FLAGS="$(MAVEN_FLAGS)" ./release-deploy.sh $(PROJECT) $(CHECK)
+	MAVEN="$(MAVEN)" MAVEN_FLAGS="$(MAVEN_FLAGS)" scripts/release-deploy.sh $(PROJECT) $(CHECK)
 
 jam-natives: ## Build, stage and stamp this host's shipped libjam (Linux x86-64: linux and windows x86-64; a Mac: darwin-aarch64, and linux-aarch64 in the container); natives.sh import adds the other host's
 	jam/jam-native/scripts/natives.sh build
@@ -157,7 +157,7 @@ jam-natives: ## Build, stage and stamp this host's shipped libjam (Linux x86-64:
 
 # Each machine builds its own wheels and release archives, from a clean export of REF (a tag, a commit, any
 # tree-ish): nothing of the working tree reaches them, and the Linux container never meets the host's build
-# directories. Windows, where make is not native, has wheels.ps1 and dists.ps1.
+# directories. Windows, where make is not native, has scripts\wheels.ps1 and scripts\dists.ps1.
 REF ?= HEAD
 WHEELS_SRC := target/wheels-src
 DISTS_SRC := target/dists-src
@@ -194,7 +194,7 @@ wheels-here: # the two libraries, their checks (C, Python) and their checked whe
 # directory from it; a Mac's VM has another), and the Maven and model caches at their real paths. The image is
 # built from the Dockerfile alone, with no build context: it copies nothing in.
 define in-container
-docker build -q --build-arg ARCH=$(shell uname -m | sed s/arm64/aarch64/) -t qxotic-manylinux - < manylinux.Dockerfile >/dev/null
+docker build -q --build-arg ARCH=$(shell uname -m | sed s/arm64/aarch64/) -t qxotic-manylinux - < scripts/manylinux.Dockerfile >/dev/null
 mkdir -p target && printf '%s:x:%s:%s::%s:/bin/sh\n' "$$(id -un)" "$$(id -u)" "$$(id -g)" "$$HOME" > target/passwd
 docker run --rm -u "$$(id -u):$$(id -g)" -v "$(CURDIR)/target/passwd:/etc/passwd:ro" -e HOME -e CTEST_ALLOW_SKIP \
   -v "$$HOME/.m2:$$HOME/.m2" -v "$$HOME/.cache:$$HOME/.cache" -v "$(CURDIR):/src" -w /src qxotic-manylinux make $(1)

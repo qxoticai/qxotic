@@ -31,7 +31,7 @@ x86-64 means x86-64-v3, a CPU with AVX2.
 
 ## From C
 
-The contract is [C-API.md](../../C-API.md)'s, restated in the header's opening comment.
+The contract is [the C API convention](../../docs/c-api.md)'s, restated in the header's opening comment.
 In short: pointer-returning functions return NULL and int functions a negative code, and `toknroll_last_error` has the message and the code, per thread.
 Output buffers `(out, capacity)` follow `snprintf`: the return is the whole result's size, the buffer holds what fits, and a capacity of 0 just counts.
 Strings are UTF-8 and borrowed, text comes with its length in bytes.
@@ -72,7 +72,7 @@ The library is a Java runtime compiled ahead of time; it starts at `toknroll_con
 | threads, heap | `-XX:ActiveProcessorCount=<n>` caps what `toknroll_encode_batch` spreads over, `-XX:MaxHeapSize=<size>` the heap, about 256 MB for a 262k-token vocabulary (a batch takes at most a bounded share of it, encoded a chunk at a time, so any length fits); the runtime reserves about 34 GB of address space for its heap, virtual memory and not RAM, whatever the heap cap, so under a virtual memory limit (`ulimit -v`) below that the start fails saying so, and the fix is a higher limit |
 
 Hub references are fetched through `curl` on the PATH, so the image carries no TLS stack of its own; local files need nothing.
-[C-API.md](../../C-API.md#configuration) has the rules behind the table.
+[The C API convention](../../docs/c-api.md#configuration) has the rules behind the table.
 
 ## Build and check
 
@@ -96,7 +96,7 @@ make publish-dist TAG=<tag> # the tarball and its checksum as assets of that Git
 On Windows, `.\build.ps1` in this directory has the same targets.
 `pip install python/` after `make python` installs the package from the checkout, and `TOKNROLL_LIBRARY=/path/to/libtoknroll.so` points an installed package at any build, and at nothing else: a path that does not exist is an error, never a fallback.
 The C suite downloads one tokenizer from the hub for its progress scenarios, so `make check` needs the network, as the Python suite does.
-This machine's wheels from a clean export of a ref, and the upload to PyPI, are `make wheels` and `make publish-wheels` at the repository root (`wheels.ps1` on Windows; [RELEASING.md](../../RELEASING.md)).
+This machine's wheels from a clean export of a ref, and the upload to PyPI, are `make wheels` and `make publish-wheels` at the repository root (`scripts\wheels.ps1` on Windows; [RELEASING.md](../../RELEASING.md)).
 
 ## Inside
 

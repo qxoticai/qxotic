@@ -1,4 +1,4 @@
-# libjinfer on Windows: the Makefile's targets, in PowerShell (the shared half is ..\..\native.ps1).
+# libjinfer on Windows: the Makefile's targets, in PowerShell (the shared half is ..\..\scripts\native.ps1).
 #   .\build.ps1 library            -O3, native-image's default target, what ships -> target\jinfer.dll (+ jinfer.lib to link against)
 #   .\build.ps1 library -Quick     this machine, quick build (-Ob -march=native)
 #   .\build.ps1 check              headers vs exports, C tests and example, Python checks
@@ -30,4 +30,4 @@ $WheelDeps = { & "$Toknroll\build.ps1" wheel | Out-Host; (Get-Item "$Toknroll\ta
 $WheelExample = 'examples\c\chat.c'; $WheelExampleArgs = @()
 $Description = 'jinfer, local LLM inference with a C API'
 $WheelTest = { & wheelenv\Scripts\python ..\python\test_jinfer.py; if ($LASTEXITCODE) { throw "checks failed" } }
-. "$PSScriptRoot\..\..\native.ps1"
+. "$PSScriptRoot\..\..\scripts\native.ps1"

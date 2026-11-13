@@ -1,20 +1,21 @@
 # make wheels and make publish-wheels on Windows, where make is not native: this machine's two wheels, built and
 # checked from a clean export of a ref (a tag, a commit, any tree-ish) -> target\wheels\.
-#   .\wheels.ps1 [-Ref <tag>]            build them
-#   .\wheels.ps1 -Publish [-Ref <tag>]   upload target\wheels\ to PyPI after twine check, skipping wheels it
+#   .\scripts\wheels.ps1 [-Ref <tag>]            build them
+#   .\scripts\wheels.ps1 -Publish [-Ref <tag>]   upload target\wheels\ to PyPI after twine check, skipping wheels it
 #                                        holds; each must be built from the ref
 param([string] $Ref = 'HEAD', [switch] $Publish)
 $ErrorActionPreference = 'Stop'
-$export = "$PSScriptRoot\target\wheels-src"
-$wheels = "$PSScriptRoot\target\wheels"
+$Root = Split-Path $PSScriptRoot   # the repository, this script's parent
+$export = "$Root\target\wheels-src"
+$wheels = "$Root\target\wheels"
 if ($Publish) {   # from the release tools' venv, native.ps1's by the same path
-    $tools = "$PSScriptRoot\target\pytools\" + (python -c 'import sys, sysconfig; print(sysconfig.get_platform(), *sys.version_info[:2], sep=chr(45))')
+    $tools = "$Root\target\pytools\" + (python -c 'import sys, sysconfig; print(sysconfig.get_platform(), *sys.version_info[:2], sep=chr(45))')
     if (-not (Test-Path "$tools\Scripts\twine.exe")) {
         if (Test-Path $tools) { Remove-Item -Recurse -Force $tools }   # a half-made venv, as native.ps1's Ensure-Tools
         python -m venv $tools; if ($LASTEXITCODE) { throw "venv failed" }
         & "$tools\Scripts\pip" install -q twine; if ($LASTEXITCODE) { throw "pip install twine failed" }
     }
-    $commit = git -C $PSScriptRoot rev-parse "$Ref^{commit}"; if ($LASTEXITCODE) { throw "no commit $Ref" }
+    $commit = git -C $Root rev-parse "$Ref^{commit}"; if ($LASTEXITCODE) { throw "no commit $Ref" }
     foreach ($w in Get-ChildItem "$wheels\*.whl") {   # git archive wrote its commit into the package's "built from"
         $init = & "$env:SystemRoot\System32\tar.exe" -xOf $w.FullName "$($w.Name.Split('-')[0])/__init__.py"
         if (-not ($init -match "built from $commit")) { throw "$($w.Name) is not built from $Ref, $commit" }
@@ -26,7 +27,7 @@ if ($Publish) {   # from the release tools' venv, native.ps1's by the same path
 foreach ($stale in $export, "$export.tar") { if (Test-Path $stale) { Remove-Item -Recurse -Force $stale } }
 New-Item -ItemType Directory -Force $export, $wheels | Out-Null
 # the files as committed: Git for Windows would hand the archive CRLF line ends
-git -C $PSScriptRoot -c core.autocrlf=false archive -o "$export.tar" $Ref; if ($LASTEXITCODE) { throw "git archive failed" }
+git -C $Root -c core.autocrlf=false archive -o "$export.tar" $Ref; if ($LASTEXITCODE) { throw "git archive failed" }
 # Windows' own tar: a Git usr\bin on the PATH brings GNU tar, which reads C:\ as a remote host
 & "$env:SystemRoot\System32\tar.exe" -xf "$export.tar" -C $export; if ($LASTEXITCODE) { throw "tar failed" }
 & "$export\toknroll\toknroll-native\build.ps1" library check check-wheel
