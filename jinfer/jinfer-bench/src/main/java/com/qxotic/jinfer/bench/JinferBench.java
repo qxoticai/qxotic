@@ -177,7 +177,7 @@ public final class JinferBench {
                 caps.add(capabilities(bench, name, p > 0 ? p : 512, Math.max(n, 16), media));
         }
         printTable(rows);
-        printCaps(caps);
+        if (runCapabilities) printCaps(caps);
     }
 
     /**
@@ -560,18 +560,21 @@ public final class JinferBench {
     private record Row(String model, int threads, String test, double mean, double stddev) {}
 
     private static void printTable(List<Row> rows) {
-        int w = rows.stream().mapToInt(r -> r.model.length()).max().orElse(5);
-        w = Math.max(w, "model".length());
-        String fmt = "| %-" + w + "s | %7s | %-6s | %16s |%n";
+        List<String> ts =
+                rows.stream().map(r -> String.format("%.2f ± %.2f", r.mean, r.stddev)).toList();
+        int wm =
+                Math.max(
+                        "model".length(),
+                        rows.stream().mapToInt(r -> r.model.length()).max().orElse(0));
+        int wt = Math.max(6, rows.stream().mapToInt(r -> r.test.length()).max().orElse(0));
+        int ws = Math.max(16, ts.stream().mapToInt(String::length).max().orElse(0));
+        String fmt = "| %-" + wm + "s | %7s | %-" + wt + "s | %" + ws + "s |%n";
         System.out.printf(fmt, "model", "threads", "test", "t/s");
-        System.out.printf(fmt, "-".repeat(w), "------:", "------", "---------------:");
-        for (Row r : rows)
-            System.out.printf(
-                    fmt,
-                    r.model,
-                    r.threads,
-                    r.test,
-                    String.format("%.2f ± %.2f", r.mean, r.stddev));
+        System.out.printf(fmt, "-".repeat(wm), "------:", "-".repeat(wt), "-".repeat(ws - 1) + ":");
+        for (int i = 0; i < rows.size(); i++) {
+            Row r = rows.get(i);
+            System.out.printf(fmt, r.model, r.threads, r.test, ts.get(i));
+        }
     }
 
     private static void printCaps(List<CapRow> rows) {
