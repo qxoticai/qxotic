@@ -424,6 +424,7 @@ final class Options {
             if (ModelStore.isRef(ref)
                     || lower.startsWith("http://")
                     || lower.startsWith("https://")) continue;
+            if (!java.nio.file.Files.exists(Path.of(ref))) throw new IOException(noSuchModel(ref));
             requireFile(Path.of(ref));
         }
         return resolve.get();
@@ -438,6 +439,12 @@ final class Options {
 
     private static String noSuchFile(Object path) {
         return "no such file: '" + path + "'";
+    }
+
+    /** A missing model: a bare word with no path in it was most likely half a reference. */
+    static String noSuchModel(String value) {
+        boolean word = value.chars().noneMatch(c -> c == '/' || c == '\\' || c == '.');
+        return noSuchFile(value) + (word ? "; a model reference is owner/repo[:quant]" : "");
     }
 
     Sampling sampling(LoadedModel.SamplingDefaults defaults) {
@@ -490,8 +497,10 @@ final class Options {
                 && (failure.getMessage() == null
                         || failure.getMessage().equals(failure.getCause().toString())))
             failure = failure.getCause();
-        if (failure instanceof UncheckedIOException e)
-            return e.getMessage() + ": " + rootMessage(e.getCause());
+        if (failure instanceof UncheckedIOException e) {
+            String cause = rootMessage(e.getCause()); // once: a message may already say it
+            return e.getMessage().contains(cause) ? e.getMessage() : e.getMessage() + ": " + cause;
+        }
         // NIO's message is the bare path when the OS gave no reason; say what went wrong with it
         if (failure instanceof FileSystemException e && e.getReason() == null)
             return switch (e) {
@@ -606,7 +615,7 @@ final class Options {
                   pull          download model files
                   list          show cached models
                   find          print the path of a cached model
-                  remove        remove cached models
+                  remove        delete cached models
                   cache-info    inspect a prompt cache
 
                 Examples:

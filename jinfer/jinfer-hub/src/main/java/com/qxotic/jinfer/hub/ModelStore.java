@@ -555,9 +555,9 @@ public final class ModelStore {
      * {@link #resolve} without the download: the cached file this ref or path names, or empty. Same
      * lookup order as resolve - jinfer's own cache first, then the HuggingFace hub cache - so a hit
      * here is exactly the file resolve would return without fetching. Never touches the network,
-     * which is what makes it safe to call from a test or a {@code list} command. Plain URLs are
-     * refused: they carry no checksum, so finding one in the cache would vouch for bytes nothing
-     * verified.
+     * which is what makes it safe to call from a test or a {@code list} command. A browser URL of a
+     * known host is the ref it spells; a plain URL is refused: it carries no checksum, so finding
+     * one in the cache would vouch for bytes nothing verified.
      */
     public Optional<Path> find(String pathOrRef) {
         if (ModelRef.isRef(pathOrRef)) {
@@ -568,8 +568,11 @@ public final class ModelStore {
             }
         }
         if (isHttpUrl(pathOrRef)) {
+            String ref = repositoryRef(URI.create(pathOrRef));
+            if (ref != null) return find(ref);
             throw new IllegalArgumentException(
-                    "plain URLs can only be resolved (they carry no checksum): " + pathOrRef);
+                    "a plain URL is not looked up offline, as it carries no checksum: "
+                            + pathOrRef);
         }
         return Optional.ofNullable(localFile(pathOrRef));
     }
@@ -1031,7 +1034,7 @@ public final class ModelStore {
      */
     static String why(IOException e) {
         if (e instanceof AccessDeniedException refused && refused.getReason() == null)
-            return refused.getFile() + ": permission denied";
+            return "permission denied: '" + refused.getFile() + "'";
         return e.getMessage() != null ? e.getMessage() : e.getClass().getSimpleName();
     }
 

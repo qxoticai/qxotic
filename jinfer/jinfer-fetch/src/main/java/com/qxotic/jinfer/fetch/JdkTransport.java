@@ -2,10 +2,12 @@ package com.qxotic.jinfer.fetch;
 
 import java.io.IOException;
 import java.io.InputStream;
+import java.net.ConnectException;
 import java.net.URI;
 import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
+import java.nio.channels.UnresolvedAddressException;
 import java.time.Duration;
 import java.util.List;
 import java.util.Map;
@@ -38,6 +40,20 @@ public final class JdkTransport implements Transport {
         HttpResponse<InputStream> response;
         try {
             response = CLIENT.send(request.build(), HttpResponse.BodyHandlers.ofInputStream());
+        } catch (ConnectException e) {
+            // the JDK names neither the host nor the reason, only a channel exception as the cause
+            String where = uri.getHost() + (uri.getPort() < 0 ? "" : ":" + uri.getPort());
+            boolean unknownHost = false;
+            for (Throwable c = e; c != null; c = c.getCause()) {
+                unknownHost |= c instanceof UnresolvedAddressException;
+            }
+            ConnectException named =
+                    new ConnectException(
+                            (unknownHost ? "cannot find host " : "cannot connect to ")
+                                    + where
+                                    + (e.getMessage() == null ? "" : ": " + e.getMessage()));
+            named.initCause(e);
+            throw named;
         } catch (InterruptedException e) {
             Thread.currentThread().interrupt();
             throw new IOException("interrupted while fetching " + uri, e);

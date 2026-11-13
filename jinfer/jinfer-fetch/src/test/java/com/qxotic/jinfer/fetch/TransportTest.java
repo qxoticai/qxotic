@@ -127,6 +127,19 @@ class TransportTest {
         }
     }
 
+    /** The JDK names neither the host nor the reason of a refused connection; we do. */
+    @Test
+    void aRefusedConnectionNamesTheHost() throws IOException {
+        int closed;
+        try (ServerSocket socket = new ServerSocket(0, 1, InetAddress.getLoopbackAddress())) {
+            closed = socket.getLocalPort();
+        }
+        URI uri = URI.create("http://127.0.0.1:" + closed + "/model.gguf");
+        var refused =
+                assertThrows(IOException.class, () -> new JdkTransport().get(uri, Map.of(), T));
+        assertEquals("cannot connect to 127.0.0.1:" + closed, refused.getMessage());
+    }
+
     @Test
     void aStatusIsAStatusNotAnException() throws IOException {
         for (Transport t : transports()) {

@@ -187,7 +187,14 @@ class ModelRefTest {
         }
         var emptyRevision =
                 assertThrows(IllegalArgumentException.class, () -> ModelRef.parse("owner/repo:@"));
-        assertEquals("empty revision", emptyRevision.getMessage());
+        assertEquals(
+                "empty revision after '@' in 'owner/repo:@': name a branch, tag or commit",
+                emptyRevision.getMessage());
+        var emptyQuant =
+                assertThrows(IllegalArgumentException.class, () -> ModelRef.parse("owner/repo:"));
+        assertEquals(
+                "empty quant after ':' in 'owner/repo:': name one, as owner/repo:Q4_K_M",
+                emptyQuant.getMessage());
         var refsRevision =
                 assertThrows(
                         IllegalArgumentException.class,

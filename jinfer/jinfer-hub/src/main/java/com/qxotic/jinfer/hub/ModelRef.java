@@ -268,7 +268,9 @@ public record ModelRef(
         int repositoryColon = repository.indexOf(':');
         if (revisionAt >= 0) {
             int revisionEnd = repositoryColon > revisionAt ? repositoryColon : repository.length();
-            require(revisionEnd > revisionAt + 1, "empty revision");
+            require(
+                    revisionEnd > revisionAt + 1,
+                    "empty revision after '@' in '" + ref + "': name a branch, tag or commit");
             require(repositoryColon < 0 || revisionAt < repositoryColon, shape(ref));
             // a revision is one segment: refs/pr/N and refs/convert/... are not it, nor is what
             // follows
@@ -285,6 +287,9 @@ public record ModelRef(
         int colon = last.lastIndexOf(':');
         if (colon >= 0) {
             quant = last.substring(colon + 1);
+            require(
+                    !quant.isBlank(),
+                    "empty quant after ':' in '" + ref + "': name one, as owner/repo:Q4_K_M");
             parts.set(parts.size() - 1, last.substring(0, colon));
             require(!parts.get(parts.size() - 1).isEmpty(), shape(ref));
         }

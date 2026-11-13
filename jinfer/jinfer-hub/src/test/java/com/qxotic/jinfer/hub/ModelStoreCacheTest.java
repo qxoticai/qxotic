@@ -300,7 +300,7 @@ class ModelStoreCacheTest {
         try {
             var refused = assertThrows(UncheckedIOException.class, () -> Hub.cached(hub));
             assertTrue(
-                    refused.getMessage().endsWith(hub + ": permission denied"),
+                    refused.getMessage().endsWith("permission denied: '" + hub + "'"),
                     refused.getMessage());
             assertFalse(refused.getMessage().contains("java."), refused.getMessage());
         } finally {

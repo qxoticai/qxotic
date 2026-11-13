@@ -88,6 +88,38 @@ class HubTest {
         assertFalse(Files.exists(Path.of(paths.get(1))));
     }
 
+    /** find answers what -m would load: a browser URL too, and a bare word gets the ref shape. */
+    @Test
+    void findTakesWhatTheModelOptionTakes() throws Exception {
+        Path file = dir.resolve("hf.co/acme/m/m-Q8_0.gguf");
+        Files.createDirectories(file.getParent());
+        Files.writeString(file, "GGUF");
+        var store = ModelStore.of(dir);
+        var found = new CliFixtures.Capture("");
+        String url = "https://huggingface.co/acme/m/blob/main/m-Q8_0.gguf";
+        assertEquals(0, Main.run(new String[] {"find", url}, found.io, store), found.err());
+        assertEquals(file.toString(), found.out().strip());
+
+        var word = new CliFixtures.Capture("");
+        assertEquals(1, Main.run(new String[] {"find", "acme", "acme:"}, word.io, store));
+        assertTrue(
+                word.err()
+                        .contains("no such file: 'acme'; a model reference is owner/repo[:quant]"),
+                word.err());
+        assertTrue(word.err().contains("acme:"), word.err());
+    }
+
+    /** A name keeps what follows the model's own name, not just the shortest quant that loads. */
+    @Test
+    void aNameKeepsTheWholeQuant() throws Exception {
+        Path file = dir.resolve("hf.co/acme/Solo-GGUF/Solo-UD-Q4_K_M.gguf");
+        Files.createDirectories(file.getParent());
+        Files.writeString(file, "GGUF");
+        assertEquals(
+                "acme/Solo-GGUF:UD-Q4_K_M",
+                Hub.name(ModelStore.of(dir), "hf.co/acme/Solo-GGUF/Solo-UD-Q4_K_M.gguf"));
+    }
+
     /** A repository holding several cached files is never a guess: both commands list them. */
     @Test
     void aRepositoryWithSeveralCachedFilesAsksForOne() throws Exception {
@@ -96,15 +128,6 @@ class HubTest {
             Files.createDirectories(file.getParent());
             Files.writeString(file, "GGUF");
         }
-        // one file: its tail past the model's name, not the shortest quant that also loads it
-        Path qad = dir.resolve("hf.co/acme/Solo-GGUF/Solo-UD-Q4_K_M.gguf");
-        Files.createDirectories(qad.getParent());
-        Files.writeString(qad, "GGUF");
-        assertEquals(
-                "acme/Solo-GGUF:UD-Q4_K_M",
-                Hub.name(ModelStore.of(dir), "hf.co/acme/Solo-GGUF/Solo-UD-Q4_K_M.gguf"));
-        Files.delete(qad);
-        Files.delete(qad.getParent());
         var store = ModelStore.of(dir);
         assertEquals("acme/m:Q8_0", Hub.name(store, "hf.co/acme/m/m-Q8_0.gguf"));
         assertEquals(

@@ -29,13 +29,8 @@ final class Hub {
 
     static void validate(Options options) {
         switch (options.command) {
-            case "pull" ->
-                    Options.require(
-                            !options.operands.isEmpty()
-                                    && options.operands.stream().noneMatch(String::isBlank),
-                            "pull needs at least one model reference");
             case "list" -> Options.require(options.operands.isEmpty(), "list takes no arguments");
-            case "find", "remove" ->
+            case "pull", "find", "remove" ->
                     Options.require(
                             !options.operands.isEmpty()
                                     && options.operands.stream().noneMatch(String::isBlank),
@@ -95,15 +90,15 @@ final class Hub {
         for (String ref : refs) {
             try {
                 Optional<Path> file = store.find(ref);
-                List<String> siblings = cachedFrom(store, ref);
-                if (isRepository(ref) && siblings.size() > 1) {
+                List<String> choices = isRepository(ref) ? cachedFrom(store, ref) : List.of();
+                if (choices.size() > 1) {
                     err.println(
                             "jinfer remove: "
                                     + ref
                                     + " holds "
-                                    + siblings.size()
+                                    + choices.size()
                                     + " cached files; name the one to remove:"
-                                    + menu(siblings));
+                                    + menu(choices));
                 } else if (file.isEmpty()) {
                     err.println("jinfer remove: " + miss(store, ref));
                 } else {
@@ -129,7 +124,7 @@ final class Hub {
 
     /** Why nothing was found, naming what the repository does have cached, if anything. */
     private static String miss(ModelStore store, String ref) {
-        if (!ModelStore.isRef(ref)) return "no such file: " + ref;
+        if (!ModelStore.isRef(ref)) return Options.noSuchModel(ref);
         List<String> cached = cachedFrom(store, ref);
         return "not cached: "
                 + ref
@@ -277,7 +272,8 @@ final class Hub {
                               -f, --force  download again even when already cached
 
                             Prints local paths. A failed refresh preserves the previous cached file.
-                            Mutable references require network access, even when cached.
+                            Mutable references require network access, even when cached;
+                            'jinfer find' prints a cached path without it.
                             """;
                     case "list" ->
                             """
@@ -286,7 +282,7 @@ final class Hub {
                             """;
                     case "find" ->
                             """
-                            jinfer find - print the cached file a model reference loads
+                            jinfer find - print the path of a cached model
                             Usage: jinfer find <ref>...
                             Example: llama-server -m "$(jinfer find LiquidAI/LFM2.5-350M-GGUF:Q8_0)"
 
@@ -294,7 +290,7 @@ final class Hub {
                             """;
                     case "remove" ->
                             """
-                            jinfer remove - remove downloaded models from the cache
+                            jinfer remove - delete cached models
                             Usage: jinfer remove <ref>...
                             Example: jinfer remove LiquidAI/LFM2.5-350M-GGUF:Q8_0
 
