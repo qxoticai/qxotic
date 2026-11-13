@@ -37,7 +37,7 @@ The two JVM flags are the ones the native image is built with: the Vector API mo
 Use no other flags for a reported number.
 
 The output is one header line and two tables.
-The following is a real run on a 16-core Zen 5 desktop, on the JVM and then on the native image:
+The following is a real run of `LiquidAI/LFM2.5-350M-GGUF:Q8_0` on a 16-core Zen 5 desktop, on the JVM and then on the native image:
 
 ```text
 jinfer-bench 0.4.0-rc1 | runtime: GraalVM JIT | jam: native, vector, scalar | threads: 16 (engine default)
