@@ -227,9 +227,9 @@ final class Hub {
 
     /**
      * Removes one snapshot entry from the hub cache, and its blob when this was the last snapshot
-     * linking it - the same care llama.cpp takes, because a blob may serve many snapshots. Once the
-     * repository holds no file but its refs, the whole folder goes, as {@code hf cache delete}
-     * leaves it.
+     * linking it - the same care llama.cpp takes, because a blob may serve many snapshots. A ref
+     * left naming an emptied snapshot goes with it, and once the repository holds no file but its
+     * refs, the whole folder goes, as {@code hf cache delete} leaves it.
      */
     static boolean remove(Path cached, Path hubCache) throws IOException {
         Path repo = hubCache.resolve(hubCache.relativize(cached).getName(0));
@@ -240,6 +240,17 @@ final class Hub {
         }
         ModelStore.pruneEmpty(cached.getParent(), repo);
         ModelStore.pruneEmpty(repo.resolve("blobs"), repo);
+        // a version left with no file: a ref naming it would name nothing
+        Path snapshot = repo.resolve(repo.relativize(cached).subpath(0, 2));
+        if (Files.notExists(snapshot)) {
+            for (var ref : refs(repo).entrySet()) {
+                if (ref.getValue().equals(snapshot.getFileName().toString())) {
+                    Path file = repo.resolve("refs").resolve(ref.getKey());
+                    Files.deleteIfExists(file);
+                    ModelStore.pruneEmpty(file.getParent(), repo);
+                }
+            }
+        }
         try (var children = Files.list(repo)) {
             if (children.anyMatch(child -> !child.getFileName().toString().equals("refs")))
                 return true;

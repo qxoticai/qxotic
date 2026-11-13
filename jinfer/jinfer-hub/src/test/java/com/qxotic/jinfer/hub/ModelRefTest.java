@@ -451,6 +451,32 @@ class ModelRefTest {
     }
 
     @Test
+    void removingAVersionsLastFileTakesTheRefsNamingIt(@TempDir Path hub) throws IOException {
+        Path repo = hub.resolve("models--a--b");
+        String main = "a".repeat(40), dev = "b".repeat(40);
+        Hub.writeRef(repo.resolve("refs/main"), main);
+        Hub.writeRef(repo.resolve("refs/dev"), dev);
+        Hub.writeRef(repo.resolve("refs/pr/1"), dev);
+        Path onMain = repo.resolve("snapshots/" + main + "/m-Q8_0.gguf");
+        Path onDev = repo.resolve("snapshots/" + dev + "/m-Q4_0.gguf");
+        for (Path file : List.of(onMain, onDev)) {
+            Files.createDirectories(file.getParent());
+            Files.writeString(file, "weights");
+        }
+
+        assertTrue(Hub.remove(onDev, hub));
+        assertFalse(Files.exists(repo.resolve("refs/dev")), "dev named only what is gone");
+        assertFalse(Files.exists(repo.resolve("refs/pr")), "so did pr/1, and its folder");
+        assertTrue(Files.exists(repo.resolve("refs/main")), "main still names its version");
+        assertEquals(
+                List.of("hf.co/a/b/m-Q8_0.gguf"),
+                Hub.cached(hub).stream().map(ModelStore.Cached::ref).toList());
+
+        assertTrue(Hub.remove(onMain, hub));
+        assertFalse(Files.exists(repo), "nothing left: the repository folder goes");
+    }
+
+    @Test
     void removeSparesABlobStillLinkedElsewhereThenTheFolder(@TempDir Path hub) throws IOException {
         Path repo = hub.resolve("models--a--b");
         Hub.writeRef(repo.resolve("refs/main"), "d".repeat(40));
