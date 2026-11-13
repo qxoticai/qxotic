@@ -43,7 +43,7 @@ class ModelStoreCacheTest {
     @Test
     void cachedRendersRefsForKnownHostsAndPathsForTheRest(@TempDir Path root) throws IOException {
         Path model = root.resolve("hf.co/acme/thing/thing-Q8_0.gguf");
-        Path foreign = root.resolve("odd-tree/file.bin");
+        Path foreign = root.resolve("odd-tree/file.gguf");
         Files.createDirectories(model.getParent());
         Files.createDirectories(foreign.getParent());
         Files.writeString(model, "weights");
@@ -52,6 +52,9 @@ class ModelStoreCacheTest {
         Files.writeString(model.resolveSibling("thing-Q8_0.gguf.part"), "half");
         Files.writeString(model.resolveSibling("thing-Q8_0.gguf.part.etag"), "\"v1\"");
         Files.writeString(root.resolve("CACHEDIR.TAG"), "tag");
+        Files.createDirectories(model.resolveSibling("quants"));
+        Files.writeString(model.resolveSibling("quants/q8_0"), "thing-Q8_0.gguf");
+        Files.writeString(foreign.resolveSibling("tokenizer.json"), "{}");
 
         List<ModelStore.Cached> mine =
                 ModelStore.of(root).cached().stream()
@@ -64,7 +67,7 @@ class ModelStoreCacheTest {
                         new ModelStore.Cached("hf.co/acme/thing/thing-Q8_0.gguf", 7)),
                 mine,
                 "a ref when the first segment is a known host, the absolute path otherwise,"
-                        + " sorted, with scaffolding left out");
+                        + " sorted, GGUFs only");
     }
 
     /** One directory the walk cannot enter costs the listing nothing but that directory. */

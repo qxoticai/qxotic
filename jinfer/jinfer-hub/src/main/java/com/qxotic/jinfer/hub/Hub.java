@@ -8,11 +8,15 @@ import java.nio.file.Path;
 import java.nio.file.StandardCopyOption;
 import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.Collection;
 import java.util.Comparator;
 import java.util.HashSet;
 import java.util.List;
+import java.util.Map;
 import java.util.Set;
+import java.util.TreeMap;
 import java.util.concurrent.atomic.AtomicLong;
+import java.util.function.BiConsumer;
 
 /**
  * The shared HuggingFace hub cache ({@code models--owner--repo/blobs/<sha256>} plus a {@code
@@ -24,18 +28,6 @@ import java.util.concurrent.atomic.AtomicLong;
 final class Hub {
 
     private Hub() {}
-
-    /**
-     * The snapshot directory this ref names in the hub cache, or null. Honors the same variables
-     * every HF client reads, and resolves a branch through {@code refs/} exactly as they do - a ref
-     * pinned to a commit needs no indirection at all.
-     */
-    static Path snapshot(ModelRef ref, Path hubCache) throws IOException {
-        Path located = cachedPath(ref, hubCache);
-        if (located == null) return null;
-        if (Files.isRegularFile(located)) return located.getParent();
-        return Files.isDirectory(located) ? located : null;
-    }
 
     /** The exact requested path, before deciding whether it names a file or a folder. */
     static Path cachedPath(ModelRef ref, Path hubCache) throws IOException {
@@ -72,44 +64,28 @@ final class Hub {
                 : Path.of(ModelStore.home(), ".cache", "huggingface", "hub");
     }
 
-    /** GGUFs in the hub cache's CURRENT snapshots, as refs. */
+    /** GGUFs in the hub cache's CURRENT snapshots ({@code main}'s, else a branch's), as refs. */
     static List<ModelStore.Cached> cached(Path hubCache) {
-        if (!Files.isDirectory(hubCache)) {
-            return List.of();
-        }
-        List<ModelStore.Cached> refs = new ArrayList<>();
-        try (var repos = Files.list(hubCache)) {
-            for (Path repo : repos.filter(Files::isDirectory).toList()) {
-                String repoId = repoId(repo);
-                if (repoId == null) {
-                    continue;
-                }
-                String commit = currentCommit(repo);
-                Path snapshot = commit == null ? null : repo.resolve("snapshots").resolve(commit);
-                if (snapshot == null || !Files.isDirectory(snapshot)) {
-                    continue;
-                }
-                ModelStore.visitFiles(
+        List<ModelStore.Cached> found = new ArrayList<>();
+        try {
+            for (Path repo : repos(hubCache)) {
+                Map<String, String> refs = refs(repo);
+                String commit =
+                        refs.getOrDefault("main", refs.values().stream().findFirst().orElse(null));
+                if (commit == null) continue;
+                Path snapshot = repo.resolve("snapshots").resolve(commit);
+                visitGgufs(
                         snapshot,
-                        (file, attrs) -> {
-                            if (!ModelStore.isGguf(file.getFileName().toString())) return;
-                            StringBuilder ref = new StringBuilder("hf.co/").append(repoId);
-                            for (Path segment : snapshot.relativize(file)) {
-                                ref.append('/').append(segment);
-                            }
-                            refs.add(new ModelStore.Cached(ref.toString(), attrs.size()));
-                        });
+                        (file, size) ->
+                                found.add(
+                                        new ModelStore.Cached(
+                                                ref(repo, "", snapshot, file), size)));
             }
         } catch (IOException e) {
-            throw new UncheckedIOException(
-                    "could not read the HuggingFace hub cache at "
-                            + hubCache
-                            + ": "
-                            + ModelStore.why(e),
-                    e);
+            throw unreadable(hubCache, e);
         }
-        refs.sort(Comparator.comparing(ModelStore.Cached::ref)); // a walk's order is the disk's
-        return refs;
+        found.sort(Comparator.comparing(ModelStore.Cached::ref)); // a walk's order is the disk's
+        return found;
     }
 
     /**
@@ -119,18 +95,12 @@ final class Hub {
      * what removing all of them frees.
      */
     static List<ModelStore.Cached> detached(Path hubCache) {
-        if (!Files.isDirectory(hubCache)) {
-            return List.of();
-        }
         List<ModelStore.Cached> found = new ArrayList<>();
-        try (var repos = Files.list(hubCache)) {
-            for (Path repo : repos.filter(Files::isDirectory).toList()) {
-                String repoId = repoId(repo);
+        try {
+            for (Path repo : repos(hubCache)) {
                 Path snapshots = repo.resolve("snapshots");
-                if (repoId == null || !Files.isDirectory(snapshots)) {
-                    continue;
-                }
-                Set<String> named = namedCommits(repo);
+                if (!Files.isDirectory(snapshots)) continue;
+                Collection<String> named = refs(repo).values();
                 List<Path> all;
                 try (var listing = Files.list(snapshots)) {
                     all = listing.toList();
@@ -144,33 +114,28 @@ final class Hub {
                 for (Path snapshot : all) {
                     String commit = snapshot.getFileName().toString();
                     if (named.contains(commit)) continue;
-                    ModelStore.visitFiles(
+                    visitGgufs(
                             snapshot,
-                            (file, attrs) -> {
-                                if (!ModelStore.isGguf(file.getFileName().toString())) return;
-                                StringBuilder ref =
-                                        new StringBuilder("hf.co/")
-                                                .append(repoId)
-                                                .append('@')
-                                                .append(commit);
-                                for (Path segment : snapshot.relativize(file)) {
-                                    ref.append('/').append(segment);
-                                }
-                                long freed = counted.add(real(file)) ? attrs.size() : 0;
-                                found.add(new ModelStore.Cached(ref.toString(), freed));
-                            });
+                            (file, size) ->
+                                    found.add(
+                                            new ModelStore.Cached(
+                                                    ref(repo, "@" + commit, snapshot, file),
+                                                    counted.add(real(file)) ? size : 0)));
                 }
             }
         } catch (IOException e) {
-            throw new UncheckedIOException(
-                    "could not read the HuggingFace hub cache at "
-                            + hubCache
-                            + ": "
-                            + ModelStore.why(e),
-                    e);
+            throw unreadable(hubCache, e);
         }
         found.sort(Comparator.comparing(ModelStore.Cached::ref)); // a walk's order is the disk's
         return found;
+    }
+
+    /** The {@code models--owner--repo} folders of the hub cache. */
+    private static List<Path> repos(Path hubCache) throws IOException {
+        if (!Files.isDirectory(hubCache)) return List.of();
+        try (var folders = Files.list(hubCache)) {
+            return folders.filter(f -> Files.isDirectory(f) && repoId(f) != null).toList();
+        }
     }
 
     /** {@code owner/repo} of a {@code models--owner--repo} folder, or null for any other. */
@@ -183,22 +148,54 @@ final class Hub {
         return folder.substring("models--".length(), cut) + "/" + folder.substring(cut + 2);
     }
 
-    /** Every commit a file in the repo's {@code refs/} names, branches and tags alike. */
-    private static Set<String> namedCommits(Path repo) throws IOException {
-        Set<String> named = new HashSet<>();
-        Path refs = repo.resolve("refs");
-        if (Files.isDirectory(refs)) {
-            ModelStore.visitFiles(refs, (entry, attrs) -> named.add(readCommit(entry)));
+    /** Each ref under {@code refs/} (a branch, a tag, {@code pr/1}) and its commit, by name. */
+    private static Map<String, String> refs(Path repo) throws IOException {
+        Map<String, String> refs = new TreeMap<>();
+        Path dir = repo.resolve("refs");
+        if (Files.isDirectory(dir)) {
+            ModelStore.visitFiles(
+                    dir,
+                    (file, attrs) -> {
+                        try {
+                            String commit = Files.readString(file, StandardCharsets.UTF_8).strip();
+                            if (isCommit(commit)) refs.put(dir.relativize(file).toString(), commit);
+                        } catch (IOException unreadable) {
+                            // a ref no one can read names nothing
+                        }
+                    });
         }
-        return named;
+        return refs;
     }
 
-    private static String readCommit(Path ref) {
-        try {
-            return Files.readString(ref, StandardCharsets.UTF_8).strip();
-        } catch (IOException unreadable) {
-            return "";
+    /** Each GGUF under {@code snapshot}, with its size (the blob's, through the link). */
+    private static void visitGgufs(Path snapshot, BiConsumer<Path, Long> onGguf)
+            throws IOException {
+        if (!Files.isDirectory(snapshot)) return;
+        ModelStore.visitFiles(
+                snapshot,
+                (file, attrs) -> {
+                    if (ModelStore.isGguf(file.getFileName().toString())) {
+                        onGguf.accept(file, attrs.size());
+                    }
+                });
+    }
+
+    /** {@code hf.co/owner/repo<at>/path} for {@code file} under {@code snapshot}. */
+    private static String ref(Path repo, String at, Path snapshot, Path file) {
+        StringBuilder ref = new StringBuilder("hf.co/").append(repoId(repo)).append(at);
+        for (Path segment : snapshot.relativize(file)) {
+            ref.append('/').append(segment);
         }
+        return ref.toString();
+    }
+
+    private static UncheckedIOException unreadable(Path hubCache, IOException e) {
+        return new UncheckedIOException(
+                "could not read the HuggingFace hub cache at "
+                        + hubCache
+                        + ": "
+                        + ModelStore.why(e),
+                e);
     }
 
     /** Where a snapshot entry's bytes live: its blob, or the entry itself when it is a copy. */
@@ -210,45 +207,20 @@ final class Hub {
         }
     }
 
-    /** The commit a repo's {@code refs/} names right now: {@code main} first, any branch else. */
-    private static String currentCommit(Path repo) throws IOException {
-        Path refs = repo.resolve("refs");
-        if (!Files.isDirectory(refs)) {
-            return null;
-        }
-        String fallback = null;
-        try (var entries = Files.list(refs)) {
-            for (Path entry : entries.filter(Files::isRegularFile).sorted().toList()) {
-                String commit = Files.readString(entry, StandardCharsets.UTF_8).strip();
-                if (!isCommit(commit)) {
-                    continue;
-                }
-                if (entry.getFileName().toString().equals("main")) {
-                    return commit;
-                }
-                if (fallback == null) {
-                    fallback = commit;
-                }
-            }
-        }
-        return fallback;
+    /** What a symbolic link points to, as an absolute path. */
+    private static Path target(Path link) throws IOException {
+        return link.getParent().resolve(Files.readSymbolicLink(link)).toAbsolutePath().normalize();
     }
 
     /**
      * Removes one snapshot entry from the hub cache, and its blob when this was the last snapshot
      * linking it - the same care llama.cpp takes, because a blob may serve many snapshots. Once the
      * repository holds no file but its refs, the whole folder goes, as {@code hf cache delete}
-     * leaves it. Package-visible for its test.
+     * leaves it.
      */
     static boolean remove(Path cached, Path hubCache) throws IOException {
         Path repo = hubCache.resolve(hubCache.relativize(cached).getName(0));
-        Path blob =
-                Files.isSymbolicLink(cached)
-                        ? cached.getParent()
-                                .resolve(Files.readSymbolicLink(cached))
-                                .toAbsolutePath()
-                                .normalize()
-                        : null;
+        Path blob = Files.isSymbolicLink(cached) ? target(cached) : null;
         if (!Files.deleteIfExists(cached)) return false;
         if (blob != null && Files.isRegularFile(blob) && !referenced(blob)) {
             Files.deleteIfExists(blob);
@@ -274,12 +246,7 @@ final class Hub {
         }
         try (var walk = Files.walk(snapshots)) {
             for (Path entry : walk.toList()) {
-                if (Files.isSymbolicLink(entry)
-                        && entry.getParent()
-                                .resolve(Files.readSymbolicLink(entry))
-                                .toAbsolutePath()
-                                .normalize()
-                                .equals(blob)) {
+                if (Files.isSymbolicLink(entry) && target(entry).equals(blob)) {
                     return true;
                 }
             }
@@ -288,30 +255,14 @@ final class Hub {
     }
 
     /**
-     * The commit this ref's revision names, or null when the repository's refs do not name it - and
-     * null only DOWNGRADES a download to the flat layout. The hub layout keys snapshots by commit,
-     * so joining it starts here; a ref already pinned to a commit needs no request.
-     */
-    static String commit(ModelRef ref, RepositorySource source) throws IOException {
-        String revision = ref.revisionOrDefault();
-        return isCommit(revision) ? revision : source.commitFor(ref);
-    }
-
-    /**
      * Downloads {@code file} into the hub cache the way every HF client lays it out: bytes in
      * {@code blobs/<sha256>} - the same sha256 the download already verifies - and a relative
      * symlink from {@code snapshots/<commit>/<path>}, so llama.cpp and {@code hf download} see the
      * file as their own. The store serializes revision selection and publication; payload
      * replacement also holds its destination lock. Other clients publish content-addressed blobs
-     * independently, so their complete bytes at the same hash are interchangeable.
+     * independently, so their complete bytes at the same hash are interchangeable. The caller holds
+     * the publication-key lock before resolving the revision.
      */
-    static Path fetchInto(
-            ModelRef ref, RemoteFile file, String commit, Path hubCache, RepositorySource source)
-            throws IOException {
-        return fetchInto(ref, file, commit, hubCache, source, false);
-    }
-
-    /** The caller holds the publication-key lock before resolving the revision. */
     static Path fetchInto(
             ModelRef ref,
             RemoteFile file,
@@ -367,12 +318,7 @@ final class Hub {
      * another snapshot's link. Publish before changing the branch ref (PULL-REFRESH.md).
      */
     static Path link(Path blob, Path dest) throws IOException {
-        if (Files.isSymbolicLink(dest)
-                && dest.getParent()
-                        .resolve(Files.readSymbolicLink(dest))
-                        .toAbsolutePath()
-                        .normalize()
-                        .equals(blob.toAbsolutePath().normalize())) {
+        if (Files.isSymbolicLink(dest) && target(dest).equals(blob.toAbsolutePath().normalize())) {
             return dest;
         }
         Files.createDirectories(dest.getParent());
@@ -433,16 +379,6 @@ final class Hub {
     }
 
     private static boolean isHex(String value, int length) {
-        if (value == null || value.length() != length) {
-            return false;
-        }
-        for (int i = 0; i < value.length(); i++) {
-            char c = value.charAt(i);
-            boolean hex = (c >= '0' && c <= '9') || (c >= 'a' && c <= 'f');
-            if (!hex) {
-                return false;
-            }
-        }
-        return true;
+        return value != null && value.matches("[0-9a-f]{" + length + "}");
     }
 }

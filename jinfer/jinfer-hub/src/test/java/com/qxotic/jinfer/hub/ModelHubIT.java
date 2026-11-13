@@ -111,10 +111,11 @@ class ModelHubIT {
         useCache(root);
         ModelRef ref = ModelRef.parse(REPO + ":Q8_0");
         HuggingFaceSource hf = new HuggingFaceSource();
-        String commit = Hub.commit(ref, hf);
+        String commit = hf.commitFor(ref);
         Assertions.assertNotNull(commit, "main resolves to a commit");
 
-        Path file = Hub.fetchInto(ref, ModelStore.standard().select(ref, hf), commit, hub, hf);
+        Path file =
+                Hub.fetchInto(ref, ModelStore.standard().select(ref, hf), commit, hub, hf, false);
         assertTrue(file.startsWith(hub));
         assertEquals(39390272L, Files.size(file));
         assertTrue(Files.isSymbolicLink(file), "a snapshot entry is a link into blobs/");
@@ -127,7 +128,7 @@ class ModelHubIT {
                         .strip());
 
         // the read side sees what the write side did: resolve() from here is a cache hit
-        assertEquals(file.getParent(), Hub.snapshot(ref, hub));
+        assertEquals(file.getParent(), Hub.cachedPath(ref, hub));
         assertTrue(
                 Hub.cached(hub).stream()
                         .anyMatch(

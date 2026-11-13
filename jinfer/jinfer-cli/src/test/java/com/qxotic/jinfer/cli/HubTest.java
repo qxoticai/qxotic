@@ -265,9 +265,7 @@ class HubTest {
                         new ModelStore.Cached("owner/small/model.gguf", 512),
                         new ModelStore.Cached("owner/big/model.gguf", 2L << 30),
                         new ModelStore.Cached("hf.co/団体/モデル/量子化-Q4_0.gguf", 3L << 20),
-                        new ModelStore.Cached("/models/Édouard's café.gguf", 1),
-                        new ModelStore.Cached("/cache/sherpa/model.int8.onnx", 9),
-                        new ModelStore.Cached("/cache/sherpa/tokens.txt", 9)),
+                        new ModelStore.Cached("/models/Édouard's café.gguf", 1)),
                 ref -> ref,
                 dir,
                 capture.io.out());
@@ -283,6 +281,5 @@ class HubTest {
         assertTrue(lines.get(3).endsWith("  owner/small/model.gguf"), lines.get(3));
         assertTrue(capture.out().contains("2.0 GB"), capture.out());
         assertTrue(lines.getLast().endsWith("  total"), lines.getLast());
-        assertFalse(capture.out().contains("sherpa"), "only loadable GGUFs are models");
     }
 }

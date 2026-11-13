@@ -133,7 +133,6 @@ public final class ModelStore {
         return new ModelStore(normalized, hubShare, List.of(sources));
     }
 
-    /** Where downloads land, and the first place a ref is looked for. */
     /**
      * Download progress for a host that renders it itself (a library embedding jinfer, a GUI).
      * {@code done} and {@code total} are bytes of the named file; a finished file reports {@code
@@ -149,6 +148,7 @@ public final class ModelStore {
         Fetch.Progress.listener = listener;
     }
 
+    /** Where downloads land, and the first place a ref is looked for. */
     public Path root() {
         return root;
     }
@@ -427,10 +427,8 @@ public final class ModelStore {
             throw new IllegalArgumentException(
                     "not a URL: '" + url + "': " + malformed.getMessage());
         }
-        String scheme = uri.getScheme() == null ? "" : uri.getScheme().toLowerCase(Locale.ROOT);
-        require(
-                scheme.equals("https") || scheme.equals("http"),
-                "cannot fetch '" + url + "': only http and https URLs are supported");
+        String scheme =
+                uri.getScheme().toLowerCase(Locale.ROOT); // http or https: isHttpUrl said so
         String host = uri.getHost();
         require(host != null, "the URL must include a host: " + url);
         int port = uri.getPort();
@@ -447,15 +445,7 @@ public final class ModelStore {
                 !path.isEmpty() && !path.endsWith("/") && !nameOf(path).isEmpty(),
                 "the URL must end in the file name, so the cache has something to call it: " + url);
 
-        Path dest = root.resolve(defaultPort ? host : host + "_" + port);
-        for (String segment : path.split("/")) {
-            if (!segment.isEmpty()) {
-                require(
-                        !segment.equals(".") && !segment.equals("..") && segment.indexOf('\\') < 0,
-                        "the URL would escape the cache: " + url);
-                dest = dest.resolve(segment);
-            }
-        }
+        Path dest = under(root.resolve(defaultPort ? host : host + "_" + port), path);
         if (policy == Policy.USE_CACHE && Files.isRegularFile(dest)) {
             return dest;
         }
@@ -654,15 +644,15 @@ public final class ModelStore {
     }
 
     /**
-     * Everything in the cache, named the way you would ASK for it again - the inverse of
-     * resolution, and the one thing a shell cannot do here: {@code find} knows the paths, but only
-     * this knows which of them are refs.
+     * Every cached GGUF, named the way you would ASK for it again - the inverse of resolution, and
+     * the one thing a shell cannot do here: {@code find} knows the paths, but only this knows which
+     * of them are refs.
      *
      * <p>A file under a known host is returned as its REF, rendered with {@code /} whatever the
      * platform separator is. Anything else - a tree predating the hub, a file fetched from a plain
      * URL whose scheme we did not record - is returned as its absolute PATH. Both forms are valid
      * {@code --model} arguments, and neither is guessed: this never invents a ref for a file that
-     * has none. Sorted, with the cache's own scaffolding left out.
+     * has none. Sorted; the cache's own scaffolding is never a GGUF.
      *
      * <p>GGUF files in the shared HuggingFace hub cache are listed too, as refs - they resolve
      * without a download, whichever tool put them there, and with the default root that tool may
@@ -705,9 +695,11 @@ public final class ModelStore {
             visitFiles(
                     root,
                     (file, attrs) -> {
-                        Path relative = root.relativize(file);
-                        if (isCachedModel(relative))
-                            found.add(new Cached(asRefOrPath(root, relative), attrs.size()));
+                        if (isGguf(file.getFileName().toString()))
+                            found.add(
+                                    new Cached(
+                                            asRefOrPath(root, root.relativize(file)),
+                                            attrs.size()));
                     });
         } catch (IOException e) {
             throw new UncheckedIOException(
@@ -750,7 +742,7 @@ public final class ModelStore {
 
     /** A ref when the first segment is a host we know, else the absolute path. Never a guess. */
     private static String asRefOrPath(Path root, Path relative) {
-        if (!ModelRef.isKnownHost(relative.getName(0).toString())) {
+        if (ModelRef.lookup(relative.getName(0).toString()) == null) {
             return root.resolve(relative).toString();
         }
         StringBuilder ref = new StringBuilder();
@@ -761,15 +753,6 @@ public final class ModelStore {
             ref.append(segment);
         }
         return ref.toString();
-    }
-
-    /** A cached model, as opposed to the cache's own bookkeeping. */
-    private static boolean isCachedModel(Path relative) {
-        String name = relative.getFileName().toString();
-        if (name.equals("CACHEDIR.TAG")) {
-            return false;
-        }
-        return !name.endsWith(".part") && !name.endsWith(".map") && !name.endsWith(".etag");
     }
 
     /**
@@ -793,15 +776,10 @@ public final class ModelStore {
                 pruneEmpty(cached.toAbsolutePath().getParent(), root);
                 return true;
             }
-            // the shared hub cache: jinfer writes there too now, so it may also remove there -
-            // but only THIS entry, and its blob only once nothing else in the repo links it.
-            // Everything beyond that belongs to other snapshots and other tools.
-            Path hub = Hub.cache().toAbsolutePath().normalize();
-            if (ref.host().equals(ModelRef.Host.HF.name)
-                    && cached.toAbsolutePath().normalize().startsWith(hub)) {
-                return Hub.remove(cached.toAbsolutePath().normalize(), hub);
-            }
-            return false;
+            // else the shared hub cache: only THIS entry, and its blob once nothing else links it;
+            // everything beyond that belongs to other snapshots and other tools
+            return Hub.remove(
+                    cached.toAbsolutePath().normalize(), Hub.cache().toAbsolutePath().normalize());
         } catch (IOException e) {
             throw new UncheckedIOException("could not remove " + ref + ": " + why(e), e);
         }
@@ -920,7 +898,7 @@ public final class ModelStore {
 
     private Path fetchPipeline(ModelRef ref, ModelSource source, Policy policy) throws IOException {
         String commit =
-                source instanceof RepositorySource repository ? Hub.commit(ref, repository) : null;
+                source instanceof RepositorySource repository ? repository.commitFor(ref) : null;
         ModelRef downloadRef =
                 commit == null
                         ? ref
@@ -1050,11 +1028,16 @@ public final class ModelStore {
 
     /** Whether a file can be made at {@code path}: its nearest existing folder is writable. */
     private static boolean writable(Path path) {
-        Path dir = path;
-        while (dir != null && !Files.exists(dir)) {
-            dir = dir.getParent();
-        }
+        Path dir = existing(path);
         return dir != null && Files.isWritable(dir);
+    }
+
+    /** {@code path}, or its nearest ancestor that exists; null when none does. */
+    private static Path existing(Path path) {
+        while (path != null && !Files.exists(path)) {
+            path = path.getParent();
+        }
+        return path;
     }
 
     /**
@@ -1195,7 +1178,7 @@ public final class ModelStore {
                             && !segment.equals("..")
                             && segment.indexOf('\\') < 0
                             && segment.indexOf('\0') < 0,
-                    "the repository listed a file that would escape the cache: " + repoRelative);
+                    "'" + repoRelative + "' would escape the cache");
             at = at.resolve(segment);
         }
         return at;
@@ -1306,17 +1289,14 @@ public final class ModelStore {
      * broken. {@code JINFER_SKIP_DISK_CHECK=1} opts out - some network mounts report their free
      * space as zero, the escape hatch huggingface_hub had to add for Azure.
      */
-    static void requireDiskSpace(Path dest, long size) { // package-visible for its test
+    static void requireDiskSpace(Path dest, long size) {
         if (size <= 0 || "1".equals(System.getenv("JINFER_SKIP_DISK_CHECK"))) {
             return;
         }
         FileStore store;
         long free;
         try {
-            Path existing = dest.getParent();
-            while (existing != null && !Files.exists(existing)) {
-                existing = existing.getParent();
-            }
+            Path existing = existing(dest.getParent());
             if (existing == null) return;
             store = Files.getFileStore(existing);
             free = store.getUsableSpace();

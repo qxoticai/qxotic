@@ -75,10 +75,11 @@ An invalid reference reports the information needed to correct it. A quant that 
 lists what the repository ships; a quant that matches several files prints a menu to pick from:
 
 ```text
-no Q8_0 in owner/repo. Available: repo-Q4_K_M.gguf, repo-Q5_K_M.gguf
-Q4_K matches 2 files in owner/repo - name the intended one:
-  repo-Q4_K_M.gguf
-  repo-Q4_K_S.gguf
+no Q9 in LiquidAI/LFM2.5-350M-GGUF; available: BF16, F16, Q4_0, Q4_K_M, Q5_K_M, Q6_K, Q8_0, QAD-Q4_0
+Q4 matches 3 files in LiquidAI/LFM2.5-350M-GGUF - name the one you want:
+  hf.co/LiquidAI/LFM2.5-350M-GGUF/LFM2.5-350M-Q4_0.gguf       209 MB
+  hf.co/LiquidAI/LFM2.5-350M-GGUF/LFM2.5-350M-QAD-Q4_0.gguf   209 MB
+  hf.co/LiquidAI/LFM2.5-350M-GGUF/LFM2.5-350M-Q4_K_M.gguf     219 MB
 ```
 
 An explicit quant never falls back to a different file.

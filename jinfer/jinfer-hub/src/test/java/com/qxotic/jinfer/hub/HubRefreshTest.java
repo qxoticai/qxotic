@@ -23,17 +23,17 @@ class HubRefreshTest {
             RepositorySource source = new HuggingFaceSource(URI.create(server.url("")));
             RemoteFile before = file("before"), after = file("after!");
             server.serve(url(OLD), "before").serve(url(NEW), "after!");
-            Path old = Hub.fetchInto(REF, before, OLD, cache, source);
+            Path old = Hub.fetchInto(REF, before, OLD, cache, source, false);
             assertEquals(OLD, Files.readString(refFile()));
-            Path fresh = Hub.fetchInto(REF, after, NEW, cache, source);
+            Path fresh = Hub.fetchInto(REF, after, NEW, cache, source, false);
             assertEquals(NEW, Files.readString(refFile()));
             assertEquals("after!", Files.readString(fresh));
             assertEquals("before", Files.readString(old));
-            assertEquals(fresh.getParent(), Hub.snapshot(REF, cache));
+            assertEquals(fresh.getParent(), Hub.cachedPath(REF, cache));
             int fetched = server.hits(url(NEW));
             Files.setLastModifiedTime(refFile(), FileTime.fromMillis(1_000));
             FileTime publishedAt = Files.getLastModifiedTime(refFile());
-            Hub.fetchInto(REF, after, NEW, cache, source);
+            Hub.fetchInto(REF, after, NEW, cache, source, false);
             assertEquals(fetched, server.hits(url(NEW)), "unchanged blob reused");
             assertEquals(
                     publishedAt,
@@ -49,10 +49,10 @@ class HubRefreshTest {
         try (FileServer server = FileServer.start()) {
             RepositorySource source = new HuggingFaceSource(URI.create(server.url("")));
             server.serve(url(OLD), "before").serve(url(NEW), "broken");
-            Path old = Hub.fetchInto(REF, file("before"), OLD, cache, source);
+            Path old = Hub.fetchInto(REF, file("before"), OLD, cache, source, false);
             assertThrows(
                     IOException.class,
-                    () -> Hub.fetchInto(REF, file("after!"), NEW, cache, source));
+                    () -> Hub.fetchInto(REF, file("after!"), NEW, cache, source, false));
             assertEquals(OLD, Files.readString(refFile()));
             assertEquals("before", Files.readString(old));
             // A non-empty directory makes atomic publication of the snapshot entry fail.
@@ -64,9 +64,9 @@ class HubRefreshTest {
             server.serve(url(NEW), "after!");
             assertThrows(
                     IOException.class,
-                    () -> Hub.fetchInto(REF, file("after!"), NEW, cache, source));
+                    () -> Hub.fetchInto(REF, file("after!"), NEW, cache, source, false));
             assertEquals(OLD, Files.readString(refFile()));
-            assertEquals(old.getParent(), Hub.snapshot(REF, cache));
+            assertEquals(old.getParent(), Hub.cachedPath(REF, cache));
             assertEquals("before", Files.readString(old));
         }
     }
@@ -96,8 +96,8 @@ class HubRefreshTest {
         try (FileServer server = FileServer.start()) {
             RepositorySource source = new HuggingFaceSource(URI.create(server.url("")));
             server.serve(url(OLD), "before").serve(url(NEW), "before");
-            Path first = Hub.fetchInto(REF, file("before"), OLD, cache, source);
-            Path second = Hub.fetchInto(REF, file("before"), NEW, cache, source);
+            Path first = Hub.fetchInto(REF, file("before"), OLD, cache, source, false);
+            Path second = Hub.fetchInto(REF, file("before"), NEW, cache, source, false);
             Path blob =
                     cache.resolve("models--refresh-test--model/blobs/" + file("before").sha256());
             Files.writeString(blob, "broken");
@@ -106,7 +106,7 @@ class HubRefreshTest {
             assertEquals("before", Files.readString(second));
             Files.delete(second);
             Files.createSymbolicLink(second, Path.of("../../blobs/missing"));
-            Hub.fetchInto(REF, file("before"), NEW, cache, source);
+            Hub.fetchInto(REF, file("before"), NEW, cache, source, false);
             assertEquals("before", Files.readString(second));
             assertEquals("before", Files.readString(first));
         }

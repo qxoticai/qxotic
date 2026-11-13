@@ -147,7 +147,7 @@ final class Hub {
         ModelRef repo = ModelRef.parse(ref);
         return store.cached().stream()
                 .map(ModelStore.Cached::ref)
-                .filter(c -> c.toLowerCase(Locale.ROOT).endsWith(".gguf") && isIn(c, repo))
+                .filter(c -> isIn(c, repo))
                 .map(c -> name(store, c))
                 .sorted(String.CASE_INSENSITIVE_ORDER)
                 .toList();
@@ -230,9 +230,7 @@ final class Hub {
     }
 
     /**
-     * The cached files {@code --model} or {@code --with} can name: GGUFs only, by {@code name},
-     * alphabetically. The cache directory is shared with whatever else wrote there (ONNX exports,
-     * tokenizer text), none of it loadable.
+     * The cached GGUFs {@code --model} or {@code --with} can name, by {@code name}, alphabetically.
      */
     static void list(
             List<ModelStore.Cached> cached,
@@ -241,7 +239,6 @@ final class Hub {
             PrintStream out) {
         List<ModelStore.Cached> models =
                 cached.stream()
-                        .filter(c -> c.ref().toLowerCase(Locale.ROOT).endsWith(".gguf"))
                         .map(c -> new ModelStore.Cached(name.apply(c.ref()), c.sizeBytes()))
                         .sorted(
                                 Comparator.comparing(

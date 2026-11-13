@@ -99,12 +99,6 @@ public record ModelRef(
             this.aliases = List.of(aliases);
         }
 
-        /** The host a ref names ({@link ModelRef#host()}), or null for a host this enum lacks. */
-        static Host byName(String name) {
-            for (Host host : values()) if (host.name.equals(name)) return host;
-            return null;
-        }
-
         /** The base URL, honoring this host's mirror variable ({@code HF_ENDPOINT} etc.). */
         String base() {
             String endpoint = System.getenv(endpointEnv);
@@ -125,11 +119,6 @@ public record ModelRef(
             }
         }
         return null;
-    }
-
-    /** Whether this is a host a ref may name - the first segment of every repository ref. */
-    static boolean isKnownHost(String name) {
-        return lookup(name) != null;
     }
 
     public ModelRef {
@@ -257,10 +246,7 @@ public record ModelRef(
             require(isBareRefShape(rest), shape(ref)); // host-less: hf.co carries it
             host = Host.HF;
         }
-        while (rest.endsWith("/")) {
-            rest = rest.substring(0, rest.length() - 1);
-        }
-        List<String> parts = segments(rest);
+        List<String> parts = segments(rest); // empty segments, a trailing '/' too, drop out
         require(parts.size() >= 2, shape(ref));
 
         String repository = parts.get(1);
@@ -351,7 +337,6 @@ public record ModelRef(
         require(
                 value.indexOf('/') < 0
                         && value.indexOf('\\') < 0
-                        && value.indexOf(':') < 0
                         && value.indexOf('\0') < 0
                         && !value.equals(".")
                         && !value.equals(".."),

@@ -347,27 +347,27 @@ class ModelRefTest {
 
         assertEquals(
                 repo.resolve("snapshots/abc123def"),
-                Hub.snapshot(ModelRef.parse("hf.co/ggml-org/stories15M_MOE:Q8_0"), hub),
+                Hub.cachedPath(ModelRef.parse("hf.co/ggml-org/stories15M_MOE:Q8_0"), hub),
                 "a branch resolves through refs/ to its commit");
         assertEquals(
                 repo.resolve("snapshots/abc123def"),
-                Hub.snapshot(ModelRef.parse("hf.co/GGML-org/stories15m_moe:Q8_0"), hub),
+                Hub.cachedPath(ModelRef.parse("hf.co/GGML-org/stories15m_moe:Q8_0"), hub),
                 "the hub reads an id in any case, so its cache does too");
         assertEquals(
                 repo.resolve("snapshots/abc123def"),
-                Hub.snapshot(ModelRef.parse("hf.co/ggml-org/stories15M_MOE@abc123def"), hub),
+                Hub.cachedPath(ModelRef.parse("hf.co/ggml-org/stories15M_MOE@abc123def"), hub),
                 "a pinned commit needs no indirection");
         assertEquals(
-                repo.resolve("snapshots/abc123def"),
-                Hub.snapshot(
+                repo.resolve("snapshots/abc123def/stories15M_MOE-Q8_0.gguf"),
+                Hub.cachedPath(
                         ModelRef.parse("hf.co/ggml-org/stories15M_MOE/stories15M_MOE-Q8_0.gguf"),
                         hub),
-                "an explicit file resolves to the directory cachedIn searches");
-        assertNull(
-                Hub.snapshot(ModelRef.parse("hf.co/who/else"), hub),
+                "an explicit file resolves to itself");
+        assertFalse(
+                Files.exists(Hub.cachedPath(ModelRef.parse("hf.co/who/else"), hub)),
                 "a repository that is not there is not a hit");
         assertNull(
-                Hub.snapshot(ModelRef.parse("modelscope.cn/ggml-org/stories15M_MOE"), hub),
+                Hub.cachedPath(ModelRef.parse("modelscope.cn/ggml-org/stories15M_MOE"), hub),
                 "ModelScope keeps its own layout; not ours to read");
     }
 

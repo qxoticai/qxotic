@@ -50,7 +50,7 @@ class RepositorySource implements ModelSource {
     @Override
     public void fetch(ModelRef ref, RemoteFile file, Path into) throws IOException {
         Fetch.download(
-                fileUrl(ref, file.path()),
+                fileUrl(ref, ref.revisionOrDefault(), file.path()),
                 into,
                 ModelStore.nameOf(file.path()),
                 file.sizeBytes(),
@@ -59,10 +59,6 @@ class RepositorySource implements ModelSource {
     }
 
     /** {@code <base><prefix>/owner/repo/resolve/<revision>/<file>} - a 302 to a signed CDN URL. */
-    String fileUrl(ModelRef ref, String file) {
-        return fileUrl(ref, ref.revisionOrDefault(), file);
-    }
-
     String fileUrl(ModelRef ref, String revision, String file) {
         return base
                 + host.prefix
@@ -102,6 +98,9 @@ class RepositorySource implements ModelSource {
     String commitFor(ModelRef ref) throws IOException {
         if (host != ModelRef.Host.HF) {
             return null;
+        }
+        if (Hub.isCommit(ref.revisionOrDefault())) {
+            return ref.revisionOrDefault();
         }
         Map<String, Object> body =
                 Json.parseMap(get(ref, base + "/api/models/" + ref.repoId() + "/refs"));
@@ -190,7 +189,7 @@ class RepositorySource implements ModelSource {
      * for a repository that does not exist too, so the message hedges on existence first.
      */
     static String denied(ModelRef ref) {
-        ModelRef.Host host = ModelRef.Host.byName(ref.host());
+        ModelRef.Host host = ref.hostKind();
         String token = host == null ? "the host's token variable" : host.tokenEnv;
         return ref.repoId()
                 + " does not exist, or is gated or private: check the name, or accept its licence"
