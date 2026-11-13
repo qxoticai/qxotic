@@ -61,6 +61,21 @@ class HubTest {
         assertTrue(listing.out().contains("first"));
         assertTrue(listing.out().contains("second"));
         assertEquals(3, fetches.get(), "listing never fetches");
+
+        var removed = new CliFixtures.Capture("");
+        assertEquals(0, Main.run(new String[] {"remove", a}, removed.io, store), removed.err());
+        assertEquals("removed " + a + "\n", removed.out());
+        assertFalse(Files.exists(Path.of(paths.get(0))));
+        assertTrue(Files.exists(Path.of(paths.get(1))), "remove deletes only what it names");
+        // one missing or path-shaped argument fails the command, yet the others still go
+        Path local = Files.writeString(dir.resolve("local.gguf"), "mine");
+        var mixed = new CliFixtures.Capture("");
+        assertEquals(1, Main.run(new String[] {"remove", a, local.toString(), b}, mixed.io, store));
+        assertEquals("removed " + b + "\n", mixed.out());
+        assertTrue(mixed.err().contains("not cached: " + a), mixed.err());
+        assertTrue(mixed.err().contains("is not a model reference"), mixed.err());
+        assertTrue(Files.exists(local), "a file passed by path is never deleted");
+        assertFalse(Files.exists(Path.of(paths.get(1))));
     }
 
     @Test

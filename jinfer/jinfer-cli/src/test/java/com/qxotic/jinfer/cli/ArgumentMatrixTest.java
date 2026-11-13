@@ -304,6 +304,8 @@ class ArgumentMatrixTest {
                     {"speak", "-m", "m", "hi", "--with", "tokenizer=other.gguf"},
                     {"list", "--threads", "2"},
                     {"pull", "owner/repo:Q8_0", "--temp", "0"},
+                    {"remove"},
+                    {"remove", "owner/repo:Q8_0", "--force"},
                     {"chat", "--model="},
                     {"server", "-m", "m", "--host="}
                 })

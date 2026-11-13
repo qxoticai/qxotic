@@ -6,6 +6,7 @@ import java.lang.System.Logger.Level;
 import java.net.URI;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.AccessDeniedException;
+import java.nio.file.DirectoryNotEmptyException;
 import java.nio.file.FileStore;
 import java.nio.file.FileVisitOption;
 import java.nio.file.FileVisitResult;
@@ -67,7 +68,7 @@ import java.util.regex.Pattern;
  *
  * <p>READ-ONLY is a supported deployment: point {@code root} at a mounted, pre-populated cache.
  * {@link #find}, {@link #cached} and cache hits through {@link #resolve} all work; a miss fails
- * with "cache root is not writable"; {@link #evict} reports the filesystem's refusal. Sources are
+ * with "cache root is not writable"; {@link #remove} reports the filesystem's refusal. Sources are
  * read-only too - no source ever writes into the store beyond the one path it was handed.
  *
  * <p>Nothing in the inference engine calls this. Resolution happens in a CLI, before {@code
@@ -759,10 +760,10 @@ public final class ModelStore {
     }
 
     /**
-     * Explicitly deletes the cached file a ref resolves to. For a non-destructive refresh, use
-     * {@link #pullAll}; the CLI never evicts as part of a pull.
+     * Explicitly deletes the cached file a ref resolves to, and the folders it leaves empty. For a
+     * non-destructive refresh, use {@link #pullAll}; a pull never removes anything.
      */
-    public boolean evict(String pathOrRef) {
+    public boolean remove(String pathOrRef) {
         if (!ModelRef.isRef(pathOrRef)) {
             return false; // a file you passed by path is yours; this cache never deletes it
         }
@@ -773,7 +774,10 @@ public final class ModelStore {
                 return false;
             }
             if (cached.toAbsolutePath().startsWith(root)) {
-                return Files.deleteIfExists(cached); // our flat cache: the file is the entry
+                // our flat cache: the file is the entry
+                if (!Files.deleteIfExists(cached)) return false;
+                pruneEmpty(cached.toAbsolutePath().getParent(), root);
+                return true;
             }
             // the shared hub cache: jinfer writes there too now, so it may also remove there -
             // but only THIS entry, and its blob only once nothing else in the repo links it.
@@ -781,11 +785,22 @@ public final class ModelStore {
             Path hub = Hub.cache().toAbsolutePath().normalize();
             if (ref.host().equals(ModelRef.Host.HF.name)
                     && cached.toAbsolutePath().normalize().startsWith(hub)) {
-                return Hub.evict(cached);
+                return Hub.remove(cached.toAbsolutePath().normalize(), hub);
             }
             return false;
         } catch (IOException e) {
-            throw new UncheckedIOException("could not evict " + ref + ": " + why(e), e);
+            throw new UncheckedIOException("could not remove " + ref + ": " + why(e), e);
+        }
+    }
+
+    /** Deletes {@code dir}, then each parent below {@code stop}, for as long as they are empty. */
+    static void pruneEmpty(Path dir, Path stop) throws IOException {
+        for (Path d = dir; d.startsWith(stop) && !d.equals(stop); d = d.getParent()) {
+            try {
+                Files.deleteIfExists(d);
+            } catch (DirectoryNotEmptyException notEmpty) {
+                return;
+            }
         }
     }
 

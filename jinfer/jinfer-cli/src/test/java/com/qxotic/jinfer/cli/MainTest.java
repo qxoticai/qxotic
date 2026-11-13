@@ -33,6 +33,7 @@ class MainTest {
                 "transcribe",
                 "pull",
                 "list",
+                "remove",
                 "cache-info"
             })
     void everyVerbHasScopedHelpWithoutModelsOrCacheWrites(String verb) {
@@ -66,6 +67,7 @@ class MainTest {
                 "transcribe",
                 "pull",
                 "list",
+                "remove",
                 "cache-info"
             })
     void helpDescriptionsShareOneColumn(String verb) {

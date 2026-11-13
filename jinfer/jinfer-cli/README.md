@@ -325,6 +325,17 @@ Show cached model references and their disk usage:
 jinfer list
 ```
 
+## Removing models: `remove`
+
+Remove cached models by the references `list` prints:
+
+```sh
+jinfer remove "$LM"
+```
+
+A file in the shared Hugging Face cache is removed together with its blob, unless another snapshot still links that blob.
+Files passed by path are never deleted.
+
 ## Prompt caches: `cache-info`
 
 Save a prompt cache with `--cache`, reuse it without modification with `--cache-ro`, and inspect it

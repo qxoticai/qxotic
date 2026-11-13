@@ -141,10 +141,12 @@ final class Hub {
 
     /**
      * Removes one snapshot entry from the hub cache, and its blob when this was the last snapshot
-     * linking it - the same care llama.cpp takes, because a blob may serve many snapshots.
-     * Package-visible for its test.
+     * linking it - the same care llama.cpp takes, because a blob may serve many snapshots. Once the
+     * repository holds no file but its refs, the whole folder goes, as {@code hf cache delete}
+     * leaves it. Package-visible for its test.
      */
-    static boolean evict(Path cached) throws IOException {
+    static boolean remove(Path cached, Path hubCache) throws IOException {
+        Path repo = hubCache.resolve(hubCache.relativize(cached).getName(0));
         Path blob =
                 Files.isSymbolicLink(cached)
                         ? cached.getParent()
@@ -152,11 +154,21 @@ final class Hub {
                                 .toAbsolutePath()
                                 .normalize()
                         : null;
-        boolean removed = Files.deleteIfExists(cached);
-        if (removed && blob != null && Files.isRegularFile(blob) && !referenced(blob)) {
+        if (!Files.deleteIfExists(cached)) return false;
+        if (blob != null && Files.isRegularFile(blob) && !referenced(blob)) {
             Files.deleteIfExists(blob);
         }
-        return removed;
+        ModelStore.pruneEmpty(cached.getParent(), repo);
+        ModelStore.pruneEmpty(repo.resolve("blobs"), repo);
+        try (var children = Files.list(repo)) {
+            if (children.anyMatch(child -> !child.getFileName().toString().equals("refs")))
+                return true;
+        }
+        try (var refs = Files.walk(repo)) {
+            for (Path path : refs.sorted(Comparator.reverseOrder()).toList())
+                Files.deleteIfExists(path);
+        }
+        return true;
     }
 
     /** Whether any snapshot entry in the blob's repository still links {@code blob}. */
@@ -216,7 +228,13 @@ final class Hub {
         Path repo = repoFolder(ref, hubCache);
         Path blob = repo.resolve("blobs").resolve(file.sha256());
         Path dest = ModelStore.under(repo.resolve("snapshots").resolve(commit), file.path());
-        boolean reuse = !force && Fetch.matches(blob, file.sizeBytes(), file.sha256());
+        // a blob is published under its sha256 only once verified, by jinfer or any HF client:
+        // name and size say it is current without reading it. Repairing bytes that rotted after
+        // publication is what force is for.
+        boolean reuse =
+                !force
+                        && Files.isRegularFile(blob)
+                        && (file.sizeBytes() < 0 || Files.size(blob) == file.sizeBytes());
         if (!reuse) {
             ModelStore.requireDiskSpace(
                     blob, Fetch.replacementRemainingBytes(blob, file.sizeBytes()));
@@ -226,7 +244,7 @@ final class Hub {
             Fetch.replace(
                     blob,
                     file.sizeBytes(),
-                    file.sha256(),
+                    null, // Fetch.download verifies the sha256; a second read would only repeat it
                     stage ->
                             Fetch.download(
                                     url,

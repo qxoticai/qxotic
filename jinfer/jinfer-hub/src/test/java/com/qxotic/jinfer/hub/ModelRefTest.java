@@ -415,7 +415,9 @@ class ModelRefTest {
     }
 
     @Test
-    void evictHubSparesABlobStillLinkedElsewhere(@TempDir Path repo) throws IOException {
+    void removeSparesABlobStillLinkedElsewhereThenTheFolder(@TempDir Path hub) throws IOException {
+        Path repo = hub.resolve("models--a--b");
+        Hub.writeRef(repo.resolve("refs/main"), "d".repeat(40));
         Path blob = repo.resolve("blobs").resolve("a".repeat(64));
         Files.createDirectories(blob.getParent());
         Files.writeString(blob, "weights");
@@ -424,10 +426,13 @@ class ModelRefTest {
         Hub.link(blob, first);
         Hub.link(blob, second);
 
-        assertTrue(Hub.evict(first));
+        assertTrue(Hub.remove(first, hub));
         assertTrue(Files.exists(blob), "another snapshot still links these bytes");
-        assertTrue(Hub.evict(second));
+        assertFalse(Files.exists(first.getParent()), "an emptied snapshot folder goes");
+        assertTrue(Hub.remove(second, hub));
         assertFalse(Files.exists(blob), "the last link took the blob with it");
+        assertFalse(Files.exists(repo), "nothing left but refs: the repository folder goes");
+        assertFalse(Hub.remove(second, hub), "the second remove is a miss");
     }
 
     @Test

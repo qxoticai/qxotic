@@ -8,6 +8,10 @@
 - **GBNF's `.` is one UTF-8 character,** as in llama.cpp, where it was one byte: a grammar written for llama.cpp means the same here, and `.{n}` cannot end inside a character.
 - **`retainSessions(n)` is `retainedSessions(n)`** on both chat-model builders, the knob's name on every face (the core's `withRetainedSessions`, Boot's `spring.ai.jinfer.chat.retained-sessions`).
 - **A first batch no longer allocates once per core.** Its first call built a SentencePiece tokenizer's 24 MB word cache, or a tiktoken tokenizer's fast engine, on every core at once and kept one; one thread builds it now, so a first batch fits the heap a single one does.
+- **`jinfer remove <ref>...` deletes cached models,** by the references `jinfer list` prints; a model in the shared Hugging Face cache takes its blob along unless another snapshot links it, and a repository folder goes once it is empty.
+  `ModelStore.evict(ref)` is `ModelStore.remove(ref)`, the command's name.
+- **`jinfer pull` of a cached model no longer reads it whole.** A blob in the shared Hugging Face cache is named by its verified SHA-256, so name and size say it is current: 0.75 s instead of 17 s for a 25 GB model.
+  A fresh download is checked once, not twice. Bytes damaged after download are replaced by `pull --force`.
 
 ## 0.4.0-rc1
 

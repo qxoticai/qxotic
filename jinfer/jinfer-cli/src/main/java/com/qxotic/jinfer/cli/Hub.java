@@ -28,6 +28,11 @@ final class Hub {
                                     && options.operands.stream().noneMatch(String::isBlank),
                             "pull needs at least one model reference");
             case "list" -> Options.require(options.operands.isEmpty(), "list takes no arguments");
+            case "remove" ->
+                    Options.require(
+                            !options.operands.isEmpty()
+                                    && options.operands.stream().noneMatch(String::isBlank),
+                            "remove needs at least one model reference");
             case "cache-info" ->
                     Options.require(
                             options.operands.size() == 1, "cache-info takes one <file.jkv>");
@@ -39,10 +44,33 @@ final class Hub {
         switch (options.command) {
             case "pull" -> pull(options.operands, options.force, store, io.out());
             case "list" -> list(store, io.out());
+            case "remove" -> {
+                return remove(options.operands, store, io.out(), io.err());
+            }
             case "cache-info" -> cacheInfo(Path.of(options.operands.getFirst()), io.out());
             default -> throw new AssertionError(options.command);
         }
         return 0;
+    }
+
+    /** Removes each cached model; one that is not cached is reported and the rest still go. */
+    static int remove(List<String> refs, ModelStore store, PrintStream out, PrintStream err) {
+        int status = 0;
+        for (String ref : refs) {
+            if (store.remove(ref)) {
+                out.println("removed " + ref);
+                continue;
+            }
+            status = 1;
+            err.println(
+                    "jinfer remove: "
+                            + (ModelStore.isRef(ref)
+                                    ? "not cached: " + ref
+                                    : ref
+                                            + " is not a model reference: remove deletes only"
+                                            + " downloaded models, as 'jinfer list' names them"));
+        }
+        return status;
     }
 
     static void pull(List<String> refs, boolean force, ModelStore store, PrintStream out)
@@ -115,6 +143,15 @@ final class Hub {
                             """
                             jinfer list - show cached model references and sizes
                             Usage: jinfer list
+                            """;
+                    case "remove" ->
+                            """
+                            jinfer remove - remove downloaded models from the cache
+                            Usage: jinfer remove <ref>...
+                            Example: jinfer remove LiquidAI/LFM2.5-350M-GGUF:Q8_0
+
+                            Takes the references 'jinfer list' prints. Files passed by path are
+                            never deleted.
                             """;
                     case "cache-info" ->
                             """

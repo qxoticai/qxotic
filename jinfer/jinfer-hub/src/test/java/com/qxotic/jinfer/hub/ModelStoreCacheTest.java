@@ -24,7 +24,7 @@ import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.CsvSource;
 
 /**
- * The store's own bookkeeping, offline: what {@code cached} reports, what {@code evict} removes,
+ * The store's own bookkeeping, offline: what {@code cached} reports, what {@code remove} deletes,
  * the offline gate, local-path passthrough, {@code resolveAll}, and the instance semantics of
  * {@code standard()} and {@code of()}.
  */
@@ -120,32 +120,39 @@ class ModelStoreCacheTest {
                 "a root that does not exist contributes nothing");
     }
 
-    // ---- evict ----
+    // ---- remove ----
 
     @Test
-    void evictRemovesAFlatCacheEntryExactlyOnce(@TempDir Path root) throws IOException {
+    void removeDeletesAFlatCacheEntryExactlyOnce(@TempDir Path root) throws IOException {
         Path model = root.resolve("hf.co/acme/thing/thing-Q8_0.gguf");
+        Path other = root.resolve("hf.co/acme/other/other-Q8_0.gguf");
         Files.createDirectories(model.getParent());
+        Files.createDirectories(other.getParent());
         Files.writeString(model, "weights");
+        Files.writeString(other, "weights");
         ModelStore store = ModelStore.of(root);
 
-        assertTrue(store.evict("hf.co/acme/thing:Q8_0"));
-        assertTrue(Files.notExists(model));
-        assertFalse(store.evict("hf.co/acme/thing:Q8_0"), "the second evict is a miss");
+        assertTrue(store.remove("hf.co/acme/thing:Q8_0"));
+        assertTrue(Files.notExists(model.getParent()), "the emptied repository folder goes");
+        assertTrue(Files.exists(other), "its neighbours stay");
+        assertFalse(store.remove("hf.co/acme/thing:Q8_0"), "the second remove is a miss");
+        assertTrue(store.remove("hf.co/acme/other:Q8_0"));
+        assertTrue(Files.exists(root), "the root itself is never removed");
+        assertTrue(Files.notExists(root.resolve("hf.co")));
     }
 
     @Test
-    void evictNeverTouchesALocalPathOrAnAmbiguousCache(@TempDir Path root) throws IOException {
+    void removeNeverTouchesALocalPathOrAnAmbiguousCache(@TempDir Path root) throws IOException {
         Path local = Files.writeString(root.resolve("mine.gguf"), "weights");
-        assertFalse(ModelStore.of(root).evict(local.toString()));
+        assertFalse(ModelStore.of(root).remove(local.toString()));
         assertTrue(Files.exists(local), "a file passed by path is the caller's, not the cache's");
 
-        // two files one quant could mean: no cache-side answer, so no eviction either
+        // two files one quant could mean: no cache-side answer, so no removal either
         Path dir = root.resolve("hf.co/acme/thing");
         Files.createDirectories(dir);
         Files.writeString(dir.resolve("a-Q8_0.gguf"), "a");
         Files.writeString(dir.resolve("b-Q8_0.gguf"), "b");
-        assertFalse(ModelStore.of(root).evict("hf.co/acme/thing:Q8_0"));
+        assertFalse(ModelStore.of(root).remove("hf.co/acme/thing:Q8_0"));
         assertTrue(Files.exists(dir.resolve("a-Q8_0.gguf")));
     }
 

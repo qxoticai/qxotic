@@ -23,8 +23,9 @@ Linux checks are recorded below; Windows publication validation is pending.
 | Existing local path | Return the path; force does not transfer ownership or authorize deletion |
 
 Mutable-reference pull first selects a file from the remote repository.
-When a SHA-256 is published, a candidate cached file is stream-hashed and size-checked before reuse.
-That costs a sequential local read, not another payload transfer.
+When a SHA-256 is published, a shared HF blob is reused when its name is that SHA-256 and its size matches: blobs are published under their hash only after verification, so reuse reads no payload.
+A flat-cache entry has no such name, so it is stream-hashed and size-checked before reuse, a sequential local read.
+Bytes damaged after publication are not detected by an ordinary pull; `pull --force` replaces them.
 Without a published checksum, explicit pull downloads again; size or modification time alone cannot establish equality.
 Plain URLs follow this rule, while known-host browser URLs are normalized into repository references.
 
@@ -84,7 +85,7 @@ The public addition is `ModelStore.pullAll(List<String>, boolean force)`.
 The existing multi-file runner preserves argument order and bounds concurrent work.
 `ModelSource` remains source-compatible.
 For replacement, a source receives an unpublished staging destination; even a source that writes directly cannot overwrite the working file.
-`evict` remains an explicitly destructive API and is never used to start a pull.
+`remove` remains an explicitly destructive API and is never used to start a pull.
 
 ### Selection and cache precedence
 
