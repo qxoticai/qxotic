@@ -309,7 +309,7 @@ final class Canary {
         return JinferDecisionModel.builder()
                 .modelPath(model)
                 .companionPath("media", media)
-                .together(true)
+                .independent(false)
                 .build();
     }
 }
