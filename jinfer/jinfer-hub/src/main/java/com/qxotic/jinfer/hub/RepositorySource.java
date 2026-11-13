@@ -209,6 +209,14 @@ class RepositorySource implements ModelSource {
         try {
             return Fetch.getString(url, headers(host));
         } catch (Fetch.HttpStatusException e) {
+            // ModelScope answers a burst of requests 403 too, its body coded 10013201001: a source
+            // that is busy, not a repository that is missing
+            if (e.status == 403 && e.getMessage().contains("10013201001")) {
+                throw new IOException(
+                        host.name
+                                + " is limiting requests from this machine: try again in a minute",
+                        e);
+            }
             if (e.status == 401 || e.status == 403) {
                 throw new ModelNotFoundException(ref.toString(), denied(ref), e);
             }

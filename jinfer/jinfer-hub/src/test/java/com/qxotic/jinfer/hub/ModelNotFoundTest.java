@@ -4,6 +4,7 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertInstanceOf;
 import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import com.sun.net.httpserver.HttpServer;
 import java.io.IOException;
@@ -50,6 +51,34 @@ class ModelNotFoundTest {
             } finally {
                 server.stop(0);
             }
+        }
+    }
+
+    /** ModelScope throttles with a 403 and a coded body: busy, never "does not exist". */
+    @Test
+    void aThrottledModelScopeIsBusyNotMissing() throws IOException {
+        byte[] body =
+                "{\"Code\":10013201001,\"Message\":\"\u64cd\u4f5c\u8fc7\u4e8e\u9891\u7e41\",\"Success\":false}"
+                        .getBytes(java.nio.charset.StandardCharsets.UTF_8);
+        HttpServer server = HttpServer.create(new InetSocketAddress("127.0.0.1", 0), 0);
+        server.createContext(
+                "/",
+                exchange -> {
+                    exchange.sendResponseHeaders(403, body.length);
+                    exchange.getResponseBody().write(body);
+                    exchange.close();
+                });
+        server.start();
+        try {
+            URI base = URI.create("http://127.0.0.1:" + server.getAddress().getPort());
+            var modelScope = new RepositorySource(ModelRef.Host.MODELSCOPE, base);
+            var e =
+                    assertThrows(
+                            IOException.class,
+                            () -> modelScope.list(ModelRef.parse("modelscope.cn/owner/repo"), ""));
+            assertTrue(e.getMessage().contains("is limiting requests"), e.getMessage());
+        } finally {
+            server.stop(0);
         }
     }
 

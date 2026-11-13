@@ -6,7 +6,6 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import java.io.IOException;
 import java.io.RandomAccessFile;
-import java.io.UncheckedIOException;
 import java.net.InetAddress;
 import java.net.UnknownHostException;
 import java.nio.ByteBuffer;
@@ -228,7 +227,7 @@ class ModelHubIT {
         try {
             var failure =
                     assertThrows(
-                            UncheckedIOException.class,
+                            ModelNotFoundException.class,
                             () -> ModelStore.standard().resolve(REPO + ":Q8_0"));
             assertTrue(failure.getMessage().contains("-Djinfer.offline"), failure.getMessage());
         } finally {
