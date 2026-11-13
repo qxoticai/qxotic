@@ -140,6 +140,7 @@ EOF
 cat > "$WORK/consumer/langchain4j-core/src/main/java/canary/Canary.java" <<'EOF'
 package canary;
 
+import com.qxotic.jinfer.ContextState;
 import com.qxotic.jinfer.decision.Answer;
 import com.qxotic.jinfer.decision.Decisions;
 import com.qxotic.jinfer.decision.Question;
@@ -190,14 +191,16 @@ final class Canary {
     }
 
     /** The typed face over the engine, as documented in jinfer's README. */
-    static <T extends Enum<T>> T route(Decisions decisions, Question.Choice<T> question) {
-        return decisions.ask("I was charged twice and I want my money back today.", question)
+    static <T extends Enum<T>> T route(
+            Decisions decisions, ContextState state, Question.Choice<T> question) {
+        return decisions.ask(state, "I was charged twice and I want my money back today.", question)
                 .selectedOption();
     }
 
-    static boolean refund(Decisions decisions) {
+    static boolean refund(Decisions decisions, ContextState state) {
         Answer.Predicate answer =
                 decisions.ask(
+                        state,
                         "I was charged twice and I want my money back today.",
                         Question.predicate("Is this a refund request?"));
         return answer.isYes();

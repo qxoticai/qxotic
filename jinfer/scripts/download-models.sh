@@ -24,8 +24,8 @@ while [ $# -gt 0 ]; do
 done
 if [ -z "$root" ]; then
   dir="$here"
-  while [ "$dir" != "/" ] && [ ! -d "$dir/.git" ]; do dir="$(dirname "$dir")"; done
-  [ -d "$dir/.git" ] || { echo "no git root found; pass --root or set JINFER_MODELS" >&2; exit 2; }
+  while [ "$dir" != "/" ] && [ ! -e "$dir/.git" ]; do dir="$(dirname "$dir")"; done
+  [ -e "$dir/.git" ] || { echo "no git root found; pass --root or set JINFER_MODELS" >&2; exit 2; }
   root="$(dirname "$dir")/models"
 fi
 
