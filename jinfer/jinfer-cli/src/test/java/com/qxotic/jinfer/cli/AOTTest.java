@@ -19,22 +19,20 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
 /**
- * The preload's matching policy: a hit must be PROVEN (size, then header digests), and every kind
- * of miss - wrong size, a size tie, same-size different-bytes - must fall back to null, never to a
- * wrong entry. The entries here carry no GGUF or tokenizer: match() must not need them.
+ * The preload's matching policy: a hit must be PROVEN (size, then the header digest), and every
+ * kind of miss - wrong size, same-size different-bytes - must fall back to null, never to a wrong
+ * entry. The entries here carry no GGUF or tokenizer: match() must not need them.
  */
 final class AOTTest {
 
     /** An entry as preload() would bake it for {@code file}, treating the whole file as header. */
     private static AOT.PreloadedFile entryFor(Path file) throws IOException {
         try (FileChannel channel = FileChannel.open(file, StandardOpenOption.READ)) {
-            AOT.HeaderDigests digests = AOT.digestHeader(channel, channel.size());
             return new AOT.PreloadedFile(
                     file.getFileName().toString(),
                     channel.size(),
                     channel.size(),
-                    digests.crc32c(),
-                    digests.sha256(),
+                    AOT.headerSha256(channel, channel.size()),
                     null,
                     null);
         }
@@ -72,12 +70,13 @@ final class AOTTest {
     }
 
     @Test
-    void aSizeTieMatchesNobody(@TempDir Path dir) throws IOException {
+    void aSizeTieIsSettledByContent(@TempDir Path dir) throws IOException {
         Path a = Files.writeString(dir.resolve("a.gguf"), "sixteen bytes ok");
         Path b = Files.writeString(dir.resolve("b.gguf"), "also 16 bytes ok");
         List<AOT.PreloadedFile> tied = List.of(entryFor(a), entryFor(b));
 
-        assertNull(AOT.match(tied, a), "ambiguity must never guess");
+        assertSame(tied.get(0), AOT.match(tied, a));
+        assertSame(tied.get(1), AOT.match(tied, b));
     }
 
     @Test
@@ -111,19 +110,15 @@ final class AOTTest {
                         actual.fileName(),
                         actual.fileSize(),
                         actual.headerLength(),
-                        actual.headerCrc32c(),
                         "0".repeat(64),
                         null,
                         null);
-        assertNull(
-                AOT.match(List.of(differentSha), file),
-                "CRC agreement alone must never select stale metadata");
+        assertNull(AOT.match(List.of(differentSha), file), "stale metadata is never selected");
         var truncated =
                 new AOT.PreloadedFile(
                         actual.fileName(),
                         actual.fileSize(),
                         actual.headerLength() + 1,
-                        actual.headerCrc32c(),
                         actual.headerSha256(),
                         null,
                         null);

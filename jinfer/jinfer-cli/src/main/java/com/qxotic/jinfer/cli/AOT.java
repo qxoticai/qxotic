@@ -23,7 +23,6 @@ import java.util.ArrayList;
 import java.util.HexFormat;
 import java.util.List;
 import java.util.Map;
-import java.util.zip.CRC32C;
 
 /**
  * The native image's model preload ({@code -Djinfer.preload=<model>[<pathSeparator><model>...]} at
@@ -40,13 +39,12 @@ import java.util.zip.CRC32C;
  * Models entries the preload can serve are called through here; nothing else in the CLI knows the
  * preload exists.
  *
- * <p>A preloaded header is used only when PROVEN to describe the candidate file's bytes, through
- * three layers of trust: the file SIZE gates for free - the only layer that saves work - then one
- * read of the header region ({@code [0, tensorDataOffset)} - exactly the bytes the parse consumed)
- * feeds CRC32C and SHA-256 in a single pass: two independent algorithms that must both agree, not a
- * cost ladder. Any mismatch warns and falls back to a fresh parse - the failure mode of a wrong
- * entry is a slower start, never a wrong header. Names carry no identity (every mmproj shares its
- * filename with every other one); they serve only the swapped-file warning.
+ * <p>A preloaded header is used only when PROVEN to describe the candidate file's bytes: the file
+ * SIZE gates for free, then the SHA-256 of the header region ({@code [0, tensorDataOffset)} -
+ * exactly the bytes the parse consumed) must match. Any mismatch warns and falls back to a fresh
+ * parse - the failure mode of a wrong entry is a slower start, never a wrong header. Names carry no
+ * identity (every mmproj shares its filename with every other one); they serve only the
+ * swapped-file warning.
  *
  * <p>The model and encoder OBJECTS are not preloaded, BY DESIGN, not as a gap: headers and
  * tokenizers are pure heap and derive from bytes alone, while the objects wire into mmap'd segments
@@ -61,13 +59,9 @@ final class AOT {
             String fileName,
             long fileSize,
             long headerLength,
-            int headerCrc32c,
             String headerSha256,
             GGUF gguf,
             Tokenizer tokenizer) {}
-
-    /** CRC32C and SHA-256 of one region, from the same single read pass. */
-    record HeaderDigests(int crc32c, String sha256) {}
 
     private static final List<PreloadedFile> PRELOADED =
             preload(System.getProperty("jinfer.preload"));
@@ -93,14 +87,12 @@ final class AOT {
                                     + " models are parsed at load, cheaply.");
                 }
                 long headerLength = gguf.getTensorDataOffset();
-                HeaderDigests digests = digestHeader(fileChannel, headerLength);
                 baked.add(
                         new PreloadedFile(
                                 path.getFileName().toString(),
                                 fileChannel.size(),
                                 headerLength,
-                                digests.crc32c(),
-                                digests.sha256(),
+                                headerSha256(fileChannel, headerLength),
                                 gguf,
                                 tokenizerFrom(gguf)));
             } catch (IOException e) {
@@ -123,9 +115,8 @@ final class AOT {
         return GGUFTokenizerLoader.createBuilderWithBuiltins().build().fromGGUF(gguf);
     }
 
-    /** Package-visible for its test: both digests of {@code [0, length)}, one read pass. */
-    static HeaderDigests digestHeader(FileChannel fileChannel, long length) throws IOException {
-        CRC32C crc = new CRC32C();
+    /** Package-visible for its test: the SHA-256 of {@code [0, length)}. */
+    static String headerSha256(FileChannel fileChannel, long length) throws IOException {
         MessageDigest sha;
         try {
             sha = MessageDigest.getInstance("SHA-256");
@@ -141,18 +132,17 @@ final class AOT {
                 throw new EOFException("header ends at " + position + " of " + length);
             }
             buffer.flip();
-            crc.update(buffer.duplicate());
             sha.update(buffer);
             position += read;
         }
-        return new HeaderDigests((int) crc.getValue(), HexFormat.of().formatHex(sha.digest()));
+        return HexFormat.of().formatHex(sha.digest());
     }
 
     /**
      * The preloaded file PROVEN to be {@code path}, or null. Size gates, then the header bytes must
-     * digest identically - so a hit is a guarantee, and every kind of miss (unknown size, a size
-     * tie, a content mismatch) warns where it helps and falls back to a fresh parse.
-     * Package-visible, pure over {@code preloaded}, for its test.
+     * digest identically - so a hit is a guarantee, and every kind of miss (unknown size, a content
+     * mismatch) warns where it helps and falls back to a fresh parse. Package-visible, pure over
+     * {@code preloaded}, for its test.
      */
     static PreloadedFile match(List<PreloadedFile> preloaded, Path path) {
         long size;
@@ -161,22 +151,9 @@ final class AOT {
         } catch (IOException unreadable) {
             return null; // the real load will say what is wrong, with its own message
         }
-        PreloadedFile found = null;
-        for (PreloadedFile candidate : preloaded) {
-            if (candidate.fileSize() == size) {
-                if (found != null) {
-                    LOG.log(
-                            System.Logger.Level.WARNING,
-                            "two preloaded files are both {0} bytes - cannot tell which one {1}"
-                                    + " is, loading it fresh",
-                            size,
-                            path);
-                    return null;
-                }
-                found = candidate;
-            }
-        }
-        if (found == null) {
+        List<PreloadedFile> sameSize =
+                preloaded.stream().filter(candidate -> candidate.fileSize() == size).toList();
+        if (sameSize.isEmpty()) {
             for (PreloadedFile candidate : preloaded) {
                 // a NAME match with a size mismatch is a swapped or re-downloaded file: the
                 // preload silently missing here would just look like a slow start
@@ -195,21 +172,22 @@ final class AOT {
             return null;
         }
         try (FileChannel fileChannel = FileChannel.open(path, StandardOpenOption.READ)) {
-            HeaderDigests digests = digestHeader(fileChannel, found.headerLength());
-            if (digests.crc32c() != found.headerCrc32c()
-                    || !digests.sha256().equals(found.headerSha256())) {
-                LOG.log(
-                        System.Logger.Level.WARNING,
-                        "{0} is the same size as the preloaded {1} but its header bytes differ -"
-                                + " loading it fresh",
-                        path,
-                        found.fileName());
-                return null;
+            for (PreloadedFile candidate : sameSize) {
+                if (headerSha256(fileChannel, candidate.headerLength())
+                        .equals(candidate.headerSha256())) {
+                    return candidate;
+                }
             }
         } catch (IOException unreadable) {
             return null;
         }
-        return found;
+        LOG.log(
+                System.Logger.Level.WARNING,
+                "{0} is the same size as the preloaded {1} but its header bytes differ - loading"
+                        + " it fresh",
+                path,
+                sameSize.getFirst().fileName());
+        return null;
     }
 
     /**
