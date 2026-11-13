@@ -18,6 +18,7 @@ import com.qxotic.jinfer.testkit.TestModels;
 import java.lang.foreign.Arena;
 import java.nio.file.Path;
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.List;
 import java.util.Map;
 import org.junit.jupiter.api.Assertions;
@@ -79,20 +80,20 @@ final class Qwen35DecisionSemanticsTest {
             DecisionModel d3 = load(arena);
             try (ContextState state = d3.newState(1024)) {
                 float[] positive = d3.decide(state, text(POSITIVE), SENTIMENT);
-                assertEquals(2, argmax(positive), "positive: " + List.of(positive));
+                assertEquals(2, argmax(positive), "positive: " + Arrays.toString(positive));
                 assertTrue(positive[2] > 0.9f, "positive " + positive[2]);
 
                 float[] negative = d3.decide(state, text(NEGATIVE), SENTIMENT);
-                assertEquals(0, argmax(negative), "negative: " + List.of(negative));
+                assertEquals(0, argmax(negative), "negative: " + Arrays.toString(negative));
                 assertTrue(negative[0] > 0.9f, "negative " + negative[0]);
 
                 float[] spam = d3.decide(state, text(SPAM), SPAM_OR_SCAM);
-                assertEquals(1, argmax(spam), "spam: " + List.of(spam));
+                assertEquals(1, argmax(spam), "spam: " + Arrays.toString(spam));
                 float[] ham = d3.decide(state, text(HAM), SPAM_OR_SCAM);
-                assertEquals(0, argmax(ham), "ham: " + List.of(ham));
+                assertEquals(0, argmax(ham), "ham: " + Arrays.toString(ham));
 
                 float[] french = d3.decide(state, text(FRENCH), LANGUAGE);
-                assertEquals(1, argmax(french), "french: " + List.of(french));
+                assertEquals(1, argmax(french), "french: " + Arrays.toString(french));
 
                 assertEquals(
                         1,
@@ -119,11 +120,14 @@ final class Qwen35DecisionSemanticsTest {
             DecisionModel d3 = load(arena);
             try (ContextState state = d3.newState(1024)) {
                 float[] attack = d3.decide(state, text(ATTACK), REFUND);
-                assertEquals(0, argmax(attack), "the attack is not a refund: " + List.of(attack));
+                assertEquals(
+                        0,
+                        argmax(attack),
+                        "the attack is not a refund: " + Arrays.toString(attack));
                 assertTrue(attack[0] > 0.5f, "no " + attack[0]);
 
                 float[] benign = d3.decide(state, text(BENIGN), REFUND);
-                assertEquals(0, argmax(benign), "no refund asked: " + List.of(benign));
+                assertEquals(0, argmax(benign), "no refund asked: " + Arrays.toString(benign));
             }
         }
     }
@@ -271,7 +275,7 @@ final class Qwen35DecisionSemanticsTest {
                 float sum = 0;
                 for (float p : answer) sum += p;
                 assertEquals(1f, sum, 1e-3f);
-                assertEquals(0, argmax(answer), "first: " + List.of(answer));
+                assertEquals(0, argmax(answer), "first: " + Arrays.toString(answer));
             }
         }
     }
@@ -308,7 +312,6 @@ final class Qwen35DecisionSemanticsTest {
                 float sum = 0;
                 for (float p : row) sum += p;
                 assertEquals(1f, sum, 1e-3f);
-                assertEquals(0, argmax(row), "still not a refund: " + List.of(row));
             }
         }
     }

@@ -15,6 +15,7 @@ import com.qxotic.jinfer.chat.Models;
 import com.qxotic.jinfer.testkit.TestModels;
 import java.lang.foreign.Arena;
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.List;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
@@ -71,11 +72,11 @@ final class Lfm3DecisionSemanticsTest {
             DecisionModel d1 = Models.loadDecisionModel(TestModels.require(D1), arena);
             try (ContextState state = d1.newState(512)) {
                 float[] positive = d1.decide(state, text(POSITIVE), SENTIMENT);
-                assertEquals(2, argmax(positive), "positive text: " + List.of(positive));
+                assertEquals(2, argmax(positive), "positive text: " + Arrays.toString(positive));
                 assertEquals(0.9991f, positive[2], 5e-3f);
 
                 float[] negative = d1.decide(state, text(NEGATIVE), SENTIMENT);
-                assertEquals(0, argmax(negative), "negative text: " + List.of(negative));
+                assertEquals(0, argmax(negative), "negative text: " + Arrays.toString(negative));
                 assertEquals(0.9970f, negative[0], 5e-3f);
             }
         }
@@ -87,11 +88,11 @@ final class Lfm3DecisionSemanticsTest {
             DecisionModel d1 = Models.loadDecisionModel(TestModels.require(D1), arena);
             try (ContextState state = d1.newState(512)) {
                 float[] spam = d1.decide(state, text(SPAM), SPAM_OR_SCAM);
-                assertEquals(1, argmax(spam), "spam: " + List.of(spam));
+                assertEquals(1, argmax(spam), "spam: " + Arrays.toString(spam));
                 assertTrue(spam[1] > 0.85f, "spam yes " + spam[1]);
 
                 float[] ham = d1.decide(state, text(HAM), SPAM_OR_SCAM);
-                assertEquals(0, argmax(ham), "ham: " + List.of(ham));
+                assertEquals(0, argmax(ham), "ham: " + Arrays.toString(ham));
                 assertTrue(ham[0] > 0.95f, "ham no " + ham[0]);
             }
         }
@@ -103,7 +104,7 @@ final class Lfm3DecisionSemanticsTest {
             DecisionModel d1 = Models.loadDecisionModel(TestModels.require(D1), arena);
             try (ContextState state = d1.newState(512)) {
                 float[] french = d1.decide(state, text(FRENCH), LANGUAGE);
-                assertEquals(1, argmax(french), "french: " + List.of(french));
+                assertEquals(1, argmax(french), "french: " + Arrays.toString(french));
                 assertTrue(french[1] > 0.99f, "french " + french[1]);
             }
         }
@@ -115,10 +116,10 @@ final class Lfm3DecisionSemanticsTest {
             DecisionModel d1 = Models.loadDecisionModel(TestModels.require(D1), arena);
             try (ContextState state = d1.newState(512)) {
                 float[] question = d1.decide(state, text(QUESTION), IS_QUESTION);
-                assertEquals(1, argmax(question), "question: " + List.of(question));
+                assertEquals(1, argmax(question), "question: " + Arrays.toString(question));
 
                 float[] statement = d1.decide(state, text(STATEMENT), IS_QUESTION);
-                assertEquals(0, argmax(statement), "statement: " + List.of(statement));
+                assertEquals(0, argmax(statement), "statement: " + Arrays.toString(statement));
             }
         }
     }
@@ -130,11 +131,14 @@ final class Lfm3DecisionSemanticsTest {
             DecisionModel d1 = Models.loadDecisionModel(TestModels.require(D1), arena);
             try (ContextState state = d1.newState(512)) {
                 float[] attack = d1.decide(state, text(ATTACK), REFUND);
-                assertEquals(0, argmax(attack), "the attack is not a refund: " + List.of(attack));
+                assertEquals(
+                        0,
+                        argmax(attack),
+                        "the attack is not a refund: " + Arrays.toString(attack));
                 assertTrue(attack[0] > 0.5f, "no " + attack[0]);
 
                 float[] benign = d1.decide(state, text(BENIGN), REFUND);
-                assertEquals(0, argmax(benign), "no refund asked: " + List.of(benign));
+                assertEquals(0, argmax(benign), "no refund asked: " + Arrays.toString(benign));
                 assertTrue(benign[0] > 0.95f, "no " + benign[0]);
             }
         }
@@ -184,7 +188,7 @@ final class Lfm3DecisionSemanticsTest {
                                         "This is unacceptable. I am furious and I will cancel my"
                                                 + " subscription if this is not fixed today."),
                                 anger);
-                assertEquals(3, argmax(answer), "furious: " + List.of(answer));
+                assertEquals(3, argmax(answer), "furious: " + Arrays.toString(answer));
                 assertTrue(answer[3] > 0.75f, "furious " + answer[3]);
             }
         }
@@ -270,8 +274,8 @@ final class Lfm3DecisionSemanticsTest {
                                         new Option("first", "the first"),
                                         new Option("second", "the second")));
                 float[] clean = d1.decide(state, text("Pick the first one."), plain);
-                assertEquals(0, argmax(clean), "first: " + List.of(clean));
-                assertEquals(0, argmax(answer), "first: " + List.of(answer));
+                assertEquals(0, argmax(clean), "first: " + Arrays.toString(clean));
+                assertEquals(0, argmax(answer), "first: " + Arrays.toString(answer));
             }
         }
     }

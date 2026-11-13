@@ -213,7 +213,10 @@ final class Lfm3DecisionRobustnessTest {
         }
     }
 
-    /** The batch splits past 1024 tokens a prompt: each answer is still the one asked alone. */
+    /**
+     * The batch splits past 1024 tokens a prompt: each answer is still the one asked alone. The JIT
+     * is warmed first - the very first pass runs colder code that rounds a few bits apart.
+     */
     @Test
     void longPromptsAnsweredEachOnTheirOwnMatchTheIndividualAsks() throws Exception {
         String license;
@@ -233,6 +236,7 @@ final class Lfm3DecisionRobustnessTest {
         try (Arena arena = Arena.ofShared()) {
             DecisionModel d1 = Models.loadDecisionModel(TestModels.require(D1), arena);
             try (ContextState state = d1.newState(1024)) {
+                d1.decideIndependently(state, text(license), questions);
                 float[][] batched = d1.decideIndependently(state, text(license), questions);
                 for (int i = 0; i < questions.size(); i++)
                     assertArrayEquals(

@@ -20,6 +20,7 @@ import java.lang.foreign.Arena;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.List;
 import java.util.Map;
 import org.junit.jupiter.api.Tag;
@@ -169,7 +170,8 @@ final class Qwen35DecisionFamilyTest {
 
                     float[] team = d3.decide(state, text(TICKET), TEAM);
                     assertRow(team, 4, variant.name() + " team");
-                    assertEquals(0, argmax(team), variant.name() + " billing: " + List.of(team[0]));
+                    assertEquals(
+                            0, argmax(team), variant.name() + " billing: " + Arrays.toString(team));
 
                     float[] urgency = d3.decide(state, text(TICKET), URGENCY);
                     assertRow(urgency, 4, variant.name() + " urgency");
@@ -294,7 +296,7 @@ final class Qwen35DecisionFamilyTest {
                 try (ContextState state = d3.newState(4096)) {
                     float[] row = d3.decide(state, photo, shows);
                     assertRow(row, 4, variant.name() + " picture");
-                    assertEquals(2, argmax(row), variant.name() + " dice: " + List.of(row));
+                    assertEquals(2, argmax(row), variant.name() + " dice: " + Arrays.toString(row));
 
                     // the same picture with no text at all
                     float[] alone = d3.decide(state, List.of(photo.getFirst()), shows);
