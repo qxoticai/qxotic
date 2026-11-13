@@ -42,6 +42,8 @@ The native libraries, the jinfer command and the wheels are built with Oracle Gr
 - **libtoknroll survives running out of memory.** A batch is encoded a chunk at a time, so its heap use is bounded whatever its length, and a batch larger than the heap now succeeds.
   An out-of-memory or stack overflow the runtime raises where no handler runs fails the call with `TOKNROLL_ERROR` and words naming the knob, where a batch could hang or abort the process before.
   The tokenizer goes on working, since encoding takes no locks; batch workers are the library's own threads, with 8 MB stacks, in libjinfer and on Windows too.
+- **A loaded tokenizer no longer stalls a batch's first collections.** libtoknroll, libjinfer and the jinfer command run the serial collector with one survivor space, so a tokenizer's tables (Gemma 4's: 230 MB) move to the old generation at the first young collection, instead of being copied at each one until they age out.
+  Those copies were 50 ms pauses that held a batch's threads idle through its first few hundred MB of text.
 - **A missing model has its own exception.** `ModelNotFoundException` (`jinfer-hub`), an `IllegalArgumentException`, is thrown wherever a source names nothing: a missing local file, a repository that does not exist or is gated, a file or quant it lacks, or an offline miss, which was an `UncheckedIOException` before.
   `source()` names it; a malformed or ambiguous ref stays a plain `IllegalArgumentException`, and libjinfer and libtoknroll report it as not found by its type.
 - **Shorter calls.** `Sampling.GREEDY` is the most likely token, no seed, in place of `new Sampling(0f, 1f, 0, 0f, null)`, and `ChatEngine.ReplySink.of(delta -> ...)` takes a reply's text as a lambda.
