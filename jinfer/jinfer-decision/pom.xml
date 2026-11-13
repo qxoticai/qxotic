@@ -10,7 +10,7 @@
 
   <artifactId>jinfer-decision</artifactId>
 
-  <name>Jinfer Decisions</name>
+  <name>Jinfer Decision Models APIs</name>
   <description>Typed decisions over a Jinfer decision model: predicate, choice and rating questions about a state, each answered with its probabilities, no text generated.</description>
 
   <properties>
