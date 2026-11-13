@@ -83,12 +83,17 @@ final class StateArenaDisciplineTest {
             if (Files.isDirectory(core)) {
                 try (Stream<Path> tree = Files.walk(dir)) {
                     return tree.filter(p -> p.toString().endsWith(".java"))
-                            .filter(p -> p.toString().contains("/src/main/java/"))
-                            .filter(p -> !p.toString().contains("/target/"))
+                            .filter(p -> slashed(p).contains("/src/main/java/"))
+                            .filter(p -> !slashed(p).contains("/target/"))
                             .toList();
                 }
             }
         }
         return List.of();
+    }
+
+    /** The path with '/' separators, so the filters read the same on Windows. */
+    private static String slashed(Path path) {
+        return path.toString().replace('\\', '/');
     }
 }

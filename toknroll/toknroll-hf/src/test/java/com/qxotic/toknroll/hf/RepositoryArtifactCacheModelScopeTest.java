@@ -25,7 +25,7 @@ class RepositoryArtifactCacheModelScopeTest {
         String text = Files.readString(tokenizerJson, StandardCharsets.UTF_8);
         assertTrue(text.contains("\"model\""), "Expected tokenizer.json to contain model key");
         assertTrue(
-                tokenizerJson.toString().contains("/master/"),
+                tokenizerJson.toString().replace('\\', '/').contains("/master/"),
                 "ModelScope cache path should use master revision");
     }
 }

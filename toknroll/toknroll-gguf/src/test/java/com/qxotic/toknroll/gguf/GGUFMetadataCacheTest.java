@@ -60,7 +60,6 @@ class GGUFMetadataCacheTest {
                         "unsloth", "gemma-4-E2B-it-GGUF", null, "gemma-4-E2B-it-Q8_0.gguf", false);
 
         assertEquals(cachedPath.toAbsolutePath().normalize(), actual);
-        assertTrue(actual.toString().contains("/main/"));
         assertTrue(actual.toString().endsWith(".gguf.metadata"));
     }
 
@@ -108,7 +107,6 @@ class GGUFMetadataCacheTest {
                         "Qwen", "Qwen3.6-35B-A3B-GGUF", null, "Qwen3.6-35B-A3B-Q8_0.gguf", false);
 
         assertEquals(cachedPath.toAbsolutePath().normalize(), actual);
-        assertTrue(actual.toString().contains("/master/"));
         assertTrue(actual.toString().endsWith(".gguf.metadata"));
     }
 
