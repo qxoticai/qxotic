@@ -16,7 +16,7 @@ import java.util.stream.Collectors;
  *
  * <p>A {@link java.net.http.HttpClient} built without a selector uses NO proxy at all, and even
  * {@link ProxySelector#getDefault()} only honors the {@code -Dhttps.proxyHost} system properties.
- * Every other model downloader (curl, the HuggingFace clients, ollama) follows the environment
+ * Every other model downloader (curl, the Hugging Face clients, ollama) follows the environment
  * variables, so a corporate laptop or a machine behind a regional mirror expects them to work here
  * too. Without this the failure is a connect timeout with nothing to suggest.
  *

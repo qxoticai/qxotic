@@ -11,14 +11,25 @@ jinfer-codecs     image/audio/video decoding (bytes <-> Media)
 jinfer-kernels    GGUF loading and CPU kernels over MemoryView
 jinfer-cache      retained sessions and content-addressed checkpoint storage
 jinfer-chat       sampling, grammar constraints, generation, chat, templates and tools
-jinfer-<model>     one ServiceLoader provider per supported GGUF architecture
+jinfer-decision   typed predicate, choice and rating questions over a decision model
+jinfer-<model>    one ServiceLoader provider per supported GGUF architecture
 jinfer-server     OpenAI-compatible HTTP/SSE server
 jinfer-cli        chat, completion, pull and server executable
+jinfer-tts        speech executable (not published)
 jinfer-bench      generic language-model and embedding benchmarks
+jinfer-native     libjinfer: the C API as a GraalVM shared library
+jinfer-image      build-time native-image feature: the kernels' vector width
 
-jinfer-hub         model references, local cache and downloads
-jinfer-jinja       whole-template fallback renderer
-jinfer-testkit     shared model-fixture discovery for tests
+jinfer-fetch      HTTP GET through the JDK client or curl; Java 11, shared with toknroll
+jinfer-hub        model references, local cache and downloads
+jinfer-jinja      whole-template fallback renderer
+jinfer-testkit    shared model-fixture discovery for tests
+
+jinfer-langchain4j                    LangChain4j provider
+jinfer-spring-ai                      Spring AI provider
+jinfer-spring-ai-autoconfigure        Spring Boot auto-configuration
+jinfer-spring-ai-spring-boot-starter  Spring Boot starter
+jinfer-bom                            version catalog
 ```
 
 `jinfer-models-all` is the convenience aggregate. Footprint-sensitive applications can depend on
