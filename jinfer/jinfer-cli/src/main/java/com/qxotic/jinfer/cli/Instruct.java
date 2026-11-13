@@ -1,11 +1,10 @@
 package com.qxotic.jinfer.cli;
 
+import com.qxotic.jinfer.Batch;
 import com.qxotic.jinfer.chat.ChatEngine;
-import com.qxotic.jinfer.chat.ChatTemplate;
 import com.qxotic.jinfer.chat.Message;
 import com.qxotic.jinfer.llm.Sampling;
 import com.qxotic.jinfer.llm.SpecialTokens;
-import com.qxotic.toknroll.IntSequence;
 import java.io.IOException;
 import java.io.PrintStream;
 import java.time.Duration;
@@ -52,48 +51,28 @@ final class Instruct {
         Options.conversationHelp(out);
     }
 
-    /**
-     * The model's start tokens (BOS, where the family writes one) ahead of a raw prompt, as
-     * llama.cpp's {@code add_bos_token} does: a raw prompt bypasses the chat template, not the
-     * framing every input sequence begins with. A prompt that already spells them is left alone.
-     */
-    static int[] withPromptStart(IntSequence start, int[] tokens) {
-        int n = start.length();
-        if (n == 0) return tokens;
-        boolean present = tokens.length >= n;
-        for (int i = 0; present && i < n; i++) present = tokens[i] == start.intAt(i);
-        if (present) return tokens;
-        int[] out = new int[n + tokens.length];
-        for (int i = 0; i < n; i++) out[i] = start.intAt(i);
-        System.arraycopy(tokens, 0, out, n, tokens.length);
-        return out;
-    }
-
     static void run(
             ChatEngine engine, Sampling sampling, Options options, Main.IO io, String prompt)
             throws IOException {
         if (options.rawPrompt) {
-            int[] tokens =
-                    withPromptStart(
-                            engine.loaded()
-                                    .template()
-                                    .map(ChatTemplate::promptStart)
-                                    .orElse(IntSequence.empty()),
-                            SpecialTokens.encode(engine.loaded().tokenizer(), prompt).toArray());
-            try (Turn turn = Turn.startRaw(engine.loaded().tokenizer(), tokens, options, io);
-                    ChatEngine.Prepared prepared =
+            // prepareRaw puts the model's start tokens (BOS) ahead, as llama.cpp's add_bos_token
+            int[] tokens = SpecialTokens.encode(engine.loaded().tokenizer(), prompt).toArray();
+            try (ChatEngine.Prepared prepared =
                             Requests.checked(
-                                    ChatEngine.Prepared.raw(
+                                    engine.prepareRaw(
                                             tokens,
-                                            sampling.sampler(
-                                                    engine.loaded()
-                                                            .model()
-                                                            .configuration()
-                                                            .vocabularySize()),
+                                            sampling,
                                             options.maxOutputTokens,
                                             Duration.ZERO,
+                                            null,
                                             List.of()),
-                                    engine.contextCapacity())) {
+                                    engine.contextCapacity());
+                    Turn turn =
+                            Turn.startRaw(
+                                    engine.loaded().tokenizer(),
+                                    Batch.tokenIds(prepared.encoded().prompt()),
+                                    options,
+                                    io)) {
                 turn.finish(engine.complete(prepared, turn), engine);
             }
             return;
