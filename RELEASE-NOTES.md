@@ -25,6 +25,10 @@ The native libraries, the jinfer command and the wheels are built with Oracle Gr
   It follows `HTTP_PROXY`, `HTTPS_PROXY` and `NO_PROXY`, and a redirect to another host drops the `Authorization` header.
 - **PrismML Ternary Bonsai 2.** `Q2_0` and PrismML's `PQ2_0` and `PTQ1_0` load across gguf, jota, jam and jinfer, and the Qwen3.5 port applies Bonsai's `prism.hadamard` rotation, so Ternary Bonsai 2 runs in all three, images included.
   Checkpoints with an MTP head and a Hadamard rotation are refused.
+- **Faster quantized matrix products in jam-native.** On AVX-512-VNNI CPUs prefill runs 8 to 13% faster end to end (LFM2.5-2.6B, 512 tokens, 16 threads), and calls of 3 to 7 tokens run twice as fast in the `Q4_0`, `Q5_0` and `MXFP4` kernels.
+  On AVX2 and AVX-VNNI CPUs, Q4_K, Q5_K and Q6_K decode about three times as fast: their rows ran on SSE3 kernels before.
+  `Q2_0`, `PQ2_0` and `PTQ1_0` decode up to 14 times as fast, and their row kernels no longer leave a buffer allocated on every thread that ran one.
+  The 32-block formats' prefill now subtracts its bias exactly, which halves its rounding error, so outputs can differ from 0.3.1 in the last bits.
 - **Qwen3.5 fixes.** RoPE rotates NEOX pairs, as llama.cpp's IMROPE does; the port had rotated adjacent pairs, a mild drift that changed some greedy replies against llama.cpp.
   Images are resized as the reference does: the grid rounds half to even, the image is stretched with bicubic weights instead of letterboxed, and the projector's own `image_min_pixels` and `image_max_pixels` bound it.
 - **A GGUF's tensors must fill their slots.** The reader checks every tensor's size, from its shape and type, against the room the file gives it, and refuses a gap or two tensors that cross; a tensor inside another, such as Q and K inside a stacked QK, still loads.
