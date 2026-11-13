@@ -40,23 +40,23 @@ The output is one header line and two tables.
 The following is a real run on a 16-core Zen 5 desktop, on the JVM and then on the native image:
 
 ```text
-jinfer-bench 0.3.0 | runtime: GraalVM JIT | jam: native, vector, scalar | threads: 16 (engine default)
-| model            | threads | test   |              t/s |
-| ---------------- | ------: | ------ | ---------------: |
-| LFM2.5-350M-Q8_0 |      16 | pp512  | 8551.38 ± 647.87 |
-| LFM2.5-350M-Q8_0 |      16 | tg128  |    245.82 ± 1.72 |
+jinfer-bench 0.4.0-rc1 | runtime: GraalVM JIT | jam: native, vector, scalar | threads: 16 (engine default)
+| model            | threads | test   |               t/s |
+| ---------------- | ------: | ------ | ----------------: |
+| LFM2.5-350M-Q8_0 |      16 | pp512  | 12312.41 ± 138.30 |
+| LFM2.5-350M-Q8_0 |      16 | tg128  |     247.57 ± 4.65 |
 
 | model            | state ms | ttft ms | cache hit ms                        | mtp           | media cold/warm ms | peak MB |
 | ---------------- | -------- | ------- | ----------------------------------- | ------------- | ------------------ | ------- |
-| LFM2.5-350M-Q8_0 | 5.9      | 77.2    | 188.7 vs 475.6 (2.5x, 639 restored) | no draft head | n/a                | 1509    |
+| LFM2.5-350M-Q8_0 | 5.9      | 70.7    | 182.4 vs 385.5 (2.1x, 639 restored) | no draft head | n/a                | 1561    |
 ```
 
 ```text
-jinfer-bench 0.3.0 | runtime: native image | jam: native, vector, scalar | threads: 16 (engine default)
+jinfer-bench 0.4.0-rc1 | runtime: native image | jam: native, vector, scalar | threads: 16 (engine default)
 | model            | threads | test   |              t/s |
 | ---------------- | ------: | ------ | ---------------: |
-| LFM2.5-350M-Q8_0 |      16 | pp512  | 6104.32 ± 416.37 |
-| LFM2.5-350M-Q8_0 |      16 | tg128  |    241.85 ± 3.17 |
+| LFM2.5-350M-Q8_0 |      16 | pp512  |  9157.28 ± 91.67 |
+| LFM2.5-350M-Q8_0 |      16 | tg128  |    248.33 ± 0.73 |
 ```
 
 The header lists the version, the compiler, the jam backends that loaded (in the order matmuls try them), and the thread budget.
@@ -151,7 +151,7 @@ A report contains the machine, the header line, and the tables, verbatim:
 
 ```text
 <CPU> (<cores> cores), <RAM>, <OS>, <JDK>, jinfer commit <sha>, idle
-jinfer-bench 0.3.0 | runtime: native image | jam: native, vector, scalar | threads: 16 (engine default)
+jinfer-bench 0.4.0-rc1 | runtime: native image | jam: native, vector, scalar | threads: 16 (engine default)
 <the two tables>
 llama-bench <build>, -t 16: pp512 <t/s>, tg128 <t/s>
 ```
