@@ -69,6 +69,14 @@ static inline void jam_decode_mxfp4_256(const void* blk, __m256i* wq, __m256* dW
     *dW = _mm256_set1_ps(jam_mxfp4_dhalf(w->e));
 }
 
+/* 4 s8 activation codes, broadcast to every lane and biased to u8 (code + 128): the unsigned operand
+ * of the bands whose weights are the signed one. The bias is applied to the vector: through a
+ * general register (load, xor, vmovd, register broadcast) the same thing costs two shuffle-port
+ * micro-ops per dot on Intel, where a memory broadcast and a vpxor cost none. */
+static inline __m256i jam_bcast4_biased(const int8_t* x) {
+    return _mm256_xor_si256(_mm256_set1_epi32(jam_load32(x)), _mm256_set1_epi8((char) 0x80));
+}
+
 /* The 8-row repacks (AVX2 and AVX-VNNI bands) store a row's 32 codes of a block as its dword slot in each
  * 32-byte group line: dword g (codes 4g..4g+3) at dst + g*32. Decoded as one vector and stored as 8
  * dwords; written per byte, the decode-and-scatter loops left clang a branchy byte loop that was a third

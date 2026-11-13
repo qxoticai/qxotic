@@ -21,6 +21,10 @@
 #define JAM_Q6K_BYTES   210    /* ql[128] qh[64] scales[16] d(f16) */
 #define JAM_VNNI_BAND   32     /* weight rows per parallel work unit (2 groups of 16) */
 #define JAM_VNNI_MIN_SEQ 8     /* columns from which a band amortizes its repack; below, the row kernels */
+/* The AVX-512 band under the 32-block quants amortizes from 3 columns, and they keep their per-32
+ * activation scales there. The K-quants stay at JAM_VNNI_MIN_SEQ: below it their row kernels quantize
+ * the activations per 32 elements, the band per 256. */
+#define JAM_BAND32_MIN_SEQ 3
 
 /* GGML block_q8_0. Packed: a row may start at any byte (the API has no alignment contract), so the
  * scale is read through the packed member, never through a uint16_t pointer. */

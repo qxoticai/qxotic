@@ -74,19 +74,22 @@ void jam_mm_lowbit_i8mm(void* arg, int rb, int re, int tid) {
     if (J->n == 1) { jam_mm_lowbit_dotprod(arg, rb, re, tid); return; }
     const int k = J->k, nb32 = k / 32, qk = jam_lowbit_qk(J->wt), bytes = jam_lowbit_bytes(J->wt);
     const size_t wrow = (size_t) (J->lda / qk) * bytes;
-    jam_q8_blk* q8 = (jam_q8_blk*) jam_lowbit_scratch(4 * (size_t) nb32 * sizeof(jam_q8_blk));
+    jam_q8_blk* q8 = (jam_q8_blk*) J->repack[tid].qs;        /* 4 rows of Q8_0 blocks */
+    /* the job's fields as locals: the stores into q8 could alias *J, and the block loop would reload them */
+    const uint8_t* const W = (const uint8_t*) J->a;
+    const int ptq = J->wt == JAM_PTQ1_0;
     jam_q8_job group = *J;
     group.a = q8; group.lda = k;
     for (int r = rb; r < re; r += 4) {
         const int nr = re - r < 4 ? re - r : 4;
         for (int t = 0; t < nr; ++t) {
-            const uint8_t* w = (const uint8_t*) J->a + (size_t) (r + t) * wrow;
+            const uint8_t* w = W + (size_t) (r + t) * wrow;
             for (int b = 0; b < k / qk; b++, w += bytes) {
                 int8_t codes[128];
                 uint16_t d;
-                memcpy(&d, J->wt == JAM_PTQ1_0 ? w + JAM_PTQ1_0_D : w, 2);
-                if (J->wt == JAM_PTQ1_0) jam_ptq1_0_codes(w, codes);
-                else                     jam_q2_codes(w, qk, codes);
+                memcpy(&d, ptq ? w + JAM_PTQ1_0_D : w, 2);
+                if (ptq) jam_ptq1_0_codes(w, codes);
+                else     jam_q2_codes(w, qk, codes);
                 jam_q8_blk* o = q8 + (size_t) t * nb32 + (size_t) b * (qk / 32);
                 for (int s = 0; s < qk / 32; s++) { o[s].d = d; memcpy(o[s].qs, codes + 32 * s, 32); }
             }

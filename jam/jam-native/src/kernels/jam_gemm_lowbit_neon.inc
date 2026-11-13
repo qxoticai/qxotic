@@ -33,11 +33,10 @@ static inline __attribute__((always_inline)) void lowbit_rows(const jam_q8_job* 
 }
 
 void JAM_MM_NAME(void* arg, int rb, int re, int tid) {
-    (void) tid;
     const jam_q8_job* J = (const jam_q8_job*) arg;
     const int k = J->k, nb32 = k / 32, qk = jam_lowbit_qk(J->wt);
     const size_t wrow = (size_t)(J->lda / qk) * jam_lowbit_bytes(J->wt);
-    int8_t* codes = jam_lowbit_scratch(4 * (size_t) k + 4 * sizeof(float) * (size_t) nb32);
+    int8_t* codes = (int8_t*) J->repack[tid].qs;              /* 4 rows of k codes, then their scales per 32 */
     float* d32 = (float*) (codes + 4 * (size_t) k);
     for (int r = rb; r < re; r += 4) {                         /* 4 rows decode once, then every column */
         const int nr = re - r < 4 ? re - r : 4;

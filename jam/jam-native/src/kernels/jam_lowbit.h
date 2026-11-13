@@ -26,8 +26,9 @@
 #define JAM_PTQ1_0_D     26    /* the scale sits after qs and qh */
 
 /* Block bytes -> s8 codes. The row kernels decode each row once, but decode (n == 1) pays this per
- * token, so NEON gets SIMD versions: a table lookup puts byte e/4 in lane e and a per-lane shift brings
- * its code down; trits use NEON's byte multiply, -1 - (q >= 86) - (q >= 171) with compare masks of -1. */
+ * token, so NEON and AVX2 get SIMD versions. NEON: a table lookup puts byte e/4 in lane e and a
+ * per-lane shift brings its code down; trits use NEON's byte multiply, -1 - (q >= 86) - (q >= 171) with
+ * compare masks of -1. */
 #if defined(__ARM_NEON)
 #include <arm_neon.h>
 static inline void jam_q2_codes(const uint8_t* blk, int qk, int8_t* out) {
@@ -63,6 +64,47 @@ static inline void jam_ptq1_0_codes(const uint8_t* blk, int8_t* out) {
             out[120 + n * 2 + h] = (int8_t) (((q * 3) >> 8) - 1);
         }
 }
+#elif defined(__AVX2__)
+#include <immintrin.h>
+/* The 32 s8 codes (-1..2) of the 8 code bytes at q: byte e/4 goes to lane e, then bit 2(e%4) and the
+ * bit above it become the code's 1s and 2s. No per-byte variable shift on x86, so two compares. */
+static inline __m256i jam_q2_codes32(const uint8_t* q) {
+    long long bytes; memcpy(&bytes, q, 8);
+    const __m256i src = _mm256_shuffle_epi8(_mm256_set1_epi64x(bytes),
+        _mm256_setr_epi8(0, 0, 0, 0, 1, 1, 1, 1, 2, 2, 2, 2, 3, 3, 3, 3,
+                         4, 4, 4, 4, 5, 5, 5, 5, 6, 6, 6, 6, 7, 7, 7, 7));
+    const __m256i lo = _mm256_set1_epi32(0x40100401), hi = _mm256_set1_epi32((int) 0x80200802);
+    const __m256i ones = _mm256_and_si256(_mm256_cmpeq_epi8(_mm256_and_si256(src, lo), lo), _mm256_set1_epi8(1));
+    const __m256i twos = _mm256_and_si256(_mm256_cmpeq_epi8(_mm256_and_si256(src, hi), hi), _mm256_set1_epi8(2));
+    return _mm256_sub_epi8(_mm256_or_si256(ones, twos), _mm256_set1_epi8(1));
+}
+static inline void jam_q2_codes(const uint8_t* blk, int qk, int8_t* out) {
+    for (int j = 0; j < qk; j += 32) _mm256_storeu_si256((__m256i*) (out + j), jam_q2_codes32(blk + 2 + j / 4));
+}
+/* Trit n of 16 bytes, less 1, at pow = 3^n: q = b * pow mod 256 (x86 has no byte multiply: the even
+ * and the odd bytes as words), then -1 + (q >= 86) + (q >= 171), unsigned compares through max. */
+static inline __m128i jam_trits16(__m128i b, uint8_t pow) {
+    const __m128i low = _mm_set1_epi16(0x00FF), m = _mm_set1_epi16(pow);
+    const __m128i q = _mm_or_si128(_mm_and_si128(_mm_mullo_epi16(_mm_and_si128(b, low), m), low),
+                                   _mm_slli_epi16(_mm_mullo_epi16(_mm_srli_epi16(b, 8), m), 8));
+    const __m128i c86 = _mm_set1_epi8(86), c171 = _mm_set1_epi8((char) 171);
+    const __m128i ge1 = _mm_cmpeq_epi8(_mm_max_epu8(q, c86), q), ge2 = _mm_cmpeq_epi8(_mm_max_epu8(q, c171), q);
+    return _mm_sub_epi8(_mm_sub_epi8(_mm_set1_epi8(-1), ge1), ge2);
+}
+static inline void jam_ptq1_0_codes(const uint8_t* blk, int8_t* out) {
+    static const uint8_t pow3[5] = { 1, 3, 9, 27, 81 };
+    const __m128i s16 = _mm_loadu_si128((const __m128i*) blk);              /* stage of 16 bytes: elements 0..79 */
+    const __m128i s8 = _mm_loadl_epi64((const __m128i*) (blk + 16));        /* stage of 8 bytes: elements 80..119 */
+    for (int n = 0; n < 5; n++) {
+        _mm_storeu_si128((__m128i*) (out + n * 16), jam_trits16(s16, pow3[n]));
+        _mm_storel_epi64((__m128i*) (out + 80 + n * 8), jam_trits16(s8, pow3[n]));
+    }
+    for (int n = 0; n < 4; n++)                                /* qh: elements 120..127 */
+        for (int h = 0; h < 2; h++) {
+            const uint8_t q = (uint8_t) (blk[24 + h] * pow3[n]);
+            out[120 + n * 2 + h] = (int8_t) (((q * 3) >> 8) - 1);
+        }
+}
 #else
 static inline void jam_q2_codes(const uint8_t* blk, int qk, int8_t* out) {
     for (int j = 0; j < qk; j++) out[j] = (int8_t) (((blk[2 + j / 4] >> 2 * (j % 4)) & 3) - 1);
@@ -85,13 +127,8 @@ static inline int jam_lowbit_bytes(jam_dtype dt) {
     return dt == JAM_Q2_0 ? JAM_Q2_0_BYTES : dt == JAM_PQ2_0 ? JAM_PQ2_0_BYTES : JAM_PTQ1_0_BYTES;
 }
 
-/* The row kernels' code buffer: per thread, grown on demand and reused, never freed (a malloc per call
- * paged in fresh memory every time: 2x slower decode on macOS). */
-static inline int8_t* jam_lowbit_scratch(size_t bytes) {
-    static _Thread_local int8_t* buf; static _Thread_local size_t cap;
-    if (bytes > cap) { free(buf); buf = (int8_t*) malloc(bytes); cap = buf ? bytes : 0; }
-    return buf;
-}
+/* The row kernels decode into their worker's scratch, J->repack[tid].qs (jam.c ensure_repack: at least
+ * 1392 bytes per 32 elements, where the largest user, four rows of codes and scales, takes 144). */
 
 /* A row of nblk blocks -> its k s8 codes and one scale per 32 elements (a block's scale repeats). */
 static inline void jam_lowbit_row(jam_dtype dt, const uint8_t* w, int nblk, int8_t* codes, float* d32) {
@@ -103,21 +140,5 @@ static inline void jam_lowbit_row(jam_dtype dt, const uint8_t* w, int nblk, int8
         for (int s = 0; s < qk / 32; s++) *d32++ = d;
     }
 }
-
-#if defined(__AVX2__)
-#include <immintrin.h>
-/* The 32 s8 codes (-1..2) of the 8 code bytes at q: byte e/4 goes to lane e, then bit 2(e%4) and the
- * bit above it become the code's 1s and 2s. No per-byte variable shift on x86, so two compares. */
-static inline __m256i jam_q2_codes32(const uint8_t* q) {
-    long long bytes; memcpy(&bytes, q, 8);
-    const __m256i src = _mm256_shuffle_epi8(_mm256_set1_epi64x(bytes),
-        _mm256_setr_epi8(0, 0, 0, 0, 1, 1, 1, 1, 2, 2, 2, 2, 3, 3, 3, 3,
-                         4, 4, 4, 4, 5, 5, 5, 5, 6, 6, 6, 6, 7, 7, 7, 7));
-    const __m256i lo = _mm256_set1_epi32(0x40100401), hi = _mm256_set1_epi32((int) 0x80200802);
-    const __m256i ones = _mm256_and_si256(_mm256_cmpeq_epi8(_mm256_and_si256(src, lo), lo), _mm256_set1_epi8(1));
-    const __m256i twos = _mm256_and_si256(_mm256_cmpeq_epi8(_mm256_and_si256(src, hi), hi), _mm256_set1_epi8(2));
-    return _mm256_sub_epi8(_mm256_or_si256(ones, twos), _mm256_set1_epi8(1));
-}
-#endif
 
 #endif /* JAM_LOWBIT_H */

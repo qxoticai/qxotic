@@ -13,13 +13,12 @@
     _mm256_maddubs_epi16((aw), _mm256_sign_epi8((a), (w))), _mm256_set1_epi16(1)))
 
 void jam_mm_lowbit_avx2(void* arg, int rb, int re, int tid) {
-    (void) tid;
     const jam_q8_job* J = (const jam_q8_job*) arg;
     const int8_t* AQ = J->aq; const float* AD = J->ad;
     float* C = (float*) J->c;
     const int ldc = J->ldc, n = J->n, k = J->k, nb32 = k / 32, qk = jam_lowbit_qk(J->wt);
     const size_t wrow = (size_t)(J->lda / qk) * jam_lowbit_bytes(J->wt);   /* row stride honors lda (ldw) */
-    int8_t* codes = jam_lowbit_scratch((size_t) k + sizeof(float) * (size_t) nb32);
+    int8_t* codes = (int8_t*) J->repack[tid].qs;              /* k codes, then a scale per 32 */
     float* d32 = (float*) (codes + k);
 
     for (int i = rb; i < re; ++i) {

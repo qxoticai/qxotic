@@ -1,8 +1,11 @@
 /* AVX2 8-row repack bands (ymm + maddubs): the quantized prefill below AVX-512-VNNI. This TU is
  * compiled with -mavx2 -mfma -mf16c only (part of the jam_avx2 target). The K-quants and MXFP4 run
- * here on every such CPU (Haswell..Rocket Lake, Zen 2/3, and the Alder-Lake-class AVX-VNNI clients,
- * which have no K-quant or MXFP4 VNNI band); Q8_0, Q5_0 and Q4_0 only on plain AVX2 (AVX-VNNI has
- * its own bands for those).
+ * here on every such CPU without VNNI (Haswell..Rocket Lake, Zen 2/3); Q8_0, Q5_0 and Q4_0 too.
+ *
+ * The file builds a second time, with JAM_BAND8_VNNI, as the AVX-VNNI clients' K-quant and MXFP4
+ * bands (jam_kernels_band8_avxvnni.c): the same repack, tiles and float epilogues, where a dot is one
+ * vpdpbusd into int32 lanes instead of the maddubs ladder below, so the int16 chains and their bounds
+ * do not apply. Those CPUs have their own Q8_0, Q5_0 and Q4_0 bands (jam_kernels_avxvnni.c).
  *
  * The same per-worker scratch as the VNNI bands (jam_repack from ensure_kquant, whose 32-row blob
  * also holds a band's four 8-row groups: at most 256 B of codes per group per 32-block), the same
@@ -34,6 +37,17 @@
 #define B8_NR_KQ  6
 #define B8_NR_Q8  8
 
+#ifdef JAM_BAND8_VNNI
+#define B8_NAME(quant) jam_##quant##_band8_avxvnni
+/* one 32-byte weight group (8 rows x 4 elems) against a 4-elem activation broadcast: one vpdpbusd.
+ * The chains of the maddubs build are plain int32 accumulators here, and folding one is an add. */
+static inline __m256i b8_dot(__m256i acc, __m256i wu, __m256i xb) { return _mm256_dpbusd_avx_epi32(acc, wu, xb); }
+static inline __m256i b8_chain(__m256i i32, __m256i wu, __m256i xb) { return _mm256_dpbusd_avx_epi32(i32, wu, xb); }
+static inline __m256i b8_chain4(__m256i i32, __m256i wu, __m256i xb) { return _mm256_dpbusd_avx_epi32(i32, wu, xb); }
+static inline __m256i b8_fold(__m256i acc, __m256i i32) { return _mm256_add_epi32(acc, i32); }
+#define B8_UNROLL2
+#else
+#define B8_NAME(quant) jam_##quant##_band8_avx2
 /* one 32-byte weight group (8 rows x 4 elems) dotted against a 4-elem activation broadcast */
 static inline __m256i b8_dot(__m256i acc, __m256i wu, __m256i xb) {
     return _mm256_add_epi32(acc, _mm256_madd_epi16(_mm256_maddubs_epi16(wu, xb), _mm256_set1_epi16(1)));
@@ -58,11 +72,14 @@ static inline __m256i b8_fold(__m256i acc, __m256i i16) {
     return _mm256_add_epi32(acc, _mm256_madd_epi16(i16, _mm256_set1_epi16(1)));
 }
 
+#endif
+
 /* bit `shift` (mask 1) or bits shift..shift+1 (mask 3) of every byte of v, moved to bit 4 */
 static inline __m256i b8_plane(__m256i v, int shift, int mask) {
     return _mm256_slli_epi16(_mm256_and_si256(_mm256_srli_epi16(v, shift), _mm256_set1_epi8((char) mask)), 4);
 }
 
+#ifndef JAM_BAND8_VNNI   /* phase 1 is the AVX2 build's, for both */
 /* ---- phase 1: F32 activations -> int8 (jam_quant32_256) + per-32 scale + per-16 RAW float sums,
  * which feed the exact dmin*min / -32-offset corrections ---- */
 static void quantize_row_q8s_avx2(const float* x, int kblocks, int8_t* xq, float* dx, float* xs) {
@@ -83,6 +100,7 @@ void jam_band8_quant_avx2(void* arg, int s0, int s1, int tid) {
                               J->dx + (size_t) s * J->kblocks,
                               J->xsum + (size_t) s * J->kblocks * 2);
 }
+#endif
 
 /* ================= Q4_K ============================================================== */
 
@@ -176,7 +194,7 @@ static inline void q4k_block8_nr(const uint8_t* qs, const float* dw, const float
         _mm256_storeu_ps(out + (int64_t)(s0 + c) * ldc + r, f[c]);
 }
 
-void jam_q4k_band8_avx2(void* arg, int t0, int t1, int tid) {
+void B8_NAME(q4k)(void* arg, int t0, int t1, int tid) {
     const jam_band_job* J = (const jam_band_job*) arg;
     const int kblocks = J->kblocks, sblocks = J->dim1 / JAM_QKK, seq = J->seq;
     JAM_BAND8_DRIVER(kblocks * 128, kblocks * 8, B8_NR_Q4K,   /* packed: 128 B/32-block/group8 */
@@ -267,7 +285,7 @@ static inline void q5k_block8_nr(const uint8_t* qs, const float* dw, const float
         _mm256_storeu_ps(out + (int64_t)(s0 + c) * ldc + r, f[c]);
 }
 
-void jam_q5k_band8_avx2(void* arg, int t0, int t1, int tid) {
+void B8_NAME(q5k)(void* arg, int t0, int t1, int tid) {
     const jam_band_job* J = (const jam_band_job*) arg;
     const int kblocks = J->kblocks, sblocks = J->dim1 / JAM_QKK, seq = J->seq;
     JAM_BAND8_DRIVER(kblocks * 256, kblocks * 8, B8_NR_KQ,    /* byte-expanded: 256 B/sub-block/group8 */
@@ -351,7 +369,7 @@ static inline void q6k_block8_nr(const uint8_t* qs, const float* dw, const int8_
         _mm256_storeu_ps(out + (int64_t)(s0 + c) * ldc + r, f[c]);
 }
 
-void jam_q6k_band8_avx2(void* arg, int t0, int t1, int tid) {
+void B8_NAME(q6k)(void* arg, int t0, int t1, int tid) {
     const jam_band_job* J = (const jam_band_job*) arg;
     const int kblocks = J->kblocks, sblocks = J->dim1 / JAM_QKK, subs16 = J->dim1 / 16, seq = J->seq;
     JAM_BAND8_DRIVER(kblocks * 256, subs16 * 8, B8_NR_KQ,     /* 2 sub16 x 128 B per 32-block */
@@ -373,6 +391,7 @@ void jam_q6k_band8_avx2(void* arg, int t0, int t1, int tid) {
  *   MXFP4: signed codes |w| <= 12, so the a+128 scheme is safe (peak 255*12*2 = 6120):
  *          u = x^0x80 broadcast, s = w; corrected per row/block via cw = d*128*sum(w). */
 
+#ifndef JAM_BAND8_VNNI   /* AVX-VNNI has its own Q8_0, Q5_0 and Q4_0 bands */
 /* ---- Q8_0: repack 8 rows (raw signed bytes, 256 B/block/group8) + per-row scale ---- */
 static void repack_q8s_group8(const uint8_t* wbase, int64_t w_stride, int nb, uint8_t* qs, float* dw) {
     for (int r = 0; r < 8; r++) {
@@ -537,6 +556,8 @@ void jam_q4_0_band8_avx2(void* arg, int t0, int t1, int tid) {
         jam_q4_0_dot_f32(J->w + (int64_t) r * J->w_stride, nb, J->rhs + (int64_t) s * J->rhs_stride));
 }
 
+#endif
+
 /* ---- MXFP4: LUT-decoded signed codes |w|<=12; a+128 scheme, cw = d*128*sum(w) ---- */
 static void repack_mxfp4_group8(const uint8_t* wbase, int64_t w_stride, int nb,
                                 uint8_t* qs, float* dw, float* cw) {
@@ -562,7 +583,7 @@ static inline __m256 mxfp4_block8(const uint8_t* qs, const float* dw, const floa
         for (int h = 0; h < 2; h++) {   /* chains of 4 maddubs stay under int16 (4*6120) */
             __m256i i16 = _mm256_setzero_si256();
             for (int g = h * 4; g < h * 4 + 4; g++)
-                i16 = b8_chain4(i16, _mm256_set1_epi32(jam_load32(x + 4 * g) ^ (int32_t) 0x80808080u),
+                i16 = b8_chain4(i16, jam_bcast4_biased(x + 4 * g),
                                _mm256_load_si256((const void*) (qs + g * 32)));
             acc = b8_fold(acc, i16);
         }
@@ -592,7 +613,7 @@ static inline void mxfp4_block8_nr(const uint8_t* qs, const float* dw, const flo
             for (int g = h * 4; g < h * 4 + 4; g++) {
                 __m256i w = _mm256_load_si256((const void*) (qs + g * 32));
                 for (int c = 0; c < B8_NR_KQ; c++)
-                    i16[c] = b8_chain4(i16[c], _mm256_set1_epi32(jam_load32(x[c] + 4 * g) ^ (int32_t) 0x80808080u), w);
+                    i16[c] = b8_chain4(i16[c], jam_bcast4_biased(x[c] + 4 * g), w);
             }
             for (int c = 0; c < B8_NR_KQ; c++) acc[c] = b8_fold(acc[c], i16[c]);
         }
@@ -609,7 +630,7 @@ static inline void mxfp4_block8_nr(const uint8_t* qs, const float* dw, const flo
         _mm256_storeu_ps(out + (int64_t)(s0 + c) * ldc + r, f[c]);
 }
 
-void jam_mxfp4_band8_avx2(void* arg, int t0, int t1, int tid) {
+void B8_NAME(mxfp4)(void* arg, int t0, int t1, int tid) {
     const jam_band_job* J = (const jam_band_job*) arg;
     const int nb = J->kblocks, seq = J->seq;
     JAM_BAND8_DRIVER(nb * 256, nb * 8, B8_NR_KQ,              /* mw holds the corrections cw */

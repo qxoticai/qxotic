@@ -1,36 +1,40 @@
-/* The 32x4 VNNI band: every quantized prefill (n >= JAM_VNNI_MIN_SEQ) on AVX-512-VNNI.
+/* The 32x6 VNNI band: quantized prefill on AVX-512-VNNI, the 32-block quants from JAM_BAND32_MIN_SEQ
+ * columns, the K-quants from JAM_VNNI_MIN_SEQ.
  *
  * One tile, eleven formats. A band is 32 weight rows, repacked per call into two 16-row groups whose
- * vpdpbusd lanes are the rows. The tile sweeps 4 activation columns at a time and every activation
- * broadcast feeds both groups: one broadcast per two dots.
+ * vpdpbusd lanes are the rows. The tile sweeps 6 activation columns at a time and every activation
+ * broadcast feeds both groups: one broadcast per two dots, one weight load per six.
  *
  * Why this shape. On Zen 5 the vector unit issues 4 pipe slots per cycle: a 512-bit vpdpbusd takes 2,
  * any other 512-bit op 2, a zmm load 1, a memory broadcast half. A tile is judged by the slots it
  * spends per dot beyond the dot itself (single core, fraction of the vpdpbusd peak):
  *   16 rows x 4 columns, one broadcast per dot ................ 0.52
  *   32 rows x 4 columns, one broadcast per two dots ........... 0.90-0.95
+ *   32 rows x 6 columns, a weight load per 6 dots, not 4 ...... measured +5 to +7% over x 4; x 8 spills
  *   sub-block scale in float (cvt, mul, fmadd, fnmadd) ........ 0.62-0.70
  *   sub-block scale in int (vpmulld, vpaddd) .................. 0.80-0.87
  * Measured and rejected: k-chunking the band into L1 (flat: the tile is pipe-bound, not load-bound)
  * and EVEX {1to16} broadcasts (the load unit serializes them, half the speed).
- * A band's fixed cost, streaming and repacking its weights, is worth about 10 columns of dots
- * (single core, k = 4096), so the tile only pays off from JAM_VNNI_MIN_SEQ columns up. Hence the
- * repack's shape: rows decode one at a time, everything after that runs 16 rows wide, in registers.
+ * A band's fixed cost, streaming and repacking its weights, is worth about 7 columns of dots
+ * (single core, k = 2048), and a short call pays it in full. Hence the repack's shape: 16 bytes of
+ * each of 16 rows load straight into four registers, one row per lane group, and everything after
+ * that, the format's decode included, runs 16 rows wide.
  *
  * Math. Activations are s8 codes q with a float scale xd, stored biased (u8 = q + 128) because they
- * are vpdpbusd's unsigned operand; weights are s8 codes w. Every dot acc = sum w (q + 128) therefore
- * carries 128 sum w, a constant of the weight row that the repack precomputes.
+ * are vpdpbusd's unsigned operand; weights are s8 codes w. Every dot sum w (q + 128) therefore
+ * carries 128 sum w, a constant of the weight row that the repack precomputes as an integer, and the
+ * accumulators start from its negative: what reaches the floats is the exact sum w q.
  *   K-quants   one xd per 256 elements (llama.cpp's Q8_K), integer sub-block scales sc and mins mn:
- *              xd (d (sum_sub sc acc_sub - K) - dmin sum_sub mn qsum_sub),   K = 128 sum_sub sc sum w
+ *              xd (d s1 - dmin sum_sub mn qsum_sub),   s1 = sum_sub sc acc_sub - K,   K = 128 sum_sub sc sum w
  *   32-blocks  one xd per 32 elements (llama.cpp's Q8_0 activations), one float scale d per block:
- *              sum_b xd_b (d_b acc_b - C_b),                                 C_b = 128 d_b sum w
+ *              sum_b xd_b d_b acc_b,                   acc_b = sum w (q + 128) + B_b,   B_b = -128 sum w
  *
  * Repack: one blob per 16-row group per 256 elements.
  *   W     [64][16][4] s8   lanes = rows, a byte group = 4 consecutive k
  *   S     K-quants: sc [nsub][16] i32      32-blocks: d [8][16] f32
- *   S2    the second half of S. 32-blocks: C [8][16] f32      Q4_K, Q5_K: mn [8][16] i32, MN's source
+ *   S2    32-blocks: B [8][16] i32
  *   MN    [4][16][2] i16   min pairs (2p, 2p + 1)                           Q4_K, Q5_K
- *   K     [16] i32
+ *   K     [16] i32         -K                                               K-quants
  *   D, DMIN  [16] f32 each
  * A group short of 16 rows is padded with zero rows and stored under a mask.
  *
@@ -39,9 +43,9 @@
 #include "jam_internal.h"
 #include "jam_kquant.h"
 #include "jam_mxfp4.h"
+#include "jam_lowbit.h"
 #include "jam_q1_0.h"
 #include <float.h>
-#include "jam_lowbit.h"
 #include <immintrin.h>
 #include <stdatomic.h>
 #include <stdint.h>
@@ -49,7 +53,7 @@
 
 enum {
     W_OFF = 0, W_BYTES = 1024,   /* per 64 codes of a row: 16 dwords x 16 rows */
-    S_OFF = 4096, S2_OFF = 4608, /* S2: the second half of S (C, or the raw mins) */
+    S_OFF = 4096, S2_OFF = 4608, /* S2: the second half of S (the 32-blocks' B) */
     MN_OFF = 5120, K_OFF = 5376, D_OFF = 5440, DMIN_OFF = 5504
 };
 _Static_assert(DMIN_OFF + 64 == JAM_BAND32_BLOB, "blob layout");
@@ -60,6 +64,8 @@ typedef enum {
     KIND_F32    /* Q8_0, Q4_0, Q5_0, MXFP4, Q1_0 and the low-bit codes: 8 blocks of 32, float scales */
 } band_kind;
 
+#define NCMAX 6   /* columns per tile: 12 dot and 12 scale accumulators in registers, the float sums beside them */
+_Static_assert(NCMAX == 6, "the band's tile switch names 4, 5 and 6 columns");
 #define INLINE static inline __attribute__((always_inline))
 #define ALIGN64 __attribute__((aligned(64)))
 
@@ -128,243 +134,303 @@ void jam_band32_quant32_avx512(void* job, int s0, int s1, int tid) {
     }
 }
 
-/* ================= decode: one row, one 256-element stretch -> s8 codes + raw scales ================= */
+/* ================= repack: 16 rows -> blobs, 16 rows wide from the first load ================= */
 
-/* w = the row's first byte, sb = which 256-element stretch, nbs = its 32-blocks (8, fewer on a ragged
- * last stretch of a 32-block quant). Writes nbs * 32 codes and the row's scales as 16 lanes:
- *   Q4_K, Q5_K   i32 sc[8] then mn[8]     Q6_K   i32 sc[16]     32-blocks   f32 d[8]
- * The K-quants also return the block's d (and dmin). */
-typedef void (*band_decode)(const uint8_t* w, int sb, int nbs, uint8_t* codes, void* scales,
-                            float* d, float* dmin);
-#define DECODER(NAME) \
-    INLINE void NAME(const uint8_t* w, int sb, int nbs, uint8_t* codes, void* scales, float* d, float* dmin)
+/* The 16 rows of a group at one 256-element stretch: row r starts at p[r / 4] + (r % 4) * stride. */
+typedef struct { const uint8_t* p[4]; int64_t stride; } rows16;
 
-/* 32 packed bytes -> 32 low nibbles, 32 high nibbles */
-INLINE void nibbles64(const uint8_t* q, __m256i* lo, __m256i* hi) {
-    const __m256i m4 = _mm256_set1_epi8(0x0F);
-    __m256i v = _mm256_loadu_si256((const __m256i*) q);
-    *lo = _mm256_and_si256(v, m4);
-    *hi = _mm256_and_si256(_mm256_srli_epi16(v, 4), m4);
-}
-/* 16 packed bytes -> [16 low nibbles | 16 high nibbles] */
-INLINE __m256i nibbles32(const uint8_t* q) {
-    const __m128i m4 = _mm_set1_epi8(0x0F);
-    __m128i v = _mm_loadu_si128((const __m128i*) q);
-    return _mm256_inserti128_si256(_mm256_castsi128_si256(_mm_and_si128(v, m4)),
-                                   _mm_and_si128(_mm_srli_epi16(v, 4), m4), 1);
-}
-/* the bits `mask` of every byte of qh at bit `shift`, moved up to bit 4 (above a nibble) */
-INLINE __m256i plane(__m256i qh, int shift, int mask) {
-    const __m256i bits = _mm256_and_si256(_mm256_srli_epi16(qh, shift), _mm256_set1_epi8((char) mask));
-    return _mm256_slli_epi16(bits, 4);
-}
-INLINE void put(uint8_t* codes, __m256i v) { _mm256_store_si256((__m256i*) codes, v); }
-
-INLINE void k32_header(const uint8_t* w, void* scales, float* d, float* dmin) {   /* Q4_K / Q5_K */
-    uint8_t scmn[16];
-    jam_q4k_scales_mins(w + 4, scmn, scmn + 8);
-    _mm512_store_si512(scales, _mm512_cvtepu8_epi32(_mm_loadu_si128((const __m128i*) scmn)));
-    *d = jam_half_at(w); *dmin = jam_half_at(w + 2);
-}
-
-DECODER(decode_q4k) {
-    (void) nbs;
-    w += (size_t) sb * JAM_Q4K_BYTES;
-    k32_header(w, scales, d, dmin);
-    for (int g = 0; g < 4; g++) {                 /* byte i of chunk g: sub-block 2g low, 2g + 1 high */
-        __m256i lo, hi;
-        nibbles64(w + 16 + g * 32, &lo, &hi);
-        put(codes + g * 64, lo); put(codes + g * 64 + 32, hi);
-    }
-}
-
-DECODER(decode_q5k) {
-    (void) nbs;
-    w += (size_t) sb * JAM_Q5K_BYTES;
-    k32_header(w, scales, d, dmin);
-    const __m256i qh = _mm256_loadu_si256((const __m256i*) (w + 16));   /* bit s of qh[i]: sub-block s */
-    for (int g = 0; g < 4; g++) {
-        __m256i lo, hi;
-        nibbles64(w + 48 + g * 32, &lo, &hi);
-        put(codes + g * 64,      _mm256_or_si256(lo, plane(qh, 2 * g, 1)));
-        put(codes + g * 64 + 32, _mm256_or_si256(hi, plane(qh, 2 * g + 1, 1)));
-    }
-}
-
-DECODER(decode_q6k) {
-    (void) nbs; (void) dmin;
-    w += (size_t) sb * JAM_Q6K_BYTES;              /* ql[128] qh[64] scales[16] d */
-    _mm512_store_si512(scales, _mm512_cvtepi8_epi32(_mm_loadu_si128((const __m128i*) (w + 192))));
-    *d = jam_half_at(w + 208);
-    const __m256i b32 = _mm256_set1_epi8(32);
-    for (int h = 0; h < 2; h++) {                  /* a half: 4 planes of 32 codes */
-        const __m256i qh = _mm256_loadu_si256((const __m256i*) (w + 128 + h * 32));
-        __m256i q[4];
-        nibbles64(w + h * 64,      &q[0], &q[2]);
-        nibbles64(w + h * 64 + 32, &q[1], &q[3]);
-        for (int j = 0; j < 4; j++) {
-            const __m256i code = _mm256_or_si256(q[j], plane(qh, 2 * j, 3));
-            put(codes + h * 128 + j * 32, _mm256_sub_epi8(code, b32));
-        }
-    }
-}
-
-DECODER(decode_q8_0) {
-    (void) d; (void) dmin;
-    w += (size_t) sb * 8 * JAM_Q8_0_BYTES;
-    for (int b = 0; b < nbs; b++, w += JAM_Q8_0_BYTES) {
-        ((float*) scales)[b] = jam_half_at(w);
-        put(codes + b * 32, _mm256_loadu_si256((const __m256i*) (w + 2)));
-    }
-}
-
-DECODER(decode_q4_0) {
-    (void) d; (void) dmin;
-    w += (size_t) sb * 8 * JAM_Q4_0_BYTES;
-    for (int b = 0; b < nbs; b++, w += JAM_Q4_0_BYTES) {
-        ((float*) scales)[b] = jam_half_at(w);
-        put(codes + b * 32, _mm256_sub_epi8(nibbles32(w + 2), _mm256_set1_epi8(8)));
-    }
-}
-
-DECODER(decode_q5_0) {
-    (void) d; (void) dmin;
-    w += (size_t) sb * 8 * JAM_Q5_0_BYTES;
-    for (int b = 0; b < nbs; b++, w += JAM_Q5_0_BYTES) {
-        ((float*) scales)[b] = jam_half_at(w);
-        const __m256i high = _mm256_movm_epi8((__mmask32) jam_load32(w + 2));   /* bit e: element e */
-        const __m256i bit4 = _mm256_and_si256(high, _mm256_set1_epi8(0x10));
-        const __m256i code = _mm256_or_si256(nibbles32(w + 6), bit4);
-        put(codes + b * 32, _mm256_sub_epi8(code, _mm256_set1_epi8(16)));
-    }
-}
-
-DECODER(decode_mxfp4) {
-    (void) d; (void) dmin;
-    static const int8_t lut[16] = { JAM_MXFP4_CODES };
-    const __m256i t = _mm256_broadcastsi128_si256(_mm_loadu_si128((const __m128i*) lut));
-    w += (size_t) sb * 8 * JAM_MXFP4_BYTES;
-    for (int b = 0; b < nbs; b++, w += JAM_MXFP4_BYTES) {
-        ((float*) scales)[b] = jam_mxfp4_dhalf(w[0]);
-        put(codes + b * 32, _mm256_shuffle_epi8(t, nibbles32(w + 1)));
-    }
-}
-
-DECODER(decode_q1_0) {
-    (void) d; (void) dmin;
-    for (int b = 0; b < nbs; b++) {                /* a 128-element block spans four 32-blocks */
-        const int b32 = sb * 8 + b;
-        const uint8_t* blk = w + (size_t) (b32 >> 2) * JAM_Q1_0_BYTES;
-        ((float*) scales)[b] = jam_half_at(blk);
-        const __m256i set = _mm256_movm_epi8((__mmask32) jam_load32(blk + 2 + (b32 & 3) * 4));
-        const __m256i clear = _mm256_xor_si256(set, _mm256_set1_epi8(-1));
-        put(codes + b * 32, _mm256_or_si256(clear, _mm256_set1_epi8(1)));   /* bit set: +1, clear: -1 */
-    }
-}
-
-INLINE void q2_codes(const uint8_t* w, int sb, int nbs, uint8_t* codes, void* scales, const int qk) {
-    for (int b = 0; b < nbs; b++) {                /* a qk-element block spans qk / 32 32-blocks */
-        const int b32 = sb * 8 + b;
-        const uint8_t* blk = w + (size_t) (b32 / (qk / 32)) * (2 + qk / 4);
-        ((float*) scales)[b] = jam_half_at(blk);
-        put(codes + b * 32, jam_q2_codes32(blk + 2 + (b32 % (qk / 32)) * 8));
-    }
-}
-DECODER(decode_q2_0)  { (void) d; (void) dmin; q2_codes(w, sb, nbs, codes, scales, JAM_Q2_0_QK); }
-DECODER(decode_pq2_0) { (void) d; (void) dmin; q2_codes(w, sb, nbs, codes, scales, JAM_PQ2_0_QK); }
-
-DECODER(decode_ptq1_0) {
-    (void) d; (void) dmin;
-    for (int b = 0; b < nbs; b += 4) {             /* a 128-element block: its codes once, 4 32-blocks */
-        const uint8_t* blk = w + (size_t) ((sb * 8 + b) / 4) * JAM_PTQ1_0_BYTES;
-        ALIGN64 int8_t block[JAM_PTQ1_0_QK];
-        jam_ptq1_0_codes(blk, block);
-        for (int s = 0; s < 4; s++) {
-            ((float*) scales)[b + s] = jam_half_at(blk + JAM_PTQ1_0_D);
-            put(codes + (b + s) * 32, _mm256_load_si256((const __m256i*) (block + s * 32)));
-        }
-    }
-}
-
-/* ================= repack: up to 16 rows -> blobs ================= */
-
-/* 16 rows x 16 dwords (row r at src + r * stride) -> 16 dwords x 16 rows (dword g at dst + g * 64).
- * Four vpermt2d butterfly stages: stage s merges rows 2^s apart; v[i] ends as dword order[i]. */
-INLINE void transpose16(const uint8_t* src, int stride, uint8_t* dst) {
-    static const int32_t merge[4][2][16] = {
-        {{ 0, 16,  1, 17,  2, 18,  3, 19,  4, 20,  5, 21,  6, 22,  7, 23 },
-         { 8, 24,  9, 25, 10, 26, 11, 27, 12, 28, 13, 29, 14, 30, 15, 31 }},
-        {{ 0,  1, 16, 17,  4,  5, 20, 21,  8,  9, 24, 25, 12, 13, 28, 29 },
-         { 2,  3, 18, 19,  6,  7, 22, 23, 10, 11, 26, 27, 14, 15, 30, 31 }},
-        {{ 0,  1,  2,  3, 16, 17, 18, 19,  4,  5,  6,  7, 20, 21, 22, 23 },
-         { 8,  9, 10, 11, 24, 25, 26, 27, 12, 13, 14, 15, 28, 29, 30, 31 }},
-        {{ 0,  1,  2,  3,  4,  5,  6,  7, 16, 17, 18, 19, 20, 21, 22, 23 },
-         { 8,  9, 10, 11, 12, 13, 14, 15, 24, 25, 26, 27, 28, 29, 30, 31 }},
-    };
-    static const int order[16] = { 0, 8, 1, 9, 4, 12, 5, 13, 2, 10, 3, 11, 6, 14, 7, 15 };
-    __m512i v[16];                                 /* fully unrolled, so the 16 rows live in registers */
-    #pragma GCC unroll 16
-    for (int r = 0; r < 16; r++) v[r] = _mm512_load_si512((const void*) (src + r * stride));
+/* The 16 bytes at `off` of every row, transposed: v[j] holds dword j of the chunk, lanes = rows.
+ * Lane L of t[q] is loaded with row 4L + q, so a 4x4 transpose inside each 128-bit lane is the whole
+ * job: 16 loads and 8 in-lane unpacks per 16 rows x 16 bytes, no shuffle across lanes, and nothing
+ * between the weight bytes and the registers. */
+typedef struct { __m512i v[4]; } quad;
+INLINE quad chunk(const rows16 R, int64_t off) {
+    __m512i t[4];
     #pragma GCC unroll 4
-    for (int s = 0; s < 4; s++) {
-        const int span = 1 << s;
-        const __m512i lo = _mm512_loadu_si512((const void*) merge[s][0]);
-        const __m512i hi = _mm512_loadu_si512((const void*) merge[s][1]);
-        #pragma GCC unroll 16
-        for (int i = 0; i < 16; i++) {
-            if (i & span) continue;
-            __m512i a = v[i], b = v[i + span];
-            v[i]        = _mm512_permutex2var_epi32(a, lo, b);
-            v[i + span] = _mm512_permutex2var_epi32(a, hi, b);
-        }
+    for (int q = 0; q < 4; q++) {
+        const int64_t o = q * R.stride + off;
+        t[q] = _mm512_castsi128_si512(_mm_loadu_si128((const __m128i*) (R.p[0] + o)));
+        t[q] = _mm512_inserti32x4(t[q], _mm_loadu_si128((const __m128i*) (R.p[1] + o)), 1);
+        t[q] = _mm512_inserti32x4(t[q], _mm_loadu_si128((const __m128i*) (R.p[2] + o)), 2);
+        t[q] = _mm512_inserti32x4(t[q], _mm_loadu_si128((const __m128i*) (R.p[3] + o)), 3);
     }
-    #pragma GCC unroll 16
-    for (int i = 0; i < 16; i++) _mm512_store_si512((void*) (dst + order[i] * 64), v[i]);
+    const __m512i a = _mm512_unpacklo_epi32(t[0], t[1]), b = _mm512_unpackhi_epi32(t[0], t[1]);
+    const __m512i c = _mm512_unpacklo_epi32(t[2], t[3]), d = _mm512_unpackhi_epi32(t[2], t[3]);
+    return (quad) {{ _mm512_unpacklo_epi64(a, c), _mm512_unpackhi_epi64(a, c),
+                     _mm512_unpacklo_epi64(b, d), _mm512_unpackhi_epi64(b, d) }};
 }
 
-/* Rows decode one at a time into row-major codes and scales; transposes make both 16 rows wide,
- * and the sums and corrections are computed on the 16 rows at once. */
-INLINE void repack16(const uint8_t* w, int64_t w_stride, int nrows, int nb, uint8_t* blob,
-                     const band_kind kind, band_decode decode) {
-    const int nsub = kind == KIND_K16 ? 16 : 8, ni = 64 / nsub;   /* 4-k groups per sub-block */
-    const __m512i ones = _mm512_set1_epi8(1);
-    ALIGN64 uint8_t codes[16 * JAM_QKK] = { 0 };   /* the padding rows of a short group stay zero; past a */
-    ALIGN64 uint8_t scales[16 * 64] = { 0 };       /* ragged k, a stretch keeps stale blocks the tile never reads */
-    for (int sb = 0; sb * 8 < nb; sb++, blob += JAM_BAND32_BLOB) {
-        const int nbs = nb - sb * 8 < 8 ? nb - sb * 8 : 8;
-        memset(blob + D_OFF, 0, JAM_BAND32_BLOB - D_OFF);   /* d, dmin of the padding rows */
-        for (int r = 0; r < nrows; r++)
-            decode(w + r * w_stride, sb, nbs, codes + r * JAM_QKK, scales + r * 64,
-                   (float*) (blob + D_OFF) + r, (float*) (blob + DMIN_OFF) + r);
-        for (int c = 0; c * 2 < nbs; c++)          /* 64 codes = 16 dwords per row per transpose */
-            transpose16(codes + c * 64, JAM_QKK, blob + W_OFF + c * W_BYTES);
-        transpose16(scales, 64, blob + S_OFF);     /* a row's 16 lanes: S, and S2 from lane 8 */
+/* A format's repack: the stretch's nbs 32-blocks (8, fewer on a ragged last stretch of a 32-block
+ * quant) -> the blob's codes W and its raw scales:
+ *   Q4_K, Q5_K   S = sc [8], MN, D, DMIN     Q6_K   S = sc [16], D     32-blocks   S = d [nbs]
+ * Every chunk it reads lies inside the stretch: nothing is read past a row's last block. */
+typedef void (*band_repack)(const rows16 R, int nbs, uint8_t* blob);
+#define REPACK(NAME) INLINE void NAME(const rows16 R, int nbs, uint8_t* blob)
 
-        __m512i bias = _mm512_setzero_si512();
+#define X32(v) _mm512_set1_epi32((int) (v))
+INLINE __m512i and32(__m512i a, uint32_t m) { return _mm512_and_si512(a, X32(m)); }
+INLINE __m512i nib_lo(__m512i v) { return and32(v, 0x0f0f0f0f); }
+INLINE __m512i nib_hi(__m512i v) { return and32(_mm512_srli_epi32(v, 4), 0x0f0f0f0f); }
+/* the fp16 in the low / high word of every lane */
+INLINE __m512 half_lo(__m512i v) { return _mm512_cvtph_ps(_mm512_cvtepi32_epi16(v)); }
+INLINE __m512 half_hi(__m512i v) { return half_lo(_mm512_srli_epi32(v, 16)); }
+INLINE void put_w(uint8_t* blob, int i, __m512i v) { _mm512_store_si512((void*) (blob + W_OFF + i * 64), v); }
+INLINE void put_s(uint8_t* blob, int i, __m512i v) { _mm512_store_si512((void*) (blob + S_OFF + i * 64), v); }
+INLINE void put_d(uint8_t* blob, int i, __m512 v)  { _mm512_store_ps(blob + S_OFF + i * 64, v); }
+
+/* table[n] = a dword whose byte i is `one` where bit i of n is set, else `zero` (vpermd reads the low
+ * 4 bits of an index, so a shifted bit field indexes it without a mask) */
+#define SPREAD1(n, one, zero) \
+    (int32_t) ((uint32_t) ((n) & 1 ? (one) : (zero))       | (uint32_t) ((n) & 2 ? (one) : (zero)) << 8 | \
+               (uint32_t) ((n) & 4 ? (one) : (zero)) << 16 | (uint32_t) ((n) & 8 ? (one) : (zero)) << 24)
+#define SPREAD(one, zero) { \
+    SPREAD1(0, one, zero),  SPREAD1(1, one, zero),  SPREAD1(2, one, zero),  SPREAD1(3, one, zero),  \
+    SPREAD1(4, one, zero),  SPREAD1(5, one, zero),  SPREAD1(6, one, zero),  SPREAD1(7, one, zero),  \
+    SPREAD1(8, one, zero),  SPREAD1(9, one, zero),  SPREAD1(10, one, zero), SPREAD1(11, one, zero), \
+    SPREAD1(12, one, zero), SPREAD1(13, one, zero), SPREAD1(14, one, zero), SPREAD1(15, one, zero) }
+INLINE __m512i spread(const int32_t table[16], __m512i bits, int shift) {
+    return _mm512_permutexvar_epi32(_mm512_srli_epi32(bits, shift), _mm512_load_si512((const void*) table));
+}
+
+/* Q4_K / Q5_K header {fp16 d, dmin; 12 bytes of 6-bit scales and mins}: llama.cpp's three-mask word
+ * trick (jam_q4k_scales_mins), on 16 rows. */
+INLINE void k32_header(const rows16 R, uint8_t* blob) {
+    const quad h = chunk(R, 0);                    /* d dmin | bytes 0-3 | 4-7 | 8-11 */
+    const __m512i sc[2] = { and32(h.v[1], 0x3f3f3f3f),
+        _mm512_or_si512(nib_lo(h.v[3]), _mm512_slli_epi32(and32(_mm512_srli_epi32(h.v[1], 6), 0x03030303), 4)) };
+    const __m512i mn[2] = { and32(h.v[2], 0x3f3f3f3f),
+        _mm512_or_si512(nib_hi(h.v[3]), _mm512_slli_epi32(and32(_mm512_srli_epi32(h.v[2], 6), 0x03030303), 4)) };
+    for (int s = 0; s < 8; s++) put_s(blob, s, and32(_mm512_srli_epi32(sc[s >> 2], 8 * (s & 3)), 0xFF));
+    for (int p = 0; p < 4; p++) {                  /* mn (2p, 2p + 1) -> one s16 pair per lane */
+        const __m512i pair = _mm512_srli_epi32(mn[p >> 1], 16 * (p & 1));
+        _mm512_store_si512((void*) (blob + MN_OFF + p * 64),
+                           _mm512_or_si512(and32(pair, 0xFF), _mm512_slli_epi32(and32(pair, 0xFF00), 8)));
+    }
+    _mm512_store_ps(blob + D_OFF, half_lo(h.v[0]));
+    _mm512_store_ps(blob + DMIN_OFF, half_hi(h.v[0]));
+}
+
+REPACK(repack_q4k) {                               /* d dmin scales[12] qs[128] */
+    (void) nbs;
+    k32_header(R, blob);
+    for (int c = 0; c < 8; c++) {                  /* byte i of pair g = c / 2: sub-block 2g low, 2g + 1 high */
+        const quad q = chunk(R, 16 + c * 16);
+        for (int j = 0; j < 4; j++) {
+            const int i = (c >> 1) * 16 + (c & 1) * 4 + j;
+            put_w(blob, i, nib_lo(q.v[j]));
+            put_w(blob, i + 8, nib_hi(q.v[j]));
+        }
+    }
+}
+
+REPACK(repack_q5k) {                               /* d dmin scales[12] qh[32] qs[128] */
+    (void) nbs;
+    k32_header(R, blob);
+    const quad qh[2] = { chunk(R, 16), chunk(R, 32) };   /* bit s of qh[i]: bit 4 of element i of sub-block s */
+    for (int c = 0; c < 8; c++) {
+        const quad q = chunk(R, 48 + c * 16);
+        const int g = c >> 1;
+        for (int j = 0; j < 4; j++) {
+            const int i = g * 16 + (c & 1) * 4 + j;
+            const __m512i h = qh[c & 1].v[j];
+            const __m512i lo4 = _mm512_slli_epi32(and32(_mm512_srli_epi32(h, 2 * g), 0x01010101), 4);
+            const __m512i hi4 = _mm512_slli_epi32(and32(_mm512_srli_epi32(h, 2 * g + 1), 0x01010101), 4);
+            put_w(blob, i, _mm512_or_si512(nib_lo(q.v[j]), lo4));
+            put_w(blob, i + 8, _mm512_or_si512(nib_hi(q.v[j]), hi4));
+        }
+    }
+}
+
+/* Q6_K: ql[128] qh[64] scales[16] d. Element e of half h = e / 128 reads nibble plane j = e / 32 % 4
+ * (ql low nibbles for j < 2, high for j >= 2) and bits 2j, 2j + 1 of qh[h * 32 + e % 32]. */
+REPACK(repack_q6k) {
+    (void) nbs;
+    const __m512i b32 = _mm512_set1_epi8(32);
+    const quad sc = chunk(R, 192);
+    for (int s = 0; s < 16; s++)                   /* s8 scales, one byte each */
+        put_s(blob, s, _mm512_srai_epi32(_mm512_slli_epi32(sc.v[s >> 2], 24 - 8 * (s & 3)), 24));
+    _mm512_store_ps(blob + D_OFF, half_hi(chunk(R, 194).v[3]));   /* bytes 208, 209 */
+    const quad qh[4] = { chunk(R, 128), chunk(R, 144), chunk(R, 160), chunk(R, 176) };
+    for (int c = 0; c < 8; c++) {                  /* ql[16c ..]: half c / 4, planes jl and jl + 2 */
+        const quad q = chunk(R, c * 16);
+        const int h = c >> 2, jl = (c >> 1) & 1;
+        for (int j = 0; j < 4; j++) {
+            const int i = h * 32 + jl * 8 + (c & 1) * 4 + j;
+            const __m512i bits = qh[h * 2 + (c & 1)].v[j];
+            const __m512i lo2 = _mm512_slli_epi32(and32(_mm512_srli_epi32(bits, 2 * jl), 0x03030303), 4);
+            const __m512i hi2 = _mm512_slli_epi32(and32(_mm512_srli_epi32(bits, 2 * jl + 4), 0x03030303), 4);
+            put_w(blob, i, _mm512_sub_epi8(_mm512_or_si512(nib_lo(q.v[j]), lo2), b32));
+            put_w(blob, i + 16, _mm512_sub_epi8(_mm512_or_si512(nib_hi(q.v[j]), hi2), b32));
+        }
+    }
+}
+
+REPACK(repack_q8_0) {                              /* per 32: fp16 d, qs[32] */
+    for (int b = 0; b < nbs; b++) {
+        const int64_t at = (int64_t) b * JAM_Q8_0_BYTES;
+        put_d(blob, b, half_lo(chunk(R, at).v[0]));
+        const quad q0 = chunk(R, at + 2), q1 = chunk(R, at + 18);
+        for (int j = 0; j < 4; j++) { put_w(blob, b * 8 + j, q0.v[j]); put_w(blob, b * 8 + 4 + j, q1.v[j]); }
+    }
+}
+
+REPACK(repack_q4_0) {                              /* per 32: fp16 d, qs[16]; element e low, e + 16 high */
+    const __m512i b8 = _mm512_set1_epi8(8);
+    for (int b = 0; b < nbs; b++) {
+        const int64_t at = (int64_t) b * JAM_Q4_0_BYTES;
+        put_d(blob, b, half_lo(chunk(R, at).v[0]));
+        const quad q = chunk(R, at + 2);
+        for (int j = 0; j < 4; j++) {
+            put_w(blob, b * 8 + j, _mm512_sub_epi8(nib_lo(q.v[j]), b8));
+            put_w(blob, b * 8 + 4 + j, _mm512_sub_epi8(nib_hi(q.v[j]), b8));
+        }
+    }
+}
+
+REPACK(repack_q5_0) {                              /* per 32: fp16 d, u32 qh (bit e: element e), qs[16] */
+    static const int32_t bit4[16] ALIGN64 = SPREAD(0x10, 0);
+    const __m512i b16 = _mm512_set1_epi8(16);
+    for (int b = 0; b < nbs; b++) {
+        const int64_t at = (int64_t) b * JAM_Q5_0_BYTES;
+        const quad h = chunk(R, at);               /* d, qh's low word | qh's high word, ... */
+        put_d(blob, b, half_lo(h.v[0]));
+        const __m512i qh = _mm512_or_si512(_mm512_srli_epi32(h.v[0], 16), _mm512_slli_epi32(h.v[1], 16));
+        const quad q = chunk(R, at + 6);
+        for (int j = 0; j < 4; j++) {
+            const __m512i lo = _mm512_or_si512(nib_lo(q.v[j]), spread(bit4, qh, 4 * j));
+            const __m512i hi = _mm512_or_si512(nib_hi(q.v[j]), spread(bit4, qh, 16 + 4 * j));
+            put_w(blob, b * 8 + j, _mm512_sub_epi8(lo, b16));
+            put_w(blob, b * 8 + 4 + j, _mm512_sub_epi8(hi, b16));
+        }
+    }
+}
+
+REPACK(repack_mxfp4) {                             /* per 32: E8M0 e, qs[16] of FP4 codes */
+    static const int8_t codes[16] = { JAM_MXFP4_CODES };
+    const __m512i lut = _mm512_broadcast_i32x4(_mm_loadu_si128((const __m128i*) codes));
+    for (int b = 0; b < nbs; b++) {
+        const int64_t at = (int64_t) b * JAM_MXFP4_BYTES;
+        /* jam_mxfp4_dhalf on 16 rows: 2^(e - 128), e = 0 and 1 the subnormals */
+        const __m512i e = and32(chunk(R, at).v[0], 0xFF);
+        const __m512i normal = _mm512_slli_epi32(_mm512_sub_epi32(e, X32(1)), 23);
+        const __m512i tiny = _mm512_slli_epi32(_mm512_add_epi32(e, X32(1)), 21);
+        put_d(blob, b, _mm512_castsi512_ps(_mm512_mask_mov_epi32(normal, _mm512_cmplt_epu32_mask(e, X32(2)), tiny)));
+        const quad q = chunk(R, at + 1);
+        for (int j = 0; j < 4; j++) {
+            put_w(blob, b * 8 + j, _mm512_shuffle_epi8(lut, nib_lo(q.v[j])));
+            put_w(blob, b * 8 + 4 + j, _mm512_shuffle_epi8(lut, nib_hi(q.v[j])));
+        }
+    }
+}
+
+REPACK(repack_q1_0) {                              /* per 128: fp16 d, 128 sign bits (set: +1, clear: -1) */
+    static const int32_t sign[16] ALIGN64 = SPREAD(0x01, 0xFF);
+    for (int b = 0; b < nbs; b += 4) {
+        const int64_t at = (int64_t) (b / 4) * JAM_Q1_0_BYTES;
+        const __m512 d = half_lo(chunk(R, at).v[0]);
+        const quad q = chunk(R, at + 2);           /* v[j]: the 32 bits of 32-block b + j */
+        for (int j = 0; j < 4; j++) {
+            put_d(blob, b + j, d);
+            for (int g = 0; g < 8; g++) put_w(blob, (b + j) * 8 + g, spread(sign, q.v[j], 4 * g));
+        }
+    }
+}
+
+/* Q2_0 / PQ2_0: fp16 d, then one byte per 4 elements, 2-bit codes LSB-first, value = code - 1. Byte t
+ * of a lane is copied to its 4 bytes; bit 2e and the bit above it are then element e's 1s and 2s. */
+INLINE void q2_repack(const rows16 R, int nbs, uint8_t* blob, const int qk) {
+    /* shuffle indices: every byte reads the first byte of its dword (+ t below: byte t) */
+    const __m512i byte0 = _mm512_set4_epi32(0x0c0c0c0c, 0x08080808, 0x04040404, 0);
+    const int per = qk / 32, bytes = 2 + qk / 4;   /* 32-blocks and bytes per block */
+    const __m512i minus1 = _mm512_set1_epi8(-1), one = _mm512_set1_epi8(1), two = _mm512_set1_epi8(2);
+    for (int b = 0; b < nbs; b += per) {
+        const int64_t at = (int64_t) (b / per) * bytes;
+        const __m512 d = half_lo(chunk(R, at).v[0]);
+        for (int s = 0; s < per; s++) put_d(blob, b + s, d);
+        for (int c = 0; c < per / 2; c++) {        /* 16 code bytes: 16 k-groups, two 32-blocks */
+            const quad q = chunk(R, at + 2 + c * 16);
+            for (int j = 0; j < 4; j++)
+                for (int t = 0; t < 4; t++) {
+                    const __m512i src =
+                        _mm512_shuffle_epi8(q.v[j], _mm512_add_epi8(byte0, _mm512_set1_epi8((char) t)));
+                    __m512i code =
+                        _mm512_mask_add_epi8(minus1, _mm512_test_epi8_mask(src, X32(0x40100401)), minus1, one);
+                    code = _mm512_mask_add_epi8(code, _mm512_test_epi8_mask(src, X32(0x80200802)), code, two);
+                    put_w(blob, b * 8 + c * 16 + j * 4 + t, code);
+                }
+        }
+    }
+}
+REPACK(repack_q2_0)  { q2_repack(R, nbs, blob, JAM_Q2_0_QK); }
+REPACK(repack_pq2_0) { q2_repack(R, nbs, blob, JAM_PQ2_0_QK); }
+
+/* The trits of every byte b at the powers given per byte of a 16-bit half (mul = both halves of a
+ * lane): q = b * 3^n mod 256, trit - 1 = (q >= 86) + (q >= 171) - 1 (jam_ptq1_0_codes: q * 3 >> 8). */
+INLINE __m512i trits(__m512i v, uint32_t mul) {
+    const __m512i m = X32(mul), low = _mm512_set1_epi16(0x00FF);
+    const __m512i even = _mm512_and_si512(_mm512_mullo_epi16(_mm512_and_si512(v, low), m), low);
+    const __m512i odd = _mm512_slli_epi16(_mm512_mullo_epi16(_mm512_srli_epi16(v, 8), m), 8);
+    const __m512i q = _mm512_or_si512(even, odd);
+    const __m512i ge1 = _mm512_movm_epi8(_mm512_cmpge_epu8_mask(q, _mm512_set1_epi8(86)));
+    const __m512i ge2 = _mm512_movm_epi8(_mm512_cmpge_epu8_mask(q, _mm512_set1_epi8((char) 171)));
+    return _mm512_sub_epi8(_mm512_sub_epi8(_mm512_set1_epi8(-1), ge1), ge2);
+}
+
+/* PTQ1_0, per 128: qs[24] qh[2] fp16 d, base-3 digits. In a stage of c bytes, element n c + m is
+ * trit n of byte m: 16 bytes x 5 trits, 8 bytes x 5 trits, then qh's 2 bytes x 4 trits. */
+REPACK(repack_ptq1_0) {
+    static const uint32_t pow3[5] = { 1, 3, 9, 27, 81 };
+    for (int b = 0; b < nbs; b += 4) {
+        const int64_t at = (int64_t) (b / 4) * JAM_PTQ1_0_BYTES;
+        const quad s16 = chunk(R, at), rest = chunk(R, at + 12);   /* rest: -, qs[16..19], qs[20..23], qh d */
+        for (int j = 0; j < 4; j++) put_d(blob, b + j, half_hi(rest.v[3]));
+        for (int n = 0; n < 5; n++) {
+            for (int j = 0; j < 4; j++) put_w(blob, b * 8 + n * 4 + j, trits(s16.v[j], pow3[n] * 0x00010001u));
+            for (int j = 0; j < 2; j++)
+                put_w(blob, b * 8 + 20 + n * 2 + j, trits(rest.v[1 + j], pow3[n] * 0x00010001u));
+        }
+        /* elements 120..127: trits 0, 1 of (qh[0], qh[1]), then trits 2, 3 */
+        const __m512i qh2 = _mm512_or_si512(and32(rest.v[3], 0xFFFF), _mm512_slli_epi32(rest.v[3], 16));
+        put_w(blob, b * 8 + 30, trits(qh2, 0x00030001));
+        put_w(blob, b * 8 + 31, trits(qh2, 0x001B0009));
+    }
+}
+
+/* A short group's rows are copied at this stride: the widest stretch of any format, 8 Q8_0 blocks. */
+enum { PAD_STRIDE = 8 * JAM_Q8_0_BYTES };
+
+INLINE void repack16(const uint8_t* w, int64_t w_stride, int nrows, int nb, uint8_t* blob,
+                     const band_kind kind, band_repack repack, const int bytes256) {
+    const int nsub = kind == KIND_K16 ? 16 : 8, ni = 64 / nsub;   /* 4-k groups per sub-block */
+    const __m512i ones = _mm512_set1_epi8(1), zero = _mm512_setzero_si512();
+    for (int sb = 0; sb * 8 < nb; sb++, blob += JAM_BAND32_BLOB, w += bytes256) {
+        const int nbs = nb - sb * 8 < 8 ? nb - sb * 8 : 8;
+        rows16 R = { { w, w + 4 * w_stride, w + 8 * w_stride, w + 12 * w_stride }, w_stride };
+        ALIGN64 uint8_t pad[16 * PAD_STRIDE];
+        if (nrows < 16) {                          /* a short group: its rows over zero rows, masked at the store */
+            const size_t bytes = (size_t) nbs * bytes256 / 8;
+            memset(pad, 0, sizeof pad);
+            for (int r = 0; r < nrows; r++) memcpy(pad + r * PAD_STRIDE, w + r * w_stride, bytes);
+            R = (rows16) { { pad, pad + 4 * PAD_STRIDE, pad + 8 * PAD_STRIDE, pad + 12 * PAD_STRIDE }, PAD_STRIDE };
+        }
+        repack(R, nbs, blob);
+
+        /* Every dot acc = sum w (q + 128) carries 128 sum w: the codes' sum per row, every byte against 1. */
+        __m512i bias = zero;
         for (int sub = 0; sub < (kind == KIND_F32 ? nbs : nsub); sub++) {
-            __m512i sum = _mm512_setzero_si512();  /* the codes' sum per row: every byte against 1 */
-            for (int i = sub * ni; i < (sub + 1) * ni; i++) {
-                const __m512i w4 = _mm512_load_si512((const void*) (blob + W_OFF + i * 64));
-                sum = _mm512_dpbusd_epi32(sum, ones, w4);
-            }
-            if (kind == KIND_F32) {                /* C = 128 d sum w */
-                const __m512 d128 = _mm512_mul_ps(_mm512_load_ps(blob + S_OFF + sub * 64),
-                                                  _mm512_set1_ps(128.0f));
-                _mm512_store_ps(blob + S2_OFF + sub * 64, _mm512_mul_ps(d128, _mm512_cvtepi32_ps(sum)));
+            __m512i sum = zero;
+            for (int i = sub * ni; i < (sub + 1) * ni; i++)
+                sum = _mm512_dpbusd_epi32(sum, ones, _mm512_load_si512((const void*) (blob + W_OFF + i * 64)));
+            if (kind == KIND_F32) {                /* B = -128 sum w, the block's dots start from it */
+                const __m512i b = _mm512_slli_epi32(_mm512_sub_epi32(zero, sum), 7);
+                _mm512_store_si512((void*) (blob + S2_OFF + sub * 64), b);
             } else {
-                __m512i sc = _mm512_load_si512((const void*) (blob + S_OFF + sub * 64));
+                const __m512i sc = _mm512_load_si512((const void*) (blob + S_OFF + sub * 64));
                 bias = _mm512_add_epi32(bias, _mm512_mullo_epi32(sc, sum));
             }
         }
-        if (kind == KIND_F32) continue;
-        _mm512_store_si512((void*) (blob + K_OFF), _mm512_slli_epi32(bias, 7));
-        if (kind == KIND_K16) continue;
-        for (int p = 0; p < 4; p++) {              /* mn (2p, 2p + 1) -> one s16 pair per lane */
-            const __m512i lo = _mm512_load_si512((const void*) (blob + S2_OFF + 2 * p * 64));
-            const __m512i hi = _mm512_load_si512((const void*) (blob + S2_OFF + (2 * p + 1) * 64));
-            _mm512_store_si512((void*) (blob + MN_OFF + p * 64),
-                               _mm512_or_si512(lo, _mm512_slli_epi32(hi, 16)));
-        }
+        if (kind != KIND_F32)                      /* -K = -128 sum_sub sc sum w, where s1 starts */
+            _mm512_store_si512((void*) (blob + K_OFF), _mm512_slli_epi32(_mm512_sub_epi32(zero, bias), 7));
     }
 }
 
@@ -376,22 +442,30 @@ INLINE void tile(const int ng, const int nc, const band_kind kind,
                  float* out, int64_t ldc, __mmask16 rows0, __mmask16 rows1) {
     const int nsub = kind == KIND_K16 ? 16 : 8, ni = 64 / nsub;
     const int64_t xd_stride = kind == KIND_F32 ? nb : nb / 8;
-    __m512 f[2][4];
-    for (int g = 0; g < 2; g++) for (int c = 0; c < 4; c++) f[g][c] = _mm512_setzero_ps();
+    __m512 f[2][NCMAX];
+    for (int g = 0; g < 2; g++) for (int c = 0; c < NCMAX; c++) f[g][c] = _mm512_setzero_ps();
 
     for (int sb = 0; sb * 8 < nb; sb++, b0 += JAM_BAND32_BLOB, b1 += JAM_BAND32_BLOB) {
         const int subs = kind == KIND_F32 && nb - sb * 8 < 8 ? nb - sb * 8 : nsub;
         const uint8_t* x = xq + sb * JAM_QKK;
-        __m512i s1[2][4];
-        for (int g = 0; g < 2; g++) for (int c = 0; c < 4; c++) s1[g][c] = _mm512_setzero_si512();
+        __m512i s1[2][NCMAX];
+        for (int g = 0; g < 2; g++) {              /* K-quants: s1 starts at -K */
+            const __m512i start = kind != KIND_F32 && g < ng
+                ? _mm512_load_si512((const void*) ((g ? b1 : b0) + K_OFF)) : _mm512_setzero_si512();
+            for (int c = 0; c < NCMAX; c++) s1[g][c] = start;
+        }
 
         for (int sub = 0; sub < subs; sub++) {
-            __m512i acc[2][4];
-            for (int g = 0; g < 2; g++) for (int c = 0; c < 4; c++) acc[g][c] = _mm512_setzero_si512();
+            __m512i acc[2][NCMAX];
+            for (int g = 0; g < 2; g++) {          /* 32-blocks: the dots start at B, so acc ends as sum w q */
+                const __m512i start = kind == KIND_F32 && g < ng
+                    ? _mm512_load_si512((const void*) ((g ? b1 : b0) + S2_OFF + sub * 64)) : _mm512_setzero_si512();
+                for (int c = 0; c < NCMAX; c++) acc[g][c] = start;
+            }
             for (int i = sub * ni; i < (sub + 1) * ni; i++) {
                 __m512i w0 = _mm512_load_si512((const void*) (b0 + W_OFF + i * 64));
                 __m512i w1 = ng > 1 ? _mm512_load_si512((const void*) (b1 + W_OFF + i * 64)) : w0;
-                #pragma GCC unroll 4
+                #pragma GCC unroll 6
                 for (int c = 0; c < nc; c++) {
                     __m512i a = _mm512_set1_epi32(jam_load32(x + c * k + i * 4));
                     acc[0][c] = _mm512_dpbusd_epi32(acc[0][c], a, w0);
@@ -400,19 +474,16 @@ INLINE void tile(const int ng, const int nc, const band_kind kind,
             }
             for (int g = 0; g < ng; g++) {
                 const uint8_t* b = g ? b1 : b0;
-                if (kind == KIND_F32) {            /* f += xd (d acc - C) */
+                if (kind == KIND_F32) {            /* f += xd d acc */
                     const __m512 d = _mm512_load_ps(b + S_OFF + sub * 64);
-                    const __m512 cw = _mm512_load_ps(b + S2_OFF + sub * 64);
-                    #pragma GCC unroll 4
+                    #pragma GCC unroll 6
                     for (int c = 0; c < nc; c++) {
                         const __m512 xdv = _mm512_set1_ps(xd[c * xd_stride + sb * 8 + sub]);
-                        const __m512 dot = _mm512_cvtepi32_ps(acc[g][c]);
-                        f[g][c] = _mm512_fmadd_ps(dot, _mm512_mul_ps(d, xdv), f[g][c]);
-                        f[g][c] = _mm512_fnmadd_ps(cw, xdv, f[g][c]);
+                        f[g][c] = _mm512_fmadd_ps(_mm512_cvtepi32_ps(acc[g][c]), _mm512_mul_ps(d, xdv), f[g][c]);
                     }
                 } else {                           /* s1 += sc acc, exact */
                     const __m512i sc = _mm512_load_si512((const void*) (b + S_OFF + sub * 64));
-                    #pragma GCC unroll 4
+                    #pragma GCC unroll 6
                     for (int c = 0; c < nc; c++)
                         s1[g][c] = _mm512_add_epi32(s1[g][c], _mm512_mullo_epi32(acc[g][c], sc));
                 }
@@ -420,13 +491,12 @@ INLINE void tile(const int ng, const int nc, const band_kind kind,
         }
         if (kind == KIND_F32) continue;
 
-        for (int g = 0; g < ng; g++) {             /* once per 256: f += xd (d (s1 - K) - dmin s2) */
+        for (int g = 0; g < ng; g++) {             /* once per 256: f += xd (d s1 - dmin s2) */
             const uint8_t* b = g ? b1 : b0;
-            const __m512i kk = _mm512_load_si512((const void*) (b + K_OFF));
             const __m512 d = _mm512_load_ps(b + D_OFF);
-            #pragma GCC unroll 4
+            #pragma GCC unroll 6
             for (int c = 0; c < nc; c++) {
-                __m512 v = _mm512_mul_ps(d, _mm512_cvtepi32_ps(_mm512_sub_epi32(s1[g][c], kk)));
+                __m512 v = _mm512_mul_ps(d, _mm512_cvtepi32_ps(s1[g][c]));
                 if (kind == KIND_K32) {            /* s2 = sum_sub mn qsum: 4 pairs of s16 x s16 */
                     const int16_t* qsum = xs + c * nb + sb * 8;
                     __m512i s2 = _mm512_setzero_si512();
@@ -458,7 +528,7 @@ INLINE void touch_rows(const uint8_t* w, int64_t w_stride, int nrows, int row_by
     __asm__ volatile("" : : "r"(seen));            /* the reads are the point: keep them */
 }
 
-INLINE void band(jam_band_job* J, int tid, const band_kind kind, band_decode decode,
+INLINE void band(jam_band_job* J, int tid, const band_kind kind, band_repack repack,
                  const int bytes256) {             /* weight bytes per 256 elements */
     const int m = J->dim0, k = J->dim1, n = J->seq, nb = k / JAM_QK;
     const int row_bytes = nb * bytes256 / 8;
@@ -480,34 +550,40 @@ INLINE void band(jam_band_job* J, int tid, const band_kind kind, band_decode dec
             const uint8_t* w = J->w + (int64_t) (row + g * 16) * J->w_stride;
             const int nrows = rows - g * 16 < 16 ? rows - g * 16 : 16;
             touch_rows(w, J->w_stride, nrows, row_bytes);
-            repack16(w, J->w_stride, nrows, nb, g ? b1 : b0, kind, decode);
+            repack16(w, J->w_stride, nrows, nb, g ? b1 : b0, kind, repack, bytes256);
         }
-        /* ng and nc as constants keep the tile's accumulators in registers; nc < 4 is the column tail */
+        /* ng and nc as constants keep the tile's accumulators in registers. The last 7 to 11 columns
+         * go as two tiles of 4 to 6, so only a call of 3 columns or fewer runs the variable form. */
         #define TILE(NG, NC) tile(NG, NC, kind, b0, b1, nb, xq + (size_t) c * k, k, \
                                   J->dx + (size_t) c * xd_stride, xs + (size_t) c * nb, \
                                   J->out + c * ldc + row, ldc, rows0, rows1)
-        for (int c = 0; c < n; c += 4) {
-            const int nc = n - c < 4 ? n - c : 4;
-            if (nc == 4) { if (ng == 2) TILE(2, 4); else TILE(1, 4); }
-            else         { if (ng == 2) TILE(2, nc); else TILE(1, nc); }
+        for (int c = 0, nc; c < n; c += nc) {
+            const int left = n - c;
+            nc = left >= 2 * NCMAX ? NCMAX : left > NCMAX ? (left + 1) / 2 : left;
+            switch (nc) {
+                case 6:  if (ng == 2) TILE(2, 6); else TILE(1, 6); break;
+                case 5:  if (ng == 2) TILE(2, 5); else TILE(1, 5); break;
+                case 4:  if (ng == 2) TILE(2, 4); else TILE(1, 4); break;
+                default: if (ng == 2) TILE(2, nc); else TILE(1, nc); break;
+            }
         }
         #undef TILE
     }
 }
 
-#define BAND(NAME, KIND, DECODE, BYTES256) \
+#define BAND(NAME, KIND, REPACK, BYTES256) \
     void NAME(void* job, int t0, int t1, int tid) { \
         (void) t0; (void) t1; \
-        band((jam_band_job*) job, tid, KIND, DECODE, BYTES256); \
+        band((jam_band_job*) job, tid, KIND, REPACK, BYTES256); \
     }
-BAND(jam_q4k_band32_avx512,   KIND_K32, decode_q4k,   JAM_Q4K_BYTES)
-BAND(jam_q5k_band32_avx512,   KIND_K32, decode_q5k,   JAM_Q5K_BYTES)
-BAND(jam_q6k_band32_avx512,   KIND_K16, decode_q6k,   JAM_Q6K_BYTES)
-BAND(jam_q8_0_band32_avx512,  KIND_F32, decode_q8_0,  8 * JAM_Q8_0_BYTES)
-BAND(jam_q4_0_band32_avx512,  KIND_F32, decode_q4_0,  8 * JAM_Q4_0_BYTES)
-BAND(jam_q5_0_band32_avx512,  KIND_F32, decode_q5_0,  8 * JAM_Q5_0_BYTES)
-BAND(jam_mxfp4_band32_avx512, KIND_F32, decode_mxfp4, 8 * JAM_MXFP4_BYTES)
-BAND(jam_q1_0_band32_avx512,  KIND_F32, decode_q1_0,  2 * JAM_Q1_0_BYTES)
-BAND(jam_q2_0_band32_avx512,  KIND_F32, decode_q2_0,  4 * JAM_Q2_0_BYTES)
-BAND(jam_pq2_0_band32_avx512, KIND_F32, decode_pq2_0, 2 * JAM_PQ2_0_BYTES)
-BAND(jam_ptq1_0_band32_avx512, KIND_F32, decode_ptq1_0, 2 * JAM_PTQ1_0_BYTES)
+BAND(jam_q4k_band32_avx512,   KIND_K32, repack_q4k,   JAM_Q4K_BYTES)
+BAND(jam_q5k_band32_avx512,   KIND_K32, repack_q5k,   JAM_Q5K_BYTES)
+BAND(jam_q6k_band32_avx512,   KIND_K16, repack_q6k,   JAM_Q6K_BYTES)
+BAND(jam_q8_0_band32_avx512,  KIND_F32, repack_q8_0,  8 * JAM_Q8_0_BYTES)
+BAND(jam_q4_0_band32_avx512,  KIND_F32, repack_q4_0,  8 * JAM_Q4_0_BYTES)
+BAND(jam_q5_0_band32_avx512,  KIND_F32, repack_q5_0,  8 * JAM_Q5_0_BYTES)
+BAND(jam_mxfp4_band32_avx512, KIND_F32, repack_mxfp4, 8 * JAM_MXFP4_BYTES)
+BAND(jam_q1_0_band32_avx512,  KIND_F32, repack_q1_0,  2 * JAM_Q1_0_BYTES)
+BAND(jam_q2_0_band32_avx512,  KIND_F32, repack_q2_0,  4 * JAM_Q2_0_BYTES)
+BAND(jam_pq2_0_band32_avx512, KIND_F32, repack_pq2_0, 2 * JAM_PQ2_0_BYTES)
+BAND(jam_ptq1_0_band32_avx512, KIND_F32, repack_ptq1_0, 2 * JAM_PTQ1_0_BYTES)

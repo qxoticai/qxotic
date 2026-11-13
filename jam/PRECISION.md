@@ -38,6 +38,25 @@ The activation scale is what sets the int8 error, and it differs by weight famil
 The AVX-512 K-quant band keeps the sub-block scales in the integer domain (`vpmulld`), which needs one activation scale per 256-block; that is exactly llama.cpp's precision model for the K-quants, and the C suite's `RP` (per-256 requant) reference is the one it is measured against.
 The band is still bounded by the same `1e-2·sumAbs` tolerance as the per-32 paths.
 
+The band serves the 32-block quants from 3 columns and the K-quants from 8.
+The two thresholds differ on purpose: for the 32-block quants the band and the row kernels below it use the same per-32 activation scales, so moving the threshold changes speed only.
+For the K-quants the row kernels below the band quantize per 32 and the band per 256, so their threshold decides which calls get which granularity, and it stays where it was.
+
+## Arithmetic error is far below the quantization error
+
+Given the int8 activation codes, what a kernel adds on top is float rounding, and it is seven orders of magnitude smaller than the quantization itself.
+Measured against a double-precision dot of the exact weight values and the kernel's own activation codes, relative to `sumAbs`, over every format and a grid of shapes:
+
+| path | rms | worst |
+|---|---|---|
+| AVX-512 band, K-quants | ~6e-9 | ~4e-8 |
+| AVX-512 band, 32-block quants | ~1e-8 | ~1e-7 |
+| K-quant row kernels, every width | ~1.4e-8 | ~5e-8, cancelling rows up to 2e-6 |
+
+The AVX-512 band's 32-block dots carry a bias term, 128 times the sum of a row's codes, because the activations are stored unsigned.
+It is subtracted as an integer before the conversion to float (the accumulators start from its negative), not as a second float product afterwards: the float then holds the exact integer dot, and the rms error halved.
+The 256-bit K-quant row kernels take a row's min term off its running sum block by block, for the same reason: the result is never the small difference of two large sums built up apart.
+
 ## History: the seq=7 Q8_0 bug (FIXED)
 
 libjam's Q8_0 gemm was once ~2% wrong at `n == 7` only, a token-remainder edge in the sign-trick weight

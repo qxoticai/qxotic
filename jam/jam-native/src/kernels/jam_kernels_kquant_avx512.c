@@ -7,7 +7,8 @@
  *     against 64 contiguous activations yields both sub-block dots, 8 lanes each;
  *   - the scales of a pair are one vpermps over a per-row register (activation scale x d x sc);
  *   - rows go four at a time per column: the column's activations, scales and sums stay in
- *     registers across the group, a further row costs only its weight stream and its dots. */
+ *     registers across the group, a further row costs only its weight stream and its dots;
+ *   - columns go inside row groups, so a group is streamed from memory once however many columns. */
 #include "jam_internal.h"
 #include "jam_kquant.h"
 #include "jam_decode_x86_256.h"   /* jam_hsum8_256 */
@@ -169,12 +170,13 @@ INLINE void rows(const jam_q8_job* J, int j, int i, const int nr, const int byte
     for (int t = 0; t < nr; t++) out[t] = _mm512_reduce_add_ps(acc[t].f) - acc[t].min;
 }
 
+/* columns inside row groups: a group is streamed once and stays in the cache for all of its columns */
 INLINE void kernel(const jam_q8_job* J, int rb, int re, const int bytes, kq_prepare prepare, kq_row row) {
-    for (int j = 0; j < J->n; j++) {
-        int i = rb;
-        for (; i + 4 <= re; i += 4) rows(J, j, i, 4, bytes, prepare, row);
-        if (i < re) rows(J, j, i, re - i, bytes, prepare, row);
-    }
+    int i = rb;
+    for (; i + 4 <= re; i += 4)
+        for (int j = 0; j < J->n; j++) rows(J, j, i, 4, bytes, prepare, row);
+    if (i < re)
+        for (int j = 0; j < J->n; j++) rows(J, j, i, re - i, bytes, prepare, row);
 }
 
 void jam_mm_q4k_avx512vnni(void* job, int rb, int re, int tid) {

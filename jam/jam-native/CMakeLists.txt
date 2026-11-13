@@ -154,7 +154,7 @@ if (CMAKE_SYSTEM_PROCESSOR MATCHES "x86_64|AMD64|amd64")
     check_c_compiler_flag(-mavxvnni JAM_CC_AVXVNNI)
     if (JAM_CC_AVXVNNI)
         jam_isa_tu(jam_avxvnni JAM_HAVE_AVXVNNI ON "-mavxvnni -mavx2 -mfma -mf16c"
-            src/kernels/jam_kernels_avxvnni.c)
+            src/kernels/jam_kernels_avxvnni.c src/kernels/jam_kernels_band8_avxvnni.c)
     endif()
 
     # AVX-512BW without VNNI (Skylake-SP/X): 512-bit maddubs Q8_0 + NVFP4. Built WITHOUT -mavx512vnni so it

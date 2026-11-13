@@ -272,11 +272,22 @@ void jam_mm_q5_0_avx2(void* job, int a_begin, int a_end, int tid);         /* ma
 void jam_mm_nvfp4_avx2(void* job, int rb, int re, int tid);                /* NVFP4: FP4 LUT + per-16 E4M3 */
 void jam_mm_q1_0_avx2(void* job, int rb, int re, int tid);                 /* Q1_0: sign-mask xor-negate maddubs */
 void jam_mm_lowbit_avx2(void* job, int rb, int re, int tid);               /* Q2_0/PQ2_0/PTQ1_0: row to codes, sign-trick maddubs */
+/* K-quant rows against s8 columns, no repack (jam_kquant_q256.inc): decode and short calls */
+void jam_mm_q4k_avx2(void* job, int rb, int re, int tid);
+void jam_mm_q5k_avx2(void* job, int rb, int re, int tid);
+void jam_mm_q6k_avx2(void* job, int rb, int re, int tid);
 #endif
 #ifdef JAM_HAVE_AVXVNNI
 void jam_mm_mxfp4_avxvnni(void* job, int a_begin, int a_end, int tid);     /* vpdpbusd + FP4 decode */
 void jam_mm_q4_0_avxvnni(void* job, int a_begin, int a_end, int tid);      /* vpdpbusd + nibble-8 decode */
 void jam_mm_q5_0_avxvnni(void* job, int a_begin, int a_end, int tid);      /* vpdpbusd + nibble|qh-16 decode */
+void jam_q4k_band8_avxvnni(void* job, int t0, int t1, int tid);            /* the 8-row bands with vpdpbusd */
+void jam_q5k_band8_avxvnni(void* job, int t0, int t1, int tid);            /*   (jam_kernels_band8_avxvnni.c) */
+void jam_q6k_band8_avxvnni(void* job, int t0, int t1, int tid);
+void jam_mxfp4_band8_avxvnni(void* job, int t0, int t1, int tid);
+void jam_mm_q4k_avxvnni(void* job, int rb, int re, int tid);               /* K-quant rows, vpdpbusd */
+void jam_mm_q5k_avxvnni(void* job, int rb, int re, int tid);
+void jam_mm_q6k_avxvnni(void* job, int rb, int re, int tid);
 #endif
 
 #ifdef JAM_HAVE_SSE3

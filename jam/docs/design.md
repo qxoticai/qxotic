@@ -50,12 +50,25 @@ Measured pp512 on an M3 Pro (Q8_0, per-call views -> shares): Qwen3.5-4B 275 -> 
 
 ## Prefill bands (AVX-512-VNNI)
 
-Every quantized prefill (`n >= 8`) on AVX-512-VNNI runs one tile kernel, `jam_kernels_band32_avx512.c`: a band of 32 weight rows is repacked per call into two 16-row vectors (lanes = rows, 4 consecutive k per byte group), and each activation broadcast feeds both vectors, so the dot loop issues one `vpdpbusd` per half broadcast.
+Quantized prefill on AVX-512-VNNI runs one tile kernel, `jam_kernels_band32_avx512.c`, from 3 columns up for the 32-block quants and from 8 for the K-quants: a band of 32 weight rows is repacked per call into two 16-row vectors (lanes = rows, 4 consecutive k per byte group), and each activation broadcast feeds both vectors, so the dot loop issues one `vpdpbusd` per half broadcast.
+The tile sweeps 6 columns at a time, which is what 32 registers hold (12 dot and 12 scale accumulators, the float sums beside them): 6 instead of 4 measured 5 to 7% faster at large column counts, 8 spills and halves the speed.
 That ratio is the design law: on Zen 5 a 512-bit `vpdpbusd` costs 2 of the 4 vector pipe slots per cycle, a memory broadcast half a slot and a 512-bit ALU op 2 slots, so the tile's efficiency is set by the non-dot ops per dot, not by cache bandwidth (k-chunking the band into L1 measured flat).
+The repack is the band's fixed cost, so it runs 16 rows wide from the first load: 16 bytes of each of 16 rows go straight into four registers, one row per lane group, a 4x4 transpose inside each 128-bit lane makes the lanes rows, and the format's decode (nibbles, bit planes, scales) then runs on 16 rows at once.
+It costs about 7 columns of dots on one core, half of what decoding row by row and then transposing 16x16 cost, and short prompts feel that cost most.
 The K-quants keep their sub-block scales integer (`vpmulld` + `vpaddd` per 32 k, one float conversion per 256-block) against activations quantized per 256 elements, llama.cpp's Q8_K precision; the 32-block quants keep a float scale and a per-32 activation scale.
+The activations are the unsigned operand of `vpdpbusd`, stored biased by 128, and the bias term, 128 times the sum of a row's codes, is an integer the repack computes: the accumulators start from its negative, so the floats only ever see the exact integer dot.
+Below their band threshold the K-quants run row kernels that quantize the activations per 32 elements, which is why their threshold did not move with the 32-block quants': it would change which calls get which activation granularity.
 Tiles are claimed from an atomic counter, so a worker on an SMT sibling or the slower CCD takes fewer of them.
 A group short of 16 rows is padded with zero rows and stored under a mask, and a k that is not a multiple of 256 ends in a shorter stretch, so no shape falls back to a scalar tail.
 Every other ISA keeps its own bands (the AVX2 8-row bands, the AVX-VNNI 256-bit bands, the ARM tiles).
+The AVX-VNNI CPUs run the AVX2 K-quant and MXFP4 bands built with one `vpdpbusd` per dot (`jam_kernels_band8_avxvnni.c`), and their Q8_0 and Q5_0 bands take two 8-row groups per tile so that a broadcast feeds two dots.
+
+## Row kernels (decode and short calls)
+
+A call too short for a band, decode above all, reads the weights in place.
+The K-quant row kernels exist at three widths: AVX-512-VNNI (`jam_kernels_kquant_avx512.c`, a pair of sub-blocks per `vpdpbusd`), 256 bits (`jam_kquant_q256.inc`, one sub-block per dot, `vpdpbusd` on AVX-VNNI and `maddubs` + `madd` on AVX2) and the SSE3 floor.
+They take rows four at a time and put the columns inside the row groups, so a group is streamed from memory once however many columns the call has.
+The low-bit formats (Q2_0, PQ2_0, PTQ1_0) decode each row once into the worker's scratch, which the context owns, with SIMD block decoders on AVX2 and NEON.
 
 ## Threading
 

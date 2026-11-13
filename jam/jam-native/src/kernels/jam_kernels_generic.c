@@ -201,13 +201,12 @@ void jam_mm_q1_0_f32_generic(void* arg, int rb, int re, int tid) {
 
 /* Q2_0, PQ2_0, PTQ1_0 (J->wt): each row decodes to its codes once, then an exact float dot per column. */
 void jam_mm_lowbit_f32_generic(void* arg, int rb, int re, int tid) {
-    (void) tid;
     const jam_q8_job* J = (const jam_q8_job*) arg;
     const float* A = (const float*) J->b;
     float* C = (float*) J->c;
     const int ldc = J->ldc, ldb = J->ldb, n = J->n, k = J->k, qk = jam_lowbit_qk(J->wt);
     const size_t wrow = (size_t)(J->lda / qk) * jam_lowbit_bytes(J->wt);   /* row stride honors lda (ldw) */
-    int8_t* codes = jam_lowbit_scratch((size_t) k + sizeof(float) * (size_t) (k / 32));
+    int8_t* codes = (int8_t*) J->repack[tid].qs;              /* k codes, then a scale per 32 */
     float* d32 = (float*) (codes + k);
     for (int i = rb; i < re; ++i) {
         jam_lowbit_row(J->wt, (const uint8_t*) J->a + (size_t) i * wrow, k / qk, codes, d32);

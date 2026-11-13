@@ -314,7 +314,7 @@ static void debug_report(const jam_context* c, jam_isa cap) {
             c->metal ? "yes" : "no");
     fprintf(stderr, "[jam]   F32   kernel: %s\n", f32_kernel_name(c->f32_kernel));
     fprintf(stderr, "[jam]   Q8_0  kernel: %s%s (requant A)\n",
-            c->avx512_vnni ? "32x4 VNNI band (seq>=8) + " : "", q8_kernel_name(c->q8_kernel));
+            c->avx512_vnni ? "32x6 VNNI band (seq>=3) + " : "", q8_kernel_name(c->q8_kernel));
     if (c->q8_decode_kernel != c->q8_kernel)
         fprintf(stderr, "[jam]          decode: %s\n", q8_kernel_name(c->q8_decode_kernel));
     fprintf(stderr, "[jam]   MXFP4 kernel: %s\n",
@@ -390,7 +390,8 @@ jam_context* jam_context_new(const jam_context_options* options) {
     if (cpu >= JAM_ISA_AVX2) { c->f32_kernel = jam_mm_f32_avx2;
         c->q8_kernel = jam_mm_q8_0_avx2; c->mxfp4_kernel = jam_mm_mxfp4_avx2;
         c->q4_0_kernel = jam_mm_q4_0_avx2; c->q5_0_kernel = jam_mm_q5_0_avx2;
-        /* K-quants keep the SSE3 int8 kernels (run_quant supplies the per-32 requant) */
+        c->kq[JAM_KQ_Q4K] = jam_mm_q4k_avx2; c->kq[JAM_KQ_Q5K] = jam_mm_q5k_avx2;
+        c->kq[JAM_KQ_Q6K] = jam_mm_q6k_avx2;
         c->nvfp4_kernel = jam_mm_nvfp4_avx2;
         c->q1_0_kernel = jam_mm_q1_0_avx2; c->lowbit_kernel = jam_mm_lowbit_avx2;
         c->dense_f16_kernel = jam_mm_f16_avx2; c->dense_bf16_kernel = jam_mm_bf16_avx2;
@@ -402,7 +403,8 @@ jam_context* jam_context_new(const jam_context_options* options) {
     if (cpu >= JAM_ISA_AVX_VNNI && x86_has("avxvnni")) {
         c->q8_kernel = jam_mm_q8_0_avxvnni; c->mxfp4_kernel = jam_mm_mxfp4_avxvnni;
         c->q4_0_kernel = jam_mm_q4_0_avxvnni; c->q5_0_kernel = jam_mm_q5_0_avxvnni;
-        }
+        c->kq[JAM_KQ_Q4K] = jam_mm_q4k_avxvnni; c->kq[JAM_KQ_Q5K] = jam_mm_q5k_avxvnni;
+        c->kq[JAM_KQ_Q6K] = jam_mm_q6k_avxvnni; }
 #endif
 #ifdef JAM_HAVE_AVX512BW
     if (cpu >= JAM_ISA_AVX512)    { c->q8_kernel  = jam_mm_q8_0_avx512bw;  /* 512-bit maddubs, no VNNI */
@@ -531,7 +533,7 @@ static int ensure_qscratch(jam_context* c, int n, int k) {
 
 /* The per-worker repack scratch for k: the x86 bands' blobs (a JAM_VNNI_BAND row band of kblocks
  * blocks), which also hold the ARM band's tiles (128 B + 12 floats per 4-row group per 32-block;
- * jam_band4_neon.inc asserts they fit). */
+ * jam_band4_neon.inc asserts they fit) and the low-bit row kernels' decoded rows (jam_lowbit.h). */
 static int ensure_repack(jam_context* c, int kblocks) {
     if (c->kq_repack_n < c->threads) {
         free(c->kq_repack);
@@ -721,13 +723,13 @@ static int try_band4_neon(jam_context* ctx, jam_q8_job* q, jam_dtype wt) {
 }
 
 #ifdef JAM_HAVE_AVX512
-/* The AVX-512-VNNI prefill band: phase 1 quantizes the activations (per family), phase 2 runs the
- * band over 32-row tiles. w_stride is the weight row in bytes, so it honors ldw. Returns 1 if it
- * ran (the caller returns JAM_OK), else 0 to fall through to the narrower paths. */
+/* The AVX-512-VNNI prefill band, from min_seq columns up: phase 1 quantizes the activations (per
+ * family), phase 2 runs the band over 32-row tiles. w_stride is the weight row in bytes, so it honors
+ * ldw. Returns 1 if it ran (the caller returns JAM_OK), else 0 to fall through to the narrower paths. */
 static int try_band32(jam_context* ctx, const void* w, int64_t w_stride, const void* a, int lda,
-                      void* c, int ldc, int m, int n, int k, jam_job_fn quant, jam_job_fn band) {
+                      void* c, int ldc, int m, int n, int k, int min_seq, jam_job_fn quant, jam_job_fn band) {
     int kblocks = k / JAM_QK;
-    if (!(ctx->avx512_vnni && n >= JAM_VNNI_MIN_SEQ && ensure_kquant(ctx, n, kblocks))) return 0;
+    if (!(ctx->avx512_vnni && n >= min_seq && ensure_kquant(ctx, n, kblocks))) return 0;
     jam_band_job job = { (const uint8_t*) w, w_stride, (const float*) a, lda,
                          ctx->kq_xq, ctx->kq_dx, ctx->kq_xsum,
                          (float*) c, ldc, m, k, n, kblocks, ctx->kq_repack, 0 };
@@ -740,7 +742,7 @@ static int try_band32(jam_context* ctx, const void* w, int64_t w_stride, const v
 static int try_band32_q32(jam_context* ctx, const void* w, int ldw, const void* a, int lda, void* c, int ldc,
                           int m, int n, int k, int block_bytes, jam_job_fn band) {
     return try_band32(ctx, w, (int64_t)(ldw / JAM_QK) * block_bytes, a, lda, c, ldc, m, n, k,
-                      jam_band32_quant32_avx512, band);
+                      JAM_BAND32_MIN_SEQ, jam_band32_quant32_avx512, band);
 }
 
 #endif  /* JAM_HAVE_AVX512 */
@@ -760,12 +762,17 @@ static int try_band32_q32(jam_context* ctx, const void* w, int ldw, const void* 
 #else
 #define JAM_BAND8(fn) ((jam_job_fn) 0)
 #endif
+#ifdef JAM_HAVE_AVXVNNI
+#define JAM_BAND8V(fn) (fn)
+#else
+#define JAM_BAND8V(fn) ((jam_job_fn) 0)
+#endif
 
 #ifdef JAM_HAVE_AVX2
 /* avx2 sibling of try_band32: same job + per-worker repack scratch (ensure_kquant's bound
  * covers the 4-groups-of-8 layouts byte-for-byte), phase 1 = the avx2 requant with raw per-16 sums.
- * Engages on any avx2-capable CPU that has no avx512 band (plain avx2 AND avx-vnni clients - the
- * K-quant VNNI bands are avx512-only). Same n >= JAM_VNNI_MIN_SEQ amortization gate. */
+ * Engages on any avx2-capable CPU that has no avx512 band: plain avx2, and the avx-vnni clients with
+ * the vpdpbusd build of the same bands. Same n >= JAM_VNNI_MIN_SEQ amortization gate. */
 static int try_band8_avx2(jam_context* ctx, const void* w, int64_t w_stride, const void* a, int lda,
                           void* c, int ldc, int m, int n, int k, jam_job_fn band8) {
     int kblocks = k / JAM_QK;
@@ -788,7 +795,7 @@ static jam_status dispatch_kquant(jam_context* ctx, const void* w, jam_dtype wt,
     (void) band; (void) band8; (void) kbytes;
 #ifdef JAM_HAVE_AVX512
     if (try_band32(ctx, w, (int64_t)(ldw / JAM_QKK) * (int64_t) kbytes, a, lda, c, ldc, m, n, k,
-                   jam_band32_quant256_avx512, band)) return JAM_OK;
+                   JAM_VNNI_MIN_SEQ, jam_band32_quant256_avx512, band)) return JAM_OK;
 #endif
 #ifdef JAM_HAVE_AVX2
     if (try_band8_avx2(ctx, w, (int64_t)(ldw / JAM_QKK) * (int64_t) kbytes,
@@ -967,7 +974,7 @@ static jam_status jam_mm_run(jam_context* ctx,
 #ifdef JAM_HAVE_AVX512
         /* a 128-element block, so its row stride is not a per-32 block size */
         if (try_band32(ctx, w, (int64_t)(ldw / JAM_Q1_0_QK) * JAM_Q1_0_BYTES, a, lda, c, ldc, m, n, k,
-                       jam_band32_quant32_avx512, jam_q1_0_band32_avx512)) return JAM_OK;
+                       JAM_BAND32_MIN_SEQ, jam_band32_quant32_avx512, jam_q1_0_band32_avx512)) return JAM_OK;
 #endif
         jam_q8_job q = { .a = w, .lda = ldw, .b = a, .ldb = lda, .c = c, .ldc = ldc, .n = n, .k = k, .nb = k / 32, .m = m };
         if (try_band4_neon(ctx, &q, wt)) return JAM_OK;
@@ -981,9 +988,13 @@ static jam_status jam_mm_run(jam_context* ctx,
         jam_job_fn band = wt == JAM_Q2_0 ? jam_q2_0_band32_avx512
                          : wt == JAM_PQ2_0 ? jam_pq2_0_band32_avx512 : jam_ptq1_0_band32_avx512;
         if (try_band32(ctx, w, (int64_t)(ldw / jam_lowbit_qk(wt)) * jam_lowbit_bytes(wt), a, lda, c, ldc,
-                       m, n, k, jam_band32_quant32_avx512, band)) return JAM_OK;
+                       m, n, k, JAM_BAND32_MIN_SEQ, jam_band32_quant32_avx512, band)) return JAM_OK;
 #endif
-        jam_q8_job q = { .a = w, .lda = ldw, .b = a, .ldb = lda, .c = c, .ldc = ldc, .n = n, .k = k, .nb = k / 32, .m = m, .wt = wt };
+        /* the row kernels and the floor decode each row into their worker's scratch */
+        if (!ensure_repack(ctx, k / 32))
+            return jam_fail(JAM_ENOMEM, "out of memory for the row scratch (k = %d)", k);
+        jam_q8_job q = { .a = w, .lda = ldw, .b = a, .ldb = lda, .c = c, .ldc = ldc, .n = n, .k = k, .nb = k / 32, .m = m,
+                         .repack = ctx->kq_repack, .wt = wt };
         return run_quant(ctx, &q, m, ctx->lowbit_kernel, jam_mm_lowbit_f32_generic);
     }
 
@@ -1025,9 +1036,9 @@ static jam_status jam_mm_run(jam_context* ctx,
                                jam_mxfp4_band32_avx512)) return JAM_OK;
 #endif
 #ifdef JAM_HAVE_AVX2
-            /* no MXFP4 avx-vnni band exists, so the avx2 band serves those clients too */
-            if (try_band8_avx2(ctx, w, (int64_t)(ldw / JAM_QK) * JAM_MXFP4_BYTES,
-                               a, lda, c, ldc, m, n, k, jam_mxfp4_band8_avx2)) return JAM_OK;
+            if (try_band8_avx2(ctx, w, (int64_t)(ldw / JAM_QK) * JAM_MXFP4_BYTES, a, lda, c, ldc, m, n, k,
+                               ctx->active == JAM_ISA_AVX_VNNI ? JAM_BAND8V(jam_mxfp4_band8_avxvnni)
+                                                               : jam_mxfp4_band8_avx2)) return JAM_OK;
 #endif
             if (try_band4_neon(ctx, &q, wt)) return JAM_OK;
             jam_job_fn mxfp4_kernel = n == 1 ? ctx->mxfp4_decode_kernel : ctx->mxfp4_kernel;
@@ -1074,20 +1085,22 @@ static jam_status jam_mm_run(jam_context* ctx,
     /* Q4_K/Q5_K/Q6_K weight @ F32 -> F32 (256-element super-blocks): VNNI repack fast path, else int8/floor.
      * Per-quant compile-time constants are a table; the ISA-bound kernels come from ctx->kq[] (same index). */
     static const struct {
-        jam_dtype dt; size_t block_bytes; jam_job_fn band; jam_job_fn band8; jam_job_fn floor;
+        jam_dtype dt; size_t block_bytes; jam_job_fn band; jam_job_fn band8; jam_job_fn band8v; jam_job_fn floor;
     } kquant_info[JAM_KQ_N] = {
-        [JAM_KQ_Q4K] = { JAM_Q4_K, JAM_Q4K_BYTES, JAM_BAND(jam_q4k_band32_avx512),
-                         JAM_BAND8(jam_q4k_band8_avx2), jam_mm_q4k_f32_generic },
-        [JAM_KQ_Q5K] = { JAM_Q5_K, JAM_Q5K_BYTES, JAM_BAND(jam_q5k_band32_avx512),
-                         JAM_BAND8(jam_q5k_band8_avx2), jam_mm_q5k_f32_generic },
-        [JAM_KQ_Q6K] = { JAM_Q6_K, JAM_Q6K_BYTES, JAM_BAND(jam_q6k_band32_avx512),
-                         JAM_BAND8(jam_q6k_band8_avx2), jam_mm_q6k_f32_generic },
+        [JAM_KQ_Q4K] = { JAM_Q4_K, JAM_Q4K_BYTES, JAM_BAND(jam_q4k_band32_avx512), JAM_BAND8(jam_q4k_band8_avx2),
+                         JAM_BAND8V(jam_q4k_band8_avxvnni), jam_mm_q4k_f32_generic },
+        [JAM_KQ_Q5K] = { JAM_Q5_K, JAM_Q5K_BYTES, JAM_BAND(jam_q5k_band32_avx512), JAM_BAND8(jam_q5k_band8_avx2),
+                         JAM_BAND8V(jam_q5k_band8_avxvnni), jam_mm_q5k_f32_generic },
+        [JAM_KQ_Q6K] = { JAM_Q6_K, JAM_Q6K_BYTES, JAM_BAND(jam_q6k_band32_avx512), JAM_BAND8(jam_q6k_band8_avx2),
+                         JAM_BAND8V(jam_q6k_band8_avxvnni), jam_mm_q6k_f32_generic },
     };
     if (at == JAM_F32 && ct == JAM_F32)
         for (int i = 0; i < JAM_KQ_N; i++)
             if (wt == kquant_info[i].dt) {
+                /* an AVX-VNNI CPU takes the 8-row band built with vpdpbusd dots */
                 return dispatch_kquant(ctx, w, wt, ldw, a, lda, c, ldc, m, n, k, kquant_info[i].block_bytes,
-                                       kquant_info[i].band, kquant_info[i].band8,
+                                       kquant_info[i].band,
+                                       ctx->active == JAM_ISA_AVX_VNNI ? kquant_info[i].band8v : kquant_info[i].band8,
                                        n == 1 ? ctx->kq_decode[i] : ctx->kq[i],
                                        kquant_info[i].floor);
             }

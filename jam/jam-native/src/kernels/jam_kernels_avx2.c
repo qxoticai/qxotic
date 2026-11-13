@@ -112,6 +112,19 @@ void jam_mm_f32_avx2(void* arg, int rb, int re, int tid) {
 
 #undef JAM_DOT
 
+/* ---- K-quant rows, decode and short calls (jam_kquant_q256.inc): the dot is maddubs + madd, exact
+ * because the codes are at most 63: 2 x 63 x 127 fits the int16 pair sum. */
+#define JAM_KQ_DOT(start, w, a) \
+    _mm256_add_epi32(start, _mm256_madd_epi16(_mm256_maddubs_epi16(w, a), _mm256_set1_epi16(1)))
+#define JAM_Q4K_NAME jam_mm_q4k_avx2
+#define JAM_Q5K_NAME jam_mm_q5k_avx2
+#define JAM_Q6K_NAME jam_mm_q6k_avx2
+#include "jam_kquant_q256.inc"
+#undef JAM_KQ_DOT
+#undef JAM_Q4K_NAME
+#undef JAM_Q5K_NAME
+#undef JAM_Q6K_NAME
+
 /* F32/F16/BF16 dense weight @ F32 -> F32, avx2: a 3-weight-row × 4-activation-col dot tile (2 and 1
  * rows at the block's end), so each row's vcvtph2ps converts amortize across 4 columns. 12 ymm
  * accumulators (+ 3 wv + 1 xv) fit the 16 registers. k stepped by 8 (dispatch gates on k%8 or k%16). */
