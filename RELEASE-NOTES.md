@@ -14,6 +14,7 @@
   `jinfer remove <ref>...` deletes the one file `find` prints for each reference, a path `list` prints included, and names it with its size; a repository holding several cached files is refused with their names, never guessed.
   A model in the shared Hugging Face cache takes its blob along unless another snapshot links it, and a repository folder goes once it is empty.
   `ModelStore.evict(ref)` is `ModelStore.remove(ref)`, the command's name.
+- **`jinfer prune` frees the space older versions take.** A pull that updates a model keeps the version it replaced in the Hugging Face cache; `list` now ends with how much that is, and `prune` deletes them, as `hf cache prune` does. `ModelStore.detached()` lists them with what removing each frees.
 - **Errors say what went wrong, once.** A server that cannot be reached reads `cannot connect to <host>` or `cannot find host <host>`, where it read `ConnectException: ClosedChannelException`; an empty `:` or `@` quotes the reference; a bare word given as a model (`-m LiquidAI`) is shown the reference shape; and a cause is no longer repeated after a message that already says it.
 - **`jinfer pull` of a cached model no longer reads it whole.** A blob in the shared Hugging Face cache is named by its verified SHA-256, so name and size say it is current: 0.75 s instead of 17 s for a 25 GB model.
   A fresh download is checked once, not twice. Bytes damaged after download are replaced by `pull --force`.

@@ -306,6 +306,7 @@ class ArgumentMatrixTest {
                     {"pull", "owner/repo:Q8_0", "--temp", "0"},
                     {"remove"},
                     {"find"},
+                    {"prune", "owner/repo"},
                     {"find", "owner/repo:Q8_0", "--force"},
                     {"remove", "owner/repo:Q8_0", "--force"},
                     {"chat", "--model="},

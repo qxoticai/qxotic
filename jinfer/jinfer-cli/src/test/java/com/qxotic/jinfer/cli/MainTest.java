@@ -35,6 +35,7 @@ class MainTest {
                 "list",
                 "find",
                 "remove",
+                "prune",
                 "cache-info"
             })
     void everyVerbHasScopedHelpWithoutModelsOrCacheWrites(String verb) {
@@ -70,6 +71,7 @@ class MainTest {
                 "list",
                 "find",
                 "remove",
+                "prune",
                 "cache-info"
             })
     void helpDescriptionsShareOneColumn(String verb) {

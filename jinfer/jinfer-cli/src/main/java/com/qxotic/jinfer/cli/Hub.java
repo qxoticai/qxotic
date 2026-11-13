@@ -29,7 +29,9 @@ final class Hub {
 
     static void validate(Options options) {
         switch (options.command) {
-            case "list" -> Options.require(options.operands.isEmpty(), "list takes no arguments");
+            case "list", "prune" ->
+                    Options.require(
+                            options.operands.isEmpty(), options.command + " takes no arguments");
             case "pull", "find", "remove" ->
                     Options.require(
                             !options.operands.isEmpty()
@@ -46,6 +48,7 @@ final class Hub {
         switch (options.command) {
             case "pull" -> pull(options.operands, options.force, store, io.out());
             case "list" -> list(store, io.out());
+            case "prune" -> prune(store, io.out());
             case "find" -> {
                 return find(options.operands, store, io.out(), io.err());
             }
@@ -206,6 +209,24 @@ final class Hub {
 
     static void list(ModelStore store, PrintStream out) {
         list(store.cached(), ref -> name(store, ref), store.root(), out);
+        long older = store.detached().stream().mapToLong(ModelStore.Cached::sizeBytes).sum();
+        if (older > 0) {
+            out.printf("%10s  in older versions: 'jinfer prune' frees it%n", humanBytes(older));
+        }
+    }
+
+    /** Deletes the files of versions no branch names, saying what each one frees. */
+    static void prune(ModelStore store, PrintStream out) {
+        long freed = 0;
+        for (var entry : store.detached()) {
+            if (!store.remove(entry.ref()) || entry.sizeBytes() == 0) continue;
+            ModelRef ref = ModelRef.parse(entry.ref());
+            out.printf(
+                    "removed %s (%s), an older version from %s%n",
+                    Path.of(ref.path()).getFileName(), humanBytes(entry.sizeBytes()), ref.repoId());
+            freed += entry.sizeBytes();
+        }
+        out.println(freed == 0 ? "no older versions cached" : "freed " + humanBytes(freed));
     }
 
     /**
@@ -297,6 +318,15 @@ final class Hub {
                             Deletes the one file 'jinfer find' prints for each reference. A
                             repository holding several cached files asks for one of their names.
                             Files outside the cache are never deleted.
+                            """;
+                    case "prune" ->
+                            """
+                            jinfer prune - delete model versions no branch points to
+                            Usage: jinfer prune
+
+                            A pull that updates a model keeps the version it replaced in the
+                            Hugging Face cache; prune deletes those. A model pinned to a commit
+                            (owner/repo@<commit>) is one too, and downloads again when next used.
                             """;
                     case "cache-info" ->
                             """

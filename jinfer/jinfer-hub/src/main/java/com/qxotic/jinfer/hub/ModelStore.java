@@ -683,6 +683,16 @@ public final class ModelStore {
         return List.copyOf(byRef.values());
     }
 
+    /**
+     * GGUFs in Hugging Face cache versions no branch or tag names: ones a pull replaced, or ones
+     * pinned to a commit. Each is a ref {@link #remove} takes, and its size is what removing it
+     * frees, a file shared with a named version counting zero, so the sizes add up to what removing
+     * all of them frees.
+     */
+    public List<Cached> detached() {
+        return Hub.detached(Hub.cache());
+    }
+
     /** One cache entry: the ref (or path) to ask for it again, and its size on disk. */
     public record Cached(String ref, long sizeBytes) {}
 

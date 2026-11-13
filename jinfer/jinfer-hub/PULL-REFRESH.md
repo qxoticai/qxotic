@@ -59,7 +59,7 @@ If the OS refuses replacement of an open file, the update fails without deleting
 6. **One remote revision.** When a commit can be resolved, listing, selection, and transfer use that commit.
    The original requested ref still determines flat-cache naming.
 7. **No false success.** Subsequent ordinary lookup selects the refreshed content, absent another actor's mutation.
-8. **Shared data remains shared.** Refresh does not garbage-collect HF snapshots or blobs.
+8. **Shared data remains shared.** Refresh does not garbage-collect HF snapshots or blobs; only an explicit `jinfer prune` removes versions no ref names.
    Same-hash repair publishes only bytes verified against that hash.
 9. **One lock implementation.** Logical publication keys and payload destinations use the existing thread/process locks, released on every exit.
    Lock order is logical publication key, payload destination, then staging destination.

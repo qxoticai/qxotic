@@ -9,7 +9,9 @@ import java.nio.file.StandardCopyOption;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Comparator;
+import java.util.HashSet;
 import java.util.List;
+import java.util.Set;
 import java.util.concurrent.atomic.AtomicLong;
 
 /**
@@ -78,15 +80,10 @@ final class Hub {
         List<ModelStore.Cached> refs = new ArrayList<>();
         try (var repos = Files.list(hubCache)) {
             for (Path repo : repos.filter(Files::isDirectory).toList()) {
-                String folder = repo.getFileName().toString();
-                int cut = folder.indexOf("--", "models--".length());
-                if (!folder.startsWith("models--") || cut < 0) {
+                String repoId = repoId(repo);
+                if (repoId == null) {
                     continue;
                 }
-                String repoId =
-                        folder.substring("models--".length(), cut)
-                                + "/"
-                                + folder.substring(cut + 2);
                 String commit = currentCommit(repo);
                 Path snapshot = commit == null ? null : repo.resolve("snapshots").resolve(commit);
                 if (snapshot == null || !Files.isDirectory(snapshot)) {
@@ -113,6 +110,104 @@ final class Hub {
         }
         refs.sort(Comparator.comparing(ModelStore.Cached::ref)); // a walk's order is the disk's
         return refs;
+    }
+
+    /**
+     * GGUFs in snapshots no ref names: versions a pull replaced, or ones pinned to a commit, as
+     * {@code hf.co/owner/repo@commit/path} refs. Each size is what removing the file frees: zero
+     * when a named snapshot links the same blob, and a blob counts once, so the sizes add up to
+     * what removing all of them frees.
+     */
+    static List<ModelStore.Cached> detached(Path hubCache) {
+        if (!Files.isDirectory(hubCache)) {
+            return List.of();
+        }
+        List<ModelStore.Cached> found = new ArrayList<>();
+        try (var repos = Files.list(hubCache)) {
+            for (Path repo : repos.filter(Files::isDirectory).toList()) {
+                String repoId = repoId(repo);
+                Path snapshots = repo.resolve("snapshots");
+                if (repoId == null || !Files.isDirectory(snapshots)) {
+                    continue;
+                }
+                Set<String> named = namedCommits(repo);
+                List<Path> all;
+                try (var listing = Files.list(snapshots)) {
+                    all = listing.toList();
+                }
+                Set<Path> counted = new HashSet<>(); // what a named snapshot keeps is not freed
+                for (Path snapshot : all) {
+                    if (named.contains(snapshot.getFileName().toString())) {
+                        ModelStore.visitFiles(snapshot, (file, attrs) -> counted.add(real(file)));
+                    }
+                }
+                for (Path snapshot : all) {
+                    String commit = snapshot.getFileName().toString();
+                    if (named.contains(commit)) continue;
+                    ModelStore.visitFiles(
+                            snapshot,
+                            (file, attrs) -> {
+                                if (!ModelStore.isGguf(file.getFileName().toString())) return;
+                                StringBuilder ref =
+                                        new StringBuilder("hf.co/")
+                                                .append(repoId)
+                                                .append('@')
+                                                .append(commit);
+                                for (Path segment : snapshot.relativize(file)) {
+                                    ref.append('/').append(segment);
+                                }
+                                long freed = counted.add(real(file)) ? attrs.size() : 0;
+                                found.add(new ModelStore.Cached(ref.toString(), freed));
+                            });
+                }
+            }
+        } catch (IOException e) {
+            throw new UncheckedIOException(
+                    "could not read the HuggingFace hub cache at "
+                            + hubCache
+                            + ": "
+                            + ModelStore.why(e),
+                    e);
+        }
+        found.sort(Comparator.comparing(ModelStore.Cached::ref)); // a walk's order is the disk's
+        return found;
+    }
+
+    /** {@code owner/repo} of a {@code models--owner--repo} folder, or null for any other. */
+    private static String repoId(Path repo) {
+        String folder = repo.getFileName().toString();
+        int cut = folder.indexOf("--", "models--".length());
+        if (!folder.startsWith("models--") || cut < 0) {
+            return null;
+        }
+        return folder.substring("models--".length(), cut) + "/" + folder.substring(cut + 2);
+    }
+
+    /** Every commit a file in the repo's {@code refs/} names, branches and tags alike. */
+    private static Set<String> namedCommits(Path repo) throws IOException {
+        Set<String> named = new HashSet<>();
+        Path refs = repo.resolve("refs");
+        if (Files.isDirectory(refs)) {
+            ModelStore.visitFiles(refs, (entry, attrs) -> named.add(readCommit(entry)));
+        }
+        return named;
+    }
+
+    private static String readCommit(Path ref) {
+        try {
+            return Files.readString(ref, StandardCharsets.UTF_8).strip();
+        } catch (IOException unreadable) {
+            return "";
+        }
+    }
+
+    /** Where a snapshot entry's bytes live: its blob, or the entry itself when it is a copy. */
+    private static Path real(Path file) {
+        try {
+            return file.toRealPath();
+        } catch (IOException gone) {
+            return file;
+        }
     }
 
     /** The commit a repo's {@code refs/} names right now: {@code main} first, any branch else. */

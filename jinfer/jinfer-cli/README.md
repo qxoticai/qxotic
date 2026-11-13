@@ -317,7 +317,7 @@ Set `JINFER_MODELS` to choose a different model-cache directory.
 Update checks and forced downloads require network access.
 An exact cached file pinned to a full commit can be pulled offline.
 
-## Cached models: `list`, `find` and `remove`
+## Cached models: `list`, `find`, `remove` and `prune`
 
 These three never touch the network.
 `list` shows every cached model with its size, each by the shortest reference that loads it:
@@ -346,6 +346,15 @@ A repository holding several cached files is never a guess: `remove owner/repo` 
 
 A file in the shared Hugging Face cache is removed together with its blob, unless another snapshot still links that blob.
 Files outside the cache are never deleted.
+
+A `pull` that updates a model keeps the version it replaced in the Hugging Face cache, and `list` ends with how much space those take.
+`prune` deletes them; a model pinned to a commit (`owner/repo@<commit>`) is one too, and downloads again when next used:
+
+```sh
+$ jinfer prune
+removed granite-4.2-3b-Q8_0.gguf (2.0 GB), an older version from ibm-granite/granite-4.2-3b-GGUF
+freed 2.0 GB
+```
 
 ## Prompt caches: `cache-info`
 

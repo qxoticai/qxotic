@@ -443,6 +443,30 @@ class ModelRefTest {
     }
 
     @Test
+    void detachedVersionsReportWhatRemovingThemFrees(@TempDir Path hub) throws IOException {
+        Path repo = hub.resolve("models--a--b");
+        Hub.writeRef(repo.resolve("refs/main"), "d".repeat(40));
+        Path replaced = repo.resolve("blobs").resolve("1".repeat(64));
+        Path kept = repo.resolve("blobs").resolve("2".repeat(64));
+        Files.createDirectories(replaced.getParent());
+        Files.writeString(replaced, "old!");
+        Files.writeString(kept, "same");
+        for (String commit : List.of("c".repeat(40), "e".repeat(40))) {
+            Hub.link(replaced, repo.resolve("snapshots/" + commit + "/x-Q8_0.gguf"));
+            Hub.link(kept, repo.resolve("snapshots/" + commit + "/y-Q8_0.gguf"));
+        }
+        Hub.link(kept, repo.resolve("snapshots/" + "d".repeat(40) + "/y-Q8_0.gguf"));
+
+        List<ModelStore.Cached> detached = Hub.detached(hub);
+        assertEquals(4, detached.size(), "both versions no ref names, every GGUF in them");
+        assertEquals("hf.co/a/b@" + "c".repeat(40) + "/x-Q8_0.gguf", detached.getFirst().ref());
+        assertEquals(
+                4,
+                detached.stream().mapToLong(ModelStore.Cached::sizeBytes).sum(),
+                "the replaced blob once; the one main still links frees nothing");
+    }
+
+    @Test
     void aPlainUrlIsCachedUnderItsHostAndPath(@TempDir Path root) {
         System.setProperty("jinfer.models", root.toString());
         System.setProperty("jinfer.offline", "true"); // never fetch: we assert the PATH it picked

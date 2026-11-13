@@ -133,8 +133,8 @@ final class Options {
                     default -> name;
                 };
         if (!MODEL_COMMANDS.contains(selected)
-                && !Set.of("pull", "list", "find", "remove", "cache-info").contains(selected))
-            throw usageHelp("unknown command: " + name);
+                && !Set.of("pull", "list", "find", "remove", "prune", "cache-info")
+                        .contains(selected)) throw usageHelp("unknown command: " + name);
         command = selected;
     }
 
@@ -616,6 +616,7 @@ final class Options {
                   list          show cached models
                   find          print the path of a cached model
                   remove        delete cached models
+                  prune         delete older model versions
                   cache-info    inspect a prompt cache
 
                 Examples:
