@@ -1394,9 +1394,6 @@ final class Fetch {
                 progress().charset().contains(StandardCharsets.UTF_8)
                         && (!BOARD || TerminalSupport.enableUtf8());
 
-        /** A host's own rendering; set, it replaces the Board and the log lines. */
-        static volatile ModelStore.ProgressListener listener;
-
         final String label;
         private final long total;
         private volatile long startBytes;
@@ -1426,11 +1423,6 @@ final class Fetch {
                 firstStartBytes = already;
                 firstStartNanos = startNanos;
             }
-            ModelStore.ProgressListener host = listener;
-            if (host != null) {
-                host.progress(label, already, total);
-                return;
-            }
             if (BOARD) {
                 if (!added) {
                     added = true;
@@ -1452,11 +1444,6 @@ final class Fetch {
          */
         void at(long written) {
             lastWritten = written;
-            ModelStore.ProgressListener host = listener;
-            if (host != null) {
-                host.progress(label, written, total);
-                return;
-            }
             if (BOARD) {
                 Board.repaint(false);
                 return;
@@ -1499,11 +1486,6 @@ final class Fetch {
 
         void finish() {
             done = true;
-            ModelStore.ProgressListener host = listener;
-            if (host != null) {
-                host.progress(label, total, total);
-                return;
-            }
             if (BOARD) {
                 Board.repaint(true); // the \u2713 shows immediately, and the row may scroll away
                 return;
@@ -1523,7 +1505,7 @@ final class Fetch {
         /**
          * Ends a row its transfer never finished, drawn once more with a cross and left to scroll
          * away like a finished one; a finished row is left as it is. The failure itself is the
-         * caller's exception, so plain progress and a host's listener hear nothing more.
+         * caller's exception, so plain progress hears nothing more.
          */
         void fail() {
             if (done) return;
@@ -1532,13 +1514,11 @@ final class Fetch {
             phase = "failed";
             failed = true;
             done = true;
-            if (listener == null && BOARD) Board.repaint(true);
+            if (BOARD) Board.repaint(true);
         }
 
         void note(String message) {
-            if (listener != null) {
-                LOG.log(System.Logger.Level.INFO, label + ": " + message);
-            } else if (BOARD) {
+            if (BOARD) {
                 Board.announce("  " + label + ": " + message);
             } else {
                 line(label + ": " + message);
