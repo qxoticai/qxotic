@@ -19,6 +19,8 @@ export MACOSX_DEPLOYMENT_TARGET
 # the version is the image's own word, once it exists
 VERSION = $(shell $(BIN) --version | awk '{print $$2}')
 DIST = jinfer-$(VERSION)-$(PLATFORM)
+# root's entries, as native.mk's tarballs: GNU tar (Linux, the container) or bsdtar (macOS)
+TAR_ROOT := $(if $(shell tar --version 2>/dev/null | grep 'GNU tar'),--owner=0 --group=0,--uid 0 --gid 0) --numeric-owner
 .DEFAULT_GOAL := help
 
 help:
@@ -45,7 +47,7 @@ $(BIN):
 dist: $(BIN)
 	rm -rf target/dist/$(DIST) && mkdir -p target/dist/$(DIST)/bin
 	cp $(BIN) target/dist/$(DIST)/bin/ && cp README.md ../jinfer-native/NOTICE $(ROOT)/LICENSE target/dist/$(DIST)/   # the notice: the same image, the same terms
-	cd target/dist && rm -f $(DIST).tar.gz && tar -czf $(DIST).tar.gz $(DIST) && sha256sum $(DIST).tar.gz > $(DIST).tar.gz.sha256
+	cd target/dist && rm -f $(DIST).tar.gz && tar $(TAR_ROOT) -czf $(DIST).tar.gz $(DIST) && sha256sum $(DIST).tar.gz > $(DIST).tar.gz.sha256
 	@ls -la target/dist/$(DIST).tar.gz && cat target/dist/$(DIST).tar.gz.sha256
 
 check-dist:

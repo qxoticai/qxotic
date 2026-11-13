@@ -16,6 +16,9 @@ VERSION := $(shell sed -n 's/^\#define $(UPPER)_VERSION "\(.*\)"/\1/p' include/$
 BASE := $(firstword $(subst -, ,$(VERSION)))
 PYVERSION := $(subst -,,$(VERSION))
 DIST  := lib$(NAME)-$(VERSION)-$(PLATFORM)
+# The tarball's entries are root's, not the builder's: unpacked by root into /usr/local they stay root's,
+# and no account name ships. GNU tar (Linux, the container) and bsdtar (macOS) spell it differently.
+TAR_ROOT := $(if $(shell tar --version 2>/dev/null | grep 'GNU tar'),--owner=0 --group=0,--uid 0 --gid 0) --numeric-owner
 # The soname follows the version's numbers, never set by hand: all three while the major is 0, as ABI
 # compatibility is not guaranteed between any two 0.x releases (a program loads the release it was built
 # against and no other), the major from 1.0. The build names the library by it (native-cc.sh) and links
@@ -156,7 +159,7 @@ dist: $(LIB)
 	    'Name: $(NAME)' 'Description: $(DESCRIPTION)' 'Version: $(VERSION)' \
 	    'Cflags: -I$${includedir}' 'Libs: -L$${libdir} -l$(NAME) -Wl,-rpath,$${libdir}' > target/dist/$(DIST)/lib/pkgconfig/$(NAME).pc
 	cp README.md NOTICE $(ROOT)/LICENSE target/dist/$(DIST)/
-	cd target/dist && rm -f $(DIST).tar.gz && tar -czf $(DIST).tar.gz $(DIST) && sha256sum $(DIST).tar.gz > $(DIST).tar.gz.sha256   # a tarball: the Unix form, symlinks and modes kept; Windows' is a zip
+	cd target/dist && rm -f $(DIST).tar.gz && tar $(TAR_ROOT) -czf $(DIST).tar.gz $(DIST) && sha256sum $(DIST).tar.gz > $(DIST).tar.gz.sha256   # a tarball: the Unix form, symlinks and modes kept; Windows' is a zip
 	@ls -la target/dist/$(DIST).tar.gz && cat target/dist/$(DIST).tar.gz.sha256
 
 # The tarball as a user gets it: a prefix with spaces, the C example built with pkg-config alone and run

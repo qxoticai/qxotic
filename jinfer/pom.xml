@@ -426,7 +426,7 @@
                   </transformer>
                 </transformers>
                 <!-- A shaded jar is one classpath jar. The JPMS descriptors of the modules it
-                     swallows (jota, jam, toknroll, gguf, json, fetch, jinfer-hub) would each declare
+                     swallows (jota, jam, toknroll, gguf, json, jinfer-fetch, jinfer-hub) would each declare
                      a module that no longer exists, so they stay out; so do the manifests the
                      transformer above regenerates. Every jar of ours embeds the same LICENSE and
                      the same jpms.args, so every copy stays out and each comes in once from its

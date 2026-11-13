@@ -33,7 +33,7 @@ dependencies = ["toknroll==0.4.0rc1"]   # the toknroll inside libjinfer, exactly
 
 [project.urls]
 Homepage = "https://qxotic.ai"
-Documentation = "https://github.com/qxoticai/qxotic/tree/main/jinfer"
+Documentation = "https://github.com/qxoticai/qxotic/blob/main/jinfer/jinfer-native/python/README.md"
 Source = "https://github.com/qxoticai/qxotic"
 Issues = "https://github.com/qxoticai/qxotic/issues"
 
