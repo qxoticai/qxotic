@@ -97,14 +97,70 @@ class FlashAttentionContractTest {
         assertClose(out32, out16);
     }
 
-    private MemoryView<MemorySegment> randomF32(int size, long seed) {
+    @Test
+    void wideHeadsMatchPlainCausalAttention() {
+        // head sizes that are a multiple of 64 above 64 take the wide 4-row QK tile on 16 lanes
+        for (int headSize : new int[] {128, 256}) {
+            int seqLen = 37, kvDim = (HEADS / KV_MUL) * headSize, queryDim = HEADS * headSize;
+            float scale = (float) (1 / Math.sqrt(headSize));
+            float[] q = randomFloats(seqLen * queryDim, 41);
+            float[] k = randomFloats(seqLen * kvDim, 42);
+            float[] v = randomFloats(seqLen * kvDim, 43);
+            MemoryView<MemorySegment> out = Views.allocateF32(memory, seqLen * queryDim);
+            FlashAttention.causalPrefill(
+                    Views.fromFloatArray(memory, q),
+                    out,
+                    Views.fromFloatArray(memory, k),
+                    Views.fromFloatArray(memory, v),
+                    HEADS,
+                    0,
+                    seqLen,
+                    headSize,
+                    kvDim,
+                    queryDim,
+                    KV_MUL,
+                    scale);
+
+            for (int t = 0; t < seqLen; t++) {
+                for (int h = 0; h < HEADS; h++) {
+                    int qAt = t * queryDim + h * headSize, kvHead = (h / KV_MUL) * headSize;
+                    double[] weights = new double[t + 1];
+                    double max = Double.NEGATIVE_INFINITY, sum = 0;
+                    for (int j = 0; j <= t; j++) {
+                        double dot = 0;
+                        for (int d = 0; d < headSize; d++)
+                            dot += (double) q[qAt + d] * k[j * kvDim + kvHead + d];
+                        weights[j] = dot * scale;
+                        max = Math.max(max, weights[j]);
+                    }
+                    for (int j = 0; j <= t; j++) sum += weights[j] = Math.exp(weights[j] - max);
+                    for (int d = 0; d < headSize; d++) {
+                        double expected = 0;
+                        for (int j = 0; j <= t; j++)
+                            expected += weights[j] / sum * v[j * kvDim + kvHead + d];
+                        assertEquals(
+                                expected,
+                                Views.getFloat(out, qAt + d, "out"),
+                                1e-5,
+                                "head size " + headSize + ", token " + t + ", head " + h);
+                    }
+                }
+            }
+        }
+    }
+
+    private static float[] randomFloats(int size, long seed) {
         float[] values = new float[size];
         long state = seed;
         for (int i = 0; i < size; i++) {
             state = state * 6364136223846793005L + 1442695040888963407L;
             values[i] = ((state >>> 40) & 0xffff) / 65536f - 0.5f;
         }
-        return Views.fromFloatArray(memory, values);
+        return values;
+    }
+
+    private MemoryView<MemorySegment> randomF32(int size, long seed) {
+        return Views.fromFloatArray(memory, randomFloats(size, seed));
     }
 
     private static MemoryView<MemorySegment> slice(

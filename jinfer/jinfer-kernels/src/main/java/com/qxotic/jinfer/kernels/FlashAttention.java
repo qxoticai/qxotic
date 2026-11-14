@@ -30,6 +30,8 @@ import jdk.incubator.vector.VectorOperators;
  */
 public final class FlashAttention {
 
+    private static final ByteOrder LE = ByteOrder.LITTLE_ENDIAN;
+
     /**
      * True when AOT-compiled into a native image (property is set during the image build; this
      * class initializes at build time there, so the flag folds to a constant either way).
@@ -672,34 +674,40 @@ public final class FlashAttention {
             float[] S,
             int sRow0,
             int BcRows) {
-        int qb1 = qb0 + qStride, qb2 = qb0 + 2 * qStride, qb3 = qb0 + 3 * qStride;
+        // The loads call the Vector API directly, not loadF32. The JIT inlines this tile into the
+        // attention loop, where each helper call draws on one inlining budget, and a call left out
+        // returns its vector boxed on every step (GraalVM 25.5 left four out here: the tile ran 7x
+        // slower). Vector API methods are inlined as they are parsed, outside that budget.
+        var F = Segments.F_SPECIES;
+        MemorySegment qs = q.vseg(), ks = key.vseg();
+        long v = 16L * Float.BYTES; // one vector: the caller runs this tile at 16 lanes only
+        long q0 = q.vbase() + (long) qb0 * Float.BYTES, qStep = (long) qStride * Float.BYTES;
+        long q1 = q0 + qStep, q2 = q1 + qStep, q3 = q2 + qStep;
         for (int k = 0; k < nKeys; k++) {
-            int ko = kvOff[runStart + k];
-            FloatVector a0 = FloatVector.zero(Segments.F_SPECIES),
-                    a1 = FloatVector.zero(Segments.F_SPECIES),
-                    a2 = FloatVector.zero(Segments.F_SPECIES),
-                    a3 = FloatVector.zero(Segments.F_SPECIES);
+            long kRow = key.vbase() + (long) kvOff[runStart + k] * Float.BYTES;
+            FloatVector a0 = FloatVector.zero(F), a1 = a0, a2 = a0, a3 = a0;
             for (int d = 0; d < headSize; d += 64) {
-                FloatVector k0 = loadF32(key, ko + d),
-                        k1 = loadF32(key, ko + d + 16),
-                        k2 = loadF32(key, ko + d + 32),
-                        k3 = loadF32(key, ko + d + 48);
-                a0 = loadF32(q, qb0 + d).fma(k0, a0);
-                a0 = loadF32(q, qb0 + d + 16).fma(k1, a0);
-                a0 = loadF32(q, qb0 + d + 32).fma(k2, a0);
-                a0 = loadF32(q, qb0 + d + 48).fma(k3, a0);
-                a1 = loadF32(q, qb1 + d).fma(k0, a1);
-                a1 = loadF32(q, qb1 + d + 16).fma(k1, a1);
-                a1 = loadF32(q, qb1 + d + 32).fma(k2, a1);
-                a1 = loadF32(q, qb1 + d + 48).fma(k3, a1);
-                a2 = loadF32(q, qb2 + d).fma(k0, a2);
-                a2 = loadF32(q, qb2 + d + 16).fma(k1, a2);
-                a2 = loadF32(q, qb2 + d + 32).fma(k2, a2);
-                a2 = loadF32(q, qb2 + d + 48).fma(k3, a2);
-                a3 = loadF32(q, qb3 + d).fma(k0, a3);
-                a3 = loadF32(q, qb3 + d + 16).fma(k1, a3);
-                a3 = loadF32(q, qb3 + d + 32).fma(k2, a3);
-                a3 = loadF32(q, qb3 + d + 48).fma(k3, a3);
+                long o = (long) d * Float.BYTES;
+                FloatVector k0 = FloatVector.fromMemorySegment(F, ks, kRow + o, LE),
+                        k1 = FloatVector.fromMemorySegment(F, ks, kRow + o + v, LE),
+                        k2 = FloatVector.fromMemorySegment(F, ks, kRow + o + 2 * v, LE),
+                        k3 = FloatVector.fromMemorySegment(F, ks, kRow + o + 3 * v, LE);
+                a0 = FloatVector.fromMemorySegment(F, qs, q0 + o, LE).fma(k0, a0);
+                a0 = FloatVector.fromMemorySegment(F, qs, q0 + o + v, LE).fma(k1, a0);
+                a0 = FloatVector.fromMemorySegment(F, qs, q0 + o + 2 * v, LE).fma(k2, a0);
+                a0 = FloatVector.fromMemorySegment(F, qs, q0 + o + 3 * v, LE).fma(k3, a0);
+                a1 = FloatVector.fromMemorySegment(F, qs, q1 + o, LE).fma(k0, a1);
+                a1 = FloatVector.fromMemorySegment(F, qs, q1 + o + v, LE).fma(k1, a1);
+                a1 = FloatVector.fromMemorySegment(F, qs, q1 + o + 2 * v, LE).fma(k2, a1);
+                a1 = FloatVector.fromMemorySegment(F, qs, q1 + o + 3 * v, LE).fma(k3, a1);
+                a2 = FloatVector.fromMemorySegment(F, qs, q2 + o, LE).fma(k0, a2);
+                a2 = FloatVector.fromMemorySegment(F, qs, q2 + o + v, LE).fma(k1, a2);
+                a2 = FloatVector.fromMemorySegment(F, qs, q2 + o + 2 * v, LE).fma(k2, a2);
+                a2 = FloatVector.fromMemorySegment(F, qs, q2 + o + 3 * v, LE).fma(k3, a2);
+                a3 = FloatVector.fromMemorySegment(F, qs, q3 + o, LE).fma(k0, a3);
+                a3 = FloatVector.fromMemorySegment(F, qs, q3 + o + v, LE).fma(k1, a3);
+                a3 = FloatVector.fromMemorySegment(F, qs, q3 + o + 2 * v, LE).fma(k2, a3);
+                a3 = FloatVector.fromMemorySegment(F, qs, q3 + o + 3 * v, LE).fma(k3, a3);
             }
             int col = runStart + k;
             S[sRow0 + col] = a0.reduceLanes(VectorOperators.ADD) * scale;
