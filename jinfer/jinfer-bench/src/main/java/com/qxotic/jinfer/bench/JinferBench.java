@@ -1,10 +1,12 @@
 package com.qxotic.jinfer.bench;
 
+import com.qxotic.format.gguf.GGUF;
 import com.qxotic.jam.JAM;
 import com.qxotic.jinfer.Batch;
 import com.qxotic.jinfer.CheckpointCodec;
 import com.qxotic.jinfer.ContentKey;
 import com.qxotic.jinfer.ContextState;
+import com.qxotic.jinfer.LanguageModel;
 import com.qxotic.jinfer.RuntimeFlags;
 import com.qxotic.jinfer.Segments;
 import com.qxotic.jinfer.Views;
@@ -13,6 +15,7 @@ import com.qxotic.jinfer.chat.ChatEngine;
 import com.qxotic.jinfer.chat.Content;
 import com.qxotic.jinfer.chat.LoadedModel;
 import com.qxotic.jinfer.chat.Message;
+import com.qxotic.jinfer.chat.ModelProvider;
 import com.qxotic.jinfer.chat.Models;
 import com.qxotic.jinfer.chat.Role;
 import com.qxotic.jinfer.codecs.ImageCodec;
@@ -20,6 +23,9 @@ import com.qxotic.jinfer.llm.Sampler;
 import com.qxotic.jinfer.llm.Sampling;
 import com.qxotic.jinfer.media.Media;
 import com.qxotic.jinfer.media.Multimodal;
+import com.qxotic.jinfer.models.lfm3.Lfm3;
+import com.qxotic.jinfer.models.qwen35.Qwen35;
+import com.qxotic.toknroll.Tokenizer;
 import java.io.IOException;
 import java.io.PrintStream;
 import java.lang.foreign.Arena;
@@ -32,6 +38,8 @@ import java.util.Arrays;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
+import java.util.Set;
 import java.util.stream.Collectors;
 
 /**
@@ -145,7 +153,12 @@ public final class JinferBench {
             BenchModel<?> bench = BenchModel.open(Path.of(path), companions);
             String name = name(path);
             String suffix = depth == 0 ? "" : "@d" + depth;
-            if (p > 0)
+            if (bench.decision)
+                System.err.printf(
+                        "  %s is a decision model: it reads a whole prompt into an empty state, so"
+                                + " only pp at depth 0 runs%n",
+                        name);
+            if (p > 0 && !(bench.decision && depth > 0))
                 rows.add(
                         measure(
                                 bench,
@@ -159,7 +172,7 @@ public final class JinferBench {
                                 warmup,
                                 reps,
                                 noWarmup));
-            if (n > 0)
+            if (n > 0 && !bench.decision)
                 rows.add(
                         measure(
                                 bench,
@@ -173,11 +186,11 @@ public final class JinferBench {
                                 warmup,
                                 reps,
                                 noWarmup));
-            if (runCapabilities)
+            if (runCapabilities && !bench.decision)
                 caps.add(capabilities(bench, name, p > 0 ? p : 512, Math.max(n, 16), media));
         }
         printTable(rows);
-        if (runCapabilities) printCaps(caps);
+        if (!caps.isEmpty()) printCaps(caps);
     }
 
     /**
@@ -188,18 +201,67 @@ public final class JinferBench {
      */
     private static final class BenchModel<S extends ContextState> {
         final LoadedModel<S> loaded;
+
+        /** A decision checkpoint's network: it reads a prompt both ways and generates nothing. */
+        final boolean decision;
+
         private S state;
         private CheckpointCodec<S> depthCodec;
         private MemorySegment depthSnapshot;
 
-        private BenchModel(LoadedModel<S> loaded) {
+        private BenchModel(LoadedModel<S> loaded, boolean decision) {
             this.loaded = loaded;
+            this.decision = decision;
         }
 
         @SuppressWarnings("unchecked")
         static BenchModel<?> open(Path path, Map<String, Path> companions) throws IOException {
+            try {
+                return new BenchModel<>(
+                        (LoadedModel<ContextState>) Models.load(path, Arena.ofAuto(), companions),
+                        false);
+            } catch (ModelProvider.IncompatibleModelException e) {
+                BenchModel<?> decision = openDecision(path);
+                if (decision == null) throw e;
+                return decision;
+            }
+        }
+
+        /**
+         * A decision checkpoint (d1, d3) is no language model to chat with, so {@link Models#load}
+         * refuses it; its network still ingests a prompt, both ways in its full-attention layers,
+         * which is what {@code llama-bench -p} times on the same file. Null for any other file.
+         */
+        private static BenchModel<?> openDecision(Path path) throws IOException {
+            GGUF gguf = GGUF.read(path);
+            String arch = gguf.getStringOrDefault("general.architecture", "");
+            if (gguf.getValueOrDefault(boolean.class, arch + ".attention.causal", true))
+                return null;
+            return switch (arch) {
+                case "lfm3" -> {
+                    Lfm3 model = Lfm3.loadModel(path, Arena.ofAuto());
+                    yield network(model, model.tokenizer(), path);
+                }
+                case "qwen35", "qwen35moe" -> {
+                    Qwen35 model = Qwen35.loadModel(path, Arena.ofAuto());
+                    yield network(model, model.tokenizer(), path);
+                }
+                default -> null;
+            };
+        }
+
+        private static <S extends ContextState> BenchModel<S> network(
+                LanguageModel<?, ?, S> model, Tokenizer tokenizer, Path path) {
             return new BenchModel<>(
-                    (LoadedModel<ContextState>) Models.load(path, Arena.ofAuto(), companions));
+                    new LoadedModel<>(
+                            model,
+                            tokenizer,
+                            "",
+                            Set.of(),
+                            Models.modelSeed(path),
+                            Optional.empty(),
+                            LoadedModel.SamplingDefaults.NONE),
+                    true);
         }
 
         int vocab() {

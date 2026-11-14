@@ -56,6 +56,16 @@
       <artifactId>jinfer-models-all</artifactId>
       <scope>runtime</scope>
     </dependency>
+    <!-- Decision checkpoints (d1, d3) are no language models for Models.load; the bench opens
+         their networks through these ports' own loaders to time prefill. -->
+    <dependency>
+      <groupId>com.qxotic</groupId>
+      <artifactId>jinfer-lfm3</artifactId>
+    </dependency>
+    <dependency>
+      <groupId>com.qxotic</groupId>
+      <artifactId>jinfer-qwen35</artifactId>
+    </dependency>
     <dependency>
       <groupId>com.qxotic</groupId>
       <artifactId>jam-native</artifactId>

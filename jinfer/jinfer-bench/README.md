@@ -79,6 +79,10 @@ Warm-up repeats the whole test until throughput settles within 3% over a window 
 A JIT needs several passes; native code needs one.
 `-d N` keeps `N` prefix tokens resident, prepared outside the timing, like `llama-bench -d`.
 
+A decision checkpoint (d1, d3) reads a whole prompt both ways and generates no text.
+It runs `pp` only, from an empty state; `tg`, `-d` and the second table are skipped.
+The matching llama.cpp run is `llama-bench -n 0`.
+
 The second table measures the engine layer through `ChatEngine` on a real prompt: state allocation, time to first token from a cold state, a prompt-cache hit compared with a full prefill, projected-media latency cold and warm (`--media`), and peak RSS.
 
 **A draft head is never part of a throughput number.**
