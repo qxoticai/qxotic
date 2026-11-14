@@ -273,70 +273,79 @@ void jam_f32_pack_avx512(void* arg, int pb, int pe, int tid) {
     }
 }
 
-/* phase 2: 8 weight rows x one 32-token panel; 16 accumulators, broadcast-FMA at full port rate. */
-void jam_mm_f32p_avx512(void* arg, int rb, int re, int tid) {
-    (void) tid;
-    const jam_f32p_job* J = (const jam_f32p_job*) arg;
-    const float* W = J->w;
-    float* C = (float*) J->c;
-    const long ldw = J->ldw, ldc = J->ldc, k = J->k;
-    const int n = J->n, npanels = (n + 31) / 32;
-    for (int p = 0; p < npanels; p++) {
-        const float* xp = J->xp + (size_t) p * 32 * k;
-        int j0 = p * 32;
-        int cols = n - j0 < 32 ? n - j0 : 32;
-        int r = rb;
-        for (; r + 8 <= re; r += 8) {
-            const float* w[8];
-            for (int a = 0; a < 8; ++a) w[a] = W + (size_t)(r + a) * ldw;
-            __m512 c0a = _mm512_setzero_ps(), c0b = c0a, c1a = c0a, c1b = c0a,
-                   c2a = c0a, c2b = c0a, c3a = c0a, c3b = c0a,
-                   c4a = c0a, c4b = c0a, c5a = c0a, c5b = c0a,
-                   c6a = c0a, c6b = c0a, c7a = c0a, c7b = c0a;
-            for (long t = 0; t < k; t++) {
-                __m512 xa = _mm512_loadu_ps(xp + (size_t) t * 32);
-                __m512 xb = _mm512_loadu_ps(xp + (size_t) t * 32 + 16);
-                __m512 b0 = _mm512_set1_ps(w[0][t]), b1 = _mm512_set1_ps(w[1][t]);
-                c0a = _mm512_fmadd_ps(b0, xa, c0a); c0b = _mm512_fmadd_ps(b0, xb, c0b);
-                c1a = _mm512_fmadd_ps(b1, xa, c1a); c1b = _mm512_fmadd_ps(b1, xb, c1b);
-                __m512 b2 = _mm512_set1_ps(w[2][t]), b3 = _mm512_set1_ps(w[3][t]);
-                c2a = _mm512_fmadd_ps(b2, xa, c2a); c2b = _mm512_fmadd_ps(b2, xb, c2b);
-                c3a = _mm512_fmadd_ps(b3, xa, c3a); c3b = _mm512_fmadd_ps(b3, xb, c3b);
-                __m512 b4 = _mm512_set1_ps(w[4][t]), b5 = _mm512_set1_ps(w[5][t]);
-                c4a = _mm512_fmadd_ps(b4, xa, c4a); c4b = _mm512_fmadd_ps(b4, xb, c4b);
-                c5a = _mm512_fmadd_ps(b5, xa, c5a); c5b = _mm512_fmadd_ps(b5, xb, c5b);
-                __m512 b6 = _mm512_set1_ps(w[6][t]), b7 = _mm512_set1_ps(w[7][t]);
-                c6a = _mm512_fmadd_ps(b6, xa, c6a); c6b = _mm512_fmadd_ps(b6, xb, c6b);
-                c7a = _mm512_fmadd_ps(b7, xa, c7a); c7b = _mm512_fmadd_ps(b7, xb, c7b);
-            }
-            float tile[8][32] __attribute__((aligned(64)));
-            _mm512_store_ps(tile[0], c0a); _mm512_store_ps(tile[0] + 16, c0b);
-            _mm512_store_ps(tile[1], c1a); _mm512_store_ps(tile[1] + 16, c1b);
-            _mm512_store_ps(tile[2], c2a); _mm512_store_ps(tile[2] + 16, c2b);
-            _mm512_store_ps(tile[3], c3a); _mm512_store_ps(tile[3] + 16, c3b);
-            _mm512_store_ps(tile[4], c4a); _mm512_store_ps(tile[4] + 16, c4b);
-            _mm512_store_ps(tile[5], c5a); _mm512_store_ps(tile[5] + 16, c5b);
-            _mm512_store_ps(tile[6], c6a); _mm512_store_ps(tile[6] + 16, c6b);
-            _mm512_store_ps(tile[7], c7a); _mm512_store_ps(tile[7] + 16, c7b);
-            for (int j = 0; j < cols; j++) {
-                float* o = C + (size_t)(j0 + j) * ldc + r;
-                for (int a = 0; a < 8; ++a) o[a] = tile[a][j];
-            }
-        }
-        for (; r < re; r++) {                        /* row tail: 1 x 32 */
-            const float* w = W + (size_t) r * ldw;
-            __m512 ca = _mm512_setzero_ps(), cb = ca;
-            for (long t = 0; t < k; t++) {
-                __m512 b = _mm512_set1_ps(w[t]);
-                ca = _mm512_fmadd_ps(b, _mm512_loadu_ps(xp + (size_t) t * 32), ca);
-                cb = _mm512_fmadd_ps(b, _mm512_loadu_ps(xp + (size_t) t * 32 + 16), cb);
-            }
-            float tile[32] __attribute__((aligned(64)));
-            _mm512_store_ps(tile, ca); _mm512_store_ps(tile + 16, cb);
-            for (int j = 0; j < cols; j++) C[(size_t)(j0 + j) * ldc + r] = tile[j];
-        }
-    }
+/* phase 2: 8 weight rows x one 32-token panel; 16 accumulators, broadcast-FMA at full port rate.
+ * WT is the weight element type; W(a, t) reads row a's element t as a float, after STAGE(t). */
+#define JAM_PACKED8(NAME, WT, STAGE, W)                                                               \
+void NAME(void* arg, int rb, int re, int tid) {                                                       \
+    (void) tid;                                                                                        \
+    const jam_f32p_job* J = (const jam_f32p_job*) arg;                                                 \
+    const WT* Wm = (const WT*) J->w;                                                                   \
+    float* C = (float*) J->c;                                                                          \
+    const long ldw = J->ldw, ldc = J->ldc, k = J->k;                                                   \
+    const int n = J->n, npanels = (n + 31) / 32;                                                       \
+    float wt[8][16] __attribute__((aligned(64))); (void) wt;                                           \
+    for (int p = 0; p < npanels; p++) {                                                                \
+        const float* xp = J->xp + (size_t) p * 32 * k;                                                 \
+        int j0 = p * 32;                                                                               \
+        int cols = n - j0 < 32 ? n - j0 : 32;                                                          \
+        int r = rb;                                                                                    \
+        for (; r + 8 <= re; r += 8) {                                                                  \
+            const WT* w[8];                                                                            \
+            for (int a = 0; a < 8; ++a) w[a] = Wm + (size_t)(r + a) * ldw;                             \
+            __m512 c0a = _mm512_setzero_ps(), c0b = c0a, c1a = c0a, c1b = c0a,                         \
+                   c2a = c0a, c2b = c0a, c3a = c0a, c3b = c0a,                                         \
+                   c4a = c0a, c4b = c0a, c5a = c0a, c5b = c0a,                                         \
+                   c6a = c0a, c6b = c0a, c7a = c0a, c7b = c0a;                                         \
+            for (long t = 0; t < k; t++) {                                                             \
+                STAGE(t);                                                                              \
+                __m512 xa = _mm512_loadu_ps(xp + (size_t) t * 32);                                     \
+                __m512 xb = _mm512_loadu_ps(xp + (size_t) t * 32 + 16);                                \
+                __m512 b0 = _mm512_set1_ps(W(0, t)), b1 = _mm512_set1_ps(W(1, t));                     \
+                c0a = _mm512_fmadd_ps(b0, xa, c0a); c0b = _mm512_fmadd_ps(b0, xb, c0b);                \
+                c1a = _mm512_fmadd_ps(b1, xa, c1a); c1b = _mm512_fmadd_ps(b1, xb, c1b);                \
+                __m512 b2 = _mm512_set1_ps(W(2, t)), b3 = _mm512_set1_ps(W(3, t));                     \
+                c2a = _mm512_fmadd_ps(b2, xa, c2a); c2b = _mm512_fmadd_ps(b2, xb, c2b);                \
+                c3a = _mm512_fmadd_ps(b3, xa, c3a); c3b = _mm512_fmadd_ps(b3, xb, c3b);                \
+                __m512 b4 = _mm512_set1_ps(W(4, t)), b5 = _mm512_set1_ps(W(5, t));                     \
+                c4a = _mm512_fmadd_ps(b4, xa, c4a); c4b = _mm512_fmadd_ps(b4, xb, c4b);                \
+                c5a = _mm512_fmadd_ps(b5, xa, c5a); c5b = _mm512_fmadd_ps(b5, xb, c5b);                \
+                __m512 b6 = _mm512_set1_ps(W(6, t)), b7 = _mm512_set1_ps(W(7, t));                     \
+                c6a = _mm512_fmadd_ps(b6, xa, c6a); c6b = _mm512_fmadd_ps(b6, xb, c6b);                \
+                c7a = _mm512_fmadd_ps(b7, xa, c7a); c7b = _mm512_fmadd_ps(b7, xb, c7b);                \
+            }                                                                                          \
+            float tile[8][32] __attribute__((aligned(64)));                                            \
+            _mm512_store_ps(tile[0], c0a); _mm512_store_ps(tile[0] + 16, c0b);                         \
+            _mm512_store_ps(tile[1], c1a); _mm512_store_ps(tile[1] + 16, c1b);                         \
+            _mm512_store_ps(tile[2], c2a); _mm512_store_ps(tile[2] + 16, c2b);                         \
+            _mm512_store_ps(tile[3], c3a); _mm512_store_ps(tile[3] + 16, c3b);                         \
+            _mm512_store_ps(tile[4], c4a); _mm512_store_ps(tile[4] + 16, c4b);                         \
+            _mm512_store_ps(tile[5], c5a); _mm512_store_ps(tile[5] + 16, c5b);                         \
+            _mm512_store_ps(tile[6], c6a); _mm512_store_ps(tile[6] + 16, c6b);                         \
+            _mm512_store_ps(tile[7], c7a); _mm512_store_ps(tile[7] + 16, c7b);                         \
+            for (int j = 0; j < cols; j++) {                                                           \
+                float* o = C + (size_t)(j0 + j) * ldc + r;                                             \
+                for (int a = 0; a < 8; ++a) o[a] = tile[a][j];                                         \
+            }                                                                                          \
+        }                                                                                              \
+        for (; r < re; r++) {           /* row tail: 1 x 32, all 8 row slots on the one row */      \
+            const WT* w[8];                                                                            \
+            for (int a = 0; a < 8; ++a) w[a] = Wm + (size_t) r * ldw;                                  \
+            __m512 ca = _mm512_setzero_ps(), cb = ca;                                                  \
+            for (long t = 0; t < k; t++) {                                                             \
+                STAGE(t);                                                                              \
+                __m512 b = _mm512_set1_ps(W(0, t));                                                    \
+                ca = _mm512_fmadd_ps(b, _mm512_loadu_ps(xp + (size_t) t * 32), ca);                    \
+                cb = _mm512_fmadd_ps(b, _mm512_loadu_ps(xp + (size_t) t * 32 + 16), cb);               \
+            }                                                                                          \
+            float tile[32] __attribute__((aligned(64)));                                               \
+            _mm512_store_ps(tile, ca); _mm512_store_ps(tile + 16, cb);                                 \
+            for (int j = 0; j < cols; j++) C[(size_t)(j0 + j) * ldc + r] = tile[j];                    \
+        }                                                                                              \
+    }                                                                                                  \
 }
+#define JAM_F32_STAGE(t) ((void) 0)
+#define JAM_F32_W(a, t)  w[a][t]
+JAM_PACKED8(jam_mm_f32p_avx512, float, JAM_F32_STAGE, JAM_F32_W)
 
 /* ---- F16 / BF16 DENSE weight @ F32 -> F32. 4×4 register
  * tile, 16-wide; the weight is converted to f32 on the fly (cvtph for F16, <<16 for BF16). Output is
@@ -396,3 +405,10 @@ void NAME(void* arg, int rb, int re, int tid) {                                 
 }
 JAM_DENSE(jam_mm_f16_avx512,  jam_loadw_f16)
 JAM_DENSE(jam_mm_bf16_avx512, jam_loadw_bf16)
+
+/* packed-panel F16 over the F32 panels: every 16 k-elements, the 8 rows widen into a stack tile
+ * (vcvtph2ps is exact) that the broadcasts read. k must be a multiple of 16. */
+#define JAM_F16_STAGE(t) if (((t) & 15) == 0) for (int a = 0; a < 8; ++a) \
+                             _mm512_store_ps(wt[a], jam_loadw_f16(w[a] + (t)))
+#define JAM_F16_W(a, t)  wt[a][(t) & 15]
+JAM_PACKED8(jam_mm_f16p_avx512, uint16_t, JAM_F16_STAGE, JAM_F16_W)

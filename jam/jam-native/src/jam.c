@@ -413,7 +413,7 @@ jam_context* jam_context_new(const jam_context_options* options) {
 #ifdef JAM_HAVE_AVX512
     if (cpu >= JAM_ISA_AVX512) {    c->f32_kernel = jam_mm_f32_avx512;
         c->dense_f16_kernel = jam_mm_f16_avx512; c->dense_bf16_kernel = jam_mm_bf16_avx512;
-        c->f32p_kernel = jam_mm_f32p_avx512; c->f32p_pack = jam_f32_pack_avx512;
+        c->f32p_kernel = jam_mm_f32p_avx512; c->f32p_pack = jam_f32_pack_avx512; c->f16p_kernel = jam_mm_f16p_avx512;
         c->dense_f32_kernel = 0; /* avx512 mnpack beats the avx2 dense shape */ }
     if (cpu >= JAM_ISA_AVX512_VNNI) c->q8_kernel  = jam_mm_q8_0_avx512;    /* 512-bit VNNI (best) */
 #ifdef JAM_HAVE_AVX512BF16
@@ -893,19 +893,20 @@ static jam_status jam_mm_run(jam_context* ctx,
 #endif
     }
 
-    /* packed-panel F32: transpose activations once, broadcast-FMA at full port rate. Worth the
-     * pack for prefill-sized n; decode (tiny n) keeps the direct tiles. */
-    if (wt == JAM_F32 && at == JAM_F32 && ct == JAM_F32 && ctx->f32p_kernel && n >= 8) {
+    /* packed-panel F32 (and F16, widened in the kernel): transpose activations once, broadcast-FMA
+     * at full port rate. Worth the pack for prefill-sized n; decode (tiny n) keeps the direct tiles. */
+    jam_job_fn packed = wt == JAM_F32 ? ctx->f32p_kernel : wt == JAM_F16 && k % 16 == 0 ? ctx->f16p_kernel : NULL;
+    if (packed && at == JAM_F32 && ct == JAM_F32 && n >= 8) {
         int npanels = (n + 31) / 32;
         size_t need = (size_t) npanels * 32 * (size_t) k * sizeof(float);
         if (need > ctx->f32_xp_cap) {
             free(ctx->f32_xp); ctx->f32_xp = malloc(need); ctx->f32_xp_cap = ctx->f32_xp ? need : 0;
         }
         if (ctx->f32_xp) {
-            jam_f32p_job job = { (const float*) w, ldw, (const float*) a, lda,
+            jam_f32p_job job = { w, ldw, (const float*) a, lda,
                                  (float*) ctx->f32_xp, c, ldc, n, k };
             jam_run(ctx, npanels, ctx->f32p_pack, &job);
-            jam_run_tiles(ctx, m, JAM_PACKED_ROWS, ctx->f32p_kernel, &job);
+            jam_run_tiles(ctx, m, JAM_PACKED_ROWS, packed, &job);
             return JAM_OK;
         }
     }

@@ -111,6 +111,7 @@ struct jam_context {
     void*  bf_x;   size_t bf_x_cap;   /* bf16 [n*k] converted activations */
     void*  f32_xp; size_t f32_xp_cap; /* f32 [npanels*32*k] transposed activation panels */
     jam_job_fn f32p_kernel, f32p_pack;  /* packed-panel F32 path (avx512); NULL -> mnpack */
+    jam_job_fn f16p_kernel;             /* packed-panel F16 over the F32 panels (avx512) */
 
     void*  metal;                    /* jam_metal* GPU backend, or NULL. Routes before the CPU. */
 
@@ -151,11 +152,12 @@ void jam_mm_f16_avx512(void* job, int row_begin, int row_end, int tid);     /* F
 void jam_mm_bf16_avx512(void* job, int row_begin, int row_end, int tid);    /* BF16 dense, 4×4 tile */
 void jam_f32_pack_avx512(void* job, int p_begin, int p_end, int tid);       /* token-panel transpose */
 void jam_mm_f32p_avx512(void* job, int row_begin, int row_end, int tid);    /* packed broadcast 8x32 */
+void jam_mm_f16p_avx512(void* job, int row_begin, int row_end, int tid);    /* the same, F16 weights */
 #endif
 
 /* ---- packed-panel F32: phase 1 transposes activations into xp, phase 2 broadcast-FMAs ---- */
 typedef struct {
-    const float* w; long ldw;
+    const void*  w; long ldw;    /* F32 or F16 rows */
     const float* x; long ldx;
     float*       xp;             /* [ceil(n/32)*32*k] token-major panels */
     void*        c; long ldc;
