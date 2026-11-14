@@ -150,6 +150,7 @@ public final class Gemma4
                             + from
                             + " exceeds contextCapacity "
                             + state.contextCapacity());
+        boolean lastOnly = batch.outputs() == Batch.Outputs.LAST;
         switch (batch.input()) {
             case Batch.Input.Tokens t -> {
                 int[] ids = t.ids();
@@ -157,7 +158,7 @@ public final class Gemma4
                 for (int id : ids)
                     if (id < 0 || id >= configuration.vocabularySize)
                         throw new IllegalArgumentException("token id out of range: " + id);
-                forward(state, ids, 0, from, n);
+                forward(state, ids, 0, from, n, lastOnly);
             }
             case Batch.Input.Embeddings e -> {
                 state.lastTokens = null; // media rows are no seed for the MTP draft
@@ -176,7 +177,8 @@ public final class Gemma4
                         pad,
                         from,
                         n,
-                        e.bidirectional());
+                        e.bidirectional(),
+                        lastOnly);
             }
             case Batch.Input.Sequences ignored ->
                     throw new UnsupportedOperationException(
@@ -241,11 +243,17 @@ public final class Gemma4
         Reference.reachabilityFence(state);
     }
 
-    private void forward(State state, int[] tokens, int tokenOffset, int startPos, int seqLen) {
+    private void forward(
+            State state,
+            int[] tokens,
+            int tokenOffset,
+            int startPos,
+            int seqLen,
+            boolean lastOnly) {
         fillRotaryTables(state, startPos, seqLen);
         embed(state, tokens, tokenOffset, seqLen);
         buildPerLayerInputs(state, tokens, tokenOffset, seqLen);
-        forwardLayers(state, startPos, seqLen, false);
+        forwardLayers(state, startPos, seqLen, false, lastOnly);
     }
 
     private void forwardEmbeddings(
@@ -254,13 +262,14 @@ public final class Gemma4
             int pleToken,
             int startPos,
             int seqLen,
-            boolean bidirectional) {
+            boolean bidirectional,
+            boolean lastOnly) {
         fillRotaryTables(state, startPos, seqLen);
         Convert.copyF32(rows, 0, state.residual, 0, (long) seqLen * configuration.embeddingLength);
         int[] ple = new int[seqLen];
         Arrays.fill(ple, pleToken);
         buildPerLayerInputs(state, ple, 0, seqLen);
-        forwardLayers(state, startPos, seqLen, bidirectional);
+        forwardLayers(state, startPos, seqLen, bidirectional, lastOnly);
     }
 
     private void fillRotaryTables(State state, int startPos, int seqLen) {
@@ -281,10 +290,32 @@ public final class Gemma4
                 weights.ropeSwa);
     }
 
-    private void forwardLayers(State state, int startPos, int seqLen, boolean bidirectional) {
-        for (int layer = 0; layer < configuration.numberOfLayers; layer++)
+    private void forwardLayers(
+            State state, int startPos, int seqLen, boolean bidirectional, boolean lastOnly) {
+        Configuration c = configuration;
+        // KV-shared layers write no cache, so when only the last row is read, the rows before it
+        // are dead past the own-KV layers: that row alone goes on, as a decode step
+        int everyRow = lastOnly && seqLen > 1 ? c.ownKvLayers : c.numberOfLayers;
+        for (int layer = 0; layer < everyRow; layer++)
             layer(state, layer, startPos, seqLen, bidirectional);
         commitKv(state, startPos, seqLen);
+        if (everyRow == c.numberOfLayers) return;
+        int last = seqLen - 1;
+        moveRow(state.residual, last, 0);
+        if (state.perLayerInputs != null) moveRow(state.perLayerInputs, last, 0);
+        for (int l = 0; l < c.ownKvLayers; l++) {
+            moveRow(state.batchK[l], last, 0);
+            moveRow(state.batchV[l], last, 0);
+        }
+        fillRotaryTables(state, startPos + last, 1);
+        for (int layer = everyRow; layer < c.numberOfLayers; layer++)
+            layer(state, layer, startPos + last, 1, bidirectional);
+        moveRow(state.residual, 0, last); // logits and the MTP seed read the batch's last row
+    }
+
+    private static void moveRow(MemoryView<MemorySegment> rows, int from, int to) {
+        long width = rows.stride().flatAt(0);
+        Convert.copyF32(rows, from * width, rows, to * width, width);
     }
 
     private void embed(State state, int[] tokens, int tokenOffset, int seqLen) {
