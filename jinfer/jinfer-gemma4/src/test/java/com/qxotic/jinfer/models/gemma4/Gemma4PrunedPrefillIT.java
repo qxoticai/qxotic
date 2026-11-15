@@ -15,9 +15,9 @@ import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 
 /**
- * The KV-shared layers run on the last row alone, as a decode step at its position. Measured drift
- * is ~0.003 (the skipped rows' keys read back from the F16 cache); a wrong key or value row for the
- * live token moves logits by 3.5 to 12.
+ * The KV-shared layers run on the last row alone, as a decode step at its position: it reads every
+ * other row's keys from the cache, as a next batch would, so logits move ~0.003 (F16 rounding, as a
+ * split prompt's do); a wrong key or value row for the live token moves them by 3.5 to 12.
  */
 @Tag("integration")
 final class Gemma4PrunedPrefillIT {

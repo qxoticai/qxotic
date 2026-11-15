@@ -2,6 +2,7 @@ package com.qxotic.jinfer.kernels;
 
 import static org.junit.jupiter.api.Assertions.assertArrayEquals;
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 
 import com.qxotic.jinfer.Segments;
 import com.qxotic.jinfer.Views;
@@ -311,6 +312,48 @@ class ConvolutionsTest {
             Convolutions.shortConvScan(k, st, p, out, seqLen, dim, dConv, parts);
             assertArrayEquals(expected, Views.toFloatArray(out, "out"));
             assertArrayEquals(state, Views.toFloatArray(st, "state"));
+        }
+    }
+
+    /**
+     * A scan over a batch's last rows, started from the history before the batch instead of the
+     * rows just before them, is exact from row {@code dConv - 1} on, final state included, and not
+     * before: why a last-row prefill carries {@code dConv - 1} more rows per trailing conv layer.
+     */
+    @ParameterizedTest
+    @CsvSource({"3, 40, 5", "7, 40, 9"})
+    void aScanFromStaleHistoryIsExactFromRowDConvMinusOne(int dConv, int seqLen, int tail) {
+        int dim = 64, parts = 3, hist = dConv - 1;
+        Random random = new Random(5);
+        float[] kernel = new float[dim * dConv],
+                history = new float[hist * dim],
+                packed = new float[seqLen * parts * dim];
+        for (float[] a : new float[][] {kernel, history, packed})
+            for (int i = 0; i < a.length; i++) a[i] = random.nextFloat() - 0.5f;
+        float[][] full = scan(kernel, history, packed, seqLen, dim, dConv);
+        float[] suffix = Arrays.copyOfRange(packed, (seqLen - tail) * parts * dim, packed.length);
+        float[][] stale = scan(kernel, history, suffix, tail, dim, dConv);
+        assertArrayEquals(full[1], stale[1], "final state");
+        for (int r = 0; r < tail; r++) {
+            int at = (seqLen - tail + r) * dim;
+            float[] want = Arrays.copyOfRange(full[0], at, at + dim);
+            float[] got = Arrays.copyOfRange(stale[0], r * dim, r * dim + dim);
+            if (r >= hist) assertArrayEquals(want, got, "row " + r);
+            else assertFalse(Arrays.equals(want, got), "row " + r + " reads the stale history");
+        }
+    }
+
+    /** {@code {out, final state}} of one scan over copies of the inputs. */
+    private static float[][] scan(
+            float[] kernel, float[] history, float[] packed, int rows, int dim, int dConv) {
+        try (Arena arena = Arena.ofConfined()) {
+            var memory = MemoryAllocators.ofArena(arena);
+            MemoryView<MemorySegment> k = Views.fromFloatArray(memory, kernel);
+            MemoryView<MemorySegment> st = Views.fromFloatArray(memory, history);
+            MemoryView<MemorySegment> p = Views.fromFloatArray(memory, packed);
+            MemoryView<MemorySegment> out = Views.allocateF32(memory, rows, dim);
+            Convolutions.shortConvScan(k, st, p, out, rows, dim, dConv, 3);
+            return new float[][] {Views.toFloatArray(out, "out"), Views.toFloatArray(st, "state")};
         }
     }
 }

@@ -160,7 +160,7 @@ public final class Lfm2
                                     + " attention");
                 int[] ids = t.ids();
                 requireTokens(ids);
-                forward(s, ids, from, n);
+                forward(s, ids, from, n, batch.outputs() == Batch.Outputs.LAST);
             }
             case Batch.Input.Sequences seq -> {
                 if (configuration.causalAttention)
@@ -219,19 +219,54 @@ public final class Lfm2
 
     // === Forward ===
 
-    private void forward(State state, int[] tokens, int startPos, int seqLen) {
+    private void forward(State state, int[] tokens, int startPos, int seqLen, boolean lastOnly) {
+        Configuration c = configuration;
         // ONCE for the batch: an angle never depends on the layer
+        RoPE.fill(state.ropeCos, state.ropeSin, startPos, seqLen, c.headSize / 2, weights.rope());
+        embedTokens(state, tokens, seqLen);
+        // Past the last attention layer's keys and values a row feeds only its own output and the
+        // trailing convs' look-back, so a batch read at its last row finishes its last rows alone
+        if (lastOnly && c.lastAttentionLayer() >= 0 && seqLen > c.tailRows()) {
+            tail(state, startPos, seqLen);
+            return;
+        }
+        for (int l = 0; l < c.numberOfLayers; l++) layer(state, l, startPos, seqLen, false);
+        commitKv(state, startPos, seqLen);
+    }
+
+    /**
+     * A batch read at its last row: every row through the last attention layer's keys and values,
+     * which go to the cache; then its last tail rows as a chunk of their own, reading the others'
+     * keys back from the cache as a next batch would.
+     */
+    private void tail(State state, int startPos, int seqLen) {
+        Configuration c = configuration;
+        int cut = c.lastAttentionLayer(), tail = c.tailRows(), skip = seqLen - tail;
+        for (int l = 0; l < cut; l++) layer(state, l, startPos, seqLen, false);
+        Norms.rmsnormRows(
+                state.normed,
+                state.residual,
+                weights.layers[cut].attnNorm(),
+                seqLen,
+                c.embeddingLength,
+                c.rmsNormEps);
+        projectKeys(state, cut, seqLen);
+        commitKv(state, startPos, seqLen);
+        for (int r = 0; r < tail; r++) moveRow(state.residual, skip + r, r);
         RoPE.fill(
                 state.ropeCos,
                 state.ropeSin,
-                startPos,
-                seqLen,
-                configuration.headSize / 2,
+                startPos + skip,
+                tail,
+                c.headSize / 2,
                 weights.rope());
-        embedTokens(state, tokens, seqLen);
-        for (int l = 0; l < configuration.numberOfLayers; l++)
-            layer(state, l, startPos, seqLen, false);
-        commitKv(state, startPos, seqLen);
+        for (int l = cut; l < c.numberOfLayers; l++) layer(state, l, startPos + skip, tail, false);
+        moveRow(state.residual, tail - 1, seqLen - 1); // logits read the batch's last row
+    }
+
+    private static void moveRow(MemoryView<MemorySegment> rows, int from, int to) {
+        long width = rows.stride().flatAt(0);
+        Convert.copyF32(rows, from * width, rows, to * width, width);
     }
 
     private void forwardEmbeddings(
@@ -375,8 +410,7 @@ public final class Lfm2
     private void attentionProject(State state, int l, int seqLen) {
         Configuration config = configuration;
         int dim = config.embeddingLength;
-        int queryDim = config.queryDim(), kvDim = config.kvDim(l);
-        int nKvHeads = config.numberOfKeyValueHeadsPerLayer[l];
+        int queryDim = config.queryDim();
         AttentionWeights attn = weights.layers[l].attention();
 
         MemoryView<MemorySegment> attNormW = weights.layers[l].attnNorm();
@@ -384,6 +418,15 @@ public final class Lfm2
                 state.normed, state.residual, attNormW, seqLen, dim, configuration.rmsNormEps);
         MatMul.gemm(attn.wq(), state.normed, state.query, seqLen);
         headNormRope(state, state.query, queryDim, config.numberOfHeads, attn.qNorm(), seqLen);
+        projectKeys(state, l, seqLen);
+    }
+
+    /** K and V of the normed rows into {@code batchK}/{@code batchV}, K head-normed and roped. */
+    private void projectKeys(State state, int l, int seqLen) {
+        Configuration config = configuration;
+        int kvDim = config.kvDim(l);
+        int nKvHeads = config.numberOfKeyValueHeadsPerLayer[l];
+        AttentionWeights attn = weights.layers[l].attention();
         MemoryView<MemorySegment> bK = state.batchK[l], bV = state.batchV[l];
         MatMul.gemm(attn.wk(), state.normed, bK, seqLen);
         if (attn.wv() != null) MatMul.gemm(attn.wv(), state.normed, bV, seqLen);
@@ -892,6 +935,22 @@ public final class Lfm2
 
         public boolean isRecurrentLayer(int layer) {
             return numberOfKeyValueHeadsPerLayer[layer] == 0;
+        }
+
+        int lastAttentionLayer() {
+            int l = numberOfLayers - 1;
+            while (l >= 0 && isRecurrentLayer(l)) l--;
+            return l;
+        }
+
+        /**
+         * Rows the layers from {@link #lastAttentionLayer} on carry for the last one: a trailing
+         * conv layer scans them from the history before the batch, not from the rows just before
+         * them, so its first {@code lCache - 1} come out wrong; each such layer costs that many
+         * more.
+         */
+        int tailRows() {
+            return 1 + (numberOfLayers - 1 - lastAttentionLayer()) * (shortConvLCache - 1);
         }
 
         public boolean isMoE() {

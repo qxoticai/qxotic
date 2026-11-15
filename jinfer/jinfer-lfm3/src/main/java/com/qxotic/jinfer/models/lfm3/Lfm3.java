@@ -334,11 +334,54 @@ public final class Lfm3
                     state.ropeCosFull, state.ropeSinFull, positions, rows, lanes, weights.ropeFull);
             RoPE.fill(state.ropeCosSwa, state.ropeSinSwa, positions, rows, lanes, weights.ropeSwa);
         }
-        for (int layer = 0; layer < configuration.numberOfLayers; layer++) {
-            block(state, layer, start, rows);
-            if (afterBlock != null) afterBlock.accept(layer);
+        // Past the last attention layer's keys and values a row feeds only its own output and the
+        // trailing convs' look-back, so a batch read at its last row finishes its last rows alone
+        if (afterBlock == null
+                && configuration.causalAttention
+                && batch.outputs() == Batch.Outputs.LAST
+                && configuration.lastAttentionLayer() >= 0
+                && rows > configuration.tailRows()) {
+            tail(state, start, rows);
+        } else {
+            for (int layer = 0; layer < configuration.numberOfLayers; layer++) {
+                block(state, layer, start, rows);
+                if (afterBlock != null) afterBlock.accept(layer);
+            }
         }
         state.advance(batch);
+    }
+
+    /**
+     * A batch read at its last row: every row through the last attention layer's keys and values,
+     * which go to the cache; then its last tail rows as a chunk of their own, reading the others'
+     * keys back from the cache as a next batch would.
+     */
+    private void tail(State state, int start, int rows) {
+        Configuration c = configuration;
+        int cut = c.lastAttentionLayer(), tail = c.tailRows(), skip = rows - tail;
+        int lanes = c.headSize / 2;
+        for (int layer = 0; layer < cut; layer++) block(state, layer, start, rows);
+        Norms.rmsnormRowsGgml(
+                state.normed,
+                state.residual,
+                weights.layers[cut].attnNorm,
+                skip,
+                c.embeddingLength,
+                c.rmsNormEps);
+        projectKeys(state, cut, skip);
+        commitKv(state, cut, start, skip);
+        for (int r = 0; r < tail; r++) moveRow(state.residual, skip + r, r);
+        RoPE.fill(
+                state.ropeCosFull, state.ropeSinFull, start + skip, tail, lanes, weights.ropeFull);
+        RoPE.fill(state.ropeCosSwa, state.ropeSinSwa, start + skip, tail, lanes, weights.ropeSwa);
+        for (int layer = cut; layer < c.numberOfLayers; layer++)
+            block(state, layer, start + skip, tail);
+        moveRow(state.residual, tail - 1, rows - 1); // logits and speech read the last row
+    }
+
+    private static void moveRow(MemoryView<MemorySegment> rows, int from, int to) {
+        long width = rows.stride().flatAt(0);
+        Convert.copyF32(rows, from * width, rows, to * width, width);
     }
 
     /** One pre-norm block in place on the residual: the mixer, then the FFN. */
@@ -414,33 +457,21 @@ public final class Lfm3
         MemoryView<MemorySegment> sin = swa ? state.ropeSinSwa : state.ropeSinFull;
 
         MatMul.gemm(w.query, state.normed, state.query, rows);
-        MatMul.gemm(w.key, state.normed, state.batchK, rows);
-        MatMul.gemm(w.value, state.normed, state.batchV, rows);
         MatMul.gemm(w.gate, state.normed, state.gate, rows);
         Parallel.forLoop(
                 rows,
-                row -> {
-                    Towers.headNormRope(
-                            state.query,
-                            (long) row * queryDim,
-                            heads,
-                            headSize,
-                            w.queryNorm,
-                            c.rmsNormEps,
-                            row,
-                            cos,
-                            sin);
-                    Towers.headNormRope(
-                            state.batchK,
-                            (long) row * kvDim,
-                            kvHeads,
-                            headSize,
-                            w.keyNorm,
-                            c.rmsNormEps,
-                            row,
-                            cos,
-                            sin);
-                });
+                row ->
+                        Towers.headNormRope(
+                                state.query,
+                                (long) row * queryDim,
+                                heads,
+                                headSize,
+                                w.queryNorm,
+                                c.rmsNormEps,
+                                row,
+                                cos,
+                                sin));
+        projectKeys(state, layer, rows);
 
         int window = swa ? c.slidingWindow : 0, ringMask = swa ? c.slidingWindow - 1 : 0;
         float scale = 1f / (float) Math.sqrt(headSize);
@@ -529,6 +560,30 @@ public final class Lfm3
                     }
                 });
         MatMul.gemm(w.output, state.attnOut, state.branch, rows);
+    }
+
+    /** An attention layer's keys and values of the normed rows, the keys head-normed and roped. */
+    private void projectKeys(State state, int layer, int rows) {
+        Configuration c = configuration;
+        AttentionWeights w = weights.layers[layer].attention;
+        int kvDim = c.kvDim(layer);
+        MemoryView<MemorySegment> cos = c.isSwa[layer] ? state.ropeCosSwa : state.ropeCosFull;
+        MemoryView<MemorySegment> sin = c.isSwa[layer] ? state.ropeSinSwa : state.ropeSinFull;
+        MatMul.gemm(w.key, state.normed, state.batchK, rows);
+        MatMul.gemm(w.value, state.normed, state.batchV, rows);
+        Parallel.forLoop(
+                rows,
+                row ->
+                        Towers.headNormRope(
+                                state.batchK,
+                                (long) row * kvDim,
+                                c.kvHeads[layer],
+                                c.headSize,
+                                w.keyNorm,
+                                c.rmsNormEps,
+                                row,
+                                cos,
+                                sin));
     }
 
     /** Query rows whose scores against every key are held at once. */
@@ -780,6 +835,22 @@ public final class Lfm3
 
         public boolean isShortConv(int layer) {
             return kvHeads[layer] == 0;
+        }
+
+        int lastAttentionLayer() {
+            int l = numberOfLayers - 1;
+            while (l >= 0 && isShortConv(l)) l--;
+            return l;
+        }
+
+        /**
+         * Rows the layers from {@link #lastAttentionLayer} on carry for the last one: a trailing
+         * conv layer scans them from the history before the batch, not from the rows just before
+         * them, so its first {@code lCache - 1} come out wrong; each such layer costs that many
+         * more.
+         */
+        int tailRows() {
+            return 1 + (numberOfLayers - 1 - lastAttentionLayer()) * (shortConvLCache - 1);
         }
 
         public int queryDim() {

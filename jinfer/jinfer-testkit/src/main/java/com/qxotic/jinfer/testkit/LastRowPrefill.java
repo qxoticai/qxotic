@@ -15,7 +15,7 @@ import java.util.stream.Stream;
 
 /**
  * A prefill that reads only its last row may skip the work no other row needs: its logits, and the
- * caches later steps read, must still match a pass that keeps every row.
+ * caches and histories later steps read, must still match a pass that keeps every row.
  */
 public final class LastRowPrefill {
 
@@ -29,12 +29,21 @@ public final class LastRowPrefill {
 
     /**
      * {@code ids} whole, then as two batches: the second starts mid-context and reads what a
-     * skipping first batch wrote.
+     * skipping first batch wrote. The bound is {@code tolerance} or, if larger, how far splitting
+     * the prompt moves the full pass (its second batch reads the first's keys from the F16 cache,
+     * which jam-native's int8 activations turn into ~0.1-0.3): a tail runs as a chunk, so it may
+     * drift as much as a split does.
      */
     public static <S extends ContextState> void assertMatchesFullPass(
             LanguageModel<?, ?, S> model, int[] ids, double tolerance) {
-        for (int at : new int[] {ids.length, ids.length / 2})
-            assertMatchesFullPass(model, tokens(ids, at), ids.length, tolerance);
+        int n = ids.length, half = n / 2;
+        run(model, tokens(ids, half).apply(Batch.Outputs.ALL), n); // warm, as below
+        double split =
+                maxDrift(
+                        run(model, tokens(ids, n).apply(Batch.Outputs.ALL), n),
+                        run(model, tokens(ids, half).apply(Batch.Outputs.ALL), n));
+        for (int at : new int[] {n, half})
+            assertMatchesFullPass(model, tokens(ids, at), n, Math.max(tolerance, split));
     }
 
     /**
@@ -51,12 +60,17 @@ public final class LastRowPrefill {
         run(model, prompt.apply(Batch.Outputs.ALL), rows);
         run(model, prompt.apply(Batch.Outputs.LAST), rows);
         List<float[]> full = run(model, prompt.apply(Batch.Outputs.ALL), rows);
-        List<float[]> last = run(model, prompt.apply(Batch.Outputs.LAST), rows);
+        double drift = maxDrift(full, run(model, prompt.apply(Batch.Outputs.LAST), rows));
+        assertTrue(drift <= tolerance, rows + " rows: max |logit drift| " + drift);
+    }
+
+    /** The largest logit difference at any step. */
+    private static double maxDrift(List<float[]> a, List<float[]> b) {
         double drift = 0;
         for (int step = 0; step <= STEPS; step++)
-            for (int i = 0; i < full.get(step).length; i++)
-                drift = Math.max(drift, Math.abs(full.get(step)[i] - last.get(step)[i]));
-        assertTrue(drift <= tolerance, rows + " rows: max |logit drift| " + drift);
+            for (int i = 0; i < a.get(step).length; i++)
+                drift = Math.max(drift, Math.abs(a.get(step)[i] - b.get(step)[i]));
+        return drift;
     }
 
     private static Function<Batch.Outputs, List<Batch>> tokens(int[] ids, int at) {
