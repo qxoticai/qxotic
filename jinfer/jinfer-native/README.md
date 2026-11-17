@@ -48,7 +48,7 @@ cl /Iinclude /I..\..\toknroll\toknroll-native\include chat.c /link /LIBPATH:<dir
 `-L<dir> -ljinfer` works with the release archive's `lib/`, and on Linux with the installed wheel's library folder, the parent of `jinfer-config --pkgconfigdir`.
 On macOS, link the wheel with `$(jinfer-config --cflags --libs)`.
 
-On Linux and macOS the library exports the two headers' functions and libjam's kernels, nothing else.
+On Linux and macOS the library exports the two headers' functions and libjam's, its kernels and the JNI entry points the library binds to itself, nothing else.
 A Windows DLL has no export list, so `jinfer.dll` exports the runtime's symbols too, and the zip carries `jinfer.def`, the API's module definition, for another toolchain's import library (`dlltool -d jinfer.def -l libjinfer.a`); a program binds by name as on any DLL.
 There is no static archive: libjam, the kernel library, is linked into the image whole, and the image is the unit.
 

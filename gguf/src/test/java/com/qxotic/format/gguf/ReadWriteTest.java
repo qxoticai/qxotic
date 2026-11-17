@@ -131,9 +131,11 @@ public class ReadWriteTest extends GGUFTest {
         // Write invalid MAGIC header.
         ByteBuffer.wrap(ggufBytes).order(ByteOrder.LITTLE_ENDIAN).putInt(0, 0xBADBEEF);
 
-        assertThrows(
-                GGUFFormatException.class,
-                () -> GGUF.read(Channels.newChannel(new ByteArrayInputStream(ggufBytes))));
+        GGUFFormatException e =
+                assertThrows(
+                        GGUFFormatException.class,
+                        () -> GGUF.read(Channels.newChannel(new ByteArrayInputStream(ggufBytes))));
+        assertEquals("Not a GGUF file: it must start with the bytes 'GGUF'", e.getMessage());
     }
 
     @Test

@@ -232,8 +232,7 @@ final class ReaderImpl {
         // Consider being *very* explicit about the byte order here.
         int magic = readInt(byteChannel); //    uint32_t magic;
         if (magic != GGUF_MAGIC) {
-            throw new GGUFFormatException(
-                    "Invalid header.magic: " + magic + " expected: " + GGUF_MAGIC);
+            throw new GGUFFormatException("Not a GGUF file: it must start with the bytes 'GGUF'");
         }
         // The version of the format implemented.
         this.version = readInt(byteChannel); // uint32_t version;

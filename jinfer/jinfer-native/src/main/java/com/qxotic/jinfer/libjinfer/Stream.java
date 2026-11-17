@@ -24,14 +24,16 @@ import org.graalvm.word.WordFactory;
 
 /**
  * Every generation, stepped like a statement: a producer thread pushes chunks into a queue, the
- * caller's thread takes one per step. A chunk is text or audio. Freeing a running stream cancels it
- * and waits for the producer to let go of the model. The C copies of the current chunk and the
- * result are borrowed from the stream, as the header says, and freed with it.
+ * caller's thread takes one per step. A chunk is text or audio. The stream lets go of its model at
+ * the step that ends it, so a finished stream that is never freed keeps no weights alive, and the
+ * model's teardown (its prompt catalog saved, its memory freed) waits only for unfinished ones.
+ * Freeing a running stream cancels it and waits for the producer to end. The C copies of the
+ * current chunk and the result are borrowed from the stream, as the header says, and freed with it.
  */
 final class Stream {
     private static final Object END = new Object();
 
-    private final Model model;
+    private Model model; // until the stream ends, see finish()
     private final LinkedBlockingQueue<Object> chunks = new LinkedBlockingQueue<>();
     final Exclusive exclusive = new Exclusive("stream");
     private volatile boolean cancelled;
@@ -59,7 +61,7 @@ final class Stream {
                         }
                     });
         } catch (RuntimeException rejected) {
-            model.release();
+            finish();
             throw rejected;
         }
     }
@@ -234,12 +236,12 @@ final class Stream {
         Object next = chunks.take();
         while (cancelled && next != END && !(next instanceof Throwable)) next = chunks.take();
         if (next == END) {
-            finished = true;
+            finish();
             if (cancelled) throw new Errors.Failure(Errors.ECANCELLED, "the stream was cancelled");
             return Errors.DONE;
         }
         if (next instanceof Throwable t) {
-            finished = true;
+            finish();
             if (t instanceof RuntimeException r) throw r;
             throw new IllegalStateException(t.getMessage(), t);
         }
@@ -295,7 +297,20 @@ final class Stream {
         if (cText != null) cText.close();
         if (cResult != null) cResult.close();
         freeSamples();
-        model.release();
+        finish(); // the drain above ended it, unless an interrupt cut the drain short
         if (early) Native.collect();
+    }
+
+    /**
+     * The producer has ended (it queued its last item) or never started: the stream needs nothing
+     * more of the model. The field is cleared before a last reference's collection, which can free
+     * the weights only once no live stream reaches them.
+     */
+    private void finish() {
+        finished = true;
+        Model m = model;
+        if (m == null) return;
+        model = null;
+        if (m.release()) Native.collect();
     }
 }

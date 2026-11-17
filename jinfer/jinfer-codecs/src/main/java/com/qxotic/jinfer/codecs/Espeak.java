@@ -59,7 +59,8 @@ public final class Espeak {
      * is "graal vee em", "graalvm" one mangled word).
      *
      * <p>Unchecked: the tool was probed at load, so a failure here is a broken installation or a
-     * hung process, not a condition a caller handles.
+     * hung process, not a condition a caller handles. A run with a NUL character is refused, {@link
+     * IllegalArgumentException}: espeak would stop reading at it.
      */
     public String ipa(String run, String language) {
         return tiedIpa(run, language).replace(TIE, "");
@@ -74,6 +75,10 @@ public final class Espeak {
     public String tiedIpa(String run, String language) {
         Objects.requireNonNull(run, "run");
         Objects.requireNonNull(language, "language");
+        // espeak reads its input as a C string: the rest of a run past a NUL would go unspoken
+        if (run.indexOf('\0') >= 0)
+            throw new IllegalArgumentException(
+                    "the text contains a NUL character, where espeak would stop reading it");
         // The run goes in on stdin, never as an argument: one starting with '-' ("-five
         // degrees") would be parsed as an option. The trailing newline is NOT cosmetic: espeak
         // reads stdin a line at a time and phonemizes the last word of an unterminated line as a

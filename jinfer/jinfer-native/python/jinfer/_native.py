@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import ctypes as C
+import os
 from toknroll._native import LogFn, locate
 
 OK, ERROR, EINVAL, ENOTFOUND, EUNSUPPORTED, ECANCELLED, EBUSY = 0, -1, -2, -3, -4, -5, -6
@@ -60,7 +61,7 @@ def bind(lib: C.CDLL) -> C.CDLL:
     return lib
 
 
-def open_library(path: str) -> C.CDLL:
+def open_library(path: str | os.PathLike[str]) -> C.CDLL:
     """ctypes.CDLL, with glibc's refusal of a CPU below the library's x86-64 level (2.33 and later check it before
     any of our code runs) given the requirement; the runtime says the same itself under an older glibc."""
     try:

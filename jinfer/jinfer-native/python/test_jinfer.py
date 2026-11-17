@@ -3,7 +3,7 @@
 cached (or a network); the optional speech, transcription and reranking checks run when their
 model is cached and are skipped otherwise. Checks pin behaviour, not model prose: prompts have
 decisive answers, because a near-tie flips under different kernels."""
-import asyncio, base64, ctypes, enum, json, logging, math, os, signal, subprocess, sys, tempfile, threading, time
+import asyncio, base64, copy, ctypes, enum, json, logging, math, os, pickle, signal, struct, subprocess, sys, tempfile, threading, time
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Literal, TypedDict
@@ -47,6 +47,19 @@ with tempfile.TemporaryDirectory() as d:
     except jinfer.InvalidArgument as e:
         ok("pass Path(" in str(e), f"the recipe: {e}")
     ok(jinfer._part("see cat.png") == {"type": "text", "text": "see cat.png"}, "text that mentions a file stays text")
+
+# a JSON integer is the float a schema asked for; a WAV that is not PCM is the caller's argument
+from typing import Optional
+ok(type(jinfer._parse(3, float)) is float and jinfer._parse([1, 2.5], list[float]) == [1.0, 2.5] and type(jinfer._parse(3, Optional[float])) is float
+   and type(jinfer._parse(3, int)) is int and jinfer._parse(True, float) is True, "schema=float gives a float")
+with tempfile.TemporaryDirectory() as d:
+    floatwav = Path(d, "float.wav")  # IEEE float, format 3: what numpy and DAWs write
+    fmt = struct.pack("<HHIIHH", 3, 1, 16000, 64000, 4, 32)
+    floatwav.write_bytes(b"RIFF" + struct.pack("<I", 36) + b"WAVEfmt " + struct.pack("<I", 16) + fmt + b"data" + struct.pack("<I", 0))
+    try:
+        jinfer._read_wav(floatwav); ok(False, "a float WAV must be refused")
+    except jinfer.InvalidArgument as e:
+        ok("not a PCM WAV" in str(e) and "float.wav" in str(e), f"a float WAV: {e}")
 
 # library
 jinfer.configure("-Djinfer.offline=true")  # a test never downloads: offline is the process's, as the hub reads it
@@ -197,6 +210,12 @@ except jinfer.InvalidArgument as e:
     ok("dict" in str(e), f"typed open object refused: {e}")
 ok(isinstance(m.chat("A person named Ada as JSON.", schema=dict, max_tokens=40, temperature=0).parsed, dict), "schema=dict is a free-form object")
 ok(m.tokenizer.decode(m.tokenizer.encode("hello world")) == "hello world", "decode inverts encode")
+# a model is this process's: a pickle or a copy would carry an address that means nothing elsewhere
+for clone in (pickle.dumps, copy.copy, lambda x: pickle.dumps(x.conversation())):
+    try:
+        clone(m); ok(False, "a model must not pickle or copy")
+    except TypeError as e:
+        ok("jinfer.load(" in str(e), f"a model refuses to leave its process: {e}")
 r = m.chat("Hi", max_tokens=4)
 before = repr(r); r.text
 ok(before == "jinfer.Reply(generating)" and "finish_reason=" in repr(r), f"reply repr never blocks: {before} -> {r!r}")
@@ -204,6 +223,15 @@ r.close()
 ok("finish_reason=" in repr(r), "a finished reply keeps its text after close")
 r = m.chat("Write a long story about the sea.", max_tokens=300); first = next(iter(r)); r.close()
 ok(r.finish_reason == "cancelled" and r.text.startswith(first) and r.usage.completion_tokens >= 1 and list(r) == [], f"a closed reply keeps what it produced: {r!r}")
+r = m.chat("word " * 50000, max_tokens=4)  # past the context: the reply fails
+reads = []
+for _ in range(2):
+    try:
+        r.text
+    except jinfer.InvalidArgument as e:
+        reads.append(str(e))
+ok(len(reads) == 2 and reads[0] == reads[1] and "context" in reads[0], f"a failed reply says why on every read: {reads}")
+r.close()
 try:
     m.chat("Three fruits.", schema=list[str], max_tokens=3, temperature=0).parsed; ok(False, "a cut-off JSON reply must explain")
 except jinfer.InvalidArgument as e:
@@ -402,6 +430,15 @@ with jinfer.load(LM, prompt_cache=catalog) as m1:
 with jinfer.load(LM, prompt_cache=catalog) as m2:
     r = m2.conversation(system="You are a terse assistant. " * 10).chat("Hi", max_tokens=2)
     ok(r.usage.cached_tokens > 0, f"prompt cache survives the model: {r.usage}")
+catalog = os.path.join(tempfile.mkdtemp(), "prompts.bin")
+m1 = jinfer.load(LM, prompt_cache=catalog)
+kept = m1.conversation(system="You are a curt assistant. " * 10, max_tokens=2)
+kept.chat("Hi").text; kept.prepare()   # the conversation keeps its finished reply
+m1.close()
+with jinfer.load(LM, prompt_cache=catalog) as m2:
+    r = m2.conversation(system="You are a curt assistant. " * 10).chat("Hi", max_tokens=2)
+    ok(r.usage.cached_tokens > 0, f"close() saves the catalog while a finished reply is still held: {r.usage}")
+del kept
 
 # media are values: strings, Paths and bytes become content parts
 parts = jinfer._content(["What is this?", b"\x89PNG\r\n\x1a\n" + b"\0" * 8])
@@ -448,6 +485,12 @@ deltas = [c.choices[0].delta.get("content", "") for c in client.chat.completions
 ok(len(deltas) >= 2 and deltas[-1] == "", f"openai stream: {deltas}")
 r = client.chat.completions.create(messages=[{"role": "developer", "content": "Be brief."}, {"role": "user", "content": "A JSON object with a city."}], response_format={"type": "json_object"}, max_completion_tokens=24, temperature=0)
 ok(isinstance(json.loads(r.choices[0].message.content), dict) and r.usage.completion_tokens <= 24, f"openai json_object, developer role, max_completion_tokens: {r.choices[0].message.content!r}")
+tool = {"type": "function", "function": {"name": "weather", "description": "Weather for a city.",
+                                          "parameters": {"type": "object", "properties": {"city": {"type": "string"}}, "required": ["city"]}}}
+chunks = list(client.chat.completions.create(messages=[{"role": "user", "content": "Weather in Oslo?"}], tools=[tool], tool_choice="required", max_tokens=48, temperature=0, stream=True))
+calls = [c for c in chunks if c.choices[0].delta.get("tool_calls")]
+ok(len(calls) == 1 and calls[0].choices[0].delta.tool_calls[0].function.name == "weather" and chunks[-1].choices[0].finish_reason == "tool_calls",
+   f"openai stream carries the tool calls: {[c.choices[0].delta for c in chunks]}")
 client.close()
 
 # embeddings
@@ -513,6 +556,10 @@ if (tts := cached("simonfxr/kokoro.cpp-GGUF:Q8_0", companions={"voice": "simonfx
     ok(repr(speech).startswith("jinfer.Speech(") and "Hz)" in repr(speech), f"speech repr: {speech!r}")
     seconds = len(speech.audio) / speech.sample_rate
     ok(len(chunks) >= 1 and 1.0 < seconds < 10 and len(speech.audio) == sum(len(c) for c in chunks), f"speech: {len(chunks)} chunks, {seconds:.1f} s")
+    try:
+        tts.speak("a\0b").audio; ok(False, "a NUL in speech text must be refused")
+    except jinfer.InvalidArgument as e:
+        ok("NUL" in str(e), f"a NUL in speech text: {e}")
     wav = os.path.join(tempfile.mkdtemp(), "speech.wav")
     speech.save(wav)
     ok(os.path.getsize(wav) > 44 + len(speech.audio), f"saved {wav}")
@@ -550,6 +597,36 @@ t.join(timeout=30)
 ok(outcome == ["cancelled"] and seen, f"cancel from another thread: {outcome} after {len(seen)} chunks")
 ok(r.finish_reason == "cancelled" and 0 < r.usage.completion_tokens <= 400 and r.usage.prompt_tokens > 0, f"result after cancel: {r.finish_reason} {r.usage}")
 ok(jinfer.__version__ == "0.4.0rc1" and N.lib.jinfer_version().decode() == "0.4.0-rc1", f"version {jinfer.__version__}")
+
+# close() from another thread while one iterates: the iterating thread hears Cancelled, the partial result stays
+r = m.chat("Write a very long story about the sea.", max_tokens=400)
+seen, outcome = [], []
+def consume_until_closed():
+    try:
+        for text in r:
+            seen.append(text)
+    except jinfer.Cancelled:
+        outcome.append("cancelled")
+t = threading.Thread(target=consume_until_closed); t.start()
+while not seen and t.is_alive(): time.sleep(0.01)
+r.close()
+t.join(timeout=30)
+ok(outcome == ["cancelled"] and r.finish_reason == "cancelled" and r.text.startswith(seen[0]) and r.usage.completion_tokens >= len(seen),
+   f"close from another thread keeps the partial reply: {outcome} {r!r}")
+
+# a closed model's weights go with it: load and close again and again, and only the open model's mappings stay
+def mapped(path):
+    with open("/proc/self/maps") as f:
+        return sum(1 for line in f if line.split()[-1] == path)
+if os.path.exists("/proc/self/maps"):
+    blob = os.path.realpath(m._info["path"])  # the hub cache's snapshot links to its blob, which the mapping names
+    before = mapped(blob)
+    for _ in range(3):
+        cycle = jinfer.load(LM); cycle.chat("Hi", max_tokens=2).text; cycle.close()
+    deadline = time.monotonic() + 10  # close() collects; the runtime's cleaner thread unmaps right after
+    while (after := mapped(blob)) != before and time.monotonic() < deadline:
+        time.sleep(0.05)
+    ok(before > 0 and after == before, f"closed models stay mapped: {before} mappings before, {after} after")
 
 # a stream takes one call at a time: a second thread's call while a step blocks is JINFER_EBUSY
 r = m.chat("Write a very long story about the sea.", max_tokens=200)

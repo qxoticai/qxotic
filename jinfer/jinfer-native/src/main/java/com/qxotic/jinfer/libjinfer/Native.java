@@ -54,11 +54,12 @@ public final class Native {
     }
 
     /**
-     * Frees the states a cancelled pass or a closed context abandoned. In a native image {@code
-     * Arenas.newCrossThread()} is {@code Arena.ofAuto()} (GraalVM cannot close a shared arena), so
-     * a state's {@code close()} frees nothing until a collection, and off-heap garbage never
-     * provokes one: ~100 MB stayed resident per cancel. ponytail: a full collection of the small
-     * Java heap costs milliseconds; a state pool in the engine would make it unnecessary.
+     * Frees the states a cancelled pass or a closed context abandoned, and a freed model's weights.
+     * In a native image {@code Arenas.newCrossThread()} is {@code Arena.ofAuto()} (GraalVM cannot
+     * close a shared arena), so a state's {@code close()} frees nothing until a collection, and
+     * off-heap garbage never provokes one: ~100 MB stayed resident per cancel. ponytail: a full
+     * collection of the small Java heap costs milliseconds; a state pool in the engine would make
+     * it unnecessary.
      */
     static void collect() {
         System.gc();
@@ -98,7 +99,9 @@ public final class Native {
             Errors.clear();
             Model model = get(handle, Model.class, "model");
             HANDLES.destroy(handle);
-            model.release();
+            boolean last = model.release();
+            model = null; // garbage only once nothing on this stack holds it
+            if (last) collect();
         } catch (Throwable t) {
             Errors.set(t);
         }

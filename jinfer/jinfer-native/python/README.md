@@ -59,7 +59,7 @@ chat.chat("Weather in Zurich?").text                      # runs weather, then a
 | Conversation state | an object; engine cache visible; fork, rewind | your list, re-sent each turn | your list, recomputed each turn | your list, last prefix reused |
 | Structured output | any Python type, parsed object back, enforced | JSON schema in, validate yourself | none built in | JSON schema in, dict back, enforced |
 | Tools | functions; the conversation runs the loop | functions; you run the loop | functions; you parse and loop | hand-written JSON; you parse and loop |
-| Embeddings, reranking | `(n, dim)` float32 array; one call | list of lists; none | pooling by hand; cross-encoder by hand | list of lists; none |
+| Embeddings, reranking | a float32 array per text, zero-copy into numpy; one call | list of lists; none | pooling by hand; cross-encoder by hand | list of lists; none |
 | Speech, transcription | both, streaming, timed words | neither | both, no streaming | neither |
 | Extra process | none | required | none | none |
 | GPU | no | yes | yes | yes, chosen at install |
@@ -106,18 +106,19 @@ The [jinfer README](https://github.com/qxoticai/qxotic/tree/main/jinfer#supporte
 | a streamed reply | `for text in model.chat(prompt)`, or `async for`; closing the reply cancels it, and what it produced stays readable |
 | the rest of a reply | `reply.tool_calls`, `.reasoning`, `.finish_reason`, `.usage` (tokens, cached tokens, milliseconds) |
 | a system prompt | `model.chat(prompt, system="You are terse.")` |
-| options | `max_tokens`, `temperature`, `top_p`, `seed`, `stop`, `tools`, `tool_choice`, `reasoning_effort`: keyword-only, `None` is the model's default, and a typo is a `TypeError`; `reasoning_effort` is on or off, `"none"` off and any level on |
+| options | `max_tokens` (`-1` runs to the end of the context), `temperature`, `top_p`, `seed`, `stop`, `tools`, `tool_choice`, `reasoning_effort`: keyword-only, `None` is the model's default, and a typo is a `TypeError`; `reasoning_effort` is on or off, `"none"` off and any level on |
 | structured output | `model.chat(prompt, schema=Person).parsed`: a dataclass, TypedDict, Pydantic class, `list[T]`, `Literal`, `Enum`, `dict` or a JSON schema dict |
 | tools | `tools=[fn]`; a conversation runs the calls, a plain `chat` returns them as `reply.tool_calls`; `tool_choice` is `"auto"`, `"none"`, `"required"`, a function or its name |
 | a conversation | `model.conversation(system=...)`, with `.chat(...)`, `.fork()`, `.rewind()`, `.prepare()`, `.messages` |
-| prepared prompts that outlive the process | `jinfer.load(ref, prompt_cache="prompts.cache")`: read at load, extended at close |
+| prepared prompts that outlive the process | `jinfer.load(ref, prompt_cache="prompts.cache")`: read at load, extended when the model is closed and no reply is still generating |
 | images, audio in | a `Path` or `bytes` in the content list: `model.chat(["What is this?", Path("photo.jpg")])`; a `str` is text |
-| embeddings | `embedder.embed(texts)` gives an `(n, dimension)` float32 array; a single string counts as one |
+| embeddings | `embedder.embed(texts)` gives a float32 array per text, and `numpy.asarray` of them is `(n, dimension)`; a single string counts as one |
 | reranking | `reranker.rerank(query, documents)` gives one score per document |
 | speech | `speaker.speak(text, speed=1.2)`: iterate its PCM chunks, or `.audio`, or `.save("out.wav")` |
 | transcription | `transcriber.transcribe("speech.wav")`, or `(pcm, sample_rate=16000)`: `.text` and timed `.words` |
 | tokens | `model.tokenizer`, a [`toknroll.Tokenizer`](https://pypi.org/project/toknroll/): `model.tokenizer.count_tokens(text)` against `model.context_capacity` |
 | the context size | `jinfer.load(ref, context_capacity=8192)`; the default is 4096, or the model's maximum when smaller, and `jinfer.MAXIMUM_CONTEXT` asks for the maximum |
+| types | `load` returns the class the file calls for, so name it for a type checker: `model: jinfer.LanguageModel = jinfer.load(ref)` |
 
 Errors are `jinfer.JinferError` subclasses with a `.code`: `InvalidArgument` (also a `ValueError`), `NotFound` (also a `FileNotFoundError`) and `Cancelled`.
 `jinfer.OpenAI(ref)` runs code written for the OpenAI SDK's `chat.completions.create` and `embeddings.create` in process, unchanged.

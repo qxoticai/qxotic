@@ -65,6 +65,12 @@ class _Completions:
                     first = False
                 yield _Obj({**head, "choices": [{"index": 0, "delta": delta, "finish_reason": None}]})
             response = reply._finish()
+            calls = response["choices"][0]["message"].get("tool_calls")
+            if calls:  # as OpenAI streams them: whole, indexed, in a delta before the finish
+                delta = {"tool_calls": [{"index": i, **call} for i, call in enumerate(calls)]}
+                if first:
+                    delta["role"] = "assistant"
+                yield _Obj({**head, "choices": [{"index": 0, "delta": delta, "finish_reason": None}]})
             last = {**head, "id": response["id"], "choices": [{"index": 0, "delta": {}, "finish_reason": reply.finish_reason}]}
             if include_usage:
                 last["usage"] = response["usage"]

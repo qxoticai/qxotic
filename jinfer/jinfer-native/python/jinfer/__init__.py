@@ -305,6 +305,8 @@ def _parse(value, tp):
         return tp(**{f.name: _parse(value[f.name], hints[f.name]) for f in dataclasses.fields(tp) if f.name in value})
     if isinstance(tp, type) and issubclass(tp, enum.Enum):
         return tp(value)
+    if tp is float and type(value) is int:  # JSON writes 3.0 as 3
+        return float(value)
     return value
 
 
@@ -331,7 +333,7 @@ def _tool_message(call: "ToolCall", result) -> dict:
 
 
 # the chat options and the types each accepts; keyword-only on every call that takes them, `None` is the model's default
-_OPTIONS = {"max_tokens": int, "seed": int, "temperature": (int, float), "top_p": (int, float),
+_OPTIONS: dict[str, Any] = {"max_tokens": int, "seed": int, "temperature": (int, float), "top_p": (int, float),
             "stop": (str, list, tuple), "reasoning_effort": str, "tools": (list, tuple, Callable), "tool_choice": (str, dict, Callable)}
 
 
@@ -398,9 +400,12 @@ def _f32(samples):
 
 def _read_wav(path) -> tuple:
     """(float32 mono PCM, sample rate) of a PCM WAV file, first channel."""
-    with wave.open(str(path), "rb") as f:
-        rate, channels, width = f.getframerate(), f.getnchannels(), f.getsampwidth()
-        frames = f.readframes(f.getnframes())
+    try:
+        with wave.open(str(path), "rb") as f:
+            rate, channels, width = f.getframerate(), f.getnchannels(), f.getsampwidth()
+            frames = f.readframes(f.getnframes())
+    except wave.Error as e:  # a float or compressed WAV, or not a WAV at all
+        raise InvalidArgument(f"{os.fspath(path)}: not a PCM WAV ({e}); 8, 16 or 32-bit PCM is supported") from None
     code, scale, offset = {1: ("B", 128.0, 128), 2: ("h", 32768.0, 0), 4: ("i", 2147483648.0, 0)}.get(width, (None, 0, 0))
     if code is None:
         raise InvalidArgument(f"{width * 8}-bit WAV is not supported; 8, 16 or 32-bit PCM is")
@@ -446,14 +451,21 @@ class Transcript:
     words: list[Word]
 
 
+_END = object()  # _next's end of the stream: a chunk may be "" or empty
+
+
 class _Stream:
-    """The lifecycle of a jinfer_stream handle; Reply and Speech say what a chunk is."""
+    """The lifecycle of a jinfer_stream handle; Reply and Speech say what a chunk is. A step and its
+    chunk are read under the lock, so close() from another thread waits for the step in progress
+    instead of freeing the handle under it, as the C API requires."""
 
     def __init__(self, ptr, model: "Model"):
         self._ptr = _check_ptr(ptr)
         self._model = model
         self._done = False
-        self._result = None
+        self._result: dict | None = None
+        self._failure: JinferError | None = None  # what ended a stream without a result, raised on every read
+        self._lock = threading.RLock()  # reentrant: close() finishes the stream through _next
 
     @property
     def _h(self):
@@ -475,40 +487,50 @@ class _Stream:
         if raw:
             self._result = json.loads(raw.decode())
         if failure:
+            self._failure = failure
             raise failure
         return False
 
     def _chunk(self):
         return None
 
+    def _next(self):
+        """The next chunk, or _END."""
+        with self._lock:
+            return self._chunk() if self._step() else _END
+
     def __iter__(self):
-        while self._step():
-            yield self._chunk()
+        while (chunk := self._next()) is not _END:
+            yield chunk
 
     async def __aiter__(self):
         # the work is CPU-bound and in-process: each step runs in a worker thread, the loop stays free
         loop = asyncio.get_running_loop()
-        while await loop.run_in_executor(None, self._step):
-            yield self._chunk()
+        while (chunk := await loop.run_in_executor(None, self._next)) is not _END:
+            yield chunk
 
     def _finish(self) -> dict:
         if self._result is None:
             for _ in self:
                 pass
-            if self._result is None:
-                raise InvalidArgument(f"the {type(self).__name__.lower()} has no result")  # closed before it ended
+            if self._result is None:  # it failed, or was closed before it ended
+                raise self._failure or InvalidArgument(f"the {type(self).__name__.lower()} has no result")
         return self._result
 
     def close(self) -> None:
-        """Frees the stream. A running generation is cancelled, and what it produced so far stays
-        readable, with the finish reason "cancelled"."""
-        if self._ptr:
-            if self._result is None:
-                N.lib.jinfer_stream_cancel(self._ptr)
-                try:
-                    self._finish()
-                except JinferError:
-                    pass  # the stream is gone either way
+        """Frees the stream, from any thread. A running generation is cancelled, and what it produced
+        so far stays readable, with the finish reason "cancelled"."""
+        if self._ptr is None:
+            return
+        if self._result is None:
+            N.lib.jinfer_stream_cancel(self._ptr)  # any thread, any time: a step in progress returns now
+        with self._lock:
+            if self._ptr is None:
+                return
+            try:
+                self._finish()
+            except JinferError:
+                pass  # the stream is gone either way
             N.lib.jinfer_stream_free(self._ptr)
             self._ptr = None
 
@@ -588,12 +610,11 @@ class Reply(_Stream, Generic[T]):
     @property
     def parsed(self) -> T:
         """The reply as the `schema=` type it was asked for. The grammar guarantees it parses."""
-        text = self.text
+        if self._schema is None:
+            raise InvalidArgument("the reply has no schema to parse into; ask for one with schema=")
         try:
-            value = json.loads(text)
+            value = json.loads(self.text)
         except ValueError:
-            if self._schema is None:
-                raise InvalidArgument("the reply is not JSON; ask for one with schema=") from None
             raise InvalidArgument(f"the reply was cut off before the JSON closed (finish_reason={self.finish_reason!r}); raise max_tokens") from None
         if _wrapped(_schema(self._schema)):
             value = value["value"]
@@ -659,7 +680,7 @@ class Model:
         return self._ptr
 
     def close(self) -> None:
-        """Drops this reference; live replies and speech keep the weights alive."""
+        """Drops this reference; replies and speech still generating keep the weights alive."""
         if self._ptr:
             N.lib.jinfer_model_free(self._h)
             self._ptr = None
@@ -675,6 +696,11 @@ class Model:
             self.close()
         except Exception:
             pass
+
+    def __reduce__(self):
+        # its handle is an address in this process: a copy anywhere else would point at nothing
+        raise TypeError(f"a {type(self).__name__} belongs to the process that loaded it; load it where it "
+                        f"is used, jinfer.load({self.source!r}), and pass the source, not the model")
 
     def __repr__(self):
         # what is really running: the first kernel backend is the one the matmuls take
@@ -716,47 +742,51 @@ class _Turn(Reply):
 
     def __init__(self, conversation: "Conversation", schema, options: dict, functions: dict):
         self._conversation, self._options, self._functions = conversation, options, functions
-        self._result = None
+        self._result: dict | None = None
         self._schema = schema
         self._rounds = 1
         self._timings: dict = {}
+        self._closed = False
+        self._lock = threading.RLock()  # one round's step at a time, as on a single reply
         self._reply = conversation._model._chat(conversation._messages, schema, options)
 
-    def _step(self) -> bool:
-        while not self._reply._step():
-            calls = self._reply.tool_calls
-            if self._rounds == _TOOL_ROUNDS or not calls or not all(call.name in self._functions for call in calls):
-                return False  # the model answered, asked for a tool that is yours to run, or ran out of rounds
-            history = self._conversation._messages
-            history.append(self._reply._message)
-            for call in calls:
-                try:
-                    result = self._functions[call.name](**call.arguments)
-                except Exception as e:  # the model hears what went wrong and may try again
-                    result = f"{type(e).__name__}: {e}"
-                history.append(_tool_message(call, result))
-            for k, v in self._reply._finish()["timings"].items():
-                self._timings[k] = self._timings.get(k, 0) + v
-            self._options.pop("tool_choice", None)  # a forced choice is for the first round
-            self._reply.close()
-            self._reply = self._conversation._model._chat(history, self._schema, self._options)
-            self._rounds += 1
-        return True
-
-    def _chunk(self) -> str:
-        return self._reply._chunk()
+    def _next(self):
+        with self._lock:
+            while (chunk := self._reply._next()) is _END:
+                calls = self._reply.tool_calls
+                if self._closed or self._rounds == _TOOL_ROUNDS or not calls or not all(call.name in self._functions for call in calls):
+                    return _END  # the model answered, asked for a tool that is yours to run, or ran out of rounds
+                history = self._conversation._messages
+                history.append(self._reply._message)
+                for call in calls:
+                    try:
+                        result = self._functions[call.name](**call.arguments)
+                    except Exception as e:  # the model hears what went wrong and may try again
+                        result = f"{type(e).__name__}: {e}"
+                    history.append(_tool_message(call, result))
+                for k, v in self._reply._finish()["timings"].items():
+                    self._timings[k] = self._timings.get(k, 0) + v
+                self._options.pop("tool_choice", None)  # a forced choice is for the first round
+                self._reply.close()
+                self._reply = self._conversation._model._chat(history, self._schema, self._options)
+                self._rounds += 1
+            return chunk
 
     def _finish(self) -> dict:
-        if self._result is None:
-            while self._step():
-                pass
-            result = dict(self._reply._finish())
-            result["timings"] = {k: self._timings.get(k, 0) + v for k, v in result["timings"].items()}
-            self._result = result
-        return self._result
+        with self._lock:
+            if self._result is None:
+                while self._next() is not _END:
+                    pass
+                result = dict(self._reply._finish())
+                result["timings"] = {k: self._timings.get(k, 0) + v for k, v in result["timings"].items()}
+                self._result = result
+            return self._result
 
     def close(self) -> None:
-        self._reply.close()
+        self._closed = True  # no round starts after this
+        self._reply.close()  # cancels the round in progress, from any thread
+        with self._lock:  # a round started before the flag was seen
+            self._reply.close()
 
 
 class Conversation:
@@ -949,17 +979,20 @@ def configure(*options: str) -> None:
 
 
 def load(source: str | os.PathLike, *, companions: dict[str, str] | None = None,
-         prompt_cache: str | os.PathLike | None = None, context_capacity: int = 0) -> Model:
+         prompt_cache: str | os.PathLike | None = None, context_capacity: int = 0) -> Any:
     """Loads a source, a hub reference such as "LiquidAI/LFM2.5-350M-GGUF:Q8_0" or a local path, downloading
     once. The file decides what comes back: a LanguageModel, Embedder, Reranker, Speaker or
-    Transcriber. From JINFER_LOG=info on, a download shows its progress on stderr at a terminal and logs
-    it otherwise; Ctrl-C during one ends the process, and the download resumes next time.
+    Transcriber, so a type checker learns the class from an annotation:
+    `model: jinfer.LanguageModel = jinfer.load(...)`. From JINFER_LOG=info on, a download shows its
+    progress on stderr at a terminal and logs it otherwise; Ctrl-C during one ends the process, and
+    the download resumes next time.
 
     Options: companions ({"media": ref} for vision and audio in, {"voice": ref} for speech),
-    prompt_cache (a catalog file, read at load and extended at close, so prepared prompts survive
-    the process), context_capacity (the tokens of state the model keeps, at most its
-    `max_context_length`; 0 is the default, 4096 or the maximum when smaller, for every kind of
-    model; `MAXIMUM_CONTEXT` (-1) is the maximum; above it is refused). The thread
+    prompt_cache (a catalog file, read at load and extended when the model is closed and no reply
+    is still generating, so prepared prompts survive the process), context_capacity (the tokens of
+    state a language, embedding or reranking model keeps, at most its `max_context_length`; 0 is the
+    default, 4096 or the maximum when smaller; `MAXIMUM_CONTEXT` (-1) is the maximum; above it is
+    refused; speech and transcription models keep no context). The thread
     count is the process's: `configure("-Djinfer.threads=N")`.
     """
     source = os.fspath(source)

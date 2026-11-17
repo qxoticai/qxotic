@@ -254,8 +254,14 @@ final class Model {
         references.incrementAndGet();
     }
 
-    void release() {
-        if (references.decrementAndGet() != 0) return;
+    /**
+     * Drops a reference; true when it was the last, the teardown done. The weights are then freed
+     * by the collection the caller runs once it holds no reference to this model either: in the
+     * image every arena is {@code ofAuto}, freed only by a collection, and off-heap memory never
+     * provokes one.
+     */
+    boolean release() {
+        if (references.decrementAndGet() != 0) return false;
         synchronized (this) {
             if (driver != null) driver.shutdownNow();
             if (info != null) info.close();
@@ -272,6 +278,7 @@ final class Model {
         }
         if (arena != null) Arenas.close(arena); // best-effort, see load0
         LOG.log(System.Logger.Level.DEBUG, "freed " + name);
+        return true;
     }
 
     synchronized ExecutorService driver() {

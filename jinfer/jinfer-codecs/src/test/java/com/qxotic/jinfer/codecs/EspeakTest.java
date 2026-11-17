@@ -58,6 +58,17 @@ final class EspeakTest {
     }
 
     @Test
+    void aNulIsRefusedRatherThanCuttingTheRunShort(@TempDir Path dir) throws IOException {
+        Path ran = dir.resolve("ran");
+        Espeak espeak = stub(dir, "ran.sh", "touch '" + ran + "'\necho 'x'\n");
+
+        var e = assertThrows(IllegalArgumentException.class, () -> espeak.ipa("a\0b", "en-us"));
+
+        assertTrue(e.getMessage().contains("NUL"), e.getMessage());
+        assertFalse(Files.exists(ran), "espeak ran on a run it would have cut short");
+    }
+
+    @Test
     void theLanguageIsTheEspeakVoice(@TempDir Path dir) throws IOException {
         Espeak espeak =
                 stub(dir, "voice.sh", "if [ \"$4\" = es ]; then echo 'ola'; else exit 2; fi\n");
