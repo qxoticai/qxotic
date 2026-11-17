@@ -107,7 +107,10 @@ public class JinferChatRequestParameters extends DefaultChatRequestParameters {
         return reasoningCutoffMessage;
     }
 
-    /** Wall-clock deadline for this request; null = the model's builder default. */
+    /**
+     * Wall-clock deadline for this request; null = the model's builder default. A reply it cuts off
+     * finishes with OTHER.
+     */
     public Duration timeout() {
         return timeout;
     }
@@ -250,7 +253,10 @@ public class JinferChatRequestParameters extends DefaultChatRequestParameters {
             return this;
         }
 
-        /** Wall-clock deadline for this request; null leaves the default. */
+        /**
+         * Wall-clock deadline for this request; null leaves the default. A reply it cuts off
+         * finishes with OTHER.
+         */
         public Builder timeout(Duration timeout) {
             if (timeout != null && timeout.isNegative())
                 throw new IllegalArgumentException("timeout must be >= 0: " + timeout);

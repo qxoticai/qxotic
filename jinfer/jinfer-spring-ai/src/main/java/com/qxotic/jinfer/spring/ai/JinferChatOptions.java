@@ -69,7 +69,12 @@ public final class JinferChatOptions extends DefaultToolCallingChatOptions
         this.outputModalities = b.outputModalities;
     }
 
-    /** Sampling seed; null = a fresh random seed per request (set one to pin sampling). */
+    /**
+     * Sampling seed; null = a fresh random seed per request (set one to pin sampling). Same seed
+     * does NOT guarantee byte-identical replay across processes: a fresh JVM's first passes run
+     * before the JIT settles, their float sums differ in the last bits, and that can flip a
+     * near-tie.
+     */
     public Long getSeed() {
         return seed;
     }
@@ -98,7 +103,10 @@ public final class JinferChatOptions extends DefaultToolCallingChatOptions
         return reasoningCutoffMessage;
     }
 
-    /** Wall-clock generation deadline; null = none. */
+    /**
+     * Wall-clock generation deadline; null = none. A reply it cuts off keeps its text and finishes
+     * with "other": neither the model nor the token budget ended it.
+     */
     public Duration getTimeout() {
         return timeout;
     }

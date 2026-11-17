@@ -795,8 +795,9 @@ public final class JinferChatModel implements ChatModel, AutoCloseable {
         /**
          * RNG seed for temperature sampling; default: a fresh random seed per request. Set one to
          * pin sampling - a per-request {@link JinferChatRequestParameters#seed} wins over this.
-         * Same seed does NOT guarantee byte-identical replay across processes: the CPU backend's
-         * run-to-run FP jitter can flip a near-tie.
+         * Same seed does NOT guarantee byte-identical replay across processes: a fresh JVM's first
+         * passes run before the JIT settles, their float sums differ in the last bits, and that can
+         * flip a near-tie.
          */
         public Builder seed(Long seed) {
             this.seed = seed;

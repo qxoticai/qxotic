@@ -37,7 +37,8 @@ import org.springframework.boot.context.properties.bind.DefaultValue;
  *     that always reason; -1 uncaps; unset = the family's policy
  * @param reasoningCutoffMessage what the model "decides" when the budget runs out, in its own
  *     words; unset = a paragraph break
- * @param timeout wall-clock generation deadline; null = none
+ * @param timeout wall-clock generation deadline; null = none; a reply it cuts off finishes with
+ *     {@code "other"}
  * @param outputModalities what a reply may be made of, {@code text,audio} for a model with a voice
  *     to choose speech when the prompt asks for it, {@code audio} to make it speak; unset = text
  *     alone, which never switches into speech. A request's own options override it

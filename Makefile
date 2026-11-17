@@ -251,7 +251,7 @@ help: ## Show this help
 		NF >= 2 && $$1 ~ /^[a-zA-Z_%-]+:/ { t = $$1; sub(/:.*/, "", t); \
 			printf "  \033[36m%-18s\033[0m %s\n", t, $$2 }' $(MAKEFILE_LIST)
 	@echo
-	@echo '  Subtrees: make -C jinfer help (run, test-golden, ...) | make -C jota help | make -C jinfer/jinfer-tts native'
+	@echo '  Subtrees: make -C jinfer help (run, native, ...) | make -C jota help | make -C jinfer/jinfer-tts native'
 
 .PHONY: dists dists-linux dists-here dists-in-container default help package compile install jar jinfer-jar test jinfer-test jota-test \
 	jam-test check-native-image native libjinfer format clean jinfer-clean jota-clean examples release-canary jam-natives toknroll-fixtures test-fixtures cache-models cache-models-in-container ci ci-format ci-test ci-corpus ci-release release-plan release-deploy wheels wheels-linux wheels-here wheels-in-container publish-wheels
