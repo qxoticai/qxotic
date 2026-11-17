@@ -12,6 +12,7 @@ import java.lang.foreign.Arena;
 import java.nio.ByteBuffer;
 import java.nio.ByteOrder;
 import java.nio.channels.FileChannel;
+import java.nio.file.FileSystemException;
 import java.nio.file.Files;
 import java.nio.file.NoSuchFileException;
 import java.nio.file.Path;
@@ -132,6 +133,29 @@ class ModelsDispatchTest {
 
         assertEquals("'fake' is not an embedding architecture", refused.getMessage());
         assertNull(RecordingProvider.last());
+    }
+
+    @Test
+    void theOtherRetrievalFaceIsRefusedBeforeThePortIsCalled() throws IOException {
+        Path reranker = write(fake().putString("fake.retrieval", "RERANKING"), "r.gguf");
+        Path embedder = write(fake().putString("fake.retrieval", "EMBEDDING"), "e.gguf");
+
+        assertEquals(
+                "r.gguf is a reranker, not an embedder: rerank with Models.loadReranker",
+                assertThrows(
+                                ModelProvider.IncompatibleModelException.class,
+                                () -> Models.loadEmbedder(reranker, Arena.ofAuto()))
+                        .getMessage());
+        assertEquals(
+                "e.gguf is an embedder, not a reranker: embed with Models.loadEmbedder",
+                assertThrows(
+                                ModelProvider.IncompatibleModelException.class,
+                                () -> Models.loadReranker(embedder, Arena.ofAuto()))
+                        .getMessage());
+        assertNull(RecordingProvider.last());
+
+        Models.loadReranker(reranker, Arena.ofAuto());
+        assertEquals("reranker", RecordingProvider.last().kind());
     }
 
     @Test
@@ -266,9 +290,15 @@ class ModelsDispatchTest {
                         .getMessage()
                         .contains("cannot be read as GGUF: Unsupported GGUF version 4"),
                 unreadable.getMessage());
-        assertThrows(
-                NoSuchFileException.class,
-                () -> Models.load(dir.resolve("absent.gguf"), Arena.ofAuto()));
+        Path absent = dir.resolve("absent.gguf");
+        assertEquals(
+                absent.toAbsolutePath() + ": model file not found",
+                assertThrows(NoSuchFileException.class, () -> Models.load(absent, Arena.ofAuto()))
+                        .getMessage());
+        assertEquals(
+                dir.toAbsolutePath() + ": a directory, not a GGUF model file",
+                assertThrows(FileSystemException.class, () -> Models.load(dir, Arena.ofAuto()))
+                        .getMessage());
         assertNull(RecordingProvider.last());
     }
 

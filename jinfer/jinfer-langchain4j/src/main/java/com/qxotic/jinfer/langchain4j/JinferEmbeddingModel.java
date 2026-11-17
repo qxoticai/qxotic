@@ -97,7 +97,7 @@ public final class JinferEmbeddingModel implements EmbeddingModel, AutoCloseable
                                 ? b.loaded
                                 : Models.loadEmbedder(b.modelPath, arena, b.companionPaths, null);
             } catch (IOException e) {
-                throw new UncheckedIOException("failed to load " + b.modelPath, e);
+                throw new UncheckedIOException("failed to load model: " + e.getMessage(), e);
             }
             this.dimension = defaultDimension(loaded, b.dimensions);
             // the native width needs no parameter, and a fixed-width model refuses one

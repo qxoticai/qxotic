@@ -13,6 +13,7 @@ import com.qxotic.jinfer.testkit.TestModels;
 import dev.langchain4j.exception.UnsupportedFeatureException;
 import dev.langchain4j.model.chat.request.DefaultChatRequestParameters;
 import java.io.IOException;
+import java.io.UncheckedIOException;
 import java.lang.foreign.Arena;
 import java.nio.file.Path;
 import org.junit.jupiter.api.Tag;
@@ -307,5 +308,17 @@ final class BuilderContractTest {
                         IllegalArgumentException.class,
                         () -> JinferChatModel.builder().maxReasoningTokens(-2));
         assertEquals("maxReasoningTokens -2", e.getMessage());
+    }
+
+    @Test
+    void aMissingModelFileSaysSoAndWhereItWasLookedFor() {
+        Path typo = Path.of("~/models/missing.gguf"); // the shell never expanded ~
+        UncheckedIOException e =
+                assertThrows(
+                        UncheckedIOException.class,
+                        () -> JinferEmbeddingModel.builder().modelPath(typo).build());
+        assertEquals(
+                "failed to load model: " + typo.toAbsolutePath() + ": model file not found",
+                e.getMessage());
     }
 }

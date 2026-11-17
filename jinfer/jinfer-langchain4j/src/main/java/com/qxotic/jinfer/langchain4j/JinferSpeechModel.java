@@ -62,7 +62,7 @@ public final class JinferSpeechModel implements TextToSpeechModel, AutoCloseable
                             : Models.loadSpeech(b.modelPath, created, b.companionPaths);
         } catch (IOException e) {
             closeQuietly(created); // a leaked ofShared arena has no backstop: free before failing
-            throw new UncheckedIOException("failed to load " + b.modelPath, e);
+            throw new UncheckedIOException("failed to load model: " + e.getMessage(), e);
         } catch (RuntimeException | Error e) {
             closeQuietly(created);
             throw e;

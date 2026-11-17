@@ -82,7 +82,7 @@ public final class JinferDecisionModel implements DecisionModel, AutoCloseable {
                                 ? b.loaded
                                 : Models.loadDecisionModel(b.modelPath, arena, b.companionPaths);
             } catch (IOException e) {
-                throw new UncheckedIOException("failed to load " + b.modelPath, e);
+                throw new UncheckedIOException("failed to load model: " + e.getMessage(), e);
             }
             this.state = model.newState(b.contextCapacity);
             this.modelName = b.modelPath == null ? null : b.modelPath.getFileName().toString();

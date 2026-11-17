@@ -107,9 +107,8 @@ public final class Lfm2Provider implements ModelProvider {
     /**
      * The LFM2.5-Embedding checkpoints: same architecture string as every other LFM2 member, told
      * apart by their OWN metadata (non-causal attention + CLS pooling) - so a GGUF that is not one
-     * refuses loudly instead of producing numbers, NAMING what it actually is. ColBERT is the trap
-     * worth spelling out: it is bidirectional too, so "not an embedder" alone would read as a
-     * contradiction, and sending its user to Models.load would be a second wrong turn.
+     * refuses loudly instead of producing numbers, NAMING what it actually is. ColBERT never gets
+     * here: its header says reranker, and {@code Models} refuses it before calling this.
      */
     @Override
     public LoadedEmbedder<?> loadEmbedder(
@@ -119,15 +118,9 @@ public final class Lfm2Provider implements ModelProvider {
         if (!model.configuration().isEmbedder())
             throw new IllegalArgumentException(
                     path.getFileName()
-                            + (model.configuration().isColbert()
-                                    ? " is LFM2.5-ColBERT, the family's late-interaction reranker"
-                                            + " (per-token dense_2 embeddings scored by MaxSim),"
-                                            + " not a single-vector embedder - rerank with"
-                                            + " Models.loadReranker"
-                                    : " is a generative LFM2 checkpoint, not an embedder - chat"
-                                            + " with it via Models.load")
-                            + ", or embed with LFM2.5-Embedding-350M-GGUF (embedders declare"
-                            + " pooling_type and non-causal attention)");
+                            + " is a generative LFM2 checkpoint, not an embedder - chat with it via"
+                            + " Models.load, or embed with LFM2.5-Embedding-350M-GGUF (embedders"
+                            + " declare pooling_type and non-causal attention)");
         // CLS pooling reads the BOS row, so every sequence leads with it (add_bos in the GGUF)
         int bos = gguf.getValue(int.class, "tokenizer.ggml.bos_token_id");
         return new LoadedEmbedder<Lfm2.State>(

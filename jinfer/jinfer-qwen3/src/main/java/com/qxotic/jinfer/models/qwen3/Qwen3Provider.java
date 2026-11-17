@@ -24,9 +24,8 @@ import java.util.Set;
  *
  * <p>Both GGUFs declare the same architecture, so the entry point the caller picks decides how the
  * weights are read: {@link com.qxotic.jinfer.chat.Models#loadEmbedder} pools, {@code loadReranker}
- * judges. Handing an embedding GGUF to the reranker (or the reverse) produces numbers, not an error
- * - it is the caller's file to choose. A caller that must choose for itself asks {@link
- * #retrieval}, which reads what the header does say: an embedding GGUF declares its pooling.
+ * judges. {@link #retrieval} reads which one the header says the file is, and {@code Models}
+ * refuses the other entry point before any weight is read.
  */
 public final class Qwen3Provider implements ModelProvider {
 

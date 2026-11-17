@@ -183,7 +183,7 @@ public final class ChatEngine implements AutoCloseable {
                     weights);
         } catch (IOException e) {
             Arenas.close(weights);
-            throw new UncheckedIOException("failed to load " + modelPath, e);
+            throw new UncheckedIOException("failed to load model: " + e.getMessage(), e);
         } catch (RuntimeException | Error e) {
             Arenas.close(weights);
             throw e;

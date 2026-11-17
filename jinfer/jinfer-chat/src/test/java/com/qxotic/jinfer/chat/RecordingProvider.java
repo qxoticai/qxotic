@@ -53,6 +53,13 @@ public final class RecordingProvider implements ModelProvider {
         return Map.of("media", "mmproj", "lexicon", "lexicon");
     }
 
+    /** The face a test stamps under {@code fake.retrieval}; empty when the header does not say. */
+    @Override
+    public Optional<Retrieval> retrieval(GGUF gguf) {
+        return Optional.ofNullable(gguf.getStringOrDefault("fake.retrieval", null))
+                .map(Retrieval::valueOf);
+    }
+
     @Override
     public LoadedModel<?> loadLanguage(
             FileChannel channel,

@@ -725,6 +725,26 @@ class JinferEmbeddingModelIT {
         assertFalse(e.getMessage().contains("chat with it"), e.getMessage());
     }
 
+    /**
+     * Qwen3-Reranker shares the embedder's architecture, so it would load and embed, with vectors
+     * that cannot tell unrelated texts apart. This conversion has no pooling_type: the converter's
+     * name decides.
+     */
+    @Test
+    void aQwen3RerankerIsNotAnEmbedder() {
+        Path reranker =
+                TestModels.require(
+                        "hf.co/mradermacher/Qwen3-Reranker-0.6B-GGUF/Qwen3-Reranker-0.6B.Q8_0.gguf");
+        IncompatibleModelException e =
+                assertThrows(
+                        IncompatibleModelException.class,
+                        () -> JinferEmbeddingModel.builder().modelPath(reranker).build());
+        assertEquals(
+                "Qwen3-Reranker-0.6B.Q8_0.gguf is a reranker, not an embedder: rerank with"
+                        + " Models.loadReranker",
+                e.getMessage());
+    }
+
     @Test
     void aCapacityPastTheModelsIsRefusedAtBuild() throws Exception {
         try (Arena arena = Arenas.newCrossThread()) {

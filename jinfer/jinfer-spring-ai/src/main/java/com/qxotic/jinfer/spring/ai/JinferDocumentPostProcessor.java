@@ -60,7 +60,7 @@ public final class JinferDocumentPostProcessor implements DocumentPostProcessor,
             try {
                 this.loaded = b.loaded != null ? b.loaded : Models.loadReranker(b.modelPath, arena);
             } catch (IOException e) {
-                throw new UncheckedIOException("failed to load " + b.modelPath, e);
+                throw new UncheckedIOException("failed to load model: " + e.getMessage(), e);
             }
             int maxContextLength = loaded.model().configuration().maxContextLength();
             int contextCapacity =

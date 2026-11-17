@@ -44,7 +44,7 @@ public final class JinferTranscriptionModel implements AudioTranscriptionModel, 
             this.model = b.model != null ? b.model : Models.loadTranscription(b.modelPath, created);
         } catch (IOException e) {
             closeQuietly(created); // a leaked ofShared arena has no backstop: free before failing
-            throw new UncheckedIOException("failed to load " + b.modelPath, e);
+            throw new UncheckedIOException("failed to load model: " + e.getMessage(), e);
         } catch (RuntimeException | Error e) {
             closeQuietly(created);
             throw e;

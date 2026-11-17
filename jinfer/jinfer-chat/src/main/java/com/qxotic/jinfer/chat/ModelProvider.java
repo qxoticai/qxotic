@@ -88,7 +88,9 @@ public interface ModelProvider {
 
     /**
      * Which retrieval face the checkpoint behind {@code gguf} has, from its header alone ({@link
-     * Models#retrieval}), or empty when it has none or the header does not say.
+     * Models#retrieval}), or empty when it has none or the header does not say. {@link
+     * Models#loadEmbedder} and {@link Models#loadReranker} refuse a checkpoint of the other face
+     * before calling the port.
      */
     default Optional<Retrieval> retrieval(GGUF gguf) {
         return Optional.empty();

@@ -22,6 +22,7 @@ import java.nio.ByteOrder;
 import java.nio.channels.Channels;
 import java.nio.channels.FileChannel;
 import java.nio.charset.StandardCharsets;
+import java.nio.file.FileSystemException;
 import java.nio.file.Files;
 import java.nio.file.NoSuchFileException;
 import java.nio.file.Path;
@@ -199,8 +200,10 @@ public final class Models {
                 path,
                 attached,
                 tokenizer,
-                (provider, fc, gguf) ->
-                        provider.loadEmbedder(fc, gguf, path, arena, attached, tokenizer));
+                (provider, fc, gguf) -> {
+                    requireRetrieval(provider, gguf, path, ModelProvider.Retrieval.EMBEDDING);
+                    return provider.loadEmbedder(fc, gguf, path, arena, attached, tokenizer);
+                });
     }
 
     /** Loads a RERANKER - the backbone plus the family's scoring recipe. */
@@ -218,7 +221,26 @@ public final class Models {
                 path,
                 Map.of(),
                 tokenizer,
-                (provider, fc, gguf) -> provider.loadReranker(fc, gguf, path, arena, tokenizer));
+                (provider, fc, gguf) -> {
+                    requireRetrieval(provider, gguf, path, ModelProvider.Retrieval.RERANKING);
+                    return provider.loadReranker(fc, gguf, path, arena, tokenizer);
+                });
+    }
+
+    /**
+     * A checkpoint whose header names the OTHER retrieval face is refused before any weight is
+     * read: one family's embedder and reranker share an architecture, and loaded through the wrong
+     * face they produce numbers without meaning, not an error. A header that says nothing loads.
+     */
+    private static void requireRetrieval(
+            ModelProvider provider, GGUF gguf, Path path, ModelProvider.Retrieval wanted) {
+        Optional<ModelProvider.Retrieval> face = provider.retrieval(gguf);
+        if (face.isEmpty() || face.get() == wanted) return;
+        String is =
+                wanted == ModelProvider.Retrieval.EMBEDDING
+                        ? " is a reranker, not an embedder: rerank with Models.loadReranker"
+                        : " is an embedder, not a reranker: embed with Models.loadEmbedder";
+        throw new ModelProvider.IncompatibleModelException(path.getFileName() + is);
     }
 
     /**
@@ -369,9 +391,11 @@ public final class Models {
     private static <T> T open(
             Path path, Map<String, Path> companions, Tokenizer tokenizer, Load<T> load)
             throws IOException {
-        if (!Files.exists(path)) {
-            throw new NoSuchFileException(path.toString(), null, "model file not found");
-        }
+        // the absolute path: a relative one or an unexpanded ~ shows where it was looked for
+        String file = path.toAbsolutePath().toString();
+        if (Files.isDirectory(path))
+            throw new FileSystemException(file, null, "a directory, not a GGUF model file");
+        if (!Files.exists(path)) throw new NoSuchFileException(file, null, "model file not found");
         try (FileChannel fc = FileChannel.open(path, StandardOpenOption.READ)) {
             fc.position(0L);
             GGUF gguf;

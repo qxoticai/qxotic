@@ -100,7 +100,7 @@ public final class JinferEmbeddingModel implements EmbeddingModel, AutoCloseable
                                 ? b.loaded
                                 : Models.loadEmbedder(b.modelPath, arena, b.companionPaths, null);
             } catch (IOException e) {
-                throw new UncheckedIOException("failed to load " + b.modelPath, e);
+                throw new UncheckedIOException("failed to load model: " + e.getMessage(), e);
             }
             this.modelName = loaded.name();
             this.dimensions = defaultDimensions(loaded, b.dimensions);
