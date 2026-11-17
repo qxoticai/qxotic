@@ -736,12 +736,20 @@ static void cancel(void) {
     jinfer_model_free(m);
 }
 
-/* two threads stepping one stream: the second gets EBUSY, never a race */
-typedef struct { jinfer_stream* s; volatile int stepping; int32_t rc; } step_box;
+/* two threads stepping one stream: the second gets EBUSY, never a race. The main thread joins in
+   only once the worker has stepped (the long prefill), so the stream cannot end before both step,
+   and either thread may be the one that meets the other: each records its own EBUSY and message. */
+typedef struct { jinfer_stream* s; volatile int stepped; int32_t rc; int busy; char message[128]; } step_box;
 static void keep_stepping(void* p) {
     step_box* b = (step_box*) p;
-    b->stepping = 1;
-    while ((b->rc = jinfer_stream_step(b->s)) == JINFER_OK || b->rc == JINFER_EBUSY) {}
+    while ((b->rc = jinfer_stream_step(b->s)) == JINFER_OK || b->rc == JINFER_EBUSY) {
+        b->stepped = 1;
+        if (b->rc == JINFER_EBUSY && !b->busy) {
+            b->busy = 1;
+            snprintf(b->message, sizeof b->message, "%s", LE(NULL));
+        }
+    }
+    b->stepped = 1;
 }
 
 static void stream_busy(void) {
@@ -751,9 +759,9 @@ static void stream_busy(void) {
     int at = snprintf(big, sizeof big, "{\"messages\":[{\"role\":\"user\",\"content\":\"");
     for (int i = 0; i < 600; i++) at += snprintf(big + at, sizeof big - (size_t) at, "word ");   /* a long prefill */
     snprintf(big + at, sizeof big - (size_t) at, "\"}],\"max_tokens\":32,\"temperature\":0}");
-    step_box b = {jinfer_chat(m, big), 0, 0};
+    step_box b = {jinfer_chat(m, big), 0, 0, 0, ""};
     thread_t worker = thread_run(keep_stepping, &b);
-    while (!b.stepping) {}
+    while (!b.stepped) {}
     int busy = 0;
     char message[128] = "";
     for (int i = 0; i < 20000000 && !busy; i++) {
@@ -764,8 +772,8 @@ static void stream_busy(void) {
         } else if (rc != JINFER_OK) break;
     }
     thread_join(worker);
-    CHECK(busy);
-    CHECK_STR(message, "the stream is in a call on another thread");
+    CHECK(busy || b.busy);   /* one of the two met the other */
+    CHECK_STR(busy ? message : b.message, "the stream is in a call on another thread");
     CHECK_EQ(b.rc, JINFER_DONE);
     jinfer_stream_free(b.s);
     jinfer_model_free(m);
