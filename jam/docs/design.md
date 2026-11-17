@@ -39,6 +39,9 @@ Making a view per call costs about 30 us per MB on an M3 Pro, 1-1.6 ms per prefi
 `jam_share(ctx, p, bytes, flags)` (Java: `JAM.share(segment, immutable)`) lets the caller remove that cost for memory it passes to many calls.
 It is a hint: results never depend on it, and a context without a device returns `JAM_EUNSUPPORTED` (Java: `false`).
 Metal makes one long-lived view per share, and an operand lying wholly inside a share uses it.
+On macOS 15 and later the shares also sit in the queue's `MTLResidencySet`, so they stay wired while shared: otherwise every submission waits about 45 us per MB of each buffer it binds before the GPU starts.
+In Java `-Djam.native.metal.resident=false` leaves them pageable.
+Measured on an M3 Pro (Qwen3.5-27B Q4_K_M): pp64 32.6 -> 47.4 t/s, pp512 53.8 -> 63.9 t/s, and 16 GB more wired memory.
 Any other operand gets a per-call view, as before.
 `JAM_SHARE_IMMUTABLE` (Java: `immutable`) promises the bytes never change while shared, so a backend with its own device memory may keep a copy; Metal maps in place and ignores it.
 Other flag bits are reserved and return `JAM_EINVAL`.

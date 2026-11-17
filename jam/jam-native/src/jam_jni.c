@@ -2,18 +2,24 @@
  * it to each mm call. Flat scalars in, an int status out; no JNI calls on the hot path. The compiler
  * checks every conversion here against jam.h, which the FFM binding cannot have. */
 #include "jam.h"
+#include "jam_internal.h"
 #include <jni.h>
 #include <stdint.h>
 
 /* A context driven by the host: parallel is a C function pointer (a Java FFM upcall stub) with the
  * jam_parallel_fn signature, user the value jam passes back to it (the Java side keys its instance by
- * it), threads how many distinct slot values the host will pass, max_isa the cap. 0 on failure, the
- * reason in jam_last_error. */
+ * it), threads how many distinct slot values the host will pass, max_isa the cap, metal_resident
+ * whether Metal's shares stay wired. 0 on failure, the reason in jam_last_error. */
 JNIEXPORT jlong JNICALL
 Java_com_qxotic_jam_libjam_NativeJAM_newJni(JNIEnv* env, jclass cls, jint threads, jint max_isa,
-                                            jlong parallel, jlong user)
+                                            jlong parallel, jlong user, jboolean metal_resident)
 {
     (void) env; (void) cls;
+#ifdef JAM_HAVE_METAL
+    jam_metal_resident = metal_resident;
+#else
+    (void) metal_resident;
+#endif
     jam_context_options options = {0};
     options.parallel      = (jam_parallel_fn)(intptr_t) parallel;
     options.parallel_user = (void*)(intptr_t) user;

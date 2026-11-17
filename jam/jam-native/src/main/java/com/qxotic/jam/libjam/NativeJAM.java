@@ -67,6 +67,14 @@ public final class NativeJAM implements JAM, AutoCloseable {
     private static final boolean SERIAL =
             Boolean.parseBoolean(NativeLoader.config("jam.native.serial", "true"));
 
+    /**
+     * {@code -Djam.native.metal.resident}: default {@code true} - on macOS 15 and later, memory
+     * shared with Metal stays wired while shared, so a GPU matmul starts at once; {@code false}
+     * leaves it pageable, and every call then waits about 45 us per MB of the buffers it binds.
+     */
+    private static final boolean METAL_RESIDENT =
+            Boolean.parseBoolean(System.getProperty("jam.native.metal.resident", "true"));
+
     // One fair lock per instance: close() and, when SERIAL, mm hold the write side; otherwise mm
     // holds the read side and the native guard arbitrates. So no call overlaps a close, and a
     // fan-out callback always resolves the instance that started it - never a cleared slot, never
@@ -90,7 +98,7 @@ public final class NativeJAM implements JAM, AutoCloseable {
         int maxIsa = isa(NativeLoader.config("jam.native.isa", ""));
         int id = INSTANCES.indexOf(null); // a closed instance's handle is reused
         if (id < 0) id = INSTANCES.size();
-        long ctx = newJni(parallel.width(), maxIsa, PF_STUB.address(), id);
+        long ctx = newJni(parallel.width(), maxIsa, PF_STUB.address(), id, METAL_RESIDENT);
         if (ctx == 0) throw new IllegalStateException("jam: " + lastError());
         NativeJAM jam = new NativeJAM(ctx, parallel);
         if (id == INSTANCES.size()) INSTANCES.add(jam);
@@ -209,7 +217,8 @@ public final class NativeJAM implements JAM, AutoCloseable {
      * signature, {@code user} the value jam passes back to it, {@code threads} how many slot values
      * the host will pass, {@code maxIsa} the cap. 0 on failure, the reason in {@link #lastError}.
      */
-    private static native long newJni(int threads, int maxIsa, long parallel, long user);
+    private static native long newJni(
+            int threads, int maxIsa, long parallel, long user, boolean metalResident);
 
     private static native void freeJni(long ctx);
 

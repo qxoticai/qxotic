@@ -392,6 +392,7 @@ extern "C" {              /* jam_metal.mm is Objective-C++: match the extern "C"
 #endif
 extern int jam_debug;            /* JAM_DEBUG, read as the library loads (jam.c): Metal's failures on stderr */
 extern int jam_metal_profile;    /* JAM_METAL_PROFILE, read with it: per-call timings at context free and exit */
+extern int jam_metal_resident;   /* 0: no residency set for the shares (jam_metal.mm) */
 jam_metal* jam_metal_create(void);
 void       jam_metal_destroy(jam_metal* m);
 jam_status jam_metal_mm(jam_metal* m, const void* a, jam_dtype at, int lda,

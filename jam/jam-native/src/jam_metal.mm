@@ -399,7 +399,20 @@ struct jam_metal {
     os_unfair_lock share_lock;              /* guards the jam_share table below */
     jam_metal_share_entry* shares;
     int nshares, share_cap;
+    id residency;                           /* the shares' MTLResidencySet, or nil */
 };
+
+/* A share is also kept resident (macOS 15+). A long-lived buffer alone is not enough: every
+ * submission that binds it waits ~45 us per MB of it before the GPU starts (M3 Pro: 2 ms for a
+ * 50 MB weight on every call, 13 ms on its first), which the queue's residency set removes.
+ * The price is wired memory: jam_metal_resident = 0 keeps the shares pageable and the wait. */
+static void jam_residency(jam_metal* m, id<MTLBuffer> buffer, int add) {
+    if (@available(macOS 15.0, *)) {
+        id<MTLResidencySet> set=(id<MTLResidencySet>)m->residency;
+        if (add) [set addAllocation:buffer]; else [set removeAllocation:buffer];
+        [set commit];
+    }
+}
 
 /* An operand's Metal view over caller-owned VM pages: a page-rounded MTLBuffer (its share's, or one
  * made for the call) + the offset of the tensor inside it. The call's reference is released before
@@ -498,6 +511,7 @@ extern "C" jam_status jam_metal_share(jam_metal* m, const void* p, size_t bytes)
     if (status == JAM_OK) {
         jam_metal_share_entry* e=&m->shares[m->nshares++];
         e->lo=lo; e->hi=hi; e->base=base; e->buffer=buffer;
+        jam_residency(m,buffer,1);
     }
     os_unfair_lock_unlock(&m->share_lock);
     if (status != JAM_OK) @autoreleasepool { [buffer release]; }
@@ -510,6 +524,7 @@ extern "C" void jam_metal_unshare(jam_metal* m, const void* p) {
     for (int i=0;i<m->nshares;i++)
         if (m->shares[i].lo == (uintptr_t)p) {
             gone=m->shares[i].buffer;
+            jam_residency(m,gone,0);
             m->shares[i]=m->shares[--m->nshares];
             break;
         }
@@ -598,6 +613,12 @@ extern "C" jam_metal* jam_metal_create(void) {
         if (!m) { [lib release]; [dev release]; return NULL; }
         m->dev   = dev;                                  /* +1 from Create, owned */
         m->queue = [dev newCommandQueue];
+        if (jam_metal_resident) if (@available(macOS 15.0, *)) {
+            MTLResidencySetDescriptor* rd=[MTLResidencySetDescriptor new];
+            id<MTLResidencySet> set=[dev newResidencySetWithDescriptor:rd error:NULL];
+            [rd release];
+            if (set) { [m->queue addResidencySet:set]; m->residency=set; }
+        }
         m->command_desc = [MTLCommandBufferDescriptor new];
         m->command_desc.retainedReferences = NO;         /* synchronous call owns every resource until wait */
         m->profile = jam_metal_profile;
@@ -668,6 +689,7 @@ extern "C" void jam_metal_destroy(jam_metal* m) {
         }
         for (int i = 0; i < m->nshares; i++) [m->shares[i].buffer release];
         [m->command_desc release];
+        [m->residency release];
         [m->queue release]; [m->dev release];
     }
     free(m->shares);

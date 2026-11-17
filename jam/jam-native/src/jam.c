@@ -27,6 +27,7 @@ float jam_ue4m3_lut[256];
 int jam_debug;                         /* JAM_DEBUG: the dispatch on stderr */
 #ifdef JAM_HAVE_METAL
 int jam_metal_profile;                 /* JAM_METAL_PROFILE: Metal's per-call timings on stderr */
+int jam_metal_resident = 1;            /* 0: Metal's shares stay pageable; set by the Java binding */
 #endif
 static _Atomic unsigned g_fork_gen;    /* bumped in every forked child: a context remembers its own */
 
