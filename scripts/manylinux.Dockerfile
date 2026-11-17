@@ -12,11 +12,11 @@
 ARG ARCH=x86_64
 FROM quay.io/pypa/manylinux_2_28_${ARCH}
 ARG ARCH
-# Oracle GraalVM 25.4 (JDK 25.0.4.1.1), from Oracle's GDS, which publishes no checksum: the archives' SHA-256,
-# x86_64 and aarch64, are pinned here (the same as Arch's jdk25-graalvm-bin)
-ARG GRAALVM=25i4/archive/graalvm-jdk-25i4-25.0.4.1.1
-ARG GRAALVM_SHA256_x86_64=4fcc632cfc68e98f49f9316f8a3588bafe4f5289f120104e2d290a75cf33e28e
-ARG GRAALVM_SHA256_aarch64=780d5784d3db9bbcff77775c4d026e4a0e21a041ba9dba7c59135949ea5234a4
+# Oracle GraalVM 25.5 (JDK 25.0.5.0.3), from Oracle's GDS, which publishes no checksum: the archives' SHA-256,
+# x86_64 and aarch64, are pinned here
+ARG GRAALVM=25i5/archive/graalvm-jdk-25i5-25.0.5.0.3
+ARG GRAALVM_SHA256_x86_64=90582f405cb89a825a43297cdacc7f427ce04039a249f5f0fc75c95b50600b08
+ARG GRAALVM_SHA256_aarch64=c4e423cdbf21963329d4fb7846fdc2236dcd9cb3e996484d06c3b6d363b58a83
 # Maven from the Apache archive, which keeps every release (the mirrors drop all but the current ones), its
 # SHA-512 as Apache publishes it
 ARG MAVEN=3.9.16
