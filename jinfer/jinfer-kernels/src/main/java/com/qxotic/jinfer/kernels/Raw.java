@@ -21,6 +21,15 @@ import java.lang.foreign.MemorySegment;
  */
 public record Raw(MemorySegment vseg, long vbase) {
 
+    /**
+     * With {@link Segments#GLOBAL_SEGMENT} this is that constant, not a field read: only a constant
+     * segment lets the JIT fold a kernel's bounds and liveness checks out of its loops.
+     */
+    @Override
+    public MemorySegment vseg() {
+        return Segments.vectorSegment(vseg);
+    }
+
     /** Entry check (FP32 + row-major contiguous) + extraction, in one call. */
     public static Raw f32(MemoryView<?> view, String name) {
         return of(view, DataType.FP32, name);
