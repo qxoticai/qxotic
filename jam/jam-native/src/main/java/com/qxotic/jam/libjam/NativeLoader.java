@@ -14,9 +14,9 @@ import java.util.Locale;
  * <p>The fat {@code jam-native} jar carries one native library per platform under {@code
  * /com/qxotic/jam/native/<os>-<arch>/<libname>} (e.g. {@code linux-x86-64/libjam.so}, {@code
  * darwin-aarch64/libjam.dylib}, {@code windows-x86-64/jam.dll}). At first use this class detects
- * the platform, extracts the matching library once to {@code <cache>/jam/<sha256>/<libname>} (see
- * {@link #cacheDir}; the digest is the {@code <libname>.sha256} beside it in the jar), and {@link
- * System#load(String) loads} it; later runs reuse that copy.
+ * the platform, extracts the matching library once to {@code <cache>/jinfer/jam/<sha256>/<libname>}
+ * (see {@link #cacheDir}; the digest is the {@code <libname>.sha256} beside it in the jar), and
+ * {@link System#load(String) loads} it; later runs reuse that copy.
  *
  * <p>Overrides, in order:
  *
@@ -99,10 +99,11 @@ final class NativeLoader {
     }
 
     /**
-     * Where extracted libraries live: {@code jam} in the user's cache directory, found as jinfer's
-     * model cache finds it ({@code $XDG_CACHE_HOME}, default {@code ~/.cache}, on Linux, {@code
-     * ~/Library/Caches} on macOS, {@code %LOCALAPPDATA%} on Windows), so it is private to the user;
-     * {@code <java.io.tmpdir>/jam} when there is no writable one (a container user without a home).
+     * Where extracted libraries live: {@code jinfer/jam} in the user's cache directory, beside
+     * jinfer's models and found as jinfer finds it ({@code $XDG_CACHE_HOME}, default {@code
+     * ~/.cache}, on Linux, {@code ~/Library/Caches} on macOS, {@code %LOCALAPPDATA%} on Windows),
+     * so it is private to the user; {@code <java.io.tmpdir>/jinfer/jam} when there is no writable
+     * one (a container user without a home).
      */
     private static Path cacheDir() {
         String home = System.getenv("HOME");
@@ -121,9 +122,11 @@ final class NativeLoader {
                                     ? Path.of(xdg)
                                     : Path.of(home, ".cache");
                 };
-        Path tmp = Path.of(System.getProperty("java.io.tmpdir"), "jam");
+        Path tmp = Path.of(System.getProperty("java.io.tmpdir"), "jinfer", "jam");
         try {
-            return dir.isAbsolute() ? Files.createDirectories(dir.resolve("jam")) : tmp;
+            return dir.isAbsolute()
+                    ? Files.createDirectories(dir.resolve("jinfer").resolve("jam"))
+                    : tmp;
         } catch (IOException e) {
             return tmp;
         }
