@@ -140,6 +140,49 @@
           </execution>
         </executions>
       </plugin>
+      <!-- The jar ALWAYS ships <lib>.sha256 beside every native library, whichever tree it came
+           from: the bare hex digest, as Maven Central's checksum files. NativeLoader extracts each
+           library to <tmpdir>/<sha256>/ and refuses one without it. Written once the libraries are
+           copied, checked before packaging (even under -DskipTests), and by BundledSha256Test. -->
+      <plugin>
+        <groupId>org.apache.maven.plugins</groupId>
+        <artifactId>maven-antrun-plugin</artifactId>
+        <executions>
+          <execution>
+            <id>natives-sha256</id>
+            <goals>
+              <goal>run</goal>
+            </goals>
+            <phase>process-classes</phase>
+            <configuration>
+              <target>
+                <checksum algorithm="SHA-256" fileext=".sha256" forceoverwrite="yes">
+                  <fileset dir="${project.build.outputDirectory}/com/qxotic/jam/native" includes="*/*.so,*/*.dylib,*/*.dll" />
+                </checksum>
+              </target>
+            </configuration>
+          </execution>
+          <execution>
+            <id>natives-sha256-verify</id>
+            <goals>
+              <goal>run</goal>
+            </goals>
+            <phase>prepare-package</phase>
+            <configuration>
+              <target>
+                <checksum algorithm="SHA-256" fileext=".sha256" verifyproperty="natives.sha256.ok">
+                  <fileset dir="${project.build.outputDirectory}/com/qxotic/jam/native" includes="*/*.so,*/*.dylib,*/*.dll" />
+                </checksum>
+                <fail message="jam-native: a bundled library does not match its .sha256">
+                  <condition>
+                    <isfalse value="${natives.sha256.ok}" />
+                  </condition>
+                </fail>
+              </target>
+            </configuration>
+          </execution>
+        </executions>
+      </plugin>
       <plugin>
         <groupId>org.apache.maven.plugins</groupId>
         <artifactId>maven-surefire-plugin</artifactId>

@@ -27,10 +27,7 @@ public final class NativeJAMProvider implements JAM.Provider {
             // No library for this platform is the expected, silent fallback. One that exists but
             // does not load, the user's or the bundled one, says so.
             if (!NativeLoader.override().isEmpty() || NativeLoader.bundled())
-                warn(
-                        "jam: the native library did not load, using the Java backends: "
-                                + t
-                                + " (a temporary directory mounted noexec? set -Djava.io.tmpdir)");
+                warn("jam: the native library did not load, using the Java backends: " + t);
             return false;
         }
         try {

@@ -2,6 +2,7 @@ package com.qxotic.jam.libjam;
 
 import java.io.IOException;
 import java.io.InputStream;
+import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.StandardCopyOption;
@@ -13,8 +14,9 @@ import java.util.Locale;
  * <p>The fat {@code jam-native} jar carries one native library per platform under {@code
  * /com/qxotic/jam/native/<os>-<arch>/<libname>} (e.g. {@code linux-x86-64/libjam.so}, {@code
  * darwin-aarch64/libjam.dylib}, {@code windows-x86-64/jam.dll}). At first use this class detects
- * the platform, extracts the matching library to a temp file, and {@link System#load(String) loads}
- * it.
+ * the platform, extracts the matching library to {@code <java.io.tmpdir>/<sha256>/<libname>} (the
+ * digest from the {@code <libname>.sha256} beside it in the jar; an existing copy is reused), and
+ * {@link System#load(String) loads} it.
  *
  * <p>Overrides, in order:
  *
@@ -64,13 +66,33 @@ final class NativeLoader {
                                 + ")");
             }
         }
-        try (InputStream src = in) {
-            Path dir = Files.createTempDirectory("jam-native");
-            dir.toFile().deleteOnExit();
-            Path tmp = dir.resolve(lib);
-            Files.copy(src, tmp, StandardCopyOption.REPLACE_EXISTING);
-            tmp.toFile().deleteOnExit();
-            System.load(tmp.toAbsolutePath().toString());
+        // One copy per library build, named by its .sha256 (written beside it at build time), so
+        // runs reuse it and nothing piles up (Windows cannot delete a loaded DLL at exit).
+        // ponytail: an existing copy is trusted as is; a shared /tmp lets another user plant one.
+        try (InputStream src = in;
+                InputStream sum = NativeLoader.class.getResourceAsStream(res + ".sha256")) {
+            if (sum == null) throw new UnsatisfiedLinkError("jam: " + res + ".sha256 missing");
+            String sha = new String(sum.readNBytes(64), StandardCharsets.US_ASCII);
+            Path path = Path.of(System.getProperty("java.io.tmpdir"), sha, lib);
+            if (!Files.exists(path)) {
+                Files.createDirectories(path.getParent());
+                // write aside, then rename: a concurrent run never loads a half-written file
+                Path part = Files.createTempFile(path.getParent(), lib, ".part");
+                Files.copy(src, part, StandardCopyOption.REPLACE_EXISTING);
+                try {
+                    Files.move(part, path, StandardCopyOption.ATOMIC_MOVE);
+                } catch (IOException e) {
+                    // Windows: another run's copy is in place (and loaded), so use it
+                    Files.delete(part);
+                }
+            }
+            try {
+                System.load(path.toAbsolutePath().toString());
+            } catch (UnsatisfiedLinkError e) {
+                throw new UnsatisfiedLinkError(
+                        e.getMessage()
+                                + " (a temporary directory mounted noexec? set -Djava.io.tmpdir)");
+            }
             loaded = true;
         } catch (IOException e) {
             throw new UnsatisfiedLinkError("jam: failed to extract " + res + ": " + e);
