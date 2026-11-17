@@ -4,6 +4,7 @@ import com.qxotic.jinfer.media.Media;
 import java.awt.image.BufferedImage;
 import java.io.ByteArrayInputStream;
 import java.io.IOException;
+import java.nio.file.Files;
 import java.nio.file.Path;
 import javax.imageio.ImageIO;
 import javax.imageio.ImageReader;
@@ -24,6 +25,10 @@ public final class ImageIoDecoder implements ImageDecoder {
     @Override
     public Media.Image load(Path path) throws IOException {
         try (ImageInputStream input = ImageIO.createImageInputStream(path.toFile())) {
+            if (input == null) { // ImageIO's answer for any file it cannot open: say why instead
+                if (Files.isDirectory(path)) throw new IOException(path + " is a directory");
+                Files.newByteChannel(path).close(); // NoSuchFileException, AccessDeniedException
+            }
             return read(input, path.toString());
         }
     }

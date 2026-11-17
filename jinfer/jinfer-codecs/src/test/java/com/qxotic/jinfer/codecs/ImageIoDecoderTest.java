@@ -8,9 +8,13 @@ import java.awt.image.BufferedImage;
 import java.io.ByteArrayOutputStream;
 import java.io.IOException;
 import java.nio.ByteBuffer;
+import java.nio.file.Files;
+import java.nio.file.NoSuchFileException;
+import java.nio.file.Path;
 import java.util.zip.CRC32;
 import javax.imageio.ImageIO;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.io.TempDir;
 
 class ImageIoDecoderTest {
 
@@ -27,6 +31,18 @@ class ImageIoDecoderTest {
                         IOException.class,
                         () -> new ImageIoDecoder().decode(hugePng(png.toByteArray())));
         assertTrue(failure.getMessage().contains("pixel limit"), failure.getMessage());
+    }
+
+    @Test
+    void aPathThatIsNotAnImageSaysWhatItIs(@TempDir Path dir) throws IOException {
+        Path missing = dir.resolve("typo.png");
+        assertThrows(NoSuchFileException.class, () -> new ImageIoDecoder().load(missing));
+        IOException folder = assertThrows(IOException.class, () -> new ImageIoDecoder().load(dir));
+        assertTrue(folder.getMessage().endsWith("is a directory"), folder.getMessage());
+        Path text = Files.writeString(dir.resolve("notes.png"), "not an image");
+        IOException notImage =
+                assertThrows(IOException.class, () -> new ImageIoDecoder().load(text));
+        assertTrue(notImage.getMessage().contains("unsupported format"), notImage.getMessage());
     }
 
     private static byte[] hugePng(byte[] small) {
