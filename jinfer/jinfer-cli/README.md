@@ -15,7 +15,10 @@ GraalVM Native Image can compile the CLI into a standalone executable.
 
 - The release archive, `jinfer-<version>-<platform>.tar.gz` (a zip on Windows), an asset of the release on GitHub, built here by `make dist`: `bin/jinfer`, this README, the license and the [notice](../jinfer-native/NOTICE).
   Unpack it anywhere and run `bin/jinfer`; it needs no Java.
-  Linux x86-64 and aarch64 (glibc 2.17 or later), macOS aarch64 and Windows x86-64; the x86-64 builds need x86-64-v3, any CPU since 2013.
+  Linux x86-64 and aarch64 (glibc 2.28 or later), macOS aarch64 and Windows x86-64; the x86-64 builds need x86-64-v3, any CPU since 2013.
+  The command unpacks its native matmul library into the temporary directory and loads it from there.
+  Where that directory is mounted `noexec`, as on some hardened Linux systems, it warns and falls back to its Java kernels, several times slower at prefill.
+  Point it at an existing directory that allows running code, before the command: `bin/jinfer -Djava.io.tmpdir="$HOME/.cache/jinfer/tmp" chat ...`; `TMPDIR` is ignored.
 - The executable JAR, or a native image for this machine, built from the source as below.
 
 ## Build and run

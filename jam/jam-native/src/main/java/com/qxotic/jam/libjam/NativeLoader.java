@@ -46,10 +46,7 @@ final class NativeLoader {
             return;
         }
 
-        String os = os(),
-                arch = arch(),
-                lib = System.mapLibraryName("jam"); // jam.dll / libjam.dylib / libjam.so
-        String res = "/com/qxotic/jam/native/" + os + "-" + arch + "/" + lib;
+        String os = os(), arch = arch(), lib = System.mapLibraryName("jam"), res = resource();
         InputStream in = NativeLoader.class.getResourceAsStream(res);
         if (in == null) { // dev fallback: rely on java.library.path
             try {
@@ -78,6 +75,16 @@ final class NativeLoader {
         } catch (IOException e) {
             throw new UnsatisfiedLinkError("jam: failed to extract " + res + ": " + e);
         }
+    }
+
+    /** Whether this jar carries a library for the current OS/arch. */
+    static boolean bundled() {
+        return NativeLoader.class.getResource(resource()) != null;
+    }
+
+    private static String resource() {
+        // jam.dll / libjam.dylib / libjam.so
+        return "/com/qxotic/jam/native/" + os() + "-" + arch() + "/" + System.mapLibraryName("jam");
     }
 
     /**

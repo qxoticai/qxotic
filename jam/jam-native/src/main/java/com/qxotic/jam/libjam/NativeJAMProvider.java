@@ -5,7 +5,8 @@ import com.qxotic.jam.JAM;
 /**
  * Provider for the native {@code libjam} backend (id {@code native}). Highest priority (1000);
  * available when the bundled library for the current OS/arch loads and exports the expected
- * symbols, otherwise silently skipped.
+ * symbols. Skipped silently when there is no library for this platform, with a warning when there
+ * is one that does not load.
  */
 public final class NativeJAMProvider implements JAM.Provider {
     @Override
@@ -23,16 +24,13 @@ public final class NativeJAMProvider implements JAM.Provider {
         try {
             NativeLoader.load();
         } catch (Throwable t) {
-            // no library for this platform: the expected, silent fallback. A library the user
-            // pointed at explicitly is different: they asked for it, so say why it is not used.
-            if (!NativeLoader.override().isEmpty())
-                System.getLogger(NativeJAMProvider.class.getName())
-                        .log(
-                                System.Logger.Level.WARNING,
-                                "jam: jam.native.library.path="
-                                        + NativeLoader.override()
-                                        + " did not load, using the Java backends: "
-                                        + t);
+            // No library for this platform is the expected, silent fallback. One that exists but
+            // does not load, the user's or the bundled one, says so.
+            if (!NativeLoader.override().isEmpty() || NativeLoader.bundled())
+                warn(
+                        "jam: the native library did not load, using the Java backends: "
+                                + t
+                                + " (a temporary directory mounted noexec? set -Djava.io.tmpdir)");
             return false;
         }
         try {
@@ -41,13 +39,14 @@ public final class NativeJAMProvider implements JAM.Provider {
         } catch (Throwable t) {
             // The library loaded but does not export what this build binds: a stale or partial
             // bundle. Falling back is right for the caller, but never silently.
-            System.getLogger(NativeJAMProvider.class.getName())
-                    .log(
-                            System.Logger.Level.WARNING,
-                            "jam: bundled native library is unusable, using the Java backends: "
-                                    + t);
+            warn("jam: bundled native library is unusable, using the Java backends: " + t);
             return false;
         }
+    }
+
+    private static void warn(String message) {
+        System.getLogger(NativeJAMProvider.class.getName())
+                .log(System.Logger.Level.WARNING, message);
     }
 
     @Override
