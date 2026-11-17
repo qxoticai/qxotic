@@ -3,7 +3,7 @@
 cached (or a network); the optional speech, transcription and reranking checks run when their
 model is cached and are skipped otherwise. Checks pin behaviour, not model prose: prompts have
 decisive answers, because a near-tie flips under different kernels."""
-import asyncio, base64, copy, ctypes, enum, json, logging, math, os, pickle, signal, struct, subprocess, sys, tempfile, threading, time
+import asyncio, base64, copy, ctypes, enum, json, logging, math, os, pickle, signal, struct, subprocess, sys, tempfile, threading, time, wave
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Literal, TypedDict
@@ -54,12 +54,17 @@ ok(type(jinfer._parse(3, float)) is float and jinfer._parse([1, 2.5], list[float
    and type(jinfer._parse(3, int)) is int and jinfer._parse(True, float) is True, "schema=float gives a float")
 with tempfile.TemporaryDirectory() as d:
     floatwav = Path(d, "float.wav")  # IEEE float, format 3: what numpy and DAWs write
+    data = struct.pack("<4f", 0.5, -0.25, 1.0, 0.0)
     fmt = struct.pack("<HHIIHH", 3, 1, 16000, 64000, 4, 32)
-    floatwav.write_bytes(b"RIFF" + struct.pack("<I", 36) + b"WAVEfmt " + struct.pack("<I", 16) + fmt + b"data" + struct.pack("<I", 0))
-    try:
-        jinfer._read_wav(floatwav); ok(False, "a float WAV must be refused")
-    except jinfer.InvalidArgument as e:
-        ok("not a PCM WAV" in str(e) and "float.wav" in str(e), f"a float WAV: {e}")
+    floatwav.write_bytes(b"RIFF" + struct.pack("<I", 36 + len(data)) + b"WAVEfmt " + struct.pack("<I", 16) + fmt + b"data" + struct.pack("<I", len(data)) + data)
+    if hasattr(wave.Wave_read, "getformat"):  # Python 3.15 reads float WAVs: the samples, not their bits as integers
+        pcm, rate = jinfer._read_wav(floatwav)
+        ok(list(pcm) == [0.5, -0.25, 1.0, 0.0] and rate == 16000, f"a float WAV reads as its samples: {list(pcm)} at {rate}")
+    else:
+        try:
+            jinfer._read_wav(floatwav); ok(False, "a float WAV must be refused where wave cannot read it")
+        except jinfer.InvalidArgument as e:
+            ok("float.wav" in str(e) and "3.15" in str(e), f"a float WAV: {e}")
 
 # library
 jinfer.configure("-Djinfer.offline=true")  # a test never downloads: offline is the process's, as the hub reads it

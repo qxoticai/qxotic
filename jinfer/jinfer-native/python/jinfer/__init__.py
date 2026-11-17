@@ -399,18 +399,21 @@ def _f32(samples):
 
 
 def _read_wav(path) -> tuple:
-    """(float32 mono PCM, sample rate) of a PCM WAV file, first channel."""
+    """(float32 mono PCM, sample rate) of a WAV file, first channel: 8, 16 or 32-bit PCM, or 32 or
+    64-bit float where Python's wave reads it (3.15 on)."""
     try:
         with wave.open(str(path), "rb") as f:
             rate, channels, width = f.getframerate(), f.getnchannels(), f.getsampwidth()
+            floats = getattr(f, "getformat", lambda: None)() == 3  # WAVE_FORMAT_IEEE_FLOAT
             frames = f.readframes(f.getnframes())
-    except wave.Error as e:  # a float or compressed WAV, or not a WAV at all
-        raise InvalidArgument(f"{os.fspath(path)}: not a PCM WAV ({e}); 8, 16 or 32-bit PCM is supported") from None
-    code, scale, offset = {1: ("B", 128.0, 128), 2: ("h", 32768.0, 0), 4: ("i", 2147483648.0, 0)}.get(width, (None, 0, 0))
+    except wave.Error as e:  # compressed, float before Python 3.15, or not a WAV at all
+        raise InvalidArgument(f"{os.fspath(path)}: {e}; a WAV of 8, 16 or 32-bit PCM is read, a float one from Python 3.15 on") from None
+    kinds = {4: ("f", 1.0, 0), 8: ("d", 1.0, 0)} if floats else {1: ("B", 128.0, 128), 2: ("h", 32768.0, 0), 4: ("i", 2147483648.0, 0)}
+    code, scale, offset = kinds.get(width, (None, 0, 0))
     if code is None:
-        raise InvalidArgument(f"{width * 8}-bit WAV is not supported; 8, 16 or 32-bit PCM is")
-    ints = _array.array(code, frames)[::channels]
-    return _array.array("f", ((s - offset) / scale for s in ints)), rate
+        raise InvalidArgument(f"{os.fspath(path)}: a {width * 8}-bit {'float' if floats else 'PCM'} WAV is not supported")
+    samples = _array.array(code, frames)[::channels]
+    return _array.array("f", ((s - offset) / scale for s in samples)), rate
 
 
 # ---- results ----
