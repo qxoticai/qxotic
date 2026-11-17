@@ -90,6 +90,23 @@ void jam_gemv_q6k_dotprod_4x1(void* arg, int rb, int re, int tid) {
     if (i < re) jam_mm_q6k_dotprod(arg, i, re, tid);
 }
 
+/* A super-block's 12 scale bytes as u8 sc[8] | mn[8] (jam_q4k_scales_mins, in one register). Reads
+ * 16: the 4 bytes past the scales are the block's own nibbles. */
+static inline uint8x16_t jam_q4k_scales_mins_neon(const uint8_t* b) {
+    static const uint8_t pick[16] = {8,9,10,11, 8,9,10,11, 0,0,0,0, 0,0,0,0};
+    static const uint8_t low[16]  = {255,255,255,255, 0,0,0,0, 0,0,0,0, 0,0,0,0};
+    const uint8x16_t v = vld1q_u8(b), c = vqtbl1q_u8(v, vld1q_u8(pick));
+    const uint8x16_t lo = vandq_u8(v, vdupq_n_u8(0x3F));           /* sc[0..3] | mn[0..3] */
+    const uint8x16_t hi = vorrq_u8(vshlq_n_u8(vshrq_n_u8(v, 6), 4),  /* sc[4..7] | mn[4..7] */
+                                   vbslq_u8(vld1q_u8(low), vandq_u8(c, vdupq_n_u8(0x0F)), vshrq_n_u8(c, 4)));
+    return vreinterpretq_u8_u32(vzip1q_u32(vreinterpretq_u32_u8(lo), vreinterpretq_u32_u8(hi)));
+}
+static inline uint32_t jam_neon_u32_at(const void* p) { uint32_t x; memcpy(&x, p, 4); return x; }
+
+/* Scales stay in registers and integer: four rows' sc/mn decode at once, zips turn them lane =
+ * row, and each 32-block costs one integer multiply and two FMAs by the activation's scale; d and
+ * dmin apply once per super-block. Through memory (scalar floats, then a vector load of them)
+ * this kernel ran a third slower. */
 void jam_gemv_q4k_dotprod_4x1(void* arg, int rb, int re, int tid) {
     const jam_q8_job* J = (const jam_q8_job*) arg;
     const char* W = (const char*) J->a;
@@ -104,13 +121,30 @@ void jam_gemv_q4k_dotprod_4x1(void* arg, int rb, int re, int tid) {
         for (int r = 0; r < 4; ++r) wr[r] = (const uint8_t*) (W + (size_t)(i + r) * ws);
         float32x4_t facc = vdupq_n_f32(0);
         for (int B = 0; B < sblocks; ++B) {
-            float d[4], dmin[4];
-            uint8_t sc[4][8], mn[4][8];
-            for (int r = 0; r < 4; ++r) {
-                const uint8_t* w = wr[r] + (size_t) B * JAM_Q4K_BYTES;
-                d[r] = jam_neon_half_at(w); dmin[r] = jam_neon_half_at(w + 2);
-                jam_q4k_scales_mins(w + 4, sc[r], mn[r]);
+            const uint8_t* w[4];
+            for (int r = 0; r < 4; ++r) w[r] = wr[r] + (size_t) B * JAM_Q4K_BYTES;
+            uint32x4_t dd = vdupq_n_u32(jam_neon_u32_at(w[0]));    /* f16 d | f16 dmin per row */
+            dd = vsetq_lane_u32(jam_neon_u32_at(w[1]), dd, 1);
+            dd = vsetq_lane_u32(jam_neon_u32_at(w[2]), dd, 2);
+            dd = vsetq_lane_u32(jam_neon_u32_at(w[3]), dd, 3);
+            const float32x4_t d4 = vcvt_f32_f16(vreinterpret_f16_u16(vmovn_u32(dd)));
+            const float32x4_t dmin4 = vcvt_f32_f16(vreinterpret_f16_u16(vshrn_n_u32(dd, 16)));
+            const uint8x16_t R0 = jam_q4k_scales_mins_neon(w[0] + 4), R1 = jam_q4k_scales_mins_neon(w[1] + 4);
+            const uint8x16_t R2 = jam_q4k_scales_mins_neon(w[2] + 4), R3 = jam_q4k_scales_mins_neon(w[3] + 4);
+            const uint16x8_t s01 = vreinterpretq_u16_u8(vzip1q_u8(R0, R1)), s23 = vreinterpretq_u16_u8(vzip1q_u8(R2, R3));
+            const uint16x8_t m01 = vreinterpretq_u16_u8(vzip2q_u8(R0, R1)), m23 = vreinterpretq_u16_u8(vzip2q_u8(R2, R3));
+            const uint8x16_t sm8[4] = { vreinterpretq_u8_u16(vzip1q_u16(s01, s23)), vreinterpretq_u8_u16(vzip2q_u16(s01, s23)),
+                                        vreinterpretq_u8_u16(vzip1q_u16(m01, m23)), vreinterpretq_u8_u16(vzip2q_u16(m01, m23)) };
+            uint32x4_t sc32[8], mn32[8];
+            for (int h = 0; h < 2; ++h) {
+                const uint16x8_t sl = vmovl_u8(vget_low_u8(sm8[h])), sh = vmovl_high_u8(sm8[h]);
+                const uint16x8_t ml = vmovl_u8(vget_low_u8(sm8[2 + h])), mh = vmovl_high_u8(sm8[2 + h]);
+                sc32[4*h] = vmovl_u16(vget_low_u16(sl)); sc32[4*h + 1] = vmovl_high_u16(sl);
+                sc32[4*h + 2] = vmovl_u16(vget_low_u16(sh)); sc32[4*h + 3] = vmovl_high_u16(sh);
+                mn32[4*h] = vmovl_u16(vget_low_u16(ml)); mn32[4*h + 1] = vmovl_high_u16(ml);
+                mn32[4*h + 2] = vmovl_u16(vget_low_u16(mh)); mn32[4*h + 3] = vmovl_high_u16(mh);
             }
+            float32x4_t in = vdupq_n_f32(0), mi = in;
             for (int g = 0; g < 4; ++g) {
                 int bl = B*8 + 2*g, bh = bl + 1;
                 const int8_t* al = AQ + (size_t) bl * 32;
@@ -118,9 +152,8 @@ void jam_gemv_q4k_dotprod_4x1(void* arg, int rb, int re, int tid) {
                 const int8x16_t al0 = vld1q_s8(al), al1 = vld1q_s8(al + 16);
                 const int8x16_t ah0 = vld1q_s8(ah), ah1 = vld1q_s8(ah + 16);
                 int32x4_t plo[4], phi[4];
-                float sl[4], ml[4], sh[4], mh[4];
                 for (int r = 0; r < 4; ++r) {
-                    const uint8_t* q = wr[r] + (size_t) B * JAM_Q4K_BYTES + 16 + g*32;
+                    const uint8_t* q = w[r] + 16 + g*32;
                     uint8x16_t q0 = vld1q_u8(q), q1 = vld1q_u8(q + 16);
                     int8x16_t wl0 = vreinterpretq_s8_u8(vandq_u8(q0, m4));
                     int8x16_t wl1 = vreinterpretq_s8_u8(vandq_u8(q1, m4));
@@ -128,16 +161,13 @@ void jam_gemv_q4k_dotprod_4x1(void* arg, int rb, int re, int tid) {
                     int8x16_t wh1 = vreinterpretq_s8_u8(vshrq_n_u8(q1, 4));
                     plo[r] = vdotq_s32(vdotq_s32(vdupq_n_s32(0), wl0, al0), wl1, al1);
                     phi[r] = vdotq_s32(vdotq_s32(vdupq_n_s32(0), wh0, ah0), wh1, ah1);
-                    sl[r] = d[r] * (float) sc[r][2*g];     ml[r] = dmin[r] * (float) mn[r][2*g];
-                    sh[r] = d[r] * (float) sc[r][2*g + 1]; mh[r] = dmin[r] * (float) mn[r][2*g + 1];
                 }
-                facc = vfmaq_f32(facc, vcvtq_f32_s32(jam_krow4(plo[0], plo[1], plo[2], plo[3])),
-                                 vmulq_n_f32(vld1q_f32(sl), AD[bl]));
-                facc = vfmsq_f32(facc, vld1q_f32(ml), vdupq_n_f32(AD[bl] * AS[bl]));
-                facc = vfmaq_f32(facc, vcvtq_f32_s32(jam_krow4(phi[0], phi[1], phi[2], phi[3])),
-                                 vmulq_n_f32(vld1q_f32(sh), AD[bh]));
-                facc = vfmsq_f32(facc, vld1q_f32(mh), vdupq_n_f32(AD[bh] * AS[bh]));
+                in = vfmaq_n_f32(in, vcvtq_f32_s32(vmulq_s32(jam_krow4(plo[0], plo[1], plo[2], plo[3]), vreinterpretq_s32_u32(sc32[2*g]))), AD[bl]);
+                mi = vfmaq_n_f32(mi, vcvtq_f32_u32(mn32[2*g]), AD[bl] * AS[bl]);
+                in = vfmaq_n_f32(in, vcvtq_f32_s32(vmulq_s32(jam_krow4(phi[0], phi[1], phi[2], phi[3]), vreinterpretq_s32_u32(sc32[2*g + 1]))), AD[bh]);
+                mi = vfmaq_n_f32(mi, vcvtq_f32_u32(mn32[2*g + 1]), AD[bh] * AS[bh]);
             }
+            facc = vfmsq_f32(vfmaq_f32(facc, in, d4), mi, dmin4);
         }
         vst1q_f32(C + i, facc);
     }
