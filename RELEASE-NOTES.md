@@ -29,6 +29,9 @@ The native libraries, the jinfer command and the wheels are built with Oracle Gr
   On AVX2 and AVX-VNNI CPUs, Q4_K, Q5_K and Q6_K decode about three times as fast: their rows ran on SSE3 kernels before.
   `Q2_0`, `PQ2_0` and `PTQ1_0` decode up to 14 times as fast, and their row kernels no longer leave a buffer allocated on every thread that ran one.
   The 32-block formats' prefill now subtracts its bias exactly, which halves its rounding error, so outputs can differ from 0.3.1 in the last bits.
+- **jam-native unpacks its library once.** The bundled `libjam` goes to `jinfer/jam/<sha256>/` in the user's cache directory (`$XDG_CACHE_HOME` or `~/.cache` on Linux, `~/Library/Caches` on macOS, `%LOCALAPPDATA%` on Windows), and every later run reuses it.
+  Each run used to unpack a copy of its own into the temporary directory, which Windows could not delete afterwards and a `/tmp` mounted `noexec` refused to run.
+  A bundled library that does not load now prints a warning before the Java backends take over; it used to fall back silently, several times slower at prefill.
 - **Qwen3.5 fixes.** RoPE rotates NEOX pairs, as llama.cpp's IMROPE does; the port had rotated adjacent pairs, a mild drift that changed some greedy replies against llama.cpp.
   Images are resized as the reference does: the grid rounds half to even, the image is stretched with bicubic weights instead of letterboxed, and the projector's own `image_min_pixels` and `image_max_pixels` bound it.
 - **A GGUF's tensors must fill their slots.** The reader checks every tensor's size, from its shape and type, against the room the file gives it, and refuses a gap or two tensors that cross; a tensor inside another, such as Q and K inside a stacked QK, still loads.
