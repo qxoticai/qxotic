@@ -38,8 +38,8 @@ backends when none matches. The shipped set, and where each library is built:
 
 | artifact | built on | toolchain |
 |---|---|---|
-| `linux-x86-64/libjam.so` | the Linux release host | `zig cc` targeting glibc 2.17 + `cmake/toolchains/linux-x86-64-glibc2.17.cmake` |
-| `linux-aarch64/libjam.so` | the Mac's manylinux container | `zig cc` targeting glibc 2.17 + `cmake/toolchains/linux-aarch64-glibc2.17.cmake` |
+| `linux-x86-64/libjam.so` | the Linux release host | `zig cc` targeting glibc 2.28 + `cmake/toolchains/linux-x86-64-glibc2.28.cmake` |
+| `linux-aarch64/libjam.so` | the Mac's manylinux container | `zig cc` targeting glibc 2.28 + `cmake/toolchains/linux-aarch64-glibc2.28.cmake` |
 | `windows-x86-64/jam.dll` | the Linux release host | `zig cc` targeting `x86_64-windows-gnu` + `cmake/toolchains/windows-x86-64.cmake` |
 | `darwin-aarch64/libjam.dylib` | an Apple-silicon Mac | Xcode CLT (clang, ObjC++, Metal); Intel Macs unsupported |
 
@@ -57,8 +57,8 @@ jam-native/scripts/natives.sh import <dir>/darwin-aarch64 <dir>/linux-aarch64   
 The Linux host builds its own library and the Windows one; the Mac builds its own and, in the
 manylinux aarch64 container (docker through Colima), the Linux aarch64 one, on the CPU itself. Both
 Linux libraries are compiled with [zig](https://ziglang.org) as the C compiler, targeting
-`x86_64-linux-gnu.2.17` and `aarch64-linux-gnu.2.17`: zig bundles the glibc stubs for every
-version, so the artifacts run on RHEL 7 or Ubuntu 14.04 class systems whatever the build box runs,
+`x86_64-linux-gnu.2.28` and `aarch64-linux-gnu.2.28`: zig bundles the glibc stubs for every
+version, so the artifacts run on RHEL 8 or Ubuntu 20.04 class systems whatever the build box runs,
 and the script fails if a link ever needs a newer glibc symbol. The
 Windows library is zig's too, targeting `x86_64-windows-gnu`, with zig's MinGW-w64 runtime linked in,
 so `jam.dll` needs only `KERNEL32.dll` and the Universal C Runtime of Windows 10 and later (the

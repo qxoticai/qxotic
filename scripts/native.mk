@@ -52,7 +52,7 @@ EXPORTS = $(if $(filter darwin,$(OS)),nm -gU $(1) | awk '{print $$3}' | sed 's/^
 # reads WHEEL_PLAT). The tag's floor is read off the library itself, the glibc version on Linux and the minimum
 # macOS on a Mac, so it cannot drift from what was linked; the rest is Python's own platform name. On Linux
 # the floor is 2.28 at least, the oldest glibc supported: the container's, which a library built there may
-# need less than (2.17 was measured), never more.
+# need less than, never more.
 GLIBC = $(shell { echo GLIBC_2.28; objdump -T $(LIB) | grep -oE 'GLIBC_[0-9.]+'; } | sort -Vu | tail -1 | sed 's/GLIBC_//; s/\./_/')
 MINOS = $(shell otool -l $(LIB) | awk '/LC_BUILD_VERSION/ {v=1} v && /minos/ {print $$2; exit}' | tr . _)
 FLOOR = $(if $(filter darwin,$(OS)),$(MINOS),$(GLIBC))

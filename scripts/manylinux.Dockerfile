@@ -2,7 +2,7 @@
 # shipped linux-aarch64 libjam: manylinux_2_28 (AlmaLinux 8, glibc 2.28) pins the glibc floor the wheels and archives
 # promise, the same on x86_64 and aarch64, whatever the host runs. Oracle GraalVM, 25.0.4 or later being the floor
 # the C shims need (make check-native-image), records the profile libtoknroll ships built with (PGO); Maven is the
-# floor the poms enforce; zig compiles libjam against glibc 2.17 (jam/jam-native/scripts/natives.sh).
+# floor the poms enforce; zig compiles libjam against the same 2.28 (jam/jam-native/scripts/natives.sh).
 #   make wheels          # on Linux: builds this image for the host's architecture, then both wheels and their checks inside it
 #   make dists           # on Linux: the same for the three release archives
 #   make wheels-linux    # the same on any host with docker: a Mac's builds Linux aarch64 (make dists-linux, the archives)

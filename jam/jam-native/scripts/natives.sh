@@ -10,9 +10,9 @@
 #   scripts/natives.sh verify         # the release gate: every shipped target staged, current, and sane
 #
 # Shipped targets and the host that builds each:
-#   linux-x86-64     Linux x86-64: zig cc against glibc 2.17 (cmake/toolchains/linux-x86-64-glibc2.17.cmake)
+#   linux-x86-64     Linux x86-64: zig cc against glibc 2.28 (cmake/toolchains/linux-x86-64-glibc2.28.cmake)
 #   linux-aarch64    Linux aarch64, the manylinux container on an Apple-silicon Mac (`make jam-natives` there
-#                    runs this script inside it): zig cc against glibc 2.17, the tests on the CPU itself
+#                    runs this script inside it): zig cc against glibc 2.28, the tests on the CPU itself
 #   windows-x86-64   Linux x86-64: zig cc cross, MinGW-w64 ABI (cmake/toolchains/windows-x86-64.cmake)
 #   darwin-aarch64   an Apple-silicon Mac: Xcode's clang, Metal on, its ctest suite run on the GPU
 #
@@ -38,7 +38,7 @@ cd "$(dirname "$SELF")/.."                    # -> jam-native
 NATIVE=dist/release/com/qxotic/jam/native
 SHIPPED="linux-x86-64 linux-aarch64 windows-x86-64 darwin-aarch64"
 STAMP=jam-native.stamp
-GLIBC_FLOOR=2.17
+GLIBC_FLOOR=2.28   # every Linux artifact's floor: the wheels and archives are manylinux_2_28
 ZIG_EXPECTED=0.16
 # Every exported symbol: jam.h's functions and the JNI entry points jam_jni.c defines (the same lists
 # ctest's exports check derives). Mach-O prefixes an underscore, so match bare names.
@@ -124,7 +124,7 @@ zig_bin() {
 }
 
 # This host's Linux library: zig cc against glibc $GLIBC_FLOOR, the host JDK's headers for JNI, the
-# tests run here (binaries linked for 2.17 run on any newer glibc).
+# tests run here (binaries linked for the floor run on any newer glibc).
 build_linux() {  # <target>
     local t=$1 b=build-$1 zig jdk
     zig=$(zig_bin)

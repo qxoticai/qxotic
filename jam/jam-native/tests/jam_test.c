@@ -968,7 +968,7 @@ static size_t heap_inuse(void) {
 #  else
 #    pragma GCC diagnostic push
 #    pragma GCC diagnostic ignored "-Wdeprecated-declarations"   /* the only probe before mallinfo2 */
-    struct mallinfo mi = mallinfo();   /* pre-2.33 (the glibc 2.17 release target): int fields, enough for a delta */
+    struct mallinfo mi = mallinfo();   /* pre-2.33 (the glibc 2.28 release target): int fields, enough for a delta */
 #    pragma GCC diagnostic pop
     return (size_t)(unsigned)mi.uordblks;
 #  endif
