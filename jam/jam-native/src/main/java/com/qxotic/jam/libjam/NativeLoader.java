@@ -14,9 +14,9 @@ import java.util.Locale;
  * <p>The fat {@code jam-native} jar carries one native library per platform under {@code
  * /com/qxotic/jam/native/<os>-<arch>/<libname>} (e.g. {@code linux-x86-64/libjam.so}, {@code
  * darwin-aarch64/libjam.dylib}, {@code windows-x86-64/jam.dll}). At first use this class detects
- * the platform, extracts the matching library to {@code <java.io.tmpdir>/<sha256>/<libname>} (the
- * digest from the {@code <libname>.sha256} beside it in the jar; an existing copy is reused), and
- * {@link System#load(String) loads} it.
+ * the platform, extracts the matching library once to {@code <cache>/jam/<sha256>/<libname>} (see
+ * {@link #cacheDir}; the digest is the {@code <libname>.sha256} beside it in the jar), and {@link
+ * System#load(String) loads} it; later runs reuse that copy.
  *
  * <p>Overrides, in order:
  *
@@ -66,15 +66,14 @@ final class NativeLoader {
                                 + ")");
             }
         }
-        // One copy per library build, named by the .sha256 the build ships beside it: runs share
-        // it,
-        // and nothing piles up (Windows cannot delete a loaded DLL at exit).
-        // ponytail: an existing copy is trusted; on a shared /tmp another user could plant one.
+        // One copy per library build, named by the .sha256 the build ships beside it: every run
+        // shares it, and nothing piles up (Windows cannot delete a loaded DLL at exit). The cache
+        // is the user's own, so an existing copy is trusted as is.
         try (InputStream src = in;
                 InputStream sum = NativeLoader.class.getResourceAsStream(res + ".sha256")) {
             if (sum == null) throw new UnsatisfiedLinkError("jam: " + res + ".sha256 missing");
             String sha = new String(sum.readNBytes(64), StandardCharsets.US_ASCII);
-            Path path = Path.of(System.getProperty("java.io.tmpdir"), sha, lib);
+            Path path = cacheDir().resolve(sha).resolve(lib);
             if (!Files.exists(path)) {
                 Files.createDirectories(path.getParent());
                 // write aside, then rename: a concurrent run never sees a half-written file
@@ -91,12 +90,42 @@ final class NativeLoader {
                 System.load(path.toAbsolutePath().toString());
             } catch (UnsatisfiedLinkError e) {
                 throw new UnsatisfiedLinkError(
-                        e.getMessage()
-                                + " (a temporary directory mounted noexec? set -Djava.io.tmpdir)");
+                        e.getMessage() + " (is its directory mounted noexec?)");
             }
             loaded = true;
         } catch (IOException e) {
             throw new UnsatisfiedLinkError("jam: failed to extract " + res + ": " + e);
+        }
+    }
+
+    /**
+     * Where extracted libraries live: {@code jam} in the user's cache directory, found as jinfer's
+     * model cache finds it ({@code $XDG_CACHE_HOME}, default {@code ~/.cache}, on Linux, {@code
+     * ~/Library/Caches} on macOS, {@code %LOCALAPPDATA%} on Windows), so it is private to the user;
+     * {@code <java.io.tmpdir>/jam} when there is no writable one (a container user without a home).
+     */
+    private static Path cacheDir() {
+        String home = System.getenv("HOME");
+        if (home == null || home.isEmpty() || os().equals("windows"))
+            home = System.getProperty("user.home");
+        String local = System.getenv("LOCALAPPDATA"), xdg = System.getenv("XDG_CACHE_HOME");
+        Path dir =
+                switch (os()) {
+                    case "windows" ->
+                            local != null && !local.isEmpty()
+                                    ? Path.of(local)
+                                    : Path.of(home, "AppData", "Local");
+                    case "darwin" -> Path.of(home, "Library", "Caches");
+                    default -> // the XDG spec ignores a relative XDG_CACHE_HOME
+                            xdg != null && xdg.startsWith("/")
+                                    ? Path.of(xdg)
+                                    : Path.of(home, ".cache");
+                };
+        Path tmp = Path.of(System.getProperty("java.io.tmpdir"), "jam");
+        try {
+            return dir.isAbsolute() ? Files.createDirectories(dir.resolve("jam")) : tmp;
+        } catch (IOException e) {
+            return tmp;
         }
     }
 
