@@ -142,7 +142,8 @@
       </plugin>
       <!-- The jar ALWAYS ships <lib>.sha256, the bare hex digest (as Maven Central's checksum
            files), beside every native library it carries, whichever tree the library came from.
-           NativeLoader extracts each library to <tmpdir>/<sha256>/ and refuses one without it.
+           NativeLoader extracts each library to <user cache>/jinfer/jam/<sha256>/ and refuses one
+           without it.
            Written on every build, -DskipTests included; BundledSha256Test checks them. -->
       <plugin>
         <groupId>org.apache.maven.plugins</groupId>

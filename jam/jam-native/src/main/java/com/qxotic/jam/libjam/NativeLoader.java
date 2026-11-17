@@ -68,7 +68,7 @@ final class NativeLoader {
         }
         // One copy per library build, named by the .sha256 the build ships beside it: every run
         // shares it, and nothing piles up (Windows cannot delete a loaded DLL at exit). The cache
-        // is the user's own, so an existing copy is trusted as is.
+        // is the user's own (see cacheDir), so an existing copy is trusted as is.
         try (InputStream src = in;
                 InputStream sum = NativeLoader.class.getResourceAsStream(res + ".sha256")) {
             if (sum == null) throw new UnsatisfiedLinkError("jam: " + res + ".sha256 missing");
@@ -99,19 +99,19 @@ final class NativeLoader {
     }
 
     /**
-     * Where extracted libraries live: {@code jinfer/jam} in the user's cache directory, beside
-     * jinfer's models and found as jinfer finds it ({@code $XDG_CACHE_HOME}, default {@code
-     * ~/.cache}, on Linux, {@code ~/Library/Caches} on macOS, {@code %LOCALAPPDATA%} on Windows),
-     * so it is private to the user; {@code <java.io.tmpdir>/jinfer/jam} when there is no writable
-     * one (a container user without a home).
+     * Where extracted libraries live: {@code jinfer/jam} in the user's cache directory, found as
+     * jinfer finds its own ({@code $XDG_CACHE_HOME} or {@code ~/.cache} on Linux, {@code
+     * ~/Library/Caches} on macOS, {@code %LOCALAPPDATA%} on Windows), so it is private to the user;
+     * {@code <java.io.tmpdir>/jinfer/jam} when there is no writable one (a container user without a
+     * home), the one place another user could reach.
      */
     private static Path cacheDir() {
-        String home = System.getenv("HOME");
-        if (home == null || home.isEmpty() || os().equals("windows"))
-            home = System.getProperty("user.home");
+        String os = os(), home = System.getenv("HOME");
+        if (home == null || home.isEmpty() || os.equals("windows"))
+            home = System.getProperty("user.home"); // a Windows $HOME is a shell's (Git Bash)
         String local = System.getenv("LOCALAPPDATA"), xdg = System.getenv("XDG_CACHE_HOME");
         Path dir =
-                switch (os()) {
+                switch (os) {
                     case "windows" ->
                             local != null && !local.isEmpty()
                                     ? Path.of(local)
