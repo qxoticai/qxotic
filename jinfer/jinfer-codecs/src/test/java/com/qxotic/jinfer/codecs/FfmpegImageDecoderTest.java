@@ -10,12 +10,23 @@ import java.awt.image.BufferedImage;
 import java.io.ByteArrayOutputStream;
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
+import java.nio.file.NoSuchFileException;
+import java.nio.file.Path;
 import java.util.List;
 import javax.imageio.ImageIO;
 import org.junit.jupiter.api.Assumptions;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.io.TempDir;
 
 class FfmpegImageDecoderTest {
+
+    @Test
+    void aMissingFileIsNamedAsMissing(@TempDir Path dir) {
+        // as the ImageIO decoder says it: a typo in a path is not an "unsupported format"
+        assertThrows(
+                NoSuchFileException.class,
+                () -> new FfmpegImageDecoder().load(dir.resolve("typo.png")));
+    }
 
     @Test
     void theSignatureNamesTheDemuxer() {
