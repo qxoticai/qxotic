@@ -122,6 +122,7 @@ The one unchanged artifact is `json`, at 0.2.0.
 - **Safer pulls.** A failed download or refresh leaves the previously usable model in place, and `list` prints one line per reference.
 - **One-line refusals.** A library refusal prints as one line with exit status 1; an invalid invocation exits with 2.
   An explicit `--speculation-depth` is refused where no draft head can use it.
+- **Speculation is opt-in.** A model with a draft head no longer drafts by default, since prose decodes at about half speed with it; `--speculation-depth 4` (`speculationDepth(4)` in Java) turns it on.
 
 ### Performance
 

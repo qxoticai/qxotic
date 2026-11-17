@@ -747,7 +747,7 @@ public final class JinferChatModel implements ChatModel, AutoCloseable {
 
         /**
          * Drafts per verify block for a model with a draft head (the {@code speculation}
-         * companion), 1..8; 0 disables. Default: the engine's, 4. A speed-up on code, lists and
+         * companion), 1..8; 0 disables. Default: the engine's, 0. A speed-up on code, lists and
          * JSON, a cost on prose - see the README.
          */
         public Builder speculationDepth(int depth) {

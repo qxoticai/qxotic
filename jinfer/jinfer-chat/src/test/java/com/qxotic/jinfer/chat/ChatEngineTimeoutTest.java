@@ -83,7 +83,7 @@ final class ChatEngineTimeoutTest {
     void deadlineExhaustedByFinalPrefillChunkNeverEntersSpeculativeDecoder() {
         ProbeModel model = new ProbeModel(() -> sleep(Duration.ofMillis(200)));
         AtomicInteger sampled = new AtomicInteger();
-        try (ChatEngine engine = engine(model)) {
+        try (ChatEngine engine = engine(model).speculationDepth(4)) {
             ChatEngine.Outcome outcome =
                     engine.generate(PROMPT, sampler(sampled), 1, TIMEOUT, listener());
 

@@ -56,7 +56,7 @@ final class Options {
     boolean thinkInline;
     Integer maxReasoningTokens;
     String reasoningCutoffMessage;
-    int speculationDepth = 4;
+    int speculationDepth;
     Path promptCache;
     boolean promptCacheReadOnly;
     Boolean stream;
@@ -721,7 +721,7 @@ final class Options {
                   --think <off|on>            off: do not reason; on: allow model reasoning
                   --max-reasoning-tokens <int>  reasoning budget; -1: uncapped
                   --reasoning-cutoff-message <text>  forced text when the reasoning budget runs out
-                  --speculation-depth <int>   draft depth in [0, 8]; default 4
+                  --speculation-depth <int>   draft depth in [0, 8]; default 0: off
                   --with tokenizer=<path|ref>  another GGUF's tokenizer; its ids must match
 
                 Unspecified sampling settings use the model's recommendations, then engine

@@ -277,13 +277,15 @@ support.chat("How do I reset my password?");   // the instructions are already i
 base.saveCachedPrompts(Path.of("personas.jkv"));
 ```
 
-**Speculative decoding.** Models that ship a draft head (e.g. Gemma 4, Qwen 3.5) can attach it as the
-`speculation` companion:
+**Speculative decoding.** Models that ship a draft head (e.g. Gemma 4, Qwen 3.5) can draft with it.
+It is off by default; a depth turns it on (`--speculation-depth 4` on the command line).
+Gemma 4's head is a separate file, attached as the `speculation` companion:
 
 ```java
 try (var gemma = JinferChatModel.builder()
         .model("unsloth/gemma-4-E2B-it-GGUF:Q8_0")
         .companion("speculation", "unsloth/gemma-4-E2B-it-GGUF/MTP/mtp-gemma-4-E2B-it-Q8_0.gguf")
+        .speculationDepth(4)
         .build()) { ... }
 ```
 

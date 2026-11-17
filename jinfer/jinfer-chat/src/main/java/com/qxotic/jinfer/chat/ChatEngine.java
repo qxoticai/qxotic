@@ -146,9 +146,10 @@ public final class ChatEngine implements AutoCloseable {
                     0, 1, 60, TimeUnit.SECONDS, streamQueue(), r -> new Thread(r, "jinfer-stream"));
     private final AtomicReference<Thread> streamThread = new AtomicReference<>();
     private volatile boolean closed;
-    // self-speculation drafts per verify block when the model carries a draft head: 0 disables,
-    // 4 is the llama.cpp-default-shaped sweet spot; only read on the generation path
-    private volatile int speculationDepth = 4;
+    // self-speculation drafts per verify block when the model carries a draft head. Off unless
+    // asked for: on prose half the drafts are rejected and decode halves (Qwen3.5-27B Q4_K_M 4.9
+    // -> 2.6 t/s); 4 is the depth to try on code, lists and JSON. Only read on the generation path
+    private volatile int speculationDepth = 0;
     // owned: freed at close(), never shared. null when the CALLER loaded the model and keeps the
     // arena - then close() quiesces and frees this engine's own memory, and nothing else
     private final Arena weights;
@@ -305,8 +306,8 @@ public final class ChatEngine implements AutoCloseable {
     }
 
     /**
-     * Drafts per verify block; 0 selects plain decoding. Embedded draft state may still be
-     * maintained so cached sessions remain valid if the depth changes later.
+     * Drafts per verify block; 0, the default, selects plain decoding. Embedded draft state may
+     * still be maintained so cached sessions remain valid if the depth changes later.
      */
     public int speculationDepth() {
         return speculationDepth;

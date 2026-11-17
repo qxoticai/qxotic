@@ -813,7 +813,7 @@ public final class JinferChatModel implements ChatModel, AutoCloseable {
         /**
          * Draft tokens per verify block for self-speculative decoding, 0..8 (0 disables). Inert
          * unless the model carries a draft head (e.g. Gemma 4's MTP sidecar, attached with {@code
-         * companion("speculation", ...)}); unset leaves the engine's default (4). Output is
+         * companion("speculation", ...)}); unset leaves the engine's default (0). Output is
          * byte-identical to plain greedy decode - speculation changes speed, never content; the
          * acceptance counters ride {@link JinferUsage}.
          */
