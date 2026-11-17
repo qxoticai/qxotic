@@ -269,9 +269,9 @@ public final class JinferBench {
         }
 
         /** Times the allocation; the caller reports it. */
-        long newState(int ctx) {
+        long newState(int ctx, int batch) {
             long t0 = System.nanoTime();
-            state = loaded.model().newState(ctx, UBATCH);
+            state = loaded.model().newState(ctx, batch);
             return System.nanoTime() - t0;
         }
 
@@ -345,8 +345,10 @@ public final class JinferBench {
         int vocab = model.vocab();
         int[] prompt = prefill ? fillerTokens(vocab, count) : null;
         int[] prefix = fillerTokens(vocab, depth);
-        model.newState(ctx);
-        System.err.printf("  %-12s state: ctx=%d depth=%d batch=%d%n", test, ctx, depth, UBATCH);
+        // a decision checkpoint reads its prompt both ways, so in one batch (llama-bench -ub N)
+        int batch = model.decision ? count : UBATCH;
+        model.newState(ctx, batch);
+        System.err.printf("  %-12s state: ctx=%d depth=%d batch=%d%n", test, ctx, depth, batch);
         model.prepareDepth(prefix);
 
         if (noWarmup) {
@@ -442,7 +444,7 @@ public final class JinferBench {
             BenchModel<?> bench, String name, int promptLen, int gen, Path mediaPath)
             throws Exception {
         // state allocation, timed once on a capabilities-sized state (JIT-warm by now)
-        long allocNanos = bench.newState(promptLen + gen + 16);
+        long allocNanos = bench.newState(promptLen + gen + 16, UBATCH);
         String allocMs = String.format("%.1f", allocNanos / 1e6);
 
         String ttft = "n/a", cache = "n/a", mtp = "no draft head", media = "n/a";
