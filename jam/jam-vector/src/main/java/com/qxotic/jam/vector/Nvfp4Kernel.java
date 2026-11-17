@@ -195,8 +195,10 @@ final class Nvfp4Kernel {
     private static float ue4m3ToFp32(int x) {
         if (x == 0 || x == 0x7F) return 0f;
         int e = (x >>> 3) & 0xF, m = x & 0x7;
-        return e != 0
-                ? (1f + m / 8f) * (float) Math.scalb(1.0, e - 7)
-                : m * (float) Math.scalb(1.0, -9);
+        // the codes are twice the E2M1 values: the scale carries the half, as ggml's does
+        return 0.5f
+                * (e != 0
+                        ? (1f + m / 8f) * (float) Math.scalb(1.0, e - 7)
+                        : m * (float) Math.scalb(1.0, -9));
     }
 }

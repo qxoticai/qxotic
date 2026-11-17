@@ -76,16 +76,25 @@ public final class Lfm3
     private final Lfm3Audio audio;
     private final Lfm3Speech speech;
 
+    /**
+     * Per layer, the scalars an NVFP4 feed-forward carries beside its weights ({@code .scale}
+     * tensors, each matmul's result times its own): the gate's, and up's times down's, which
+     * commute to the output. 1 where a file has none.
+     */
+    private final float[][] ffnScales;
+
     private Lfm3(
             Configuration configuration,
             Tokenizer tokenizer,
             Weights weights,
+            float[][] ffnScales,
             Lfm3Vision vision,
             Lfm3Audio audio,
             Lfm3Speech speech) {
         this.configuration = configuration;
         this.tokenizer = tokenizer;
         this.weights = weights;
+        this.ffnScales = ffnScales;
         this.vision = vision;
         this.audio = audio;
         this.speech = speech;
@@ -397,16 +406,14 @@ public final class Lfm3
         Ops.addRows(state.residual, state.branch, rows, dim);
 
         Norms.rmsnormRowsGgml(state.normed, state.residual, w.ffnNorm, rows, dim, eps);
-        Towers.ffn(
-                w.ffnGate,
-                w.ffnUp,
-                w.ffnDown,
-                state.normed,
-                state.hidden,
-                state.hidden2,
-                state.branch,
-                rows,
-                configuration.feedForwardLength);
+        int ff = configuration.feedForwardLength;
+        float gateScale = ffnScales[layer][0], outScale = ffnScales[layer][1];
+        MatMul.gemm(w.ffnGate, state.normed, state.hidden, rows);
+        if (gateScale != 1f) Ops.multiplyInPlace(state.hidden, 0, rows * ff, gateScale);
+        MatMul.gemm(w.ffnUp, state.normed, state.hidden2, rows);
+        Activations.siluMultiplyRows(state.hidden, state.hidden2, rows, ff);
+        MatMul.gemm(w.ffnDown, state.hidden, state.branch, rows);
+        if (outScale != 1f) Ops.multiplyInPlace(state.branch, 0, rows * dim, outScale);
         if (w.postFfnNorm != null)
             Norms.rmsnormRowsGgml(state.branch, state.branch, w.postFfnNorm, rows, dim, eps);
         Ops.addRows(state.residual, state.branch, rows, dim);
@@ -1036,7 +1043,14 @@ public final class Lfm3
         Configuration config = readConfiguration(gguf, tokenizer.vocabulary().size());
         Map<String, MemoryView<MemorySegment>> tensors =
                 ModelLoader.loadTensors(channel, gguf, arena);
-        return new Lfm3(config, tokenizer, loadWeights(tensors, config), null, null, null);
+        return new Lfm3(
+                config,
+                tokenizer,
+                loadWeights(tensors, config),
+                ffnScales(tensors, config.numberOfLayers),
+                null,
+                null,
+                null);
     }
 
     /** A model sharing this backbone's weights with the towers of {@code mmprojPath} attached. */
@@ -1065,7 +1079,7 @@ public final class Lfm3
                         "'"
                                 + mmprojPath.getFileName()
                                 + "' has neither a vision nor an audio tower");
-            return new Lfm3(configuration, tokenizer, weights, v, a, sp);
+            return new Lfm3(configuration, tokenizer, weights, ffnScales, v, a, sp);
         }
     }
 
@@ -1190,6 +1204,29 @@ public final class Lfm3
                 output,
                 RoPE.withFreqFactors(headSize, c.ropeTheta, freqFactors),
                 RoPE.plain(headSize, c.ropeThetaSwa));
+    }
+
+    private static float[][] ffnScales(Map<String, MemoryView<MemorySegment>> tensors, int layers) {
+        // a scale left unapplied is a wrong model, silently
+        for (String name : tensors.keySet())
+            require(
+                    !name.endsWith(".scale")
+                            || name.matches("blk\\.\\d+\\.ffn_(gate|up|down)\\.scale"),
+                    "weight scale " + name + " is not supported");
+        float[][] scales = new float[layers][];
+        for (int layer = 0; layer < layers; layer++) {
+            String p = "blk." + layer + ".ffn_";
+            scales[layer] =
+                    new float[] {
+                        scale(tensors, p + "gate.scale"),
+                        scale(tensors, p + "up.scale") * scale(tensors, p + "down.scale")
+                    };
+        }
+        return scales;
+    }
+
+    private static float scale(Map<String, MemoryView<MemorySegment>> tensors, String name) {
+        return tensors.containsKey(name) ? Views.getFloat(f32(tensors, name, 1), 0, name) : 1f;
     }
 
     static MemoryView<MemorySegment> weight(

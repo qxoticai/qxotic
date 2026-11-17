@@ -206,7 +206,7 @@ typedef struct { uint8_t d[4]; uint8_t qs[32]; } jam_ref_nvfp4_blk;
 static inline float jam_ref_ue4m3_to_float(uint8_t x) {   /* matches ggml_ue4m3_to_fp32 (bit 7 ignored) */
     if (x == 0 || x == 0x7F) return 0.0f;
     int e = (x >> 3) & 0xF, m = x & 0x7;
-    return e ? ldexpf(1.0f + (float) m / 8.0f, e - 7) : ldexpf((float) m, -9);
+    return 0.5f * (e ? ldexpf(1.0f + (float) m / 8.0f, e - 7) : ldexpf((float) m, -9));
 }
 static inline uint8_t jam_ref_fp32_to_ue4m3(float v) {    /* nearest UE4M3 code (scales are >= 0) */
     uint8_t best = 0; float bd = 1e30f;

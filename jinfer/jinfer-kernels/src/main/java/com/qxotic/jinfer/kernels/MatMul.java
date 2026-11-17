@@ -94,6 +94,10 @@ public final class MatMul {
             Boolean.parseBoolean(
                     System.getProperty("jinfer.mxfp4.nativeDecode", Boolean.toString(ARM)));
     private static final boolean NATIVE_KQ_DECODE = nativeDecode("jinfer.kq.nativeDecode", 8);
+    // NVFP4 on every ISA and pool size: the Java dot decodes with scalar code, so it is
+    // compute-bound where the other formats' vector dots are memory-bound
+    private static final boolean NATIVE_NVFP4_DECODE =
+            Boolean.parseBoolean(System.getProperty("jinfer.nvfp4.nativeDecode", "true"));
     // the low-bit codes formats (Q2_0, PQ2_0, PTQ1_0): AArch64 only - their Java dots run 8x behind
     // native's NEON decode + SDOT there (M3 Pro, Bonsai 2 4B Q2_0 tg128: 3.5 t/s), and on x86 the
     // Java dots are memory-bound already
@@ -337,6 +341,7 @@ public final class MatMul {
         boolean nativeQ8Decode = NATIVE_Q8_DECODE && dt == DataType.Q8_0 && NATIVE != null;
         boolean nativeMxfp4Decode = NATIVE_MXFP4_DECODE && dt == DataType.MXFP4 && NATIVE != null;
         boolean nativeKqDecode = NATIVE_KQ_DECODE && bytePackedDot(dt) && NATIVE != null;
+        boolean nativeNvfp4Decode = NATIVE_NVFP4_DECODE && dt == DataType.NVFP4 && NATIVE != null;
         boolean nativeLowbitDecode =
                 NATIVE_LOWBIT_DECODE
                         && (dt == DataType.Q2_0 || dt == DataType.PQ2_0 || dt == DataType.PTQ1_0)
@@ -349,9 +354,14 @@ public final class MatMul {
                                 || nativeQ8Decode
                                 || nativeMxfp4Decode
                                 || nativeKqDecode
+                                || nativeNvfp4Decode
                                 || nativeLowbitDecode);
         if ((n > 1 || jamDecode) && !inPlace && jamApplies(dt, k, wOff)) {
-            if (NATIVE != null
+            // x86 native has no NVFP4 prefill band yet, only row kernels: the Vector API rung's
+            // dequantize-then-F32 gemm is 1.4x faster there (LFM3-1.7B pp512 514 -> 840)
+            boolean vectorFirst = !ARM && dt == DataType.NVFP4 && n > 1 && VECTOR != null;
+            if (!vectorFirst
+                    && NATIVE != null
                     && NATIVE.mm(
                             ws, wBase, wOff, dt, wStride, av, aOff, aStride, cv, cOff, cStride, m,
                             n, k)) {
@@ -1040,9 +1050,11 @@ public final class MatMul {
     static float ue4m3ToFp32(int x) {
         if (x == 0 || x == 0x7F) return 0f;
         int e = (x >>> 3) & 0xF, m = x & 0x7;
-        return e != 0
-                ? (1f + m / 8f) * (float) Math.scalb(1.0, e - 7)
-                : m * (float) Math.scalb(1.0, -9);
+        // the codes are twice the E2M1 values: the scale carries the half, as ggml's does
+        return 0.5f
+                * (e != 0
+                        ? (1f + m / 8f) * (float) Math.scalb(1.0, e - 7)
+                        : m * (float) Math.scalb(1.0, -9));
     }
 
     static float getNvfp4(MemorySegment w, long wByte, long i) {
@@ -2239,9 +2251,8 @@ public final class MatMul {
      * unpack is fine on C2 (llama-1B tg 114 vs Graal's 118). MXFP4 remains a non-member because x86
      * native-call overhead can outweigh its faster kernel; AArch64 routes it explicitly through
      * native JAM above, where activation requantization + packed NEON SDOT measured 6.76 -> 37.05
-     * t/s on gpt-oss-20b. NVFP4 is structurally exempt: its dot dequantizes with scalar code then
-     * runs a dense F32 vector dot, so there is no byte-vector unpack for C2 to fall back on (kernel
-     * probe: 1.8x hot-cache gap, from the scalar decode loop's codegen).
+     * t/s on gpt-oss-20b. NVFP4 is not a member either: its dot dequantizes with scalar code on
+     * every JIT, so it has its own switch above.
      */
     private static boolean bytePackedDot(DataType dt) {
         return dt == DataType.Q4_K || dt == DataType.Q5_K || dt == DataType.Q6_K;

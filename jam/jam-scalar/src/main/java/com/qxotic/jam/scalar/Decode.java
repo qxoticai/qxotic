@@ -279,11 +279,11 @@ final class Decode {
         return (sc << 8) | mn;
     }
 
-    /** NVFP4 per-16 scale: UE4M3 code to float (ggml_ue4m3_to_fp32, bit 7 ignored). */
+    /** NVFP4 per-16 scale, as ggml_ue4m3_to_fp32: bit 7 ignored, halved for the doubled codes. */
     @AlwaysInline("one call per 16 elements")
     private static float ue4m3(int x) {
         if (x == 0 || x == 0x7F) return 0f;
         int e = (x >> 3) & 0xF, m = x & 0x7;
-        return e != 0 ? Math.scalb(1f + m / 8f, e - 7) : Math.scalb((float) m, -9);
+        return 0.5f * (e != 0 ? Math.scalb(1f + m / 8f, e - 7) : Math.scalb((float) m, -9));
     }
 }
