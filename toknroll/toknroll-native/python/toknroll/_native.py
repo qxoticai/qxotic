@@ -23,7 +23,7 @@ def locate(name: str) -> Path:
     system, machine = platform.system().lower(), platform.machine().lower()
     arch = {"x86_64": "x86-64", "amd64": "x86-64", "arm64": "aarch64"}.get(machine, machine)
     folder = f"{system}-{arch}"
-    package = Path(sys.modules[name].__file__).resolve().parent
+    package = Path(sys.modules[name].__path__[0]).resolve()  # the package's directory
     built = f"{name}.dll" if system == "windows" else f"lib{name}.dylib" if system == "darwin" else f"lib{name}.so"
     # the package's copy is named by its soname, lib<name>.so.<version>, the name a C program linked against it loads
     shipped = f"{name}.dll" if system == "windows" else f"lib{name}.*.dylib" if system == "darwin" else f"lib{name}.so.*"
@@ -149,7 +149,7 @@ def config(name: str, argv: list[str] | None = None) -> int:
         return 2
     module = importlib.import_module(name)
     library = locate(name)
-    libdir, include = library.parent, Path(module.__file__).resolve().parent / "include"
+    libdir, include = library.parent, Path(module.__path__[0]).resolve() / "include"
     windows = sys.platform == "win32"
     if args.version:
         print(module.__version__)

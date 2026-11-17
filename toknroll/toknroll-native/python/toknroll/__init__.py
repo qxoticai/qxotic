@@ -32,6 +32,7 @@ from array import array
 from collections.abc import Iterable
 from enum import IntFlag
 from itertools import accumulate, pairwise
+from typing import Any
 
 from . import _native as N
 
@@ -110,7 +111,7 @@ def _cstring(value: object, what: str) -> bytes:
     return data
 
 
-def _id(value: object, what: str) -> int:
+def _id(value: Any, what: str) -> int:
     """A token id as the C API takes it: any `__index__` int in range(2**31), else OverflowError, as HF and tiktoken raise."""
     try:
         value = operator.index(value)
@@ -185,6 +186,9 @@ class Tokenizer:
     """
 
     __slots__ = ("_h", "_source", "_lib", "__weakref__")
+    _h: int | None  # None once closed
+    _source: str
+    _lib: C.CDLL
 
     def __init__(self, *args, **kwargs):
         # a wrapper over a handle another owns would free it under its owner: _wrap makes the only one
