@@ -66,9 +66,10 @@ final class NativeLoader {
                                 + ")");
             }
         }
-        // One copy per library build, named by its .sha256 (written beside it at build time), so
-        // runs reuse it and nothing piles up (Windows cannot delete a loaded DLL at exit).
-        // ponytail: an existing copy is trusted as is; a shared /tmp lets another user plant one.
+        // One copy per library build, named by the .sha256 the build ships beside it: runs share
+        // it,
+        // and nothing piles up (Windows cannot delete a loaded DLL at exit).
+        // ponytail: an existing copy is trusted; on a shared /tmp another user could plant one.
         try (InputStream src = in;
                 InputStream sum = NativeLoader.class.getResourceAsStream(res + ".sha256")) {
             if (sum == null) throw new UnsatisfiedLinkError("jam: " + res + ".sha256 missing");
@@ -76,7 +77,7 @@ final class NativeLoader {
             Path path = Path.of(System.getProperty("java.io.tmpdir"), sha, lib);
             if (!Files.exists(path)) {
                 Files.createDirectories(path.getParent());
-                // write aside, then rename: a concurrent run never loads a half-written file
+                // write aside, then rename: a concurrent run never sees a half-written file
                 Path part = Files.createTempFile(path.getParent(), lib, ".part");
                 Files.copy(src, part, StandardCopyOption.REPLACE_EXISTING);
                 try {
