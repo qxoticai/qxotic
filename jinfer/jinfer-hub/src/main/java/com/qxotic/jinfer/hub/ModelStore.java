@@ -213,7 +213,7 @@ public final class ModelStore {
     /**
      * The one door for a remote model. {@code owner/repo} is a ref and {@code hf.co} carries it;
      * naming a host reaches another source. A local path and a URL each get their own remedy: a hub
-     * page's URL, the ref to pass instead.
+     * page's URL, the ref to use instead.
      */
     public static void requireRef(String model) {
         if (isRef(model)) {
@@ -265,7 +265,7 @@ public final class ModelStore {
 
     /**
      * A local path or a remote ref. A ref names its host; everything else is a file on this
-     * machine. A URL is refused, naming the ref to pass when it is a hub page.
+     * machine. A URL is refused, naming the ref to use when it is a hub page.
      *
      * @throws ModelNotFoundException when it names nothing that exists or can be reached
      */

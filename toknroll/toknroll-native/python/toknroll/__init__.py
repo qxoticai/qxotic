@@ -12,9 +12,10 @@
     tokenizer.vocabulary_size, tokenizer.token(0), tokenizer.id("<|im_end|>")
 
 `load` takes a tokenizer.json or the directory holding one, a GGUF file, or a hub reference
-(`owner/repo`, `owner/repo:QUANT` for a GGUF's header, `modelscope.cn/owner/repo` for the other hub); remote
-sources fetch metadata only, never weights, and a URL is refused, naming the reference to pass. A `Tokenizer` never changes, so it may be shared
-between threads, and it pickles as its source. Errors are `ToknrollError` subclasses.
+(`owner/repo`, `owner/repo:QUANT` for a GGUF's header, `modelscope.cn/owner/repo` for the other
+hub); remote sources fetch metadata only, never weights, and a URL is refused; the error shows the
+reference to use instead. A `Tokenizer` never changes, so it may be shared between threads, and it
+pickles as its source. Errors are `ToknrollError` subclasses.
 
 Ids are `array('i')`, four bytes each and nothing boxed: slice it, iterate it, `len` it, or hand
 it to numpy with `numpy.frombuffer(ids, dtype=numpy.int32)` without a copy. `decode` reads a writable,
@@ -329,7 +330,7 @@ def configure(*options: str) -> None:
 def load(source: str | os.PathLike) -> Tokenizer:
     """A tokenizer from a tokenizer.json or its directory, a GGUF file, or `owner/repo[:QUANT]`
     on a hub. Remote sources fetch tokenizer metadata only, never weights, and cache it on disk. A URL
-    is refused, naming the reference to pass."""
+    is refused; the error shows the reference to use instead."""
     text = os.fspath(source)  # anything else is fspath's TypeError; bytes reach _cstring's
     if os.path.exists(text):
         text = os.path.abspath(text)  # the source outlives the working directory: pickling, repr

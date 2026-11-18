@@ -8,13 +8,14 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.Arrays;
 import java.util.List;
 import java.util.function.Consumer;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
 /**
- * A URL is never a model: a hub page's URL is refused with the exact ref to pass instead, and
+ * A URL is never a model: a hub page's URL is refused with the exact ref to use instead, and
  * anything else with the download remedy. A wrong suggestion is worse than none, so every shape
  * that could mislead names no ref.
  */
@@ -101,6 +102,108 @@ class ModelRefUrlTest {
     }
 
     @Test
+    void aRootModelFileIsSuggestedByItsQuantAndThatQuantSelectsIt(@TempDir Path root) {
+        String lfm = "https://huggingface.co/LiquidAI/LFM2.5-350M-GGUF";
+        String[] lfmFiles = {
+            "LFM2.5-350M-Q8_0.gguf", "LFM2.5-350M-Q4_0.gguf", "LFM2.5-350M-QAD-Q4_0.gguf",
+            "LFM2.5-350M-Q4_K_M.gguf", "LFM2.5-350M-BF16.gguf", "LFM2.5-350M-F16.gguf",
+            "LFM2.5-350M-IQ4_XS.gguf", "LFM2.5-350M-UD-Q4_K_XL.gguf", "LFM2.5-350M-q6_k.gguf",
+            "LFM2.5-350M-MXFP4_MOE.gguf", "LFM2.5-350M-TQ1_0.gguf", "mmproj-LFM2.5-350M-F16.gguf"
+        };
+        String[][] cases = {
+            {lfm + "/blob/main/LFM2.5-350M-Q8_0.gguf", "hf.co/LiquidAI/LFM2.5-350M-GGUF:Q8_0"},
+            {
+                lfm + "/resolve/main/LFM2.5-350M-Q8_0.gguf?download=true",
+                "hf.co/LiquidAI/LFM2.5-350M-GGUF:Q8_0"
+            },
+            {lfm + "/blob/main/LFM2.5-350M-Q4_0.gguf", "hf.co/LiquidAI/LFM2.5-350M-GGUF:Q4_0"},
+            {
+                lfm + "/blob/main/LFM2.5-350M-QAD-Q4_0.gguf",
+                "hf.co/LiquidAI/LFM2.5-350M-GGUF:QAD-Q4_0"
+            },
+            {lfm + "/blob/main/LFM2.5-350M-Q4_K_M.gguf", "hf.co/LiquidAI/LFM2.5-350M-GGUF:Q4_K_M"},
+            {lfm + "/blob/main/LFM2.5-350M-BF16.gguf", "hf.co/LiquidAI/LFM2.5-350M-GGUF:BF16"},
+            {lfm + "/blob/main/LFM2.5-350M-IQ4_XS.gguf", "hf.co/LiquidAI/LFM2.5-350M-GGUF:IQ4_XS"},
+            {
+                lfm + "/blob/main/LFM2.5-350M-UD-Q4_K_XL.gguf",
+                "hf.co/LiquidAI/LFM2.5-350M-GGUF:UD-Q4_K_XL"
+            },
+            {lfm + "/blob/main/LFM2.5-350M-q6_k.gguf", "hf.co/LiquidAI/LFM2.5-350M-GGUF:q6_k"},
+            {
+                lfm + "/blob/main/LFM2.5-350M-MXFP4_MOE.gguf",
+                "hf.co/LiquidAI/LFM2.5-350M-GGUF:MXFP4_MOE"
+            },
+            {lfm + "/blob/main/LFM2.5-350M-TQ1_0.gguf", "hf.co/LiquidAI/LFM2.5-350M-GGUF:TQ1_0"},
+            {lfm + "/blob/v2/LFM2.5-350M-Q8_0.gguf", "hf.co/LiquidAI/LFM2.5-350M-GGUF@v2:Q8_0"},
+            {
+                "https://huggingface.co/liquidai/lfm2.5-350m-gguf/blob/main/LFM2.5-350M-Q8_0.gguf",
+                "hf.co/liquidai/lfm2.5-350m-gguf:Q8_0"
+            },
+        };
+        FakeSource listing = new FakeSource("fake").serving("", files(lfmFiles));
+        ModelStore store = ModelStore.of(root, listing);
+        for (String[] c : cases) {
+            suggests(c[1], c[0]);
+            String file = c[0].replaceFirst(".*/", "").replaceFirst("\\?.*", "");
+            selectsOrListsAmongItsMatches(store, c[1], file);
+        }
+        suggests( // a repository not named -GGUF: the model is its whole name
+                "hf.co/deepseek-ai/DeepSeek-V4-Pro:Q8_0",
+                "https://huggingface.co/deepseek-ai/DeepSeek-V4-Pro/blob/main/DeepSeek-V4-Pro-Q8_0.gguf");
+        suggests(
+                "modelscope.cn/Qwen/Qwen3-0.6B-GGUF@v1:Q8_0",
+                MS + "/file/view/v1/Qwen3-0.6B-Q8_0.gguf");
+    }
+
+    @Test
+    void anythingElseKeepsItsExactFile() {
+        String lfm = "https://huggingface.co/LiquidAI/LFM2.5-350M-GGUF/blob/main/";
+        suggests(
+                "hf.co/LiquidAI/LFM2.5-350M-GGUF/mmproj-LFM2.5-350M-F16.gguf",
+                lfm + "mmproj-LFM2.5-350M-F16.gguf");
+        suggests(
+                "hf.co/LiquidAI/LFM2.5-350M-GGUF/MTP/LFM2.5-350M-Q8_0.gguf",
+                lfm + "MTP/LFM2.5-350M-Q8_0.gguf");
+        suggests(
+                "hf.co/LiquidAI/LFM2.5-350M-GGUF/LFM2.5-350M-Q8_0-00001-of-00002.gguf",
+                lfm + "LFM2.5-350M-Q8_0-00001-of-00002.gguf");
+        suggests(
+                "hf.co/LiquidAI/LFM2.5-350M-GGUF/LFM2.5-350M-Q8_0-imat.gguf",
+                lfm + "LFM2.5-350M-Q8_0-imat.gguf");
+        suggests("hf.co/LiquidAI/LFM2.5-350M-GGUF/LFM2.5-350M.gguf", lfm + "LFM2.5-350M.gguf");
+        suggests("hf.co/LiquidAI/LFM2.5-350M-GGUF/LFM2.5-350M-.gguf", lfm + "LFM2.5-350M-.gguf");
+        suggests("hf.co/LiquidAI/LFM2.5-350M-GGUF/LFM2.5-350M-0.gguf", lfm + "LFM2.5-350M-0.gguf");
+        suggests(
+                "hf.co/LiquidAI/LFM2.5-350M-GGUF/LFM2.5-350M-Q8_0.bin",
+                lfm + "LFM2.5-350M-Q8_0.bin");
+        suggests(
+                "hf.co/LiquidAI/LFM2.5-350M-GGUF/LFM2.5-1.2B-Q8_0.gguf",
+                lfm + "LFM2.5-1.2B-Q8_0.gguf");
+        suggests("hf.co/LiquidAI/LFM2.5-350M-GGUF/tokenizer.json", lfm + "tokenizer.json");
+    }
+
+    /**
+     * The quant's promise: it selects the linked file, or, when another file shares the quant (Q4_0
+     * beside QAD-Q4_0), lists the matches with the linked one among them: never another file.
+     */
+    private static void selectsOrListsAmongItsMatches(ModelStore store, String ref, String file) {
+        try {
+            assertEquals(file, store.select(ref), ref + " must select the linked " + file);
+        } catch (IllegalArgumentException menu) {
+            assertTrue(menu.getMessage().contains("name the one you want"), menu.getMessage());
+            assertTrue(
+                    menu.getMessage().contains("/" + file),
+                    ref + " must list " + file + ": " + menu.getMessage());
+        }
+    }
+
+    private static RemoteFile[] files(String... names) {
+        return Arrays.stream(names)
+                .map(n -> new RemoteFile(n, 10, null))
+                .toArray(RemoteFile[]::new);
+    }
+
+    @Test
     void publishersAndModelsAsTheyAreNamed() {
         for (String repo :
                 List.of(
@@ -130,7 +233,7 @@ class ModelRefUrlTest {
                 "https://modelscope.cn/models/Qwen/Qwen3-0.6B-GGUF",
                 "http://modelscope.cn/models/Qwen/Qwen3-0.6B-GGUF/files");
         suggests(
-                "modelscope.cn/Qwen/Qwen3-0.6B-GGUF/Qwen3-0.6B-Q8_0.gguf",
+                "modelscope.cn/Qwen/Qwen3-0.6B-GGUF:Q8_0",
                 MS + "/file/view/master/Qwen3-0.6B-Q8_0.gguf",
                 MS + "/resolve/master/Qwen3-0.6B-Q8_0.gguf");
         suggests(
@@ -231,7 +334,7 @@ class ModelRefUrlTest {
                 "'"
                         + HF
                         + "/blob/v2/x.gguf' is a URL, not a model reference.\n"
-                        + "Pass: hf.co/unsloth/gemma-4-E2B-it-GGUF@v2/x.gguf\n"
+                        + "Use: hf.co/unsloth/gemma-4-E2B-it-GGUF@v2/x.gguf\n"
                         + "That is unsloth's repository on hf.co: check it is the publisher you"
                         + " meant to trust.",
                 ModelRef.notAReference(HF + "/blob/v2/x.gguf"));
@@ -277,7 +380,7 @@ class ModelRefUrlTest {
                     assertThrows(IllegalArgumentException.class, () -> door.accept(link))
                             .getMessage();
             assertTrue(
-                    message.contains("Pass: hf.co/unsloth/gemma-4-E2B-it-GGUF/x-Q8_0.gguf"),
+                    message.contains("Use: hf.co/unsloth/gemma-4-E2B-it-GGUF/x-Q8_0.gguf"),
                     message);
             for (String other :
                     List.of(

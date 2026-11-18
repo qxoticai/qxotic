@@ -1011,12 +1011,12 @@ def configure(*options: str) -> None:
 
 def load(source: str | os.PathLike, *, companions: dict[str, str] | None = None,
          prompt_cache: str | os.PathLike | None = None, context_capacity: int = 0) -> Any:
-    """Loads a source, a hub reference such as "LiquidAI/LFM2.5-350M-GGUF:Q8_0" or a local path, downloading
-    once; a URL is refused, naming the reference to pass. The file decides what comes back: a LanguageModel, Embedder, Reranker, Speaker or
-    Transcriber, so a type checker learns the class from an annotation:
-    `model: jinfer.LanguageModel = jinfer.load(...)`. From JINFER_LOG=info on, a download shows its
-    progress on stderr at a terminal and logs it otherwise; Ctrl-C during one ends the process, and
-    the download resumes next time.
+    """Loads a source, a hub reference such as "LiquidAI/LFM2.5-350M-GGUF:Q8_0" or a local path,
+    downloading once. A URL is refused; the error shows the reference to use instead. The file decides
+    what comes back: a LanguageModel, Embedder, Reranker, Speaker or Transcriber, so a type checker
+    learns the class from an annotation: `model: jinfer.LanguageModel = jinfer.load(...)`. From
+    JINFER_LOG=info on, a download shows its progress on stderr at a terminal and logs it otherwise;
+    Ctrl-C during one ends the process, and the download resumes next time.
 
     Options: companions ({"media": ref} for vision and audio in, {"voice": ref} for speech),
     prompt_cache (a catalog file, read at load and extended when the model is closed and no reply

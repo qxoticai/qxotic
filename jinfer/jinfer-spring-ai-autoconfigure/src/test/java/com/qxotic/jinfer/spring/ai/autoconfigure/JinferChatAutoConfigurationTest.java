@@ -134,7 +134,7 @@ class JinferChatAutoConfigurationTest {
                             assertThat(context).hasFailed();
                             assertThat(context.getStartupFailure())
                                     .hasStackTraceContaining("spring.ai.jinfer.chat.model: '")
-                                    .hasStackTraceContaining("Pass: hf.co/acme/m-GGUF@v2");
+                                    .hasStackTraceContaining("Use: hf.co/acme/m-GGUF@v2");
                         });
     }
 

@@ -93,7 +93,7 @@ class HubTest {
     void everyCommandAnswersALinkWithTheRefToPass() {
         var store = ModelStore.of(dir); // no sources: a refused link must not reach the network
         String link = "https://huggingface.co/acme/m/blob/main/m-Q8_0.gguf";
-        String ref = "Pass: hf.co/acme/m/m-Q8_0.gguf";
+        String ref = "Use: hf.co/acme/m:Q8_0";
         String[][] commands = {
             {"-m", link, "instruct", "hi"},
             {"instruct", "-m", link, "hi"},
@@ -128,7 +128,7 @@ class HubTest {
         var link = new CliFixtures.Capture("");
         String url = "https://huggingface.co/acme/m/blob/main/m-Q8_0.gguf";
         assertNotEquals(0, Main.run(new String[] {"find", url}, link.io, store));
-        assertTrue(link.err().contains("Pass: hf.co/acme/m/m-Q8_0.gguf"), link.err());
+        assertTrue(link.err().contains("Use: hf.co/acme/m:Q8_0"), link.err());
         var found = new CliFixtures.Capture("");
         String ref = "hf.co/acme/m/m-Q8_0.gguf";
         assertEquals(0, Main.run(new String[] {"find", ref}, found.io, store), found.err());

@@ -240,7 +240,7 @@ echo 'Hello, World!' | jbang toknroll@qxoticai --count --source google/gemma-4-e
 | `modelscope.cn/owner/repo` | the same from ModelScope | `modelscope.cn/Qwen/Qwen3-4B` |
 | `./path` or `/path` | a local .gguf or tokenizer folder | `./model.gguf` |
 
-A URL is refused, naming the reference to pass instead.
+A URL is refused; the error shows the reference to use instead.
 
 First run caches the tokenizer on disk. Public models need no API key.
 

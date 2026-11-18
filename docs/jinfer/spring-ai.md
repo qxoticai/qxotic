@@ -57,7 +57,7 @@ try (var model = JinferChatModel.builder()
 ```
 
 `model(String)` accepts a model ref (`owner/repo:quant`, or `modelscope.cn/...` for another source).
-A URL is refused, naming the reference to pass.
+A URL is refused; the error shows the reference to use instead.
 `modelPath(Path)` is the local form and never touches the network.
 Companions use the same split: `companion(capability, String)` accepts a model reference; `companionPath(capability, Path)` accepts a local file.
 Spring Boot properties remain path-or-ref strings and the autoconfiguration routes them to the matching method.

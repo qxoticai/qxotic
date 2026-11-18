@@ -420,7 +420,7 @@ final class Options {
     private static List<Path> resolveFiles(List<String> refs, Supplier<List<Path>> resolve)
             throws IOException {
         for (String ref : refs) {
-            // a URL goes on to the store, which refuses it naming the ref to pass
+            // a URL goes on to the store, which refuses it naming the ref to use
             if (ModelStore.isRef(ref) || ref.contains("://")) continue;
             if (!java.nio.file.Files.exists(Path.of(ref))) throw new IOException(noSuchModel(ref));
             requireFile(Path.of(ref));
@@ -697,7 +697,7 @@ final class Options {
 
                 References: [host/]owner/repo[@revision][/file][:quant]. Default host: hf.co.
                 Existing local files win. Remote files are downloaded once and cached.
-                A URL is refused, naming the reference to pass.
+                A URL is refused; the error shows the reference to use instead.
                 Cache: JINFER_MODELS or the platform cache.
                 Offline: JINFER_OFFLINE=1|true|on|yes prevents fetching (case-insensitive).
                 0|false|off|no disables it; -Djinfer.offline takes the same values and wins.

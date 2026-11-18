@@ -146,7 +146,7 @@ class ModelStoreCacheTest {
                                 store.remove(
                                         "https://huggingface.co/acme/other/blob/main/other-Q8_0.gguf"));
         assertTrue(
-                link.getMessage().contains("Pass: hf.co/acme/other/other-Q8_0.gguf"),
+                link.getMessage().contains("Use: hf.co/acme/other:Q8_0"),
                 "a link is refused with the ref it names: " + link.getMessage());
         assertTrue(store.remove("hf.co/acme/other/other-Q8_0.gguf"));
         assertTrue(Files.notExists(other));

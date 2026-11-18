@@ -271,7 +271,7 @@ First release on Maven Central: `com.qxotic` artifacts for jota, jam, jinfer, to
 - **Stringified arguments.** A small model that sends an array or object argument as a JSON string, Llama 3.2 1B does, gets it unwrapped where the tool's schema declares that shape.
 - **Gemma 4 video.** A `VideoContent` (langchain4j), a video `Media` (Spring AI) or a `video_url` part (server) renders the way the Gemma 4 processor does: every sampled frame is a timestamped image block, `mm:ss <|image>...<image|>`, one space between frames.
   Qwen 3.5 still refuses video: its vision tower takes images only.
-- **A pasted link names the ref to pass.** A model's page pasted from the browser (`https://huggingface.co/owner/repo`, its `tree`, `blob` and `resolve` views, ModelScope's alike) is refused with the exact reference it spells, and the publisher it names to check; `huggingface.co/owner/repo` is accepted as a host spelling.
+- **A pasted link names the ref to use.** A model's page pasted from the browser (`https://huggingface.co/owner/repo`, its `tree`, `blob` and `resolve` views, ModelScope's alike) is refused with the exact reference it spells, and the publisher it names to check; `huggingface.co/owner/repo` is accepted as a host spelling.
   Any other URL is refused too: download the file and pass its path.
 - **Vector API check in the library.** A JVM started without `--add-modules jdk.incubator.vector` fails at model load with the one-line remedy, on every binding, instead of a NoClassDefFoundError inside a kernel.
 - **Builder ranges.** The langchain4j builders refuse an out-of-range temperature, top-p, top-k, min-p, output limit, timeout or speech speed where it is set, with the range in the message.

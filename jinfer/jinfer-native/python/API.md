@@ -16,7 +16,7 @@ The [README](README.md) is the short introduction; the [comparison](../../../doc
 | `Transcriber` | speech recognition | `transcribe` |
 
 - A Hub reference is `[host/]owner/repo[@rev][/path][:quant]`, `LiquidAI/LFM2.5-350M-GGUF:Q8_0` for example, downloaded once and cached; `modelscope.cn/...` reads ModelScope.
-- A URL is refused, naming the reference to pass: `InvalidArgument`.
+- A URL is refused with `InvalidArgument`; the error shows the reference to use instead.
 - `companions={"media": ...}` attaches a vision or audio projector (`mmproj`), `companions={"voice": ...}` a speech voice.
 - `context_capacity=8192` sets the context; the default is 4096, or the model's maximum when smaller, and `jinfer.MAXIMUM_CONTEXT` asks for the maximum.
 - `prompt_cache="prompts.cache"` keeps prepared prompts across processes: the file is read at load, and extended when the model is closed and no reply is still generating.

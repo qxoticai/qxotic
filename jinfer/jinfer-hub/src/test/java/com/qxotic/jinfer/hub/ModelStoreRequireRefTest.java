@@ -35,7 +35,7 @@ class ModelStoreRequireRefTest {
     void rejectsHuggingFaceBrowserSpellingWithTheRefToPass() {
         String message =
                 message(() -> ModelStore.requireRef("https://huggingface.co/owner/repo:Q8_0"));
-        assertTrue(message.contains("Pass: hf.co/owner/repo:Q8_0"), message);
+        assertTrue(message.contains("Use: hf.co/owner/repo:Q8_0"), message);
     }
 
     // ---- rejected, each with its own remedy ----

@@ -273,7 +273,7 @@ Companions follow the same pattern with `companion(...)` and `companionPath(...)
 
 A model reference is `owner/repo[:quant]`, resolved from Hugging Face by default.
 Name a host to use another source, as in `modelscope.cn/Qwen/Qwen3-0.6B-GGUF:Q8_0`.
-A URL is refused, naming the reference to pass.
+A URL is refused; the error shows the reference to use instead.
 Set `JINFER_OFFLINE=1` to require cached models and prohibit downloads.
 
 Context capacity defaults to 4096 tokens, or the model's maximum when smaller, for chat, embedding and reranking alike.

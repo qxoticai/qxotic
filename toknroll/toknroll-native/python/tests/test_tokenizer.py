@@ -71,7 +71,7 @@ class LoadTest(unittest.TestCase):
             toknroll.load("not-a-reference")
         with self.assertRaises(toknroll.InvalidArgument) as e:  # a browser's URL, pasted
             toknroll.load("https://huggingface.co/Qwen/Qwen3-0.6B")
-        self.assertIn("Pass: hf.co/Qwen/Qwen3-0.6B", str(e.exception))       # the ref to pass instead
+        self.assertIn("Use: hf.co/Qwen/Qwen3-0.6B", str(e.exception))       # the ref to use instead
         for url in ("https://example.org/tokenizer.json", "ftp://huggingface.co/Qwen/Qwen3-0.6B"):
             with self.assertRaises(toknroll.InvalidArgument) as e:
                 toknroll.load(url)

@@ -159,7 +159,7 @@ Companion roles (e.g. `media=<clip.gguf>` and `speculation=<mtp.gguf>`) are decl
 
 Java framework builders keep remote and local sources explicit: `model(String)` accepts a model
 reference, while `modelPath(Path)` accepts a local GGUF file and never touches the network. A
-URL is not a model reference: a hub page's URL is refused naming the reference to pass, and any
+URL is not a model reference: a hub page's URL is refused with the reference to use instead, and any
 other is downloaded by you and passed as a path. Companions follow the
 same rule: `companion(capability, String)` accepts a model reference and
 `companionPath(capability, Path)` accepts a local file.

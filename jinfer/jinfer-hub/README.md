@@ -7,7 +7,7 @@
 </p>
 
 `jinfer-hub` resolves Hugging Face and ModelScope references, `owner/repo[:quant]`, into verified, cached local files: the names model cards already use, the checksums the hubs publish, and a cache laid out by reference.
-A local path is used as it is, and a URL is refused, naming the reference to pass instead.
+A local path is used as it is, and a URL is refused; the error shows the reference to use instead.
 
 ## Add the library
 
@@ -180,11 +180,11 @@ Resolution happens before loading, and inference never fetches: the path returne
 
 ## A URL is not a model reference
 
-A link to a model's page, pasted from the browser, is refused with the exact reference to pass instead, and the publisher it names, to check:
+A link to a model's page, pasted from the browser, is refused with the exact reference to use instead, and the publisher it names, to check:
 
 ```text
 'https://huggingface.co/LiquidAI/LFM2.5-350M-GGUF/blob/main/LFM2.5-350M-Q8_0.gguf' is a URL, not a model reference.
-Pass: hf.co/LiquidAI/LFM2.5-350M-GGUF/LFM2.5-350M-Q8_0.gguf
+Use: hf.co/LiquidAI/LFM2.5-350M-GGUF:Q8_0
 That is LiquidAI's repository on hf.co: check it is the publisher you meant to trust.
 ```
 

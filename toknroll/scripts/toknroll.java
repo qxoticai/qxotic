@@ -66,7 +66,7 @@ class toknroll implements Callable<Integer> {
                 "  owner/repo@v2       at a branch, tag or commit",
                 "  modelscope.cn/...   the same, from ModelScope",
                 "  ./x.gguf, ./dir     a local GGUF or tokenizer folder",
-                "A URL is refused, naming the reference to pass."
+                "A URL is refused, with the reference to use instead."
             })
     String source;
 
@@ -122,7 +122,7 @@ class toknroll implements Callable<Integer> {
 
     static Tokenizer loadTokenizer(String source) {
         if (!ModelStore.isRef(source) && !source.contains("://")) return local(source);
-        ModelRef ref = ModelRef.parse(source); // a URL is refused, naming the ref to pass
+        ModelRef ref = ModelRef.parse(source); // a URL is refused, naming the ref to use
         // a quant picks its file from the repository listing, as jinfer does: nothing downloads
         String file = ref.quant() != null ? ModelStore.standard().select(source) : ref.path();
         boolean ms = ref.host().equals("modelscope.cn");

@@ -30,7 +30,7 @@ import java.util.Locale;
  *
  * <p>Position is the whole grammar: {@code /path} says WHERE, {@code :quant} says WHICH, {@code
  * @revision} says WHEN. A ref is never a URL - no scheme, no query, no {@code /blob/} browser
- * view: a pasted link is refused with the ref to pass instead ({@link #notAReference}). The host table ({@link Host}) is closed and the default is hardcoded, so one string still
+ * view: a pasted link is refused with the ref to use instead ({@link #notAReference}). The host table ({@link Host}) is closed and the default is hardcoded, so one string still
  * means one thing on every machine, in a script and in a config file alike.
  *
  * <p>The host is optional and defaults to {@link Host#HF}, matching what llama.cpp's {@code -hf}
@@ -153,7 +153,7 @@ public record ModelRef(
     }
 
     /**
-     * Why {@code url} is refused, with the ref to pass when it is a hub page: the reference is
+     * Why {@code url} is refused, with the ref to use when it is a hub page: the reference is
      * jinfer's one spelling of a model, and the provider is named so the user checks it.
      */
     static String notAReference(String url) {
@@ -166,7 +166,7 @@ public record ModelRef(
         }
         return "'"
                 + url
-                + "' is a URL, not a model reference.\nPass: "
+                + "' is a URL, not a model reference.\nUse: "
                 + ref
                 + "\nThat is "
                 + ref.owner()
@@ -189,12 +189,13 @@ public record ModelRef(
 
     /**
      * The ref to suggest for a hub page's URL, never a way in: a URL is refused, and this only
-     * names what to pass instead, or null. The pages: the repository page, a folder ({@code
+     * names what to use instead, or null. The pages: the repository page, a folder ({@code
      * tree/<rev>[/dir]}, ModelScope's {@code files} and {@code summary}) or a file ({@code
      * blob/<rev>/<file>}, {@code resolve/<rev>/<file>}, ModelScope's {@code
-     * file/view/<rev>/<file>}). The default branch is dropped, any other revision kept. Segments
-     * are split before they are decoded, and one holding an encoded slash gives no ref: a wrong
-     * suggestion is worse than none.
+     * file/view/<rev>/<file>}). The default branch is dropped, any other revision kept, and a root
+     * file named {@code <model>-<QUANT>.gguf} is suggested as {@code :QUANT} ({@link #quantOf}).
+     * Segments are split before they are decoded, and one holding an encoded slash gives no ref: a
+     * wrong suggestion is worse than none.
      */
     static ModelRef suggestionFor(String url) {
         URI uri;
@@ -237,13 +238,42 @@ public record ModelRef(
                 return null;
             }
             if (!rest.get(1).equals(host.defaultRevision)) ref += "@" + rest.get(1);
-            if (rest.size() > 2) ref += "/" + String.join("/", rest.subList(2, rest.size()));
+            if (rest.size() > 2) {
+                String file = String.join("/", rest.subList(2, rest.size()));
+                String quant = quantOf(parts.get(1), file);
+                if (quant != null) {
+                    try {
+                        return parse(ref + ":" + quant);
+                    } catch (IllegalArgumentException unparsed) {
+                        // the file's own name stays
+                    }
+                }
+                ref += "/" + file;
+            }
         }
         try {
             return parse(ref);
         } catch (IllegalArgumentException e) {
             return null;
         }
+    }
+
+    /**
+     * QUANT when {@code file} is the root's {@code <model>-<QUANT>.gguf}, the model being the
+     * repository's name without its {@code -GGUF}, else null. The whole remainder is the most
+     * specific quant the name allows ({@code QAD-Q4_0}, never its {@code Q4_0}), so {@code :QUANT}
+     * loads this very file or lists it among its matches: never another file. A file in a folder
+     * keeps its path, as a root file could win its quant.
+     */
+    static String quantOf(String repo, String file) {
+        String model = repo.replaceFirst("(?i)[-_.]gguf$", "") + "-";
+        if (file.contains("/")
+                || !file.regionMatches(true, 0, model, 0, model.length())
+                || !file.regionMatches(true, file.length() - 5, ".gguf", 0, 5)) {
+            return null;
+        }
+        String quant = file.substring(model.length(), file.length() - 5);
+        return quant.matches("(?i)([a-z0-9]+-)?[a-z]+[0-9][a-z0-9_]*") ? quant : null;
     }
 
     /** Whether the first segment spells a host the closed table knows. */
