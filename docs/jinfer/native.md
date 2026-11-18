@@ -42,7 +42,7 @@ pip install jinfer    # Python 3.10 or later; the wheel carries the library for 
 ```
 
 Downloads run through `curl` on the PATH; an image or an audio file given to a chat is decoded by `ffmpeg`, and speech synthesis with Kokoro voices phonemizes through `espeak-ng`.
-The package [README](https://pypi.org/project/jinfer/) has the whole API and one example script a use case.
+The [API reference](https://github.com/qxoticai/qxotic/blob/main/jinfer/jinfer-native/python/API.md) has the whole API and one example script a use case.
 
 The package wraps the header and adds what Python expects, and nothing else.
 `load` returns a `LanguageModel`, `Embedder`, `Reranker`, `Speaker` or `Transcriber` with only the methods that apply.
@@ -50,21 +50,6 @@ Results are typed objects instead of dicts, a reply is both the stream and the r
 Python types go in and Python values come out: `schema=` takes a dataclass, a TypedDict, a Pydantic class, `list[T]`, `Literal` or `Enum`, and a function is a tool.
 What is only possible locally gets a face of its own: a `Conversation` whose turns are served from the engine's kept state (`chat`, `fork`, `rewind`, `prepare`).
 There are no prompt templates, chains, memory classes, callbacks, retries or option objects.
-
-| You want | Call |
-|---|---|
-| a reply | `model.chat(prompt).text` |
-| a streamed reply | `for text in model.chat(prompt)`, or `async for` |
-| the rest of a reply | `reply.tool_calls`, `.reasoning`, `.usage`, `.finish_reason` |
-| a conversation | `chat = model.conversation(system=...)`; `chat.chat(text)`, `chat.fork()`, `chat.rewind()`, `chat.prepare()` |
-| structured output | `model.chat(prompt, schema=Person).parsed`, a dataclass, TypedDict, Pydantic class, `list[T]`, `Literal`, `Enum` or a JSON schema dict |
-| tools | `tools=[fn]`; a conversation runs the calls, a plain `chat` returns them as `reply.tool_calls` |
-| images, audio in | a `Path` or `bytes` in the content list: `model.chat(["What is this?", Path("photo.jpg")])` |
-| embeddings, reranking | `embedder.embed(texts)`, `reranker.rerank(query, documents)` |
-| speech, transcription | `speaker.speak(text).save("out.wav")`, `transcriber.transcribe("speech.wav").words` |
-| a warm prompt cache | `chat.prepare()` once; `prompt_cache="catalog.jkvf"` at load keeps it across processes |
-| the context size | `jinfer.load(source, context_capacity=8192)`, up to `model.max_context_length`; the default (`0`) is 4096 or the maximum when smaller, `jinfer.MAXIMUM_CONTEXT` (`-1`) the maximum |
-| log lines | `logging.getLogger("jinfer")` |
 
 `jinfer.OpenAI(model_ref)` replaces `OpenAI(api_key=...)` as a migration aid; code written for the OpenAI SDK then runs in-process, unchanged.
 

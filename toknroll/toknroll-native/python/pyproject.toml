@@ -33,7 +33,7 @@ dependencies = []
 
 [project.urls]
 Homepage = "https://qxotic.ai"
-Documentation = "https://github.com/qxoticai/qxotic/blob/main/toknroll/toknroll-native/python/README.md"
+Documentation = "https://github.com/qxoticai/qxotic/blob/v0.4.0/toknroll/toknroll-native/python/API.md"
 Source = "https://github.com/qxoticai/qxotic"
 Issues = "https://github.com/qxoticai/qxotic/issues"
 
