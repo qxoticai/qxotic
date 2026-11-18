@@ -52,8 +52,7 @@ class ModelRefUrlTest {
             {ms + "/tree/v1", "modelscope.cn/Qwen/Qwen3-0.6B-GGUF@v1"},
         };
         for (String[] c : cases) {
-            assertEquals(c[1], ModelRef.fromUrl(c[0]), c[0]);
-            assertEquals(c[1], ModelRef.parse(c[1]).toString(), "the suggestion parses back");
+            assertEquals(c[1], String.valueOf(ModelRef.fromUrl(c[0])), c[0]);
         }
     }
 

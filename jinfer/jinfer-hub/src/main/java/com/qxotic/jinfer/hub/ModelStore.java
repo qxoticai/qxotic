@@ -225,9 +225,7 @@ public final class ModelStore {
                     "a model ref is required: owner/repo[:quant], or"
                             + " modelscope.cn/owner/repo[:quant] for another source");
         }
-        if (value.contains("://")) {
-            throw new IllegalArgumentException(ModelRef.notAReference(value));
-        }
+        refuseUrl(value);
         if (ModelRef.isPathShape(value)) {
             throw new IllegalArgumentException(
                     "'"

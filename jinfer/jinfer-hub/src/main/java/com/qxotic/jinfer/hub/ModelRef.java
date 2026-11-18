@@ -157,22 +157,21 @@ public record ModelRef(
      * jinfer's one spelling of a model, and the provider is named so the user checks it.
      */
     static String notAReference(String url) {
-        String ref = fromUrl(url);
+        ModelRef ref = fromUrl(url);
         if (ref == null) {
             return "'"
                     + url
                     + "' is a URL, not a model reference: download the file and pass its local"
                     + " path, or name a model on hf.co or modelscope.cn as owner/repo[:quant]";
         }
-        ModelRef parsed = parse(ref);
         return "'"
                 + url
                 + "' is a URL, not a model reference.\nPass: "
                 + ref
                 + "\nThat is "
-                + parsed.owner()
+                + ref.owner()
                 + "'s repository on "
-                + parsed.host()
+                + ref.host()
                 + ": check it is the publisher you meant to trust.";
     }
 
@@ -180,11 +179,10 @@ public record ModelRef(
      * The ref a hub page's URL names, or null: the repository page, a folder ({@code
      * tree/<rev>[/dir]}, ModelScope's {@code files}) or a file ({@code blob/<rev>/<file>}, {@code
      * resolve/<rev>/<file>}, ModelScope's {@code file/view/<rev>/<file>}). The default branch is
-     * dropped, any other revision kept. Segments are split before they are decoded, so an encoded
-     * slash cannot move a boundary, and the answer must parse back to itself: a wrong suggestion is
-     * worse than none.
+     * dropped, any other revision kept. Segments are split before they are decoded, and one holding
+     * an encoded slash gives no ref: a wrong suggestion is worse than none.
      */
-    static String fromUrl(String url) {
+    static ModelRef fromUrl(String url) {
         URI uri;
         try {
             uri = new URI(url.strip());
@@ -195,8 +193,9 @@ public record ModelRef(
         if (host == null || uri.getRawPath() == null) return null;
         List<String> parts = new ArrayList<>();
         for (String raw : uri.getRawPath().split("/")) {
-            if (!raw.isEmpty())
-                parts.add(URLDecoder.decode(raw.replace("+", "%2B"), StandardCharsets.UTF_8));
+            String part = URLDecoder.decode(raw.replace("+", "%2B"), StandardCharsets.UTF_8);
+            if (part.contains("/")) return null; // an encoded slash would move a boundary
+            if (!part.isEmpty()) parts.add(part);
         }
         if (!host.prefix.isEmpty()) { // ModelScope's models live under /models
             if (parts.isEmpty() || !parts.getFirst().equals(host.prefix.substring(1))) return null;
@@ -204,9 +203,7 @@ public record ModelRef(
         } else if (!parts.isEmpty() && List.of("datasets", "spaces").contains(parts.getFirst())) {
             return null; // Hugging Face's other kinds of repository
         }
-        if (parts.size() < 2 || parts.get(0).contains("/") || parts.get(1).contains("/")) {
-            return null;
-        }
+        if (parts.size() < 2) return null;
         String ref = host.name + "/" + parts.get(0) + "/" + parts.get(1);
         List<String> rest = parts.subList(2, parts.size());
         if (rest.size() >= 2 && rest.get(0).equals("file") && rest.get(1).equals("view")) {
@@ -214,15 +211,14 @@ public record ModelRef(
         }
         if (!rest.isEmpty() && !rest.equals(List.of("files"))) { // files: ModelScope's file list
             if (rest.size() < 2
-                    || !List.of("tree", "blob", "resolve", "view").contains(rest.get(0))
-                    || rest.get(1).contains("/")) {
+                    || !List.of("tree", "blob", "resolve", "view").contains(rest.get(0))) {
                 return null;
             }
             if (!rest.get(1).equals(host.defaultRevision)) ref += "@" + rest.get(1);
             if (rest.size() > 2) ref += "/" + String.join("/", rest.subList(2, rest.size()));
         }
         try {
-            return parse(ref).toString().equals(ref) ? ref : null;
+            return parse(ref);
         } catch (IllegalArgumentException e) {
             return null;
         }
