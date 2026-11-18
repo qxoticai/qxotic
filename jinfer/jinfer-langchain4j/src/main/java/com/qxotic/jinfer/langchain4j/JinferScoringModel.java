@@ -9,15 +9,20 @@ import com.qxotic.jinfer.chat.Models;
 import com.qxotic.jinfer.hub.ModelStore;
 import com.qxotic.jota.memory.MemoryAllocators;
 import dev.langchain4j.data.segment.TextSegment;
+import dev.langchain4j.exception.UnsupportedFeatureException;
 import dev.langchain4j.model.output.Response;
 import dev.langchain4j.model.output.TokenUsage;
 import dev.langchain4j.model.scoring.ScoringModel;
+import dev.langchain4j.model.scoring.listener.ScoringModelListener;
+import dev.langchain4j.model.scoring.request.ScoringRequest;
+import dev.langchain4j.model.scoring.response.ScoringResponse;
 import java.io.IOException;
 import java.io.UncheckedIOException;
 import java.lang.foreign.Arena;
 import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Objects;
 import java.util.concurrent.locks.ReentrantLock;
 
 /**
@@ -30,6 +35,9 @@ import java.util.concurrent.locks.ReentrantLock;
  * document LAST): it is prefilled ONCE and each document re-ingests only its own tokens, so K
  * documents cost {@code |frame| + sum|document|} instead of {@code K * |frame + document|}.
  *
+ * <p>Both doors, {@code scoreAll} and {@code score(ScoringRequest)}, go through core's {@code
+ * score}, so the builder's listeners see every call, {@code ReRankingContentAggregator}'s included.
+ *
  * <p>Concurrency contract as everywhere: an instance is ONE serial scoring pipeline (one reusable
  * full-context state, rewound between pairs); for parallel pipelines build several instances -
  * weights are shared via the OS page cache.
@@ -41,6 +49,7 @@ public final class JinferScoringModel implements ScoringModel, AutoCloseable {
     private final Arena arena;
     private final ReentrantLock lock = new ReentrantLock(true); // single-stream, like ChatEngine
     private final String instruction;
+    private final List<ScoringModelListener> listeners;
 
     private JinferScoringModel(Builder b) {
         // ONE private arena. The state borrows it; close() closes the state first, then the arena.
@@ -67,6 +76,7 @@ public final class JinferScoringModel implements ScoringModel, AutoCloseable {
                                 + " MaxSim) - drop instruction(...)");
             this.instruction =
                     b.instruction == null ? loaded.reranker().defaultInstruction() : b.instruction;
+            this.listeners = b.listeners;
         } catch (RuntimeException | Error e) {
             Arenas.close(arena); // free before failing (best-effort: ofAuto self-manages)
             throw e;
@@ -93,20 +103,55 @@ public final class JinferScoringModel implements ScoringModel, AutoCloseable {
         }
     }
 
+    /** The listeners core's {@code score} dispatches onRequest/onResponse/onError to. */
+    @Override
+    public List<ScoringModelListener> listeners() {
+        return listeners;
+    }
+
+    /**
+     * Through core's {@code score}, so the listeners see this door too (ScoringModel's contract).
+     */
     @Override
     public Response<List<Double>> scoreAll(List<TextSegment> segments, String query) {
-        List<String> documents = segments.stream().map(TextSegment::text).toList();
-        List<Double> scores = new ArrayList<>(segments.size());
+        ScoringResponse response =
+                score(
+                        ScoringRequest.builder()
+                                .documents(segments.stream().map(TextSegment::text).toList())
+                                .query(query)
+                                .build());
+        return Response.from(response.scores(), response.tokenUsage());
+    }
+
+    @Override
+    public ScoringResponse doScore(ScoringRequest request) {
+        rejectModelSwitch(request);
+        List<Double> scores = new ArrayList<>(request.documents().size());
         int promptTokens;
         // one serial scoring pipeline per instance (the concurrency contract): concurrent
         // callers queue fairly, exactly like the chat and embedding surfaces
         lock.lock();
         try {
-            promptTokens = loaded.scoreAll(state, instruction, query, documents, scores::add);
+            promptTokens =
+                    loaded.scoreAll(
+                            state, instruction, request.query(), request.documents(), scores::add);
         } finally {
             lock.unlock();
         }
-        return Response.from(scores, new TokenUsage(promptTokens, 0));
+        return ScoringResponse.builder()
+                .scores(scores)
+                .modelName(loaded.name())
+                .tokenUsage(new TokenUsage(promptTokens, 0))
+                .build();
+    }
+
+    /** One loaded GGUF a pipeline: a request naming another model is refused, never scored. */
+    private void rejectModelSwitch(ScoringRequest request) {
+        if (request.modelName() != null && !request.modelName().equals(loaded.name()))
+            throw new UnsupportedFeatureException(
+                    "per-request modelName is not supported: this model IS '"
+                            + loaded.name()
+                            + "' (one loaded GGUF per instance)");
     }
 
     public static Builder builder() {
@@ -119,6 +164,7 @@ public final class JinferScoringModel implements ScoringModel, AutoCloseable {
         private LoadedReranker<?> loaded; // derived from source at build()
         private int contextCapacity; // 0: the default
         private String instruction;
+        private List<ScoringModelListener> listeners = List.of();
 
         /** The reranker GGUF to load. Required. */
         public Builder modelPath(Path modelPath) {
@@ -175,6 +221,16 @@ public final class JinferScoringModel implements ScoringModel, AutoCloseable {
          */
         public Builder instruction(String instruction) {
             this.instruction = instruction;
+            return this;
+        }
+
+        /**
+         * The listeners notified of every scoring call, {@code scoreAll} and {@code score} alike:
+         * request, response and error. Called on the thread of the call; an exception they throw is
+         * logged and ignored by langchain4j.
+         */
+        public Builder listeners(List<ScoringModelListener> listeners) {
+            this.listeners = List.copyOf(Objects.requireNonNull(listeners, "listeners"));
             return this;
         }
 

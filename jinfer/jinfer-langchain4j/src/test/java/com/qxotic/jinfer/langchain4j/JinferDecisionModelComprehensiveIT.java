@@ -11,10 +11,10 @@ import com.qxotic.jinfer.chat.Models;
 import com.qxotic.jinfer.codecs.ImageCodec;
 import com.qxotic.jinfer.media.Media;
 import com.qxotic.jinfer.testkit.TestModels;
+import dev.langchain4j.data.message.CustomMessage;
 import dev.langchain4j.data.message.ImageContent;
 import dev.langchain4j.data.message.PdfFileContent;
 import dev.langchain4j.data.message.TextContent;
-import dev.langchain4j.data.message.UserMessage;
 import dev.langchain4j.data.message.VideoContent;
 import dev.langchain4j.exception.AsyncNotSupportedException;
 import dev.langchain4j.exception.UnsupportedFeatureException;
@@ -150,14 +150,16 @@ final class JinferDecisionModelComprehensiveIT {
                                 .build());
         ScaleAnswer scale = response.scale("urgency");
         assertEquals(4, scale.probabilities().size());
-        double sum = 0, mean = 0;
+        double sum = 0, mean = 0, likeliest = 0;
         for (int i = 0; i < scale.probabilities().size(); i++) {
             sum += scale.probabilities().get(i);
             mean += i * scale.probabilities().get(i);
+            likeliest = Math.max(likeliest, scale.probabilities().get(i));
         }
         assertEquals(1, sum, 1e-5);
         assertEquals(mean, scale.mean(), 1e-5);
-        assertNull(scale.confidence(), "a jinfer answer does not report a confidence");
+        // jinfer's confidence, as on every face: the likeliest level's probability
+        assertEquals(likeliest, scale.confidence(), 1e-6);
     }
 
     @Test
@@ -425,7 +427,7 @@ final class JinferDecisionModelComprehensiveIT {
                     () ->
                             listened.decide(
                                     DecisionRequest.builder()
-                                            .inputMessages(UserMessage.from("hi"))
+                                            .inputMessages(CustomMessage.from(Map.of("k", "v")))
                                             .question("q", YesNoQuestion.from("?"))
                                             .build()));
             assertEquals(1, errors.get());

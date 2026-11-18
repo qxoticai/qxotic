@@ -12,6 +12,16 @@ import com.qxotic.jinfer.chat.JsonCodec;
 import com.qxotic.jinfer.chat.Models;
 import com.qxotic.jinfer.codecs.VideoSampler;
 import com.qxotic.jinfer.hub.ModelStore;
+import dev.langchain4j.agent.tool.ToolExecutionRequest;
+import dev.langchain4j.data.message.AiMessage;
+import dev.langchain4j.data.message.AudioContent;
+import dev.langchain4j.data.message.ChatMessage;
+import dev.langchain4j.data.message.ImageContent;
+import dev.langchain4j.data.message.SystemMessage;
+import dev.langchain4j.data.message.TextContent;
+import dev.langchain4j.data.message.ToolExecutionResultMessage;
+import dev.langchain4j.data.message.UserMessage;
+import dev.langchain4j.data.message.VideoContent;
 import dev.langchain4j.exception.UnsupportedFeatureException;
 import dev.langchain4j.model.decision.DecisionModel;
 import dev.langchain4j.model.decision.listener.DecisionModelListener;
@@ -21,6 +31,7 @@ import dev.langchain4j.model.decision.request.DecisionInput;
 import dev.langchain4j.model.decision.request.DecisionRequest;
 import dev.langchain4j.model.decision.request.DecisionRequestParameters;
 import dev.langchain4j.model.decision.request.FieldsInput;
+import dev.langchain4j.model.decision.request.MessagesInput;
 import dev.langchain4j.model.decision.request.Question;
 import dev.langchain4j.model.decision.request.ScaleQuestion;
 import dev.langchain4j.model.decision.request.TextInput;
@@ -49,10 +60,14 @@ import java.util.concurrent.locks.ReentrantLock;
  * The family's prompt, the tokens read for each option and the calibration live in its port - this
  * class maps types and owns the pipeline.
  *
- * <p>The input is a text, fields - put to the model as JSON, a member a line - or contents: text,
+ * <p>The input is a text, fields - put to the model as JSON, a member a line - contents: text,
  * images, audio and video in their order, the media read through the model's towers, its {@code
- * media} companion. A field holding contents is its text (or its media's kinds); its media join the
- * input's, never the JSON. A conversation is not an input: {@code inputMessages} is refused.
+ * media} companion - or a conversation. A field holding contents is its text (or its media's
+ * kinds); its media join the input's, never the JSON. A conversation is its transcript, {@code
+ * {"messages": [...]}}, one object a message, as langchain4j's decision models send it: its media
+ * referred to as {@code [image 1]}, {@code [audio 1]}, {@code [video 1]} and joining the input's in
+ * that order. It is how {@code DecisionModelChatModelRouter} and the guardrails' decision checks
+ * ask.
  *
  * <p>The questions of a request are answered in its order, the model's own way unless {@link
  * Builder#independent} asks for each alone.
@@ -199,13 +214,113 @@ public final class JinferDecisionModel implements DecisionModel, AutoCloseable {
                 yield parts;
             }
             case ContentsInput contents -> Mappings.parts(contents.contents(), videoSampler);
+            case MessagesInput messages -> {
+                // the media ahead of the JSON, as fields put theirs and System One reads files
+                List<Content> parts = new ArrayList<>();
+                Map<String, Object> state = Map.of("messages", transcript(messages, parts));
+                parts.add(new Content.Text(JsonCodec.stringify(state, true)));
+                yield parts;
+            }
             default ->
                     throw new UnsupportedFeatureException(
-                            "a jinfer decision model judges a text, fields or contents, not "
+                            "a jinfer decision model judges a text, fields, contents or messages,"
+                                    + " not "
                                     + input.type().name().toLowerCase(Locale.ROOT)
                                     + ": put what is to be judged as input(...),"
-                                    + " inputFields(...) or inputContents(...)");
+                                    + " inputFields(...), inputContents(...) or"
+                                    + " inputMessages(...)");
         };
+    }
+
+    /**
+     * A conversation as langchain4j's decision models send it: one object a message, its role
+     * ({@code system}, {@code user}, {@code assistant}, {@code tool}), a user's name, the text, an
+     * assistant's tool calls, a tool result's call id, name and error flag. Thinking is left out
+     * and an assistant message with neither text nor tool calls skipped. A medium is its marker,
+     * {@code [image 1]}, numbered per kind; the media go to {@code media} in that order.
+     */
+    private List<Map<String, Object>> transcript(MessagesInput input, List<Content> media) {
+        List<Map<String, Object>> messages = new ArrayList<>();
+        Map<String, Integer> counts = new LinkedHashMap<>();
+        for (ChatMessage message : input.messages()) {
+            Map<String, Object> entry = new LinkedHashMap<>();
+            switch (message) {
+                case SystemMessage m -> {
+                    entry.put("role", "system");
+                    entry.put("text", m.text());
+                }
+                case UserMessage m -> {
+                    entry.put("role", "user");
+                    if (m.name() != null) entry.put("name", m.name());
+                    entry.put("text", transcriptText(m.contents(), media, counts));
+                }
+                case AiMessage m -> {
+                    boolean text = m.text() != null && !m.text().isEmpty();
+                    if (!text && !m.hasToolExecutionRequests()) continue;
+                    entry.put("role", "assistant");
+                    if (text) entry.put("text", m.text());
+                    if (m.hasToolExecutionRequests()) {
+                        List<Map<String, Object>> calls = new ArrayList<>();
+                        for (ToolExecutionRequest request : m.toolExecutionRequests()) {
+                            Map<String, Object> call = new LinkedHashMap<>();
+                            if (request.id() != null) call.put("id", request.id());
+                            call.put("name", request.name());
+                            if (request.arguments() != null)
+                                call.put("arguments", request.arguments());
+                            calls.add(call);
+                        }
+                        entry.put("tool_calls", calls);
+                    }
+                }
+                case ToolExecutionResultMessage m -> {
+                    entry.put("role", "tool");
+                    if (m.id() != null) entry.put("tool_call_id", m.id());
+                    entry.put("name", m.toolName());
+                    entry.put("text", transcriptText(m.contents(), media, counts));
+                    if (Boolean.TRUE.equals(m.isError())) entry.put("is_error", true);
+                }
+                default ->
+                        throw new UnsupportedFeatureException(
+                                "a conversation holds system, user, AI and tool result messages,"
+                                        + " not "
+                                        + message.getClass().getSimpleName());
+            }
+            messages.add(entry);
+        }
+        if (messages.isEmpty())
+            throw new IllegalArgumentException(
+                    "the conversation has nothing to judge: AI messages with neither text nor"
+                            + " tool calls are left out");
+        return messages;
+    }
+
+    /** A message's contents as its text: text as itself, a medium as its marker. */
+    private String transcriptText(
+            List<dev.langchain4j.data.message.Content> contents,
+            List<Content> media,
+            Map<String, Integer> counts) {
+        List<String> parts = new ArrayList<>();
+        for (dev.langchain4j.data.message.Content content : contents) {
+            String kind =
+                    switch (content) {
+                        case TextContent t -> null;
+                        case ImageContent i -> "image";
+                        case AudioContent a -> "audio";
+                        case VideoContent v -> "video";
+                        default ->
+                                throw new UnsupportedFeatureException(
+                                        "a conversation's contents are text, images, audio and"
+                                                + " video, not "
+                                                + content.type().name().toLowerCase(Locale.ROOT));
+                    };
+            if (kind == null) {
+                parts.add(((TextContent) content).text());
+                continue;
+            }
+            media.add(Mappings.media(content, videoSampler));
+            parts.add("[" + kind + " " + counts.merge(kind, 1, Integer::sum) + "]");
+        }
+        return String.join("\n", parts);
     }
 
     /** A field's list of contents ({@link FieldsInput} allows one), never a plain list. */

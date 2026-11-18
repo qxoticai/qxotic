@@ -163,7 +163,9 @@ The one unchanged artifact is `json`, at 0.2.0.
   Files are read and written little-endian on every platform, and the tensor name limit counts UTF-8 bytes; the writer stops at ggml's 63.
 - **Responses API.** A deadline or a cancel ends a Responses reply as `incomplete`, with its reason.
 - **`/v1/models` reports input modalities**, so a client can tell which models accept images or audio.
-- **LangChain4j 1.23.0.** `jinfer-langchain4j` builds on it and passes its chat, streaming, AI-service, tools and JSON-schema TCKs.
+- **LangChain4j 1.24.0.** `jinfer-langchain4j` builds on it and passes its chat, streaming, AI-service, tools and JSON-schema TCKs.
+  `JinferDecisionModel` takes a conversation (`inputMessages`) as its transcript, so LangChain4j's `DecisionModelChatModelRouter` and the guardrails' decision checks run on d1.
+  `JinferScoringModel` takes `ScoringModelListener`s, notified of every scoring call.
 - **Spring AI 2.1.** `jinfer-spring-ai` builds on 2.1 and its message parts: a reply's reasoning is a `ReasoningPart` (`AssistantMessage.getReasoning()`), before the text and the tool calls, and streams as its own part per delta, so `ChatClient` and `MessageAggregator` keep it off the content lane.
   The `thinking` metadata entry and the `isThought` chunk flag are gone.
   Prompts are read by parts too: a user message's text and media reach the model in the order written, and tool results are read from their parts (text; a media result is refused in words).

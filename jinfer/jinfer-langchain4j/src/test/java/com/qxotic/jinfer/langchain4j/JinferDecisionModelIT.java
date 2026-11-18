@@ -1,15 +1,12 @@
 package com.qxotic.jinfer.langchain4j;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
-import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import com.qxotic.jinfer.testkit.TestModels;
 import dev.langchain4j.data.message.AudioContent;
 import dev.langchain4j.data.message.ImageContent;
 import dev.langchain4j.data.message.TextContent;
-import dev.langchain4j.data.message.UserMessage;
-import dev.langchain4j.exception.UnsupportedFeatureException;
 import dev.langchain4j.model.decision.request.ChoiceQuestion;
 import dev.langchain4j.model.decision.request.DecisionRequest;
 import dev.langchain4j.model.decision.request.ScaleQuestion;
@@ -198,19 +195,5 @@ final class JinferDecisionModelIT {
             assertEquals("speech", response.choice("holds").value());
             assertEquals(0.74172, response.choice("holds").probabilityOf("speech"), TOLERANCE);
         }
-    }
-
-    @Test
-    void aConversationIsNotAnInput() {
-        UnsupportedFeatureException refused =
-                assertThrows(
-                        UnsupportedFeatureException.class,
-                        () ->
-                                model.decide(
-                                        DecisionRequest.builder()
-                                                .inputMessages(UserMessage.from("hello"))
-                                                .question("refund", REFUND)
-                                                .build()));
-        assertTrue(refused.getMessage().contains("not messages"), refused.getMessage());
     }
 }

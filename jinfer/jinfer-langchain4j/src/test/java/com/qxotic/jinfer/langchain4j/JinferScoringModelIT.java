@@ -8,8 +8,17 @@ import com.qxotic.jinfer.Arenas;
 import com.qxotic.jinfer.chat.Models;
 import com.qxotic.jinfer.testkit.TestModels;
 import dev.langchain4j.data.segment.TextSegment;
+import dev.langchain4j.exception.UnsupportedFeatureException;
 import dev.langchain4j.model.output.Response;
+import dev.langchain4j.model.scoring.listener.ScoringModelErrorContext;
+import dev.langchain4j.model.scoring.listener.ScoringModelListener;
+import dev.langchain4j.model.scoring.listener.ScoringModelRequestContext;
+import dev.langchain4j.model.scoring.listener.ScoringModelResponseContext;
+import dev.langchain4j.model.scoring.request.DefaultScoringRequestParameters;
+import dev.langchain4j.model.scoring.request.ScoringRequest;
+import dev.langchain4j.model.scoring.response.ScoringResponse;
 import java.lang.foreign.Arena;
+import java.util.ArrayList;
 import java.util.List;
 import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.Assertions;
@@ -267,6 +276,93 @@ class JinferScoringModelIT {
                                             + max
                                             + "; -1 selects the maximum"),
                     refused.getMessage());
+        }
+    }
+
+    /**
+     * Both doors go through core's {@code score}: the listeners see {@code scoreAll} and {@code
+     * score(ScoringRequest)} alike, the response names the checkpoint, and a request naming another
+     * model reaches {@code onError} as the refusal the caller gets.
+     */
+    @Test
+    void listenersSeeEveryDoor() throws Exception {
+        List<String> events = new ArrayList<>();
+        ScoringModelListener listener =
+                new ScoringModelListener() {
+                    @Override
+                    public void onRequest(ScoringModelRequestContext context) {
+                        events.add("request " + context.scoringRequest().documents().size());
+                    }
+
+                    @Override
+                    public void onResponse(ScoringModelResponseContext context) {
+                        ScoringResponse response = context.scoringResponse();
+                        events.add("response " + response.modelName());
+                        assertTrue(response.tokenUsage().inputTokenCount() > 0);
+                    }
+
+                    @Override
+                    public void onError(ScoringModelErrorContext context) {
+                        events.add("error " + context.error().getClass().getSimpleName());
+                    }
+                };
+        try (Arena arena = Arenas.newCrossThread()) {
+            var loaded = Models.loadReranker(TestModels.require(REF), arena);
+            try (JinferScoringModel listened =
+                    JinferScoringModel.builder()
+                            .model(loaded)
+                            .contextCapacity(2048)
+                            .listeners(List.of(listener))
+                            .build()) {
+                String query = "Where do I reset my password?";
+                List<String> docs =
+                        List.of(
+                                "The reset portal is https://acme.example/reset.",
+                                "Bananas are rich in potassium.");
+                List<Double> viaSegments =
+                        listened.scoreAll(docs.stream().map(TextSegment::from).toList(), query)
+                                .content();
+                ScoringResponse viaRequest =
+                        listened.score(
+                                ScoringRequest.builder().documents(docs).query(query).build());
+                assertEquals(loaded.name(), viaRequest.modelName());
+                for (int i = 0; i < docs.size(); i++)
+                    assertEquals(viaSegments.get(i), viaRequest.scores().get(i), 1e-4);
+
+                // a blank document reaches this door (a TextSegment cannot be blank): scored, low
+                ScoringResponse blank =
+                        listened.score(
+                                ScoringRequest.builder()
+                                        .documents(List.of(""))
+                                        .query(query)
+                                        .build());
+                assertTrue(blank.scores().getFirst() < 0.5, blank.scores().toString());
+
+                assertThrows(
+                        UnsupportedFeatureException.class,
+                        () ->
+                                listened.score(
+                                        ScoringRequest.builder()
+                                                .documents(docs)
+                                                .query(query)
+                                                .parameters(
+                                                        DefaultScoringRequestParameters.builder()
+                                                                .modelName("another.gguf")
+                                                                .build())
+                                                .build()));
+                String name = "response " + loaded.name();
+                assertEquals(
+                        List.of(
+                                "request 2",
+                                name,
+                                "request 2",
+                                name,
+                                "request 1",
+                                name,
+                                "request 2",
+                                "error UnsupportedFeatureException"),
+                        events);
+            }
         }
     }
 }

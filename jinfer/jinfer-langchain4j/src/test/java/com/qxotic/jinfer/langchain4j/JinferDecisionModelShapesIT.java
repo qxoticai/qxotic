@@ -8,10 +8,17 @@ import com.qxotic.jinfer.chat.DecisionModel;
 import com.qxotic.jinfer.chat.Models;
 import com.qxotic.jinfer.testkit.TestModels;
 import dev.langchain4j.data.message.AiMessage;
+import dev.langchain4j.data.message.ChatMessage;
 import dev.langchain4j.data.message.ImageContent;
 import dev.langchain4j.data.message.PdfFileContent;
 import dev.langchain4j.data.message.TextContent;
+import dev.langchain4j.data.message.UserMessage;
 import dev.langchain4j.exception.UnsupportedFeatureException;
+import dev.langchain4j.model.chat.ChatModel;
+import dev.langchain4j.model.chat.request.ChatRequest;
+import dev.langchain4j.model.chat.response.ChatResponse;
+import dev.langchain4j.model.chat.router.DecisionModelChatModelRouter;
+import dev.langchain4j.model.chat.router.RoutingChatModel;
 import dev.langchain4j.model.decision.request.ChoiceQuestion;
 import dev.langchain4j.model.decision.request.DecisionRequest;
 import dev.langchain4j.model.decision.request.ScaleQuestion;
@@ -20,11 +27,13 @@ import dev.langchain4j.model.decision.response.DecisionResponse;
 import java.lang.foreign.Arena;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.ArrayList;
 import java.util.Base64;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.function.BiFunction;
+import java.util.function.Function;
 import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Tag;
@@ -32,8 +41,9 @@ import org.junit.jupiter.api.Test;
 
 /**
  * The adapter's shapes: many questions in one request, contents in every order, an empty text
- * content, a content a decision cannot judge, a field of empty contents, and one instance serving
- * every shape in sequence. Liquid d1-2B with its vision tower, so {@code integration}.
+ * content, a content a decision cannot judge, a field of empty contents, a conversation, and one
+ * instance serving every shape in sequence. Liquid d1-2B with its vision tower, so {@code
+ * integration}.
  */
 @Tag("integration")
 final class JinferDecisionModelShapesIT {
@@ -230,16 +240,79 @@ final class JinferDecisionModelShapesIT {
                 "the first shape again reads the same");
     }
 
-    /** An AI message's content is not an input: only text, fields and contents are. */
+    /** A conversation is read whole: the same last words mean what the turns before make them. */
     @Test
-    void anAiMessageIsNotAnInput() {
-        assertThrows(
-                UnsupportedFeatureException.class,
-                () ->
+    void aConversationIsReadWhole() {
+        Function<String, Double> refund =
+                offer ->
                         model.decide(
-                                DecisionRequest.builder()
-                                        .inputMessages(AiMessage.from("hello"))
-                                        .question("q", YesNoQuestion.from("?"))
-                                        .build()));
+                                        DecisionRequest.builder()
+                                                .inputMessages(
+                                                        UserMessage.from(
+                                                                "I was charged twice for order"
+                                                                        + " A-17."),
+                                                        AiMessage.from(offer),
+                                                        UserMessage.from("Yes please."))
+                                                .question(
+                                                        "refund",
+                                                        YesNoQuestion.from(
+                                                                "Is the customer asking for a"
+                                                                        + " refund?"))
+                                                .build())
+                                .yesNo("refund")
+                                .probability();
+        double asked = refund.apply("Sorry about that! Shall I refund the duplicate charge?");
+        double declined = refund.apply("Sorry about that! Would you like our newsletter instead?");
+        assertTrue(asked > 0.5, "the offer accepted is a refund: " + asked);
+        assertTrue(declined < asked, "a newsletter accepted is less of one: " + declined);
+    }
+
+    /**
+     * langchain4j's own router over this model: {@code DecisionModelChatModelRouter} asks with the
+     * request's conversation, so a follow-up is routed by what it follows. {@code FAIL}, so a
+     * refusal surfaces instead of quietly taking the default route.
+     */
+    @Test
+    void routesAChatModelByItsConversation() {
+        List<String> routed = new ArrayList<>();
+        Function<String, ChatModel> named =
+                name ->
+                        new ChatModel() {
+                            @Override
+                            public ChatResponse doChat(ChatRequest request) {
+                                routed.add(name);
+                                return ChatResponse.builder()
+                                        .aiMessage(AiMessage.from(name))
+                                        .build();
+                            }
+                        };
+        ChatModel routing =
+                RoutingChatModel.builder()
+                        .route(
+                                "small",
+                                "Greetings, small talk, short factual questions",
+                                named.apply("small"))
+                        .route(
+                                "large",
+                                "Writing code, multi-step reasoning, analysis",
+                                named.apply("large"))
+                        .router(
+                                DecisionModelChatModelRouter.builder()
+                                        .decisionModel(model)
+                                        .fallbackStrategy(
+                                                DecisionModelChatModelRouter.FallbackStrategy.FAIL)
+                                        .build())
+                        .defaultRoute("small")
+                        .build();
+        List<ChatMessage> code =
+                List.of(
+                        UserMessage.from("I need to parse ISO-8601 dates with time zones in Java."),
+                        AiMessage.from(
+                                "I can write a parser that handles offsets, zone ids and leap"
+                                        + " seconds, with tests. Shall I go ahead?"),
+                        UserMessage.from("Yes, go ahead."));
+        routing.chat(List.of(UserMessage.from("Hi there, how are you?")));
+        routing.chat(code);
+        assertEquals(List.of("small", "large"), routed);
     }
 }

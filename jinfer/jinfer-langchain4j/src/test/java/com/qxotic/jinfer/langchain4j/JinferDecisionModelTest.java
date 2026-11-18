@@ -14,12 +14,22 @@ import com.qxotic.jinfer.chat.DecisionModel.Option;
 import com.qxotic.jinfer.chat.DecisionModel.Predicate;
 import com.qxotic.jinfer.chat.DecisionModel.Question;
 import com.qxotic.jinfer.chat.DecisionModel.Rating;
+import com.qxotic.jinfer.chat.JsonCodec;
 import com.qxotic.jinfer.media.Media;
 import com.qxotic.jota.memory.MemoryAllocators;
+import dev.langchain4j.agent.tool.ToolExecutionRequest;
+import dev.langchain4j.data.message.AiMessage;
+import dev.langchain4j.data.message.ChatMessage;
+import dev.langchain4j.data.message.ContentType;
+import dev.langchain4j.data.message.CustomMessage;
 import dev.langchain4j.data.message.ImageContent;
+import dev.langchain4j.data.message.PdfFileContent;
+import dev.langchain4j.data.message.SystemMessage;
 import dev.langchain4j.data.message.TextContent;
+import dev.langchain4j.data.message.ToolExecutionResultMessage;
 import dev.langchain4j.data.message.UserMessage;
 import dev.langchain4j.exception.UnsupportedFeatureException;
+import dev.langchain4j.internal.DecisionModelInputUtils;
 import dev.langchain4j.model.decision.request.ChoiceQuestion;
 import dev.langchain4j.model.decision.request.DecisionRequest;
 import dev.langchain4j.model.decision.request.ScaleQuestion;
@@ -35,6 +45,7 @@ import java.util.Base64;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.function.Function;
 import javax.imageio.ImageIO;
 import org.junit.jupiter.api.Test;
@@ -251,18 +262,97 @@ class JinferDecisionModelTest {
         assertEquals(new Content.Text("after"), stub.input.get(2));
     }
 
+    /**
+     * A conversation reaches the model as the transcript langchain4j's own decision models send
+     * (Ollama's, Gemini's), its media ahead. Core's builder of it is internal, so the adapter owns
+     * its own and core's is the oracle here: an upstream change to the shape fails this test.
+     */
     @Test
-    void aConversationIsRefused() {
-        var refused =
+    void aConversationIsItsTranscriptWithItsMediaAhead() throws Exception {
+        ToolExecutionRequest call =
+                ToolExecutionRequest.builder()
+                        .id("call-1")
+                        .name("lookupOrder")
+                        .arguments("{\"order\": \"A-17\"}")
+                        .build();
+        List<ChatMessage> conversation =
+                List.of(
+                        SystemMessage.from("You are the support assistant of a shop."),
+                        UserMessage.builder()
+                                .name("ana")
+                                .contents(
+                                        List.of(
+                                                TextContent.from("I was charged twice, receipt:"),
+                                                ImageContent.from(png(), "image/png")))
+                                .build(),
+                        AiMessage.builder()
+                                .text("Let me check.")
+                                .thinking("left out")
+                                .toolExecutionRequests(List.of(call))
+                                .build(),
+                        ToolExecutionResultMessage.builder()
+                                .id("call-1")
+                                .toolName("lookupOrder")
+                                .text("order A-17 was not found")
+                                .isError(true)
+                                .build(),
+                        AiMessage.builder().thinking("nothing to send").build(),
+                        UserMessage.from("I want my money back."));
+        model.decide(
+                DecisionRequest.builder()
+                        .inputMessages(conversation)
+                        .question("q", YesNoQuestion.from("?"))
+                        .build());
+
+        var oracle =
+                DecisionModelInputUtils.transcript(
+                        conversation,
+                        "oracle",
+                        Set.of(ContentType.IMAGE, ContentType.AUDIO, ContentType.VIDEO));
+        assertEquals(List.of("[image 1]"), List.copyOf(oracle.media().keySet()));
+        assertEquals(2, stub.input.size());
+        Media.Image image =
+                assertInstanceOf(
+                        Media.Image.class,
+                        assertInstanceOf(Content.Media.class, stub.input.get(0)).media());
+        assertEquals(3, image.width());
+        assertEquals(
+                new Content.Text(JsonCodec.stringify(Map.of("messages", oracle.messages()), true)),
+                stub.input.get(1));
+    }
+
+    @Test
+    void aConversationRefusesWhatItCannotHold() {
+        for (ChatMessage message :
+                List.of(
+                        CustomMessage.from(Map.of("k", "v")),
+                        UserMessage.from(
+                                PdfFileContent.from(
+                                        Base64.getEncoder().encodeToString(new byte[] {37}),
+                                        "application/pdf")))) {
+            assertThrows(
+                    UnsupportedFeatureException.class,
+                    () ->
+                            model.decide(
+                                    DecisionRequest.builder()
+                                            .inputMessages(message)
+                                            .question("q", YesNoQuestion.from("?"))
+                                            .build()),
+                    message.toString());
+        }
+        var empty =
                 assertThrows(
-                        UnsupportedFeatureException.class,
+                        IllegalArgumentException.class,
                         () ->
                                 model.decide(
                                         DecisionRequest.builder()
-                                                .inputMessages(UserMessage.from("hi"))
+                                                .inputMessages(
+                                                        AiMessage.builder()
+                                                                .thinking("only thinking")
+                                                                .build())
                                                 .question("q", YesNoQuestion.from("?"))
                                                 .build()));
-        assertTrue(refused.getMessage().contains("not messages"), refused.getMessage());
+        assertTrue(empty.getMessage().contains("nothing to judge"), empty.getMessage());
         assertEquals(null, stub.input, "nothing reached the model");
     }
 

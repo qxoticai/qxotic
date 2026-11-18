@@ -58,7 +58,7 @@ Every knob here has the same name on the other faces (CLI, server, Spring AI, Ja
 
 ## Add the provider
 
-These examples target jinfer **0.4.0**, LangChain4j **1.23.0**, and Java **25**.
+These examples target jinfer **0.4.0**, LangChain4j **1.24.0**, and Java **25**.
 For an unreleased checkout, first install the artifacts locally from the repository root:
 
 ```bash
@@ -78,7 +78,7 @@ mvn -pl jinfer/jinfer-bom,jinfer/jinfer-langchain4j,jinfer/jinfer-gemma-embeddin
     <dependency>
       <groupId>dev.langchain4j</groupId>
       <artifactId>langchain4j-bom</artifactId>
-      <version>1.23.0</version>
+      <version>1.24.0</version>
       <type>pom</type>
       <scope>import</scope>
     </dependency>
@@ -100,7 +100,7 @@ mvn -pl jinfer/jinfer-bom,jinfer/jinfer-langchain4j,jinfer/jinfer-gemma-embeddin
 Use `jinfer-models-all` instead of `jinfer-lfm2` for every model family.
 The `AiServices` examples also need `dev.langchain4j:langchain4j`.
 The BOMs manage versions only.
-Without them, pin the versions `jinfer-bom` 0.4.0 lists (0.4.0 for `jinfer-langchain4j` and `jinfer-lfm2`) and `1.23.0` on each LangChain4j one.
+Without them, pin the versions `jinfer-bom` 0.4.0 lists (0.4.0 for `jinfer-langchain4j` and `jinfer-lfm2`) and `1.24.0` on each LangChain4j one.
 
 Optional runtime backends are `jam-native` (hand-tuned SIMD) and `jam-vector` (Panama Vector API):
 
@@ -472,7 +472,7 @@ The image vector shares the embedding space used by text queries.
 As the model card says, media embeds without a prompt, so the input type changes nothing for an input that carries media.
 Text and media parts in one `EmbeddingInput` embed as one vector, in order.
 Without the projector, `supportedContentTypes()` is text only and LangChain4j refuses media before decoding it.
-With a listener registered, LangChain4j (1.21 to 1.23) refuses an input that is media alone ("text cannot be null or blank", [langchain4j#6784](https://github.com/langchain4j/langchain4j/issues/6784)).
+With a listener registered, LangChain4j (1.21 to 1.24) refuses an input that is media alone ("text cannot be null or blank", [langchain4j#6784](https://github.com/langchain4j/langchain4j/issues/6784)).
 Adding a text part avoids the error, but the text then becomes part of the vector.
 
 Plain `embed(String)`/`embedAll` embeds raw text; a one-time SLF4J warning points at the role options when the model is prefix-trained and a logging provider is installed.
@@ -498,6 +498,9 @@ RetrievalAugmentor augmentor = DefaultRetrievalAugmentor.builder()
 
 Try the smaller [Search.java](../examples/scripts/Search.java) and
 [Rerank.java](../examples/scripts/Rerank.java) demos side by side.
+
+`listeners(...)` takes langchain4j `ScoringModelListener`s, notified of every scoring call, `scoreAll` and `score(ScoringRequest)` alike, `ReRankingContentAggregator`'s included.
+The response names the checkpoint it came from (`modelName()`), and a request naming another model is refused rather than answered by this one.
 
 ## Decisions
 
@@ -527,7 +530,19 @@ try (var model = JinferDecisionModel.builder()
 The input can be a text, fields or contents.
 Fields are put to the model as JSON, the form d1 was trained on; a field holding contents contributes its text (or its media's kinds) to the JSON, and its media to the input, never as base64 in the prompt.
 Contents take images, audio and video beside text; d1 reads images and video, d1-Omni also audio, d3 images.
-A conversation (`inputMessages`) is not an input and is refused.
+A conversation (`inputMessages`) is put to the model as its transcript, `{"messages": [...]}`, the form LangChain4j's Ollama decision model sends d1; its images, audio and video are referred to as `[image 1]`, `[audio 1]`, `[video 1]` and join the input in that order.
+So LangChain4j's `DecisionModelChatModelRouter` can route a `RoutingChatModel` on d1, in process:
+
+```java
+ChatModel chat = RoutingChatModel.builder()
+        .route("small", "Greetings, small talk, short factual questions", smallModel)
+        .route("large", "Writing code, multi-step reasoning, analysis", largeModel)
+        .router(new DecisionModelChatModelRouter(decisionModel))
+        .defaultRoute("large")
+        .build();
+```
+
+The router reads the conversation, not only the last message, so a follow-up such as "Yes, go ahead." is routed by what it answers.
 
 The questions of a request are taken the way the model was trained to, with no isolation between them guaranteed.
 On d1 and d1-Omni the input is read once for all of them, several times faster, and an answer can then shift with the questions asked beside it.

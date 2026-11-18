@@ -13,7 +13,7 @@ Ports use jinfer's hand-written, oracle-validated chat-template codecs; unported
 
 ## Installation
 
-These examples target jinfer **0.4.0**, LangChain4j **1.23.0**, and Java **25**.
+These examples target jinfer **0.4.0**, LangChain4j **1.24.0**, and Java **25**.
 For an unreleased checkout, first install the artifacts locally from the repository root:
 
 ```bash
@@ -353,7 +353,7 @@ Each input must fit; packing several inputs does not split an oversized document
 Keep the concrete adapter in try-with-resources, as above, so its state and owned weights are closed.
 
 For an existing `store`, create the ingestor and retriever inside that same try block and use them before it closes.
-This higher-level wiring also needs `dev.langchain4j:langchain4j:1.23.0`:
+This higher-level wiring also needs `dev.langchain4j:langchain4j:1.24.0`:
 
 ```java
 EmbeddingStoreIngestor.builder()
@@ -410,7 +410,7 @@ The image vector shares the embedding space used by text queries.
 As the model card says, media embeds without a prompt, so the input type changes nothing for an input that carries media.
 Text and media parts in one `EmbeddingInput` embed as one vector, in order.
 Without the projector, `supportedContentTypes()` is text only and LangChain4j refuses media before decoding it.
-With a listener registered, LangChain4j (1.21 to 1.23) refuses an input that is media alone ("text cannot be null or blank", [langchain4j#6784](https://github.com/langchain4j/langchain4j/issues/6784)).
+With a listener registered, LangChain4j (1.21 to 1.24) refuses an input that is media alone ("text cannot be null or blank", [langchain4j#6784](https://github.com/langchain4j/langchain4j/issues/6784)).
 Adding a text part avoids the error, but the text then becomes part of the vector.
 
 Plain `embed(String)`/`embedAll` embeds raw text; a one-time SLF4J warning points at the role options when the model is prefix-trained and a logging provider is installed.
@@ -437,6 +437,9 @@ RetrievalAugmentor augmentor = DefaultRetrievalAugmentor.builder()
 ```
 
 Runnable version: `RerankRetrievalIT`.
+
+`listeners(...)` takes LangChain4j `ScoringModelListener`s, notified of every scoring call, `scoreAll` and `score(ScoringRequest)` alike, `ReRankingContentAggregator`'s included.
+The response names the checkpoint it came from (`modelName()`), and a request naming another model is refused rather than answered by this one.
 
 ## Decisions
 
@@ -467,7 +470,19 @@ try (var model = JinferDecisionModel.builder()
 The input can be a text, fields or contents.
 Fields are put to the model as JSON, the form d1 was trained on; a field holding contents contributes its text (or its media's kinds) to the JSON, and its media to the input, never as base64 in the prompt.
 Contents take images, audio and video beside text; d1 reads images and video, d1-Omni also audio, d3 images.
-A conversation (`inputMessages`) is not an input and is refused.
+A conversation (`inputMessages`) is put to the model as its transcript, `{"messages": [...]}`, the form LangChain4j's Ollama decision model sends d1; its images, audio and video are referred to as `[image 1]`, `[audio 1]`, `[video 1]` and join the input in that order.
+So LangChain4j's `DecisionModelChatModelRouter` can route a `RoutingChatModel` on d1, in process:
+
+```java
+ChatModel chat = RoutingChatModel.builder()
+        .route("small", "Greetings, small talk, short factual questions", smallModel)
+        .route("large", "Writing code, multi-step reasoning, analysis", largeModel)
+        .router(new DecisionModelChatModelRouter(decisionModel))
+        .defaultRoute("large")
+        .build();
+```
+
+The router reads the conversation, not only the last message, so a follow-up such as "Yes, go ahead." is routed by what it answers.
 
 The questions of a request are taken the way the model was trained to, with no isolation between them guaranteed.
 On d1 and d1-Omni the input is read once for all of them, several times faster, and an answer can then shift with the questions asked beside it.

@@ -10,7 +10,7 @@ import com.qxotic.jinfer.chat.Content;
 import com.qxotic.jinfer.chat.DecisionModel;
 import com.qxotic.jinfer.chat.Models;
 import com.qxotic.jinfer.testkit.TestModels;
-import dev.langchain4j.data.message.UserMessage;
+import dev.langchain4j.data.message.CustomMessage;
 import dev.langchain4j.exception.UnsupportedFeatureException;
 import dev.langchain4j.model.decision.listener.DecisionModelErrorContext;
 import dev.langchain4j.model.decision.listener.DecisionModelListener;
@@ -228,7 +228,7 @@ final class JinferDecisionModelConcurrencyIT {
                     () ->
                             model.decide(
                                     DecisionRequest.builder()
-                                            .inputMessages(UserMessage.from("hi"))
+                                            .inputMessages(CustomMessage.from(Map.of("k", "v")))
                                             .question("q", YesNoQuestion.from("?"))
                                             .build()));
             assertEquals(1, errors.get());
