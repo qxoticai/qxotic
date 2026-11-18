@@ -12,15 +12,13 @@ import javax.sound.sampled.AudioSystem;
 import javax.sound.sampled.UnsupportedAudioFileException;
 
 /**
- * The {@code javax.sound.sampled} decoder: WAV/AIFF/AU with no external process, falling back to
- * ffmpeg for anything {@code AudioSystem} cannot handle, so the facade always yields 16 kHz mono.
- * JVM only - {@code AudioSystem}'s SPI discovery is fragile under native-image, so {@link
- * AudioCodec} loads this reflectively.
+ * The {@code javax.sound.sampled} decoder: WAV, AIFF and AU with no external process, refusing the
+ * rest with the switch that reads it. JVM only - {@code AudioSystem}'s SPI discovery is fragile
+ * under native-image, so {@link AudioCodec} loads this reflectively.
  */
 public final class JavaSoundAudioDecoder implements AudioDecoder {
 
     private static final int SR = FfmpegAudioDecoder.SAMPLE_RATE; // 16000
-    private final FfmpegAudioDecoder fallback = new FfmpegAudioDecoder();
 
     @Override
     public String name() {
@@ -32,8 +30,7 @@ public final class JavaSoundAudioDecoder implements AudioDecoder {
         try (AudioInputStream in = AudioSystem.getAudioInputStream(path.toFile())) {
             return convert(in);
         } catch (UnsupportedAudioFileException | IllegalArgumentException e) {
-            return fallback.load(
-                    path); // mp3/compressed, or a conversion AudioSystem can't do -> ffmpeg
+            throw unreadable(path.toString(), e);
         }
     }
 
@@ -44,13 +41,23 @@ public final class JavaSoundAudioDecoder implements AudioDecoder {
                         new BufferedInputStream(new ByteArrayInputStream(encoded)))) {
             return convert(in);
         } catch (UnsupportedAudioFileException | IllegalArgumentException e) {
-            return fallback.decode(encoded);
+            throw unreadable("<" + encoded.length + " bytes>", e);
         }
+    }
+
+    /** A format, or a conversion to 16 kHz mono, the JDK cannot do: mp3, FLAC, Ogg, m4a. */
+    private static IOException unreadable(String src, Exception cause) {
+        return new IOException(
+                "javax.sound cannot read "
+                        + src
+                        + ": it reads WAV, AIFF and AU; -Djinfer.audioDecoder=ffmpeg reads the"
+                        + " rest",
+                cause);
     }
 
     /**
      * Convert any decoded stream to 16 kHz mono float[] PCM via the JDK's format converter. Throws
-     * {@link IllegalArgumentException} if the target conversion is unsupported (caller falls back).
+     * {@link IllegalArgumentException} if the target conversion is unsupported.
      */
     private Media.Audio convert(AudioInputStream in) throws IOException {
         // Target: signed 16-bit little-endian PCM, 16 kHz, mono. The converter downmixes +

@@ -90,6 +90,7 @@ The native libraries, the jinfer command and the wheels are built with Oracle Gr
   Against the official towers, Gemma 4 E2B's projected image and audio rows now agree to cosine 0.99998 and better.
   Gemma 4 chat encodes video frames at the reference's 70 tokens again, not at a still image's 280, so a 32-frame video fits a prompt about four times smaller.
   Audio handed in at another rate is resampled to 16 kHz with miniaudio's filter (`AudioCodec` still decodes files to 16 kHz itself).
+  On the JVM, the default decoders read the JDK's formats only, WAV, AIFF and AU for audio, and refuse the rest naming `-Djinfer.audioDecoder=ffmpeg` or `-Djinfer.imageDecoder=ffmpeg`, where audio silently fell back to ffmpeg.
 - **The server finishes what it started.** A shutdown lets the reply in flight finish within the shutdown timeout, where it was cut at once; queued callers still get their 503 straight away.
   An upload far past the body limit (`--max-body-mb`) reads its 413, where the connection was reset before the client saw why.
   A reply cut short by the deadline finishes with `"length"`, OpenAI's value for a truncated reply, where `"other"` failed clients that read the field as an enum; the Responses API still says `timeout`.

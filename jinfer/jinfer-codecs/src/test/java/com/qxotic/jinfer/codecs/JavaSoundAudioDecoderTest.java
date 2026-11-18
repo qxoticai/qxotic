@@ -10,6 +10,17 @@ import org.junit.jupiter.api.Test;
 
 class JavaSoundAudioDecoderTest {
 
+    /** mp3 is not a JDK format: the refusal names the decoder that reads it. */
+    @Test
+    void aFormatTheJdkCannotReadNamesTheRemedy() {
+        byte[] mp3 = {'I', 'D', '3', 4, 0, 0, 0, 0, 0, 0, (byte) 0xff, (byte) 0xfb, (byte) 0x90};
+        IOException refused =
+                assertThrows(IOException.class, () -> new JavaSoundAudioDecoder().decode(mp3));
+        assertTrue(
+                refused.getMessage().endsWith("-Djinfer.audioDecoder=ffmpeg reads the rest"),
+                refused.getMessage());
+    }
+
     @Test
     void rejectsDecodedAudioPastTheLimit() {
         IOException failure =

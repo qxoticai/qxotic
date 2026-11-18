@@ -216,6 +216,7 @@ It reports `tok/s` over the packed tokens and `seq/s`.
 
 ```bash
 java --add-modules jdk.incubator.vector -Djdk.incubator.vector.VECTOR_ACCESS_OOB_CHECK=0 \
+  -Djinfer.audioDecoder=ffmpeg \
   -cp jinfer/jinfer-bench/target/jinfer-bench.jar com.qxotic.jinfer.bench.TranscriptionBench \
   -m tdt-0.6b-v3-q4_k.gguf --librispeech LibriSpeech/test-clean --limit 100 --dump out.tsv
 ```
@@ -230,6 +231,7 @@ java --add-modules jdk.incubator.vector -Djdk.incubator.vector.VECTOR_ACCESS_OOB
 | `--audio <file>` | speed run over one file; exclusive with `--librispeech` |
 | `--reps <N>` | runs of the speed test, the first discarded as warm-up; default 3 |
 
+`-Djinfer.audioDecoder=ffmpeg` reads the corpus's FLAC; the JVM's own decoder reads WAV, AIFF and AU.
 WER lowercases, keeps `[a-z0-9']` and collapses spaces before a word-level edit distance.
 RTFx is seconds of audio transcribed per wall second, model load excluded.
 [WER.md](../jinfer-parakeet/WER.md) compares jinfer with parakeet.cpp and sherpa-onnx step by step.
