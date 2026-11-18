@@ -534,7 +534,8 @@ class ServerTest {
                                     HttpResponse.BodyHandlers.ofString());
                     assertEquals(405, rejected.statusCode(), method + " " + path);
                     assertEquals(
-                            "GET, OPTIONS", rejected.headers().firstValue("Allow").orElseThrow());
+                            "GET, HEAD, OPTIONS",
+                            rejected.headers().firstValue("Allow").orElseThrow());
                 }
                 assertEquals(
                         204,

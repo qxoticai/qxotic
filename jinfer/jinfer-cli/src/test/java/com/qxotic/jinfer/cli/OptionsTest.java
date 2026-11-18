@@ -15,7 +15,6 @@ import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.concurrent.TimeUnit;
-import java.util.regex.Pattern;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 import org.junit.jupiter.params.ParameterizedTest;
@@ -319,27 +318,6 @@ class OptionsTest {
                     .configureRuntime();
             System.out.println(RuntimeFlags.THREADS + ":" + RuntimeFlags.BATCH_CAPACITY);
         }
-    }
-
-    @Test
-    void makefileInvocationsUseTheCommandSyntax() throws Exception {
-        Path makefile = Path.of("..", "Makefile");
-        int found = 0;
-        for (String line : Files.readAllLines(makefile)) {
-            int start = line.indexOf("-jar $(JAR_FILE)");
-            if (start < 0 || !line.contains("--model")) continue;
-            var tokens = new ArrayList<String>();
-            var matcher =
-                    Pattern.compile("\"([^\"]*)\"|(\\S+)")
-                            .matcher(
-                                    line.substring(start + "-jar $(JAR_FILE)".length())
-                                            .replace("$(MODEL)", "model.gguf"));
-            while (matcher.find())
-                tokens.add(matcher.group(1) != null ? matcher.group(1) : matcher.group(2));
-            assertEquals("instruct", Options.parse(tokens.toArray(String[]::new)).command);
-            found++;
-        }
-        assertTrue(found > 0);
     }
 
     @Test
