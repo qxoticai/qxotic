@@ -22,9 +22,9 @@ _No Python. No ONNX. No external services. Just_ **AI, in a jar.**
 
 ## Highlights
 
-- **Designed from first-principles for the JVM.** AI runs end-to-end on the JVM. No sidecar servers, no ONNX, no IPC, no Python.
+- **Designed from first principles for the JVM.** AI runs end-to-end on the JVM. No sidecar servers, no ONNX, no IPC, no Python.
 - **Write once, accelerate everywhere.** A common tensor API for CPUs and GPUs.
-- **Optional native acceleration.** Fast matrix multiplication routines, competitive with `llama.cpp`.
+- **Optional native acceleration.** Fast matrix multiplication routines, [competitive with `llama.cpp`](https://qxotic.ai/#benchmarks).
 - **GraalVM's Native Image.** First-class support for GraalVM Native Image: self-contained binaries, with small footprint and millisecond startup.
 
 ## [Quixotic: Pure Java Inference at Native Speed](https://www.youtube.com/watch?v=S7x4DxwRnk4)
@@ -47,18 +47,18 @@ _No Python. No ONNX. No external services. Just_ **AI, in a jar.**
 
 ## Demos
 
-The demos need a JDK 25 and [JBang](https://www.jbang.dev/). The first run downloads the CLI and the model.
+The demos need Java 25+ and [JBang](https://www.jbang.dev/). The first run downloads the CLI and the model.
 
 ### Chat
 
 ```bash
-jbang jinfer@qxoticai chat --model LiquidAI/LFM2.5-350M-GGUF:Q8_0
+jbang jinfer@qxoticai chat -m LiquidAI/LFM2.5-350M-GGUF:Q8_0
 ```
 
 ### OpenAI-compatible server
 
 ```bash
-jbang jinfer@qxoticai --model openbmb/MiniCPM5-2B-GGUF:Q4_K_M --context-capacity 16384 server
+jbang jinfer@qxoticai server -m openbmb/MiniCPM5-2B-GGUF:Q4_K_M --context-capacity 16384
 ```
 
 Then, from another terminal, any OpenAI client works against `http://localhost:54154/v1`:
@@ -81,11 +81,11 @@ curl -s http://localhost:54154/v1/chat/completions \
 ```bash
 # Linux
 ffmpeg -nostats -loglevel error -f pulse -i default -ar 16000 -ac 1 -f s16le - \
-  | jbang jinfer@qxoticai -m mudler/parakeet-cpp-gguf/tdt-0.6b-v3-q4_k.gguf transcribe - --raw-pcm
+  | jbang jinfer@qxoticai transcribe -m mudler/parakeet-cpp-gguf/tdt-0.6b-v3-q4_k.gguf - --raw-pcm
 
 # macOS
 ffmpeg -nostats -loglevel error -f avfoundation -i ":default" -ar 16000 -ac 1 -f s16le - \
-  | jbang jinfer@qxoticai -m mudler/parakeet-cpp-gguf/tdt-0.6b-v3-q4_k.gguf transcribe - --raw-pcm
+  | jbang jinfer@qxoticai transcribe -m mudler/parakeet-cpp-gguf/tdt-0.6b-v3-q4_k.gguf - --raw-pcm
 ```
 
 On Linux and macOS these use the system's default microphone.
@@ -99,7 +99,7 @@ Then put the name of the `(audio)` entry in `audio="..."`, and run from `cmd` or
 
 ```bat
 ffmpeg -nostats -loglevel error -f dshow -i audio="Microphone (Realtek(R) Audio)" -ar 16000 -ac 1 -f s16le - ^
-  | jbang jinfer@qxoticai -m mudler/parakeet-cpp-gguf/tdt-0.6b-v3-q4_k.gguf transcribe - --raw-pcm
+  | jbang jinfer@qxoticai transcribe -m mudler/parakeet-cpp-gguf/tdt-0.6b-v3-q4_k.gguf - --raw-pcm
 ```
 
 ## Build and test
@@ -115,3 +115,9 @@ make ci              # what a pull request runs: formatting, the suite, the corp
 `make help` lists the rest.
 The suites that need models or hardware are opt-in; each module's README describes how to run them.  
 See [CONTRIBUTING.md](CONTRIBUTING.md) before opening a pull request.
+
+## License
+
+The source code is licensed under the [Apache License 2.0](LICENSE).
+The native artifacts, the `jinfer` command and the `libjinfer` and `libtoknroll` libraries in every package they ship in, are built with Oracle GraalVM and carry its runtime under the [GraalVM Free Terms and Conditions](https://www.oracle.com/downloads/licenses/graal-free-license.html): free to use, commercially too, but a product sold for a fee that bundles them is not covered.
+See the NOTICE files of [libjinfer](jinfer/jinfer-native/NOTICE) and [libtoknroll](toknroll/toknroll-native/NOTICE).
