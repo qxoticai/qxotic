@@ -16,6 +16,7 @@ import com.qxotic.jinfer.chat.DecisionModel.Question;
 import com.qxotic.jinfer.chat.DecisionModel.Rating;
 import com.qxotic.jinfer.media.Media;
 import com.qxotic.jota.memory.MemoryAllocators;
+import io.micrometer.observation.tck.TestObservationRegistry;
 import java.awt.image.BufferedImage;
 import java.io.ByteArrayOutputStream;
 import java.lang.foreign.Arena;
@@ -143,6 +144,23 @@ class JinferDecisionModelTest {
         assertTrue(stub.joint, "the questions taken the model's own way by default");
     }
 
+    /** A decision is Spring AI's decision operation, observed as chat and embedding are. */
+    @Test
+    void aDecisionIsObserved() {
+        TestObservationRegistry observations = TestObservationRegistry.create();
+        try (JinferDecisionModel observed =
+                JinferDecisionModel.builder()
+                        .model(stub)
+                        .observationRegistry(observations)
+                        .build()) {
+            observed.call("x", asked("q", YesNoQuestion.of("?")));
+        }
+        observations
+                .assertThat()
+                .hasNumberOfObservationsWithNameEqualTo("gen_ai.client.operation", 1);
+        observations.assertThat().hasAnObservationWithAKeyValue("gen_ai.system", "jinfer");
+    }
+
     @Test
     void probabilitiesBecomeTheFrameworksAnswers() {
         stub.rows =
@@ -171,6 +189,9 @@ class JinferDecisionModelTest {
         assertEquals(0.3, response.getChoice("pick").getProbability("c"), 1e-6);
         assertEquals(2.0, response.getScore("scale").getValue(), 0);
         assertEquals(2, response.getScore("scale").getNearestLevel());
+        // jinfer's confidence, as its server reports it: the likeliest outcome's probability
+        assertEquals(0.6, response.getChoice("pick").getConfidence(), 1e-6);
+        assertEquals(1.0, response.getScore("scale").getConfidence(), 1e-6);
         assertEquals(List.of("yes", "pick", "scale"), List.copyOf(response.getAnswers().keySet()));
     }
 

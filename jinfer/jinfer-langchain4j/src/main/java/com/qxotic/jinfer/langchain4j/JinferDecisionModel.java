@@ -267,6 +267,9 @@ public final class JinferDecisionModel implements DecisionModel, AutoCloseable {
     }
 
     private static DecisionAnswer answer(Question question, float[] p) {
+        // jinfer's confidence, as the server reports it: the likeliest outcome's probability
+        double confidence = 0;
+        for (float x : p) confidence = Math.max(confidence, x);
         return switch (question) {
             case YesNoQuestion q -> YesNoAnswer.from(p[1]);
             case ChoiceQuestion q -> {
@@ -277,7 +280,11 @@ public final class JinferDecisionModel implements DecisionModel, AutoCloseable {
                 String best =
                         Collections.max(probabilities.entrySet(), Map.Entry.comparingByValue())
                                 .getKey();
-                yield ChoiceAnswer.builder().value(best).probabilities(probabilities).build();
+                yield ChoiceAnswer.builder()
+                        .value(best)
+                        .probabilities(probabilities)
+                        .confidence(confidence)
+                        .build();
             }
             default -> {
                 List<Double> probabilities = new ArrayList<>();
@@ -290,6 +297,7 @@ public final class JinferDecisionModel implements DecisionModel, AutoCloseable {
                 yield ScaleAnswer.builder()
                         .mean(Math.min(mean, p.length - 1))
                         .probabilities(probabilities)
+                        .confidence(confidence)
                         .build();
             }
         };

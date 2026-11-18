@@ -38,6 +38,7 @@ import org.springframework.ai.chat.messages.part.StreamingParts;
 import org.springframework.ai.chat.messages.part.TextPart;
 import org.springframework.ai.chat.messages.part.ToolCallPart;
 import org.springframework.ai.chat.messages.part.ToolResultPart;
+import org.springframework.ai.chat.messages.part.UnknownPart;
 import org.springframework.ai.content.Media;
 import org.springframework.ai.tool.ToolCallback;
 import org.springframework.ai.tool.definition.DefaultToolDefinition;
@@ -348,6 +349,29 @@ class JinferMappingsTest {
         assertTrue(e.getMessage().contains("image/png"), e.getMessage());
     }
 
+    /** Another provider's block in a request may be its whole content: refused, never dropped. */
+    @Test
+    void aForeignPartInARequestIsRefusedByName() {
+        UnknownPart document = new UnknownPart("anthropic", "document", "{}", null, Map.of());
+        UserMessage user =
+                UserMessage.builder().part(TextPart.of("Summarize:")).part(document).build();
+        ToolResponseMessage tool =
+                ToolResponseMessage.builder()
+                        .result(
+                                new ToolResultPart(
+                                        "abc", "search", List.of(document), false, null, Map.of()))
+                        .build();
+        for (var m : List.of(user, tool)) {
+            IllegalArgumentException e =
+                    assertThrows(
+                            IllegalArgumentException.class,
+                            () -> JinferMappings.toMessages(List.of(m), VideoSampler.UNIFORM));
+            assertTrue(
+                    e.getMessage().endsWith("cannot carry this part: anthropic document"),
+                    e.getMessage());
+        }
+    }
+
     @Test
     void assistantHistoryIsReadByParts() {
         AssistantMessage.ToolCall call =
@@ -365,6 +389,9 @@ class JinferMappingsTest {
                                         new OpaquePayload("anthropic", "sig", "x"),
                                         Map.of()))
                         .part(TextPart.of("The weather:"))
+                        .part(
+                                new UnknownPart(
+                                        "anthropic", "redacted_thinking", "{}", null, Map.of()))
                         .part(ToolCallPart.of(call))
                         .build();
         List<Content> parts =

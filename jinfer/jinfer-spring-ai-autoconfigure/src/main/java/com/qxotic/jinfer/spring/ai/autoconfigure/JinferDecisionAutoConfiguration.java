@@ -2,7 +2,9 @@ package com.qxotic.jinfer.spring.ai.autoconfigure;
 
 import com.qxotic.jinfer.codecs.VideoSampler;
 import com.qxotic.jinfer.spring.ai.JinferDecisionModel;
+import io.micrometer.observation.ObservationRegistry;
 import org.springframework.ai.decision.DecisionModel;
+import org.springframework.ai.decision.observation.DecisionModelObservationConvention;
 import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.boot.autoconfigure.AutoConfiguration;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnClass;
@@ -26,7 +28,10 @@ public class JinferDecisionAutoConfiguration {
     @Bean
     @ConditionalOnMissingBean(DecisionModel.class)
     public JinferDecisionModel jinferDecisionModel(
-            JinferDecisionProperties properties, ObjectProvider<VideoSampler> videoSampler) {
+            JinferDecisionProperties properties,
+            ObjectProvider<ObservationRegistry> observationRegistry,
+            ObjectProvider<DecisionModelObservationConvention> observationConvention,
+            ObjectProvider<VideoSampler> videoSampler) {
         if (!StringUtils.hasText(properties.model())) {
             throw new IllegalStateException(
                     "spring.ai.jinfer.decision.model is required: a decision GGUF (e.g. Liquid's"
@@ -36,6 +41,8 @@ public class JinferDecisionAutoConfiguration {
                 JinferDecisionModel.builder()
                         .contextCapacity(properties.contextCapacity())
                         .independent(properties.independent());
+        observationRegistry.ifAvailable(builder::observationRegistry);
+        observationConvention.ifAvailable(builder::observationConvention);
         videoSampler.ifAvailable(builder::videoSampler); // a VideoSampler bean overrides UNIFORM
         Sources.model(
                 "spring.ai.jinfer.decision.model",

@@ -12,6 +12,7 @@ import com.qxotic.jinfer.chat.JsonCodec;
 import com.qxotic.jinfer.chat.Models;
 import com.qxotic.jinfer.codecs.VideoSampler;
 import com.qxotic.jinfer.hub.ModelStore;
+import io.micrometer.observation.ObservationRegistry;
 import java.io.IOException;
 import java.io.UncheckedIOException;
 import java.lang.foreign.Arena;
@@ -39,6 +40,10 @@ import org.springframework.ai.decision.input.ConversationInput;
 import org.springframework.ai.decision.input.DecisionInput;
 import org.springframework.ai.decision.input.FieldsInput;
 import org.springframework.ai.decision.input.TextInput;
+import org.springframework.ai.decision.observation.DecisionModelObservationContext;
+import org.springframework.ai.decision.observation.DecisionModelObservationConvention;
+import org.springframework.ai.decision.observation.DecisionModelObservationDocumentation;
+import org.springframework.ai.decision.observation.DefaultDecisionModelObservationConvention;
 import org.springframework.ai.decision.question.ChoiceQuestion;
 import org.springframework.ai.decision.question.DecisionQuestion;
 import org.springframework.ai.decision.question.ScoreLevel;
@@ -71,6 +76,12 @@ public final class JinferDecisionModel implements DecisionModel, AutoCloseable {
     private final boolean independent;
     private final VideoSampler videoSampler;
     private final String modelName; // the GGUF's file name; null for a model loaded by the caller
+    private final ObservationRegistry observationRegistry;
+    private final DecisionModelObservationConvention observationConvention;
+
+    private static final String PROVIDER = "jinfer";
+    private static final DecisionModelObservationConvention DEFAULT_CONVENTION =
+            new DefaultDecisionModelObservationConvention();
 
     private JinferDecisionModel(Builder b) {
         // ONE private arena: weights land in it only when THIS instance loads them
@@ -88,6 +99,8 @@ public final class JinferDecisionModel implements DecisionModel, AutoCloseable {
             this.modelName = b.modelPath == null ? null : b.modelPath.getFileName().toString();
             this.independent = b.independent;
             this.videoSampler = b.videoSampler;
+            this.observationRegistry = b.observationRegistry;
+            this.observationConvention = b.observationConvention;
         } catch (RuntimeException | Error e) {
             Arenas.close(arena); // free before failing
             throw e;
@@ -111,6 +124,26 @@ public final class JinferDecisionModel implements DecisionModel, AutoCloseable {
 
     @Override
     public DecisionResponse call(DecisionPrompt prompt) {
+        DecisionModelObservationContext context =
+                DecisionModelObservationContext.builder()
+                        .decisionPrompt(prompt)
+                        .provider(PROVIDER)
+                        .build();
+        return DecisionModelObservationDocumentation.DECISION_MODEL_OPERATION
+                .observation(
+                        observationConvention,
+                        DEFAULT_CONVENTION,
+                        () -> context,
+                        observationRegistry)
+                .observe(
+                        () -> {
+                            DecisionResponse response = decide(prompt);
+                            context.setResponse(response);
+                            return response;
+                        });
+    }
+
+    private DecisionResponse decide(DecisionPrompt prompt) {
         rejectModelSwitch(prompt);
         List<Content> input = input(prompt.getInstructions());
         Map<String, DecisionQuestion> asked = prompt.getQuestions();
@@ -245,6 +278,9 @@ public final class JinferDecisionModel implements DecisionModel, AutoCloseable {
     }
 
     private static DecisionAnswer answer(DecisionQuestion question, float[] p) {
+        // jinfer's confidence, as the server reports it: the likeliest outcome's probability
+        double confidence = 0;
+        for (float x : p) confidence = Math.max(confidence, x);
         return switch (question) {
             case YesNoQuestion q -> YesNoAnswer.builder().probability(p[1]).build();
             case ChoiceQuestion q -> {
@@ -256,7 +292,11 @@ public final class JinferDecisionModel implements DecisionModel, AutoCloseable {
                 String best =
                         Collections.max(probabilities.entrySet(), Map.Entry.comparingByValue())
                                 .getKey();
-                yield ChoiceAnswer.builder().value(best).probabilities(probabilities).build();
+                yield ChoiceAnswer.builder()
+                        .value(best)
+                        .probabilities(probabilities)
+                        .confidence(confidence)
+                        .build();
             }
             case ScoreQuestion q -> {
                 List<Double> probabilities = new ArrayList<>();
@@ -269,6 +309,7 @@ public final class JinferDecisionModel implements DecisionModel, AutoCloseable {
                 yield ScoreAnswer.builder()
                         .value(Math.min(mean, p.length - 1))
                         .probabilities(probabilities)
+                        .confidence(confidence)
                         .build();
             }
         };
@@ -288,6 +329,8 @@ public final class JinferDecisionModel implements DecisionModel, AutoCloseable {
         private int contextCapacity; // 0: the default
         private boolean independent;
         private VideoSampler videoSampler = VideoSampler.UNIFORM;
+        private ObservationRegistry observationRegistry = ObservationRegistry.NOOP;
+        private DecisionModelObservationConvention observationConvention;
 
         /** The decision GGUF to load. Required. */
         public Builder modelPath(Path modelPath) {
@@ -377,6 +420,21 @@ public final class JinferDecisionModel implements DecisionModel, AutoCloseable {
         /** How a video part's frames are sampled; uniform across the clip by default. */
         public Builder videoSampler(VideoSampler videoSampler) {
             this.videoSampler = Objects.requireNonNull(videoSampler);
+            return this;
+        }
+
+        /** Metrics/tracing registry; default {@link ObservationRegistry#NOOP} (zero cost). */
+        public Builder observationRegistry(ObservationRegistry observationRegistry) {
+            this.observationRegistry = Objects.requireNonNull(observationRegistry);
+            return this;
+        }
+
+        /**
+         * Custom observation convention; default {@link DefaultDecisionModelObservationConvention}.
+         */
+        public Builder observationConvention(
+                DecisionModelObservationConvention observationConvention) {
+            this.observationConvention = observationConvention;
             return this;
         }
 

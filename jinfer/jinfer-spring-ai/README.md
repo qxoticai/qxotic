@@ -341,6 +341,7 @@ try (var omni = JinferChatModel.builder()
 The same option on a request's `JinferChatOptions` opens or closes the voice for that request alone, and `spring.ai.jinfer.chat.output-modalities=text,audio` sets the default in Spring Boot.
 A streamed reply's media chunks are not aggregated: `ChatClient.stream().content()` yields the transcript, and a subscriber to `ChatModel.stream` collects the audio parts, each chunk a WAV of its own.
 A spoken reply does not reason, so allowing audio turns `thinking` off, and it cannot offer tools or follow a grammar: such a request is refused in words.
+Allowing audio is not requiring it: a model without a voice answers `TEXT, AUDIO` in text, and `AUDIO` alone is the form refused with the remedy.
 There is no voice option: LFM3-Omni's spoken chat replies come in its one chat voice, whatever the system prompt asks for.
 A language clause is a request the model may not honour: it can answer in that language, in English, or in text alone (Japanese replies came back as text in every run).
 For speech in a set language, LFM3-Omni's text-to-speech instruction takes the language explicitly (see [jinfer-lfm3](../jinfer-lfm3/README.md#text-to-speech)).
@@ -450,6 +451,7 @@ java --add-modules jdk.incubator.vector --enable-native-access=ALL-UNNAMED \
 
 The image vector shares the embedding space used by text queries.
 As the model card says, media embeds without a prompt; text documents keep theirs.
+A Spring AI `Document` holds text or media, not both, so the mixed text-and-media input the LangChain4j adapter embeds as one vector cannot be expressed here.
 Spring AI's vector stores still refuse non-text documents at `add`, so media vectors come from the `EmbeddingModel` directly.
 
 For a starter-managed embedding model, select `spring.ai.model.embedding=jinfer`.

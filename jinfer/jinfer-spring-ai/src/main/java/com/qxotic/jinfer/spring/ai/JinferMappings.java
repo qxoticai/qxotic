@@ -35,6 +35,7 @@ import org.springframework.ai.chat.messages.part.StreamingParts;
 import org.springframework.ai.chat.messages.part.TextPart;
 import org.springframework.ai.chat.messages.part.ToolCallPart;
 import org.springframework.ai.chat.messages.part.ToolResultPart;
+import org.springframework.ai.chat.messages.part.UnknownPart;
 import org.springframework.ai.tool.ToolCallback;
 import org.springframework.ai.tool.definition.ToolDefinition;
 import org.springframework.core.io.Resource;
@@ -89,10 +90,24 @@ final class JinferMappings {
                 case TextPart t when t.text() != null && !t.text().isEmpty() ->
                         parts.add(new Content.Text(t.text()));
                 case MediaPart m -> parts.add(media(m.media(), videoSampler));
-                default -> {} // empty, or another provider's block
+                case TextPart empty -> {}
+                default -> throw unsupported("a user message", part);
             }
         }
         return parts;
+    }
+
+    /**
+     * Content jinfer cannot read, another provider's block among it: refused rather than dropped,
+     * since it may be the whole request (an assistant echo drops one, its reasoning replayed as
+     * text).
+     */
+    private static IllegalArgumentException unsupported(String where, MessagePart part) {
+        String name =
+                part instanceof UnknownPart u
+                        ? u.provider() + " " + u.kind()
+                        : part.getClass().getSimpleName();
+        return new IllegalArgumentException(where + " cannot carry this part: " + name);
     }
 
     /**
@@ -111,7 +126,7 @@ final class JinferMappings {
                                         + " returned "
                                         + m.media().getMimeType()
                                         + " media: a tool result is text here");
-                default -> {} // another provider's block
+                default -> throw unsupported("tool " + result.name() + "'s result", part);
             }
         }
         return text.toString();

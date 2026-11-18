@@ -325,6 +325,7 @@ omni.streaming().chat(request, new StreamingChatResponseHandler() {
 An `AiService`'s `TokenStream` takes the same `onUnmappedRawEvent`.
 A reply sent back in history carries its speech and replays exactly; sent back as `AudioContent.from(speech)`, the clip is heard by the model like any other audio input.
 A spoken reply does not reason, so allowing audio turns `thinking` off, and it cannot offer tools or follow a grammar: such a request is refused in words.
+Allowing audio is not requiring it: a model without a voice answers `TEXT, AUDIO` in text, and `AUDIO` alone is the form refused with the remedy.
 There is no voice option: LFM3-Omni's spoken chat replies come in its one chat voice, whatever the system prompt asks for.
 A language clause is a request the model may not honour: it can answer in that language, in English, or in text alone (Japanese replies came back as text in every run).
 For speech in a set language, LFM3-Omni's text-to-speech instruction takes the language explicitly (see [jinfer-lfm3](../jinfer-lfm3/README.md#text-to-speech)).

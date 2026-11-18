@@ -13,6 +13,7 @@ The native libraries, the jinfer command and the wheels are built with Oracle Gr
   `decideIndependently` and `askIndependently` answer each question as if asked alone, as the adapters' `independent(true)` does; the server answers each alone unless vLLM's `"joint": true` asks otherwise.
   `jinfer server` serves `POST /v1/systemone` in llama.cpp's System One shape, and LangChain4j and Spring AI get a `JinferDecisionModel`, with `spring.ai.model.decision=jinfer` in the starter.
   d1 matches Liquid's reference and llama.cpp, and d3 matches llama.cpp.
+  Every face reports a choice's and a rating's confidence alike, the likeliest outcome's probability, and Spring AI's `JinferDecisionModel` is observed as `gen_ai.client.operation` through its `observationRegistry`.
 - **json 0.4.0-rc1.** A Java string holding a lone surrogate prints it as an escape, `\uD800`, so the JSON can be encoded as UTF-8; a surrogate pair prints as itself.
   With `decimalsAsBigDecimal(false)`, a decimal past `double`'s range is refused at its first digit instead of read as `Infinity`.
   Errors count a line at `\r` and `\r\n` as at `\n`, and `unescapeString`'s errors carry line and column too.

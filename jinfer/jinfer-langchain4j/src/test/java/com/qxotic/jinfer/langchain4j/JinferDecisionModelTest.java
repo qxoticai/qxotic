@@ -3,7 +3,6 @@ package com.qxotic.jinfer.langchain4j;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertInstanceOf;
-import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
@@ -170,7 +169,9 @@ class JinferDecisionModelTest {
         assertEquals(List.of("a", "b", "c"), response.choice("pick").options());
         assertEquals(2.0, response.scale("scale").mean(), 0);
         assertEquals(3, response.scale("scale").probabilities().size());
-        assertNull(response.scale("scale").confidence());
+        // jinfer's confidence, as its server reports it: the likeliest outcome's probability
+        assertEquals(0.6, response.choice("pick").confidence(), 1e-6);
+        assertEquals(1.0, response.scale("scale").confidence(), 1e-6);
     }
 
     @Test
