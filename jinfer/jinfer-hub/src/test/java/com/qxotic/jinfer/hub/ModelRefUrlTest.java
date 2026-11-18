@@ -52,7 +52,7 @@ class ModelRefUrlTest {
             {ms + "/tree/v1", "modelscope.cn/Qwen/Qwen3-0.6B-GGUF@v1"},
         };
         for (String[] c : cases) {
-            assertEquals(c[1], String.valueOf(ModelRef.fromUrl(c[0])), c[0]);
+            assertEquals(c[1], String.valueOf(ModelRef.suggestionFor(c[0])), c[0]);
         }
     }
 
@@ -69,7 +69,7 @@ class ModelRefUrlTest {
                         "https://modelscope.cn/Qwen/Qwen3-0.6B-GGUF",
                         "https://example.org/models/x.gguf",
                         "hf.co/acme/x")) {
-            assertNull(ModelRef.fromUrl(url), url);
+            assertNull(ModelRef.suggestionFor(url), url);
         }
     }
 

@@ -157,7 +157,7 @@ public record ModelRef(
      * jinfer's one spelling of a model, and the provider is named so the user checks it.
      */
     static String notAReference(String url) {
-        ModelRef ref = fromUrl(url);
+        ModelRef ref = suggestionFor(url);
         if (ref == null) {
             return "'"
                     + url
@@ -176,13 +176,14 @@ public record ModelRef(
     }
 
     /**
-     * The ref a hub page's URL names, or null: the repository page, a folder ({@code
+     * The ref to suggest for a hub page's URL, never a way in: a URL is refused, and this only
+     * names what to pass instead, or null. The pages: the repository page, a folder ({@code
      * tree/<rev>[/dir]}, ModelScope's {@code files}) or a file ({@code blob/<rev>/<file>}, {@code
      * resolve/<rev>/<file>}, ModelScope's {@code file/view/<rev>/<file>}). The default branch is
      * dropped, any other revision kept. Segments are split before they are decoded, and one holding
      * an encoded slash gives no ref: a wrong suggestion is worse than none.
      */
-    static ModelRef fromUrl(String url) {
+    static ModelRef suggestionFor(String url) {
         URI uri;
         try {
             uri = new URI(url.strip());
