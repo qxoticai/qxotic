@@ -58,9 +58,16 @@ class ParakeetWorkspaceTest {
             // allocated ~120 MB (the subsampling array alone is ~39 MB); a warm one allocates
             // 6.2 MB, stable to a few KB (mel features, the stream's PCM buffer, Vector API
             // boxes). One per-layer [frames][dim] array coming back would add ~15 MB.
-            long before = allocatedBytes();
-            parakeet.transcribe(state, longer);
-            long used = allocatedBytes() - before;
+            // The bound holds for COMPILED code: on a loaded machine the JIT can still be
+            // compiling,
+            // and interpreted Vector API code boxes every lane (129 GB once). The best of a few
+            // passes measures the compiled one; the first is it on an idle machine.
+            long used = Long.MAX_VALUE;
+            for (int pass = 0; pass < 5 && used >= 10_000_000; pass++) {
+                long before = allocatedBytes();
+                parakeet.transcribe(state, longer);
+                used = Math.min(used, allocatedBytes() - before);
+            }
             assertTrue(used < 10_000_000, "warm transcription allocated " + used + " bytes");
         }
         // Windows of different lengths (committed windows, then the tail) share one workspace too.
