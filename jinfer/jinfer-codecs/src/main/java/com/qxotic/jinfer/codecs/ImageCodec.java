@@ -70,10 +70,8 @@ public final class ImageCodec {
         return switch (choice) {
             case "ffmpeg" -> new FfmpegImageDecoder();
             case "imageio" ->
-                    // the explicit type witness: T must be ImageDecoder, not the fallback's
-                    // concrete class, or the erased cast lands on the wrong type
-                    Codecs.<ImageDecoder>reflect(
-                            "com.qxotic.jinfer.codecs.ImageIoDecoder", FfmpegImageDecoder::new);
+                    Codecs.reflect(
+                            "com.qxotic.jinfer.codecs.ImageIoDecoder", "jinfer.imageDecoder");
             default ->
                     throw new IllegalArgumentException(
                             "unknown -Djinfer.imageDecoder='"

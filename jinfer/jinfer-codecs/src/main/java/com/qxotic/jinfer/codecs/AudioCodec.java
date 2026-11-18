@@ -105,10 +105,9 @@ public final class AudioCodec {
         return switch (choice) {
             case "ffmpeg" -> new FfmpegAudioDecoder();
             case "javasound" ->
-                    // explicit type witness - see ImageCodec
-                    Codecs.<AudioDecoder>reflect(
+                    Codecs.reflect(
                             "com.qxotic.jinfer.codecs.JavaSoundAudioDecoder",
-                            FfmpegAudioDecoder::new);
+                            "jinfer.audioDecoder");
             default ->
                     throw new IllegalArgumentException(
                             "unknown -Djinfer.audioDecoder='"

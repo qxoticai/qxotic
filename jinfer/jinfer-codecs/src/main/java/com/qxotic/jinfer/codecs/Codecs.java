@@ -1,7 +1,6 @@
 package com.qxotic.jinfer.codecs;
 
 import java.util.Locale;
-import java.util.function.Supplier;
 
 /**
  * The media backend-selection machinery shared by {@link AudioCodec} and {@link ImageCodec}: the
@@ -38,20 +37,23 @@ final class Codecs {
     /**
      * Instantiate a backend by NON-CONSTANT class name: a literal at the {@code Class.forName} site
      * would let native-image fold the call and drag the module ({@code java.desktop}, {@code
-     * javax.sound.sampled}) into the image. Falls back to ffmpeg when the backend cannot load.
+     * javax.sound.sampled}) into the image. A backend this runtime lacks is refused, naming the
+     * {@code property} switch to ffmpeg: the choice is never swapped behind the caller's back.
      */
-    static <T> T reflect(String className, Supplier<T> ffmpegFallback) {
+    static <T> T reflect(String className, String property) {
         try {
             @SuppressWarnings("unchecked")
             T backend = (T) Class.forName(className).getDeclaredConstructor().newInstance();
             return backend;
         } catch (ReflectiveOperationException | LinkageError e) {
-            LOG.log(
-                    System.Logger.Level.WARNING,
-                    "media backend ''{0}'' unavailable ({1}); falling back to ffmpeg",
-                    className,
+            throw new IllegalStateException(
+                    className
+                            + " is unavailable in this runtime ("
+                            + e
+                            + "): -D"
+                            + property
+                            + "=ffmpeg decodes without it",
                     e);
-            return ffmpegFallback.get();
         }
     }
 }
