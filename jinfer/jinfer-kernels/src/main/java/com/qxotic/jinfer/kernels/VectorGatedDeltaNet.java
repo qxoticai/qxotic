@@ -15,12 +15,12 @@ import jdk.incubator.vector.VectorOperators;
 final class VectorGatedDeltaNet {
     private static final ByteOrder LE = ByteOrder.LITTLE_ENDIAN;
     private static final boolean ENABLED =
-            Boolean.parseBoolean(System.getProperty("jinfer.gdn.vector", "true"));
+            Boolean.parseBoolean(System.getProperty("jinfer.vector.gdn", "true"));
 
     private VectorGatedDeltaNet() {}
 
     /**
-     * Whether {@code -Djinfer.gdn.vector} left the vector recurrence on. For the selection tests.
+     * Whether {@code -Djinfer.vector.gdn} left the vector recurrence on. For the selection tests.
      */
     static boolean enabled() {
         return ENABLED;

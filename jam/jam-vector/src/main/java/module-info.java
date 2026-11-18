@@ -2,6 +2,7 @@
 module com.qxotic.jam.vector {
     requires com.qxotic.jam;
     requires static com.qxotic.graalvm.annotations;
+    requires static org.graalvm.nativeimage; // VectorWidth, a native-image Feature
     requires static java.management; // JIT detection (Graal vs C2) for tile-shape selection
     requires jdk.incubator.vector;
 

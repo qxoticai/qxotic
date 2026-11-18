@@ -1,8 +1,8 @@
 package com.qxotic.toknroll.vector;
 
-import com.oracle.svm.core.CPUFeatureAccess;
 import java.util.Set;
 import java.util.TreeSet;
+import org.graalvm.nativeimage.ImageSingletons;
 import org.graalvm.nativeimage.Platform;
 import org.graalvm.nativeimage.hosted.Feature;
 import org.graalvm.nativeimage.hosted.RuntimeSystemProperties;
@@ -49,19 +49,23 @@ final class VectorWidth implements Feature {
     }
 
     /**
-     * The target's CPU features, from the builder: an internal API, so a GraalVM that moves it gets
-     * those of its default target (AVX2 on x86-64, NEON elsewhere) instead of a failed build.
+     * The target's CPU features, from the builder's {@code CPUFeatureAccess}: an internal API, so
+     * reached by reflection (the jar compiles against GraalVM's public SDK only), and a GraalVM
+     * that moves it gets its default target's features (AVX2 on x86-64, NEON elsewhere) instead of
+     * a failed build.
      */
     private static Set<String> targetFeatures() {
         Set<String> features = new TreeSet<>();
         try {
-            for (Object f : CPUFeatureAccess.singleton().buildtimeCPUFeatures())
+            Class<?> cpu = Class.forName("com.oracle.svm.core.CPUFeatureAccess");
+            Object singleton = ImageSingletons.lookup(cpu);
+            for (Object f : (Iterable<?>) cpu.getMethod("buildtimeCPUFeatures").invoke(singleton))
                 features.add(((Enum<?>) f).name());
-        } catch (LinkageError | RuntimeException moved) {
+        } catch (ReflectiveOperationException | LinkageError | RuntimeException unreadable) {
             if (Platform.includedIn(Platform.AMD64.class)) features.addAll(Set.of("AVX", "AVX2"));
             System.out.println(
                     "toknroll: cannot read the target's CPU features ("
-                            + moved
+                            + unreadable
                             + "), assuming GraalVM's default target's");
         }
         return features;

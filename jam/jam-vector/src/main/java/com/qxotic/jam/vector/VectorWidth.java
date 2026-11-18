@@ -1,0 +1,64 @@
+package com.qxotic.jam.vector;
+
+import java.util.Set;
+import java.util.TreeSet;
+import org.graalvm.nativeimage.ImageSingletons;
+import org.graalvm.nativeimage.Platform;
+import org.graalvm.nativeimage.hosted.Feature;
+
+/**
+ * Pins jam-vector's Vector API width to the ISA a native image is built for. The jar's
+ * native-image.properties registers it, so every image with jam-vector on its class path runs it
+ * and needs no flag. On the JVM nothing loads it.
+ *
+ * <p>The kernels fix their species when {@link VectorSupport} initializes, at build time, and left
+ * alone it would take the width the build machine prefers, not {@code -march}'s: an x86-64-v3 image
+ * built on an AVX-512 host would carry 512-bit species and run them through the Vector API's
+ * fallback, a hundred times slower. This sets {@code jam.vector.width} first: 512 with AVX-512, 256
+ * with AVX2, 128 otherwise. An explicit {@code -Djam.vector.width} or {@code JAM_VECTOR_WIDTH}
+ * still narrows it, within what the target executes. It reads the knob itself: calling {@link
+ * VectorSupport} would initialize it, and fix the species, before the width is set.
+ */
+final class VectorWidth implements Feature {
+    @Override
+    public void beforeAnalysis(BeforeAnalysisAccess access) {
+        Set<String> features = targetFeatures();
+        int max = features.contains("AVX512F") ? 512 : features.contains("AVX2") ? 256 : 128;
+        String requested = System.getProperty("jam.vector.width");
+        if (requested == null) requested = System.getenv("JAM_VECTOR_WIDTH");
+        requested = requested == null ? "" : requested.strip();
+        int bits = requested.isEmpty() ? max : Integer.parseInt(requested);
+        if (bits > max)
+            throw new IllegalArgumentException(
+                    "jam.vector.width="
+                            + bits
+                            + " exceeds the "
+                            + max
+                            + "-bit vectors of the target ISA");
+        System.setProperty("jam.vector.width", Integer.toString(bits));
+        System.out.println("jam: Vector API width " + bits + " bits for a " + max + "-bit target");
+    }
+
+    /**
+     * The target's CPU features, from the builder's {@code CPUFeatureAccess}: an internal API, so
+     * reached by reflection (the jar compiles against GraalVM's public SDK only), and a GraalVM
+     * that moves it gets its default target's features (AVX2 on x86-64, NEON elsewhere) instead of
+     * a failed build.
+     */
+    private static Set<String> targetFeatures() {
+        Set<String> features = new TreeSet<>();
+        try {
+            Class<?> cpu = Class.forName("com.oracle.svm.core.CPUFeatureAccess");
+            Object singleton = ImageSingletons.lookup(cpu);
+            for (Object f : (Iterable<?>) cpu.getMethod("buildtimeCPUFeatures").invoke(singleton))
+                features.add(((Enum<?>) f).name());
+        } catch (ReflectiveOperationException | LinkageError | RuntimeException unreadable) {
+            if (Platform.includedIn(Platform.AMD64.class)) features.addAll(Set.of("AVX", "AVX2"));
+            System.out.println(
+                    "jam: cannot read the target's CPU features ("
+                            + unreadable
+                            + "), assuming GraalVM's default target's");
+        }
+        return features;
+    }
+}

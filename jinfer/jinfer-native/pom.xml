@@ -195,8 +195,9 @@
                 <buildArg>-H:ServiceLoaderFeatureExcludeServices=com.qxotic.jinfer.hub.Console</buildArg>
                 <buildArg>-H:ExcludeResources=com/qxotic/jam/native/.*</buildArg>
                 <buildArg>-Djam.vector.wideTiles=${jam.wideTiles}</buildArg>
-                <!-- the kernels' vector width: the target ISA's unless narrowed here (jinfer-core's VectorWidth) -->
-                <buildArg>-Djinfer.vectorBitSize=${jinfer.image.vectorBits}</buildArg>
+                <!-- the kernels' vector width: the target ISA's unless narrowed here (jinfer-core's and jam-vector's VectorWidth) -->
+                <buildArg>-Djinfer.vector.width=${jinfer.image.vectorWidth}</buildArg>
+                <buildArg>-Djam.vector.width=${jinfer.image.vectorWidth}</buildArg>
                 <buildArg>-Djdk.incubator.vector.VECTOR_ACCESS_OOB_CHECK=0</buildArg>
                 <buildArg>-Djinfer.convTile=${jinfer.convTile}</buildArg>
                 <buildArg>-Djinfer.trace=${jinfer.trace}</buildArg>

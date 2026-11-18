@@ -82,7 +82,7 @@
              KernelSelectionTest pins the constants to the requested properties, so a selection
              that silently fell back to the default fails instead of re-testing it. Ordinary
              executions keep every jam backend off the classpath: they test the Java kernels.
-             default-test is whatever this machine's compiler selects (jinfer.vectorJit=auto); the
+             default-test is whatever this machine's compiler selects (jinfer.vector.jit=auto); the
              executions that want the vector kernels to run say vectorJit=fast explicitly, since
              on stock C2 the detection turns them off. -->
         <configuration>
@@ -140,7 +140,7 @@
               <goal>test</goal>
             </goals>
             <configuration>
-              <argLine>@{argLine} ${jinfer.jvm.flags} -Djinfer.vectorJit=fast</argLine>
+              <argLine>@{argLine} ${jinfer.jvm.flags} -Djinfer.vector.jit=fast</argLine>
               <reportsDirectory>${project.build.directory}/surefire-reports/vector-fast</reportsDirectory>
               <includes>
                 <include>**/*MatMul*Test.java</include>
@@ -158,7 +158,7 @@
               <goal>test</goal>
             </goals>
             <configuration>
-              <argLine>@{argLine} ${jinfer.jvm.flags} -Djinfer.vectorJit=slow</argLine>
+              <argLine>@{argLine} ${jinfer.jvm.flags} -Djinfer.vector.jit=slow</argLine>
               <reportsDirectory>${project.build.directory}/surefire-reports/vector-slow</reportsDirectory>
               <includes>
                 <include>**/*MatMul*Test.java</include>
@@ -176,7 +176,7 @@
               <goal>test</goal>
             </goals>
             <configuration>
-              <argLine>@{argLine} ${jinfer.jvm.flags} -Djinfer.vectorJit=fast -Djinfer.gdn.vector=false -Djinfer.mamba2.vector=false -Djinfer.mamba2.vectorNorm=false</argLine>
+              <argLine>@{argLine} ${jinfer.jvm.flags} -Djinfer.vector.jit=fast -Djinfer.vector.gdn=false -Djinfer.vector.mamba2=false -Djinfer.vector.mamba2Norm=false</argLine>
               <reportsDirectory>${project.build.directory}/surefire-reports/java-recurrences</reportsDirectory>
               <includes>
                 <include>**/GatedDeltaNetTest.java</include>
@@ -192,7 +192,7 @@
               <goal>test</goal>
             </goals>
             <configuration>
-              <argLine>@{argLine} ${jinfer.jvm.flags} -Djinfer.vectorJit=fast -Djinfer.vectorBitSize=128</argLine>
+              <argLine>@{argLine} ${jinfer.jvm.flags} -Djinfer.vector.jit=fast -Djinfer.vector.width=128</argLine>
               <reportsDirectory>${project.build.directory}/surefire-reports/vector-128</reportsDirectory>
               <includes>
                 <include>${kernel.numeric.tests}</include>
@@ -206,7 +206,7 @@
               <goal>test</goal>
             </goals>
             <configuration>
-              <argLine>@{argLine} ${jinfer.jvm.flags} -Djinfer.vectorJit=fast -Djinfer.vectorBitSize=256</argLine>
+              <argLine>@{argLine} ${jinfer.jvm.flags} -Djinfer.vector.jit=fast -Djinfer.vector.width=256</argLine>
               <reportsDirectory>${project.build.directory}/surefire-reports/vector-256</reportsDirectory>
               <includes>
                 <include>${kernel.numeric.tests}</include>
@@ -220,7 +220,7 @@
               <goal>test</goal>
             </goals>
             <configuration>
-              <argLine>@{argLine} ${jinfer.jvm.flags} -Djinfer.vectorBitSize=0</argLine>
+              <argLine>@{argLine} ${jinfer.jvm.flags} -Djinfer.vector.width=0</argLine>
               <reportsDirectory>${project.build.directory}/surefire-reports/scalar</reportsDirectory>
               <includes>
                 <include>${kernel.numeric.tests}</include>

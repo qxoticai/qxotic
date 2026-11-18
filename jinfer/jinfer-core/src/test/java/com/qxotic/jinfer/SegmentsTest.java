@@ -24,7 +24,7 @@ class SegmentsTest {
                             IllegalArgumentException.class,
                             () -> Segments.vectorBitSize(bad, 256),
                             bad);
-            assertTrue(e.getMessage().startsWith("jinfer.vectorBitSize: "), e.getMessage());
+            assertTrue(e.getMessage().startsWith("jinfer.vector.width: "), e.getMessage());
             assertTrue(e.getMessage().endsWith("not '" + bad + "'"), e.getMessage());
         }
     }

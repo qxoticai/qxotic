@@ -109,7 +109,7 @@ The wrapper also gives the library its soname, derived from the version, `libjin
 libjam, the kernel library, is linked whole (jam-native's static archive, the pom's whole-archive line) and loaded from the library's own file: the isolate shim hands the runtime its path as `jam.native.library.path`, so nothing is extracted at run time.
 `NATIVE_CC_LOG=<file> make libjinfer` records every compiler and linker line the build ran.
 
-The image is built for one ISA level, `-march`, and jinfer-core's `VectorWidth` feature, which every jinfer image carries, pins the kernels' Vector API width to that level from the target CPU features the builder reports.
+The image is built for one ISA level, `-march`, and the `VectorWidth` features of jinfer-core, jam-vector and toknroll-vector, which every jinfer image carries, pin the kernels' Vector API widths to that level from the target CPU features the builder reports.
 Left to its default, the width would be the build host's, and an AVX2 image built on an AVX-512 machine would carry 512-bit species and emulate them, a hundred times slower.
 
 The image is lean the way libtoknroll's is: curl as a process instead of the JDK's HTTP client and TLS stack, the image's own `System.LoggerFinder` instead of `java.util.logging`, the shim's terminal probes instead of the Foreign Function API, staging files named without `SecureRandom`, each a service provider or a plain code path and never a substitution of a JDK class.

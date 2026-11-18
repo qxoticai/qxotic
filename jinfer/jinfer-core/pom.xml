@@ -32,12 +32,6 @@
       <artifactId>nativeimage</artifactId>
       <scope>provided</scope>
     </dependency>
-    <dependency>
-      <!-- CPUFeatureAccess, the builder's hosted API for the target's CPU features -->
-      <groupId>org.graalvm.nativeimage</groupId>
-      <artifactId>svm</artifactId>
-      <scope>provided</scope>
-    </dependency>
   </dependencies>
 
   <build>

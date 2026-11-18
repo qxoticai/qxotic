@@ -26,7 +26,7 @@ import org.junit.jupiter.api.io.TempDir;
 
 /**
  * The scalar kernels must produce the SAME TOKENS as the vector ones. A fallback that runs but
- * computes something else is worse than no fallback, and {@code -Djinfer.vectorBitSize=0} is only
+ * computes something else is worse than no fallback, and {@code -Djinfer.vector.width=0} is only
  * useful as a debugging and A/B tool if it is answer-preserving.
  *
  * <p>Float sums differ - the vector path accumulates in a different order, so logits diverge in the
@@ -49,7 +49,7 @@ final class VectorScalarParityTest {
                 TestModels.require(
                         "hf.co/unsloth/Llama-3.2-1B-Instruct-GGUF/Llama-3.2-1B-Instruct-Q8_0.gguf");
         String vector = walk(gguf, null, directory.resolve("vector.log"));
-        String scalar = walk(gguf, "-Djinfer.vectorBitSize=0", directory.resolve("scalar.log"));
+        String scalar = walk(gguf, "-Djinfer.vector.width=0", directory.resolve("scalar.log"));
 
         assertTrue(vector.split(" ").length == STEPS, "vector run produced: " + vector);
         assertEquals(

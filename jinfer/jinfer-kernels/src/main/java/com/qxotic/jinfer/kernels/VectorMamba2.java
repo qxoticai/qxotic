@@ -15,9 +15,9 @@ import jdk.incubator.vector.VectorOperators;
 final class VectorMamba2 {
     private static final ByteOrder LE = ByteOrder.LITTLE_ENDIAN;
     private static final boolean SCAN_ENABLED =
-            Boolean.parseBoolean(System.getProperty("jinfer.mamba2.vector", "true"));
+            Boolean.parseBoolean(System.getProperty("jinfer.vector.mamba2", "true"));
     private static final boolean NORM_ENABLED =
-            Boolean.parseBoolean(System.getProperty("jinfer.mamba2.vectorNorm", "true"));
+            Boolean.parseBoolean(System.getProperty("jinfer.vector.mamba2Norm", "true"));
 
     private VectorMamba2() {}
 

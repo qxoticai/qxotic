@@ -38,7 +38,7 @@ public final class Mamba2 {
 
     /**
      * Whether {@code stateSize} alone keeps an available vector scan off: the cliff. A slow Vector
-     * API JIT is its own cliff, reported at boot, and {@code -Djinfer.mamba2.vector=false} is the
+     * API JIT is its own cliff, reported at boot, and {@code -Djinfer.vector.mamba2=false} is the
      * caller's choice.
      */
     static boolean geometryUncovered(int stateSize) {

@@ -14,8 +14,8 @@ import org.junit.jupiter.api.Test;
  * Pins the kernel selection this JVM runs under to the properties it was started with.
  *
  * <p>Every kernel picks its implementation from a static constant read once at class initialization
- * ({@code -Djinfer.convTile}, {@code -Djinfer.vectorBitSize}, {@code -Djinfer.gdn.vector}, {@code
- * -Djinfer.mamba2.vector*}, the JAM rungs on the classpath), so the only way to run the suite
+ * ({@code -Djinfer.convTile}, {@code -Djinfer.vector.width}, {@code -Djinfer.vector.gdn}, {@code
+ * -Djinfer.vector.mamba2*}, the JAM rungs on the classpath), so the only way to run the suite
  * against a non-default implementation is a JVM started with that property. {@code
  * jinfer-kernels/pom.xml} does exactly that: one surefire execution per selection, each re-running
  * the whole suite. This test is what makes a misspelled or silently ignored property fail loudly
@@ -63,9 +63,9 @@ class KernelSelectionTest {
 
     @Test
     void vectorWidthFollowsTheProperty() {
-        Integer requested = Integer.getInteger("jinfer.vectorBitSize");
+        Integer requested = Integer.getInteger("jinfer.vector.width");
         if (requested != null) {
-            assertEquals(requested.intValue(), Segments.vectorBits(), "jinfer.vectorBitSize");
+            assertEquals(requested.intValue(), Segments.vectorBits(), "jinfer.vector.width");
         } else {
             assertTrue(Segments.vectorBits() > 0, "the default selects the Vector API");
         }
@@ -74,7 +74,7 @@ class KernelSelectionTest {
 
     @Test
     void vectorJitFollowsThePropertyOrTheDetection() {
-        String knob = System.getProperty("jinfer.vectorJit", "auto");
+        String knob = System.getProperty("jinfer.vector.jit", "auto");
         boolean trusted =
                 switch (knob) {
                     case "fast" -> true;
@@ -82,7 +82,7 @@ class KernelSelectionTest {
                     default -> Segments.vectorJitDetected();
                 };
         assertEquals(
-                Segments.USE_VECTOR_API && trusted, Segments.FAST_VECTOR_JIT, "jinfer.vectorJit");
+                Segments.USE_VECTOR_API && trusted, Segments.FAST_VECTOR_JIT, "jinfer.vector.jit");
     }
 
     @Test
@@ -106,17 +106,17 @@ class KernelSelectionTest {
     @Test
     void recurrenceSwitchesFollowTheProperties() {
         assertEquals(
-                Boolean.parseBoolean(System.getProperty("jinfer.gdn.vector", "true")),
+                Boolean.parseBoolean(System.getProperty("jinfer.vector.gdn", "true")),
                 VectorGatedDeltaNet.enabled(),
-                "jinfer.gdn.vector");
+                "jinfer.vector.gdn");
         assertEquals(
-                Boolean.parseBoolean(System.getProperty("jinfer.mamba2.vector", "true")),
+                Boolean.parseBoolean(System.getProperty("jinfer.vector.mamba2", "true")),
                 VectorMamba2.scanEnabled(),
-                "jinfer.mamba2.vector");
+                "jinfer.vector.mamba2");
         assertEquals(
-                Boolean.parseBoolean(System.getProperty("jinfer.mamba2.vectorNorm", "true")),
+                Boolean.parseBoolean(System.getProperty("jinfer.vector.mamba2Norm", "true")),
                 VectorMamba2.normEnabled(),
-                "jinfer.mamba2.vectorNorm");
+                "jinfer.vector.mamba2Norm");
     }
 
     @Test

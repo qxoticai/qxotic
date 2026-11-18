@@ -68,8 +68,8 @@
          (make native passes native). A shipped binary must be built with the default. -->
     <jinfer.image.march>compatibility</jinfer.image.march>
     <!-- The kernels' Vector API width in bits, empty = what the target ISA (-march) can execute, which jinfer-core's
-         VectorWidth feature pins at build time in every image. Set it only to build narrower than the target. -->
-    <jinfer.image.vectorBits />
+         and jam-vector's VectorWidth features pin at build time in every image. Set it only to build narrower than the target. -->
+    <jinfer.image.vectorWidth />
     <!-- The collector of every image, libjinfer and the executables: the serial one with one survivor space, as
          libtoknroll's (toknroll-native's pom says why). -->
     <jinfer.image.gc>-H:MaxSurvivorSpaces=1</jinfer.image.gc>
@@ -482,7 +482,8 @@
               <buildArg>-O3</buildArg>
               <buildArg>-Djam.vector.wideTiles=${jam.wideTiles}</buildArg>
               <buildArg>-march=${jinfer.image.march}</buildArg>
-              <buildArg>-Djinfer.vectorBitSize=${jinfer.image.vectorBits}</buildArg>
+              <buildArg>-Djinfer.vector.width=${jinfer.image.vectorWidth}</buildArg>
+              <buildArg>-Djam.vector.width=${jinfer.image.vectorWidth}</buildArg>
               <!-- the builder filters the environment; the Makefiles export 14.0 on macOS -->
               <buildArg>-EMACOSX_DEPLOYMENT_TARGET</buildArg>
               <!-- downloads go through curl as a process (jinfer-fetch's CurlTransport): no TLS stack in the image -->

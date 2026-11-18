@@ -19,7 +19,7 @@ import org.junit.jupiter.api.Test;
 class Mamba2Test {
     /**
      * The scalar-geometry cliff blames the geometry only: on a slow Vector API JIT (stock C2, or
-     * {@code -Djinfer.vectorJit=slow}) every geometry runs scalar and that is SLOW_JIT's report.
+     * {@code -Djinfer.vector.jit=slow}) every geometry runs scalar and that is SLOW_JIT's report.
      */
     @Test
     void geometryCliffOnlyWhereTheVectorPathIsAvailable() {

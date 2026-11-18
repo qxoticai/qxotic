@@ -188,7 +188,7 @@ public final class GatedDeltaNet {
 
     /**
      * Whether {@code headDim} alone keeps an available vector recurrence off: the cliff. A slow
-     * Vector API JIT is its own cliff, reported at boot, and {@code -Djinfer.gdn.vector=false} is
+     * Vector API JIT is its own cliff, reported at boot, and {@code -Djinfer.vector.gdn=false} is
      * the caller's choice.
      */
     static boolean geometryUncovered(int headDim) {

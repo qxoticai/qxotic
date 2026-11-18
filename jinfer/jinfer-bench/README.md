@@ -256,5 +256,5 @@ Each has its own documentation.
 
 - [`hotspot_compile_commands`](../hotspot_compile_commands): C2 inlining hints for the hot Vector API helpers, to separate an inlining regression from a kernel regression under C2. The Graal JIT does not read it.
 - `-Djinfer.convTile=auto|4x2|4x4` and `-Djinfer.convProfile=true`: the convolution register tile and its shape census; documented in `jinfer/pom.xml` and `Convolutions.TILE_CODE`.
-- `-Djinfer.vectorJit=auto|fast|slow`: overrides the compiler detection behind `SLOW_JIT`.
+- `-Djinfer.vector.jit=auto|fast|slow`: overrides the compiler detection behind `SLOW_JIT`.
 - JFR (`-XX:StartFlightRecording`): start it after warm-up, or filter the samples by time; a recording that starts with the JVM attributes interpreter and C1 time to the kernels.

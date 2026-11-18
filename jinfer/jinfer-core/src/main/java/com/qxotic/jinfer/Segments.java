@@ -42,14 +42,14 @@ public final class Segments {
                     "jinfer needs the Vector API: add '--add-modules jdk.incubator.vector' to the"
                         + " JVM arguments (or JAVA_TOOL_OPTIONS). It is an incubator module, so the"
                         + " flag is required until the Vector API is finalized."
-                        + " -Djinfer.vectorBitSize=0 selects jinfer's scalar kernels but still"
-                        + " needs the module present.",
+                        + " -Djinfer.vector.width=0 selects jinfer's scalar kernels but still needs"
+                        + " the module present.",
                     noVectorApi);
         }
-        return vectorBitSize(System.getProperty("jinfer.vectorBitSize"), preferred);
+        return vectorBitSize(System.getProperty("jinfer.vector.width"), preferred);
     }
 
-    /** {@code -Djinfer.vectorBitSize} ({@code override}, null when unset) over the preference. */
+    /** {@code -Djinfer.vector.width} ({@code override}, null when unset) over the preference. */
     static int vectorBitSize(String override, int preferred) {
         if (override == null || override.isBlank())
             return preferred; // a build passes it through unset as ""
@@ -59,7 +59,7 @@ public final class Segments {
             return bits;
         } catch (IllegalArgumentException notAShape) { // NumberFormatException included
             throw new IllegalArgumentException(
-                    "jinfer.vectorBitSize: 0 (the scalar kernels) or a Vector API shape size"
+                    "jinfer.vector.width: 0 (the scalar kernels) or a Vector API shape size"
                             + " (64, 128, 256, 512), not '"
                             + override
                             + "'");
@@ -114,25 +114,25 @@ public final class Segments {
     // via -XX:-UseJVMCICompiler.
     public static final boolean FAST_VECTOR_JIT = USE_VECTOR_API && vectorJit();
 
-    // -Djinfer.vectorJit=auto|fast|slow: auto (the default) is the compiler detection below; fast
+    // -Djinfer.vector.jit=auto|fast|slow: auto (the default) is the compiler detection below; fast
     // and slow override it, for a JIT whose Vector API quality the detection misjudges and for
     // the kernel selection matrix in jinfer-kernels' pom, which runs both sides on any compiler.
     // A native image folds this at build time, so pass it to the image build, not the binary.
     private static boolean vectorJit() {
-        String value = System.getProperty("jinfer.vectorJit", "auto");
+        String value = System.getProperty("jinfer.vector.jit", "auto");
         return switch (value) {
             case "fast" -> true;
             case "slow" -> false;
             case "auto" -> vectorJitDetected();
             default ->
                     throw new IllegalArgumentException(
-                            "jinfer.vectorJit: auto, fast or slow, not '" + value + "'");
+                            "jinfer.vector.jit: auto, fast or slow, not '" + value + "'");
         };
     }
 
     /**
      * Whether the active compiler intrinsifies the Vector API well enough to trust it on hot paths:
-     * the compiler's own answer, what {@code -Djinfer.vectorJit=auto} resolves to.
+     * the compiler's own answer, what {@code -Djinfer.vector.jit=auto} resolves to.
      */
     public static boolean vectorJitDetected() {
         if (System.getProperty("org.graalvm.nativeimage.imagecode") != null) {

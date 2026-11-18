@@ -2,7 +2,7 @@
 # recipe (-march=native, into the repository's bin/). What ships is `make image`: the image at the
 # architecture's floor, native-image's default target spelled out since the pom's is compatibility (x86-64-v3,
 # armv8.1-a: the libraries' floor), -O3, Oracle GraalVM's inferred profile; the kernels' vector width follows the
-# target through jinfer-core's feature, as in every image. `make dist` wraps it as the release
+# target through the libraries' own features, as in every image. `make dist` wraps it as the release
 # archive, a prefix tree with bin/jinfer, this README, the license and the notice, and check-dist runs that.
 ROOT := $(abspath $(dir $(lastword $(MAKEFILE_LIST)))/../..)
 MAVEN ?= mvn
