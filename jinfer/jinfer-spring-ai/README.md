@@ -24,6 +24,7 @@ No inference server, Python runtime or API key required.
 ## Spring Boot quick start
 
 The examples use Java 25, Spring Boot 4.2.0-RC2 and Spring AI 2.1.0-RC2.
+A Spring Boot native image (`mvn -Pnative native:compile`), built with GraalVM 25.0.4 or later, needs no extra configuration.
 Add the [dependencies below](#add-the-provider) to your Spring Boot application, then set these JVM options:
 
 ```text

@@ -79,12 +79,6 @@
       <scope>provided</scope>
     </dependency>
     <dependency>
-      <!-- the vector width feature, registered by the jar's own native-image.properties -->
-      <groupId>com.qxotic</groupId>
-      <artifactId>jinfer-image</artifactId>
-      <scope>runtime</scope>
-    </dependency>
-    <dependency>
       <groupId>com.qxotic</groupId>
       <artifactId>jinfer-models-all</artifactId>
       <scope>runtime</scope>
@@ -201,7 +195,7 @@
                 <buildArg>-H:ServiceLoaderFeatureExcludeServices=com.qxotic.jinfer.hub.Console</buildArg>
                 <buildArg>-H:ExcludeResources=com/qxotic/jam/native/.*</buildArg>
                 <buildArg>-Djam.vector.wideTiles=${jam.wideTiles}</buildArg>
-                <!-- the kernels' vector width: the target ISA's unless narrowed here (jinfer-image's VectorWidth) -->
+                <!-- the kernels' vector width: the target ISA's unless narrowed here (jinfer-core's VectorWidth) -->
                 <buildArg>-Djinfer.vectorBitSize=${jinfer.image.vectorBits}</buildArg>
                 <buildArg>-Djdk.incubator.vector.VECTOR_ACCESS_OOB_CHECK=0</buildArg>
                 <buildArg>-Djinfer.convTile=${jinfer.convTile}</buildArg>

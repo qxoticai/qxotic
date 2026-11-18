@@ -87,6 +87,14 @@ make release-canary
 The canary installs release artifacts into a temporary Maven repository and compiles isolated LangChain4j, Spring AI and Spring Boot consumers with and without BOMs.
 It requires network access for dependencies and checks dependency resolution and compilation, not inference, signatures or native-library correctness.
 
+```sh
+make native-canary
+```
+
+After the release install, the native canary builds a LangChain4j app with `native-image` and a Spring Boot app with `mvn -Pnative native:compile` against the installed jars, with no configuration, and runs each.
+Each must answer, and each build must log jinfer's vector-width pin: an image without it runs a hundred times slower.
+It needs GraalVM 25 on the PATH and takes a few minutes.
+
 Build and test the shipped native libraries using [Building jam](jam/BUILDING.md): `make jam-natives` on the Linux host and on the Mac (which also builds the Linux aarch64 library in its container), at the release commit, then the Mac's libraries imported on the Linux host and the staged set verified:
 
 ```sh

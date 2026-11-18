@@ -513,6 +513,7 @@ make native
 ```
 
 One self-contained binary, instant startup. Requires GraalVM Native Image 25.0.4+.
+An application's own native image, plain Java, LangChain4j or Spring Boot, needs no flags either: jinfer's jars carry their native-image configuration, the kernels' vector width included.
 
 > [!IMPORTANT]
 > **`jinfer` does not use `jota`'s Tensor API**, instead, it uses `jota`'s low-level memory APIs, which also support CuTe nested layouts and strong encapsulation, but without multi-backend kernel generation.  

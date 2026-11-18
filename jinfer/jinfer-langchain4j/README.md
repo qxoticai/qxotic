@@ -132,6 +132,7 @@ Vector one; with neither, it uses its built-in kernels.
 ```
 
 Java 25 is required.
+A GraalVM native image of the application, built with GraalVM 25.0.4 or later (`native-image`, or GraalVM's Maven or Gradle plugin), needs no extra configuration.
 
 ## Chat
 

@@ -1,4 +1,4 @@
-package com.qxotic.toknroll.libtoknroll;
+package com.qxotic.toknroll.vector;
 
 import com.oracle.svm.core.CPUFeatureAccess;
 import java.util.Set;
@@ -16,16 +16,17 @@ import org.graalvm.nativeimage.hosted.RuntimeSystemProperties;
  * compares bytes), 256 with AVX2, 128 otherwise (NEON, AVX). An explicit {@code
  * -Dtoknroll.vector.width} still wins, within what the target executes.
  *
+ * <p>The jar's native-image.properties registers it, so every image with toknroll-vector on its
+ * class path runs it and needs no flag. On the JVM nothing loads it.
+ *
  * <p>An x86 target without AVX gets no vector code for these operations at all, and the engine
  * would run several times slower than core's own encoder: there the image starts with {@code
  * toknroll.engine=none}, which a {@code -Dtoknroll.engine} at run time overrides.
  */
-public final class VectorWidth implements Feature {
+final class VectorWidth implements Feature {
     @Override
     public void beforeAnalysis(BeforeAnalysisAccess access) {
-        Set<String> features = new TreeSet<>();
-        for (Object f : CPUFeatureAccess.singleton().buildtimeCPUFeatures())
-            features.add(((Enum<?>) f).name());
+        Set<String> features = targetFeatures();
         int max = features.contains("AVX512BW") ? 512 : features.contains("AVX2") ? 256 : 128;
         String requested = System.getProperty("toknroll.vector.width", "").strip();
         int bits = requested.isEmpty() ? max : Integer.parseInt(requested);
@@ -45,5 +46,24 @@ public final class VectorWidth implements Feature {
             System.out.println(
                     "toknroll: Vector API width " + bits + " bits for a " + max + "-bit target");
         }
+    }
+
+    /**
+     * The target's CPU features, from the builder: an internal API, so a GraalVM that moves it gets
+     * those of its default target (AVX2 on x86-64, NEON elsewhere) instead of a failed build.
+     */
+    private static Set<String> targetFeatures() {
+        Set<String> features = new TreeSet<>();
+        try {
+            for (Object f : CPUFeatureAccess.singleton().buildtimeCPUFeatures())
+                features.add(((Enum<?>) f).name());
+        } catch (LinkageError | RuntimeException moved) {
+            if (Platform.includedIn(Platform.AMD64.class)) features.addAll(Set.of("AVX", "AVX2"));
+            System.out.println(
+                    "toknroll: cannot read the target's CPU features ("
+                            + moved
+                            + "), assuming GraalVM's default target's");
+        }
+        return features;
     }
 }

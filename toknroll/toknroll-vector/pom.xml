@@ -29,6 +29,18 @@
       <artifactId>toknroll-core</artifactId>
     </dependency>
     <dependency>
+      <!-- VectorWidth's Feature: the image builder supplies it -->
+      <groupId>org.graalvm.sdk</groupId>
+      <artifactId>nativeimage</artifactId>
+      <scope>provided</scope>
+    </dependency>
+    <dependency>
+      <!-- CPUFeatureAccess, the builder's hosted API for the target's CPU features -->
+      <groupId>org.graalvm.nativeimage</groupId>
+      <artifactId>svm</artifactId>
+      <scope>provided</scope>
+    </dependency>
+    <dependency>
       <groupId>com.qxotic</groupId>
       <artifactId>toknroll-testkit</artifactId>
       <scope>test</scope>

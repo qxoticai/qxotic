@@ -6,7 +6,7 @@ the prompt cache.
 ## Modules
 
 ```text
-jinfer-core       primitives, model contracts, media vocabulary and telemetry
+jinfer-core       primitives, model contracts, media vocabulary, telemetry, and the native-image vector width
 jinfer-codecs     image/audio/video decoding (bytes <-> Media)
 jinfer-kernels    GGUF loading and CPU kernels over MemoryView
 jinfer-cache      retained sessions and content-addressed checkpoint storage
@@ -18,7 +18,6 @@ jinfer-cli        chat, completion, pull and server executable
 jinfer-tts        speech executable (not published)
 jinfer-bench      generic language-model and embedding benchmarks
 jinfer-native     libjinfer: the C API as a GraalVM shared library
-jinfer-image      build-time native-image feature: the kernels' vector width
 
 jinfer-fetch      HTTP GET through the JDK client or curl; Java 11, shared with toknroll
 jinfer-hub        model references, local cache and downloads

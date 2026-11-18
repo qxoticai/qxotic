@@ -49,7 +49,6 @@
     <module>jinfer-cli</module>
     <module>jinfer-bench</module>
     <module>jinfer-native</module>
-    <module>jinfer-image</module>
     <module>jinfer-fetch</module>
     <module>jinfer-hub</module>
     <module>jinfer-jinja</module>
@@ -68,7 +67,7 @@
     <!-- native-image -march: compatibility (portable) unless the build asks for the host's ISA
          (make native passes native). A shipped binary must be built with the default. -->
     <jinfer.image.march>compatibility</jinfer.image.march>
-    <!-- The kernels' Vector API width in bits, empty = what the target ISA (-march) can execute, which jinfer-image's
+    <!-- The kernels' Vector API width in bits, empty = what the target ISA (-march) can execute, which jinfer-core's
          VectorWidth feature pins at build time in every image. Set it only to build narrower than the target. -->
     <jinfer.image.vectorBits />
     <!-- The collector of every image, libjinfer and the executables: the serial one with one survivor space, as
@@ -232,11 +231,6 @@
       <dependency>
         <groupId>com.qxotic</groupId>
         <artifactId>jinfer-server</artifactId>
-        <version>${jinfer.version}</version>
-      </dependency>
-      <dependency>
-        <groupId>com.qxotic</groupId>
-        <artifactId>jinfer-image</artifactId>
         <version>${jinfer.version}</version>
       </dependency>
       <dependency>

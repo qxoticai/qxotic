@@ -143,6 +143,9 @@ ci-release: ## CI gate 4: the release shape, unsigned, no natives
 release-canary: ## Prove the published shape works: install the release build into a throwaway repo, compile consumers with and without BOMs against ONLY it
 	MAVEN="$(MAVEN)" MAVEN_FLAGS="$(MAVEN_FLAGS)" scripts/release-canary.sh
 
+native-canary: ## Prove apps' native images need no configuration: a LangChain4j and a Spring Boot app, built with GraalVM against the installed jars, must answer
+	MAVEN="$(MAVEN)" MAVEN_FLAGS="$(MAVEN_FLAGS)" scripts/native-canary.sh
+
 release-plan: ## What a release would publish, and whether the versions agree
 	scripts/release-plan.sh
 

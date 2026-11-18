@@ -27,7 +27,8 @@ To rule the engine out, say when chasing a suspected difference, set `-Dtoknroll
 A tokenizer's `toString()` names the engine once it has encoded through it.
 
 The engine runs at the platform's vector width: 128 bits (NEON, AVX), 256 bits (AVX2) or 512 bits (AVX-512), never more than 512.
-`-Dtoknroll.vector.width=128|256|512` picks one, as an image built for a narrower target than its build machine must.
+`-Dtoknroll.vector.width=128|256|512` picks a narrower one.
+A GraalVM native image takes the width of the CPU it is built for, not of the build machine, with no flag: the jar's own native-image configuration sets it.
 On x86 without AVX the JDK leaves these vector operations uncompiled, and the engine is several times slower.
 
 ## Memory and threads
