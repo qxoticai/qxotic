@@ -90,14 +90,18 @@ class HubTest {
 
     /** find answers what -m would load: a browser URL too, and a bare word gets the ref shape. */
     @Test
-    void findTakesWhatTheModelOptionTakes() throws Exception {
+    void findAnswersALinkWithTheRefToPass() throws Exception {
         Path file = dir.resolve("hf.co/acme/m/m-Q8_0.gguf");
         Files.createDirectories(file.getParent());
         Files.writeString(file, "GGUF");
         var store = ModelStore.of(dir);
-        var found = new CliFixtures.Capture("");
+        var link = new CliFixtures.Capture("");
         String url = "https://huggingface.co/acme/m/blob/main/m-Q8_0.gguf";
-        assertEquals(0, Main.run(new String[] {"find", url}, found.io, store), found.err());
+        assertNotEquals(0, Main.run(new String[] {"find", url}, link.io, store));
+        assertTrue(link.err().contains("Pass: hf.co/acme/m/m-Q8_0.gguf"), link.err());
+        var found = new CliFixtures.Capture("");
+        String ref = "hf.co/acme/m/m-Q8_0.gguf";
+        assertEquals(0, Main.run(new String[] {"find", ref}, found.io, store), found.err());
         assertEquals(file.toString(), found.out().strip());
 
         var word = new CliFixtures.Capture("");

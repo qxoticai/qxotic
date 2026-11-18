@@ -553,37 +553,6 @@ class ModelRefTest {
     }
 
     @Test
-    void aPlainUrlIsCachedUnderItsHostAndPath(@TempDir Path root) {
-        System.setProperty("jinfer.models", root.toString());
-        System.setProperty("jinfer.offline", "true"); // never fetch: we assert the PATH it picked
-        try {
-            var offline =
-                    assertThrows(
-                            ModelNotFoundException.class,
-                            () ->
-                                    ModelStore.standard()
-                                            .resolve("https://example.org/models/x.gguf"));
-            assertTrue(
-                    offline.getMessage()
-                            .contains(root.resolve("example.org/models/x.gguf").toString()),
-                    offline.getMessage());
-        } finally {
-            System.clearProperty("jinfer.offline");
-        }
-    }
-
-    @Test
-    void aUrlWithNothingToNameTheFileIsRefused() {
-        for (String bad :
-                new String[] {
-                    "https://example.org/models/", "https://example.org", "ftp://example.org/x.gguf"
-                }) {
-            assertThrows(
-                    IllegalArgumentException.class, () -> ModelStore.standard().resolve(bad), bad);
-        }
-    }
-
-    @Test
     void quantsMatchAsWholeTokensOnly() {
         assertTrue(ModelStore.matchesQuant("gemma-4-E2B-it-Q4_K_M.gguf", "Q4_K_M"));
         assertTrue(ModelStore.matchesQuant("gemma-4-E2B-it-q4_k_m.gguf", "Q4_K_M")); // fold case

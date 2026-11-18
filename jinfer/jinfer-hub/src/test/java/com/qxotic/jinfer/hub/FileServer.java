@@ -20,7 +20,7 @@ import java.util.concurrent.atomic.AtomicInteger;
  * A local HTTP file server for download tests: honors single {@code Range} requests the way every
  * model host does (206 + Content-Range), records hits and the last Range and query per path, and
  * can be told to IGNORE Range for a path - the "some servers answer 200 with the whole file"
- * downgrade {@code Fetch.sizeOf} is built around.
+ * downgrade a download must survive.
  */
 final class FileServer implements AutoCloseable {
 

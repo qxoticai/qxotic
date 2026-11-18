@@ -9,8 +9,9 @@
  * <p>Every builder takes the model as a MODEL REF - {@code .model("owner/model-GGUF:Q4_K_M")} -
  * resolved through the ambient {@code ModelStore} and downloaded into the shared model cache when
  * absent (resumable, checksum-verified; {@code JINFER_OFFLINE=1} forbids the network). {@code
- * .modelPath(Path)} is the explicit local form and touches neither the cache nor the network; a URL
- * is not a model ref: download it first, then pass the path.
+ * .modelPath(Path)} is the explicit local form and touches neither the cache nor the network. A URL
+ * is not a model ref: a hub page's URL is refused naming the ref to pass, any other is downloaded
+ * by the caller and passed as a path.
  *
  * <p>Each chat, embedding, or scoring model instance is ONE serial inference pipeline: concurrent
  * calls queue fairly on it. Speech requests instead use independent synthesis states and may run

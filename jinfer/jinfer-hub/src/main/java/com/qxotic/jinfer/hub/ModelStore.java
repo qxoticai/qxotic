@@ -3,7 +3,6 @@ package com.qxotic.jinfer.hub;
 import java.io.IOException;
 import java.io.UncheckedIOException;
 import java.lang.System.Logger.Level;
-import java.net.URI;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.AccessDeniedException;
 import java.nio.file.DirectoryNotEmptyException;
@@ -59,8 +58,8 @@ import java.util.regex.Pattern;
  * cache in its own layout, so the bytes are immediately visible to llama.cpp, {@code hf download}
  * and everything else that reads that layout - and theirs to us, which the read side always does.
  * An EXPLICIT root opts out: it says "my cache lives here, all of it", and it is also the
- * documented escape hatch for a full disk, so nothing may leak elsewhere. ModelScope and plain URLs
- * always use the flat layout - there is no shared convention to join.
+ * documented escape hatch for a full disk, so nothing may leak elsewhere. ModelScope always uses
+ * the flat layout - there is no shared convention to join.
  *
  * <p>Format policy lives HERE, not in the grammar. {@link ModelRef} parses any repository path;
  * this class knows that jinfer loads GGUF, and refuses a repository that ships none BEFORE any
@@ -213,7 +212,8 @@ public final class ModelStore {
 
     /**
      * The one door for a remote model. {@code owner/repo} is a ref and {@code hf.co} carries it;
-     * naming a host reaches another source. A local path and a URL each get their own remedy.
+     * naming a host reaches another source. A local path and a URL each get their own remedy: a hub
+     * page's URL, the ref to pass instead.
      */
     public static void requireRef(String model) {
         if (isRef(model)) {
@@ -226,11 +226,7 @@ public final class ModelStore {
                             + " modelscope.cn/owner/repo[:quant] for another source");
         }
         if (value.contains("://")) {
-            throw new IllegalArgumentException(
-                    "'"
-                            + model
-                            + "' is a URL, not a model ref. Download it first, then pass the file"
-                            + " with modelPath(...).");
+            throw new IllegalArgumentException(ModelRef.notAReference(value));
         }
         if (ModelRef.isPathShape(value)) {
             throw new IllegalArgumentException(
@@ -269,18 +265,9 @@ public final class ModelStore {
         return ref.quant() == null ? DEFAULT_QUANT : ref.quant();
     }
 
-    /** A plain {@code http(s)} URL, distinct from a model ref. */
-    private static boolean isHttpUrl(String value) {
-        if (value == null) {
-            return false;
-        }
-        String scheme = value.indexOf("://") < 0 ? null : value.substring(0, value.indexOf("://"));
-        return "http".equalsIgnoreCase(scheme) || "https".equalsIgnoreCase(scheme);
-    }
-
     /**
-     * A local path, remote ref, or plain HTTP(S) URL. A ref names its host; an explicit URL names
-     * bytes to download; everything else is a file on this machine.
+     * A local path or a remote ref. A ref names its host; everything else is a file on this
+     * machine. A URL is refused, naming the ref to pass when it is a hub page.
      *
      * @throws ModelNotFoundException when it names nothing that exists or can be reached
      */
@@ -323,9 +310,7 @@ public final class ModelStore {
         if (ModelRef.isRef(pathOrRef)) {
             return resolveRef(ModelRef.parse(pathOrRef), policy);
         }
-        if (isHttpUrl(pathOrRef)) {
-            return url(pathOrRef, policy);
-        }
+        refuseUrl(pathOrRef);
         Path local = localFile(pathOrRef);
         if (local == null) {
             throw new ModelNotFoundException(
@@ -393,136 +378,10 @@ public final class ModelStore {
         }
     }
 
-    /**
-     * A plain URL: fetched and cached, with none of what a repository gives us. There is no listing
-     * to search, so no quant and no revision, and no published checksum, so the only integrity
-     * check is the size the server states. That downgrade is announced rather than assumed - a
-     * caller who thinks jinfer verified these bytes has been misled.
-     *
-     * <p>The cache mapping still holds: {@code https://example.org/models/x.gguf} lands at {@code
-     * <root>/example.org/models/x.gguf}; a non-default port adds a numeric suffix such as {@code
-     * _8000} to the host directory. The URL is used VERBATIM for the request - a query may be a
-     * signature - while the cache path excludes its query.
-     */
-    private Path url(String url, Policy policy) {
-        URI uri;
-        try {
-            uri = URI.create(url);
-        } catch (IllegalArgumentException malformed) {
-            throw new IllegalArgumentException(
-                    "not a URL: '" + url + "': " + malformed.getMessage());
-        }
-        String scheme =
-                uri.getScheme().toLowerCase(Locale.ROOT); // http or https: isHttpUrl said so
-        String host = uri.getHost();
-        require(host != null, "the URL must include a host: " + url);
-        int port = uri.getPort();
-        boolean defaultPort =
-                port < 0
-                        || (scheme.equals("http") && port == 80)
-                        || (scheme.equals("https") && port == 443);
-        String ref = defaultPort ? repositoryRef(uri) : null;
-        if (ref != null) {
-            return resolveRef(ModelRef.parse(ref), policy);
-        }
-        String path = uri.getPath() == null ? "" : uri.getPath();
-        require(
-                !path.isEmpty() && !path.endsWith("/") && !nameOf(path).isEmpty(),
-                "the URL must end in the file name, so the cache has something to call it: " + url);
-
-        Path dest = under(root.resolve(defaultPort ? host : host + "_" + port), path);
-        if (policy == Policy.USE_CACHE && Files.isRegularFile(dest)) {
-            return dest;
-        }
-        // before the SIZE probe, not just the download: offline means no request at all
-        requireOnlineFor(url, dest.toString(), policy);
-        Map<String, String> headers = Map.of("User-Agent", "jinfer-hub");
-        long size = Fetch.sizeOf(url, headers);
-        requireWritable(dest);
-        requireDiskSpace(dest, Fetch.replacementRemainingBytes(dest, size));
-        tagCacheDirectory(root);
-        Fetch.announce(
-                "download "
-                        + host
-                        + path
-                        + "\n  "
-                        + host
-                        + " publishes no checksum - verifying size only");
-        try {
-            Fetch.replace(
-                    dest,
-                    size,
-                    null,
-                    stage -> {
-                        Fetch.download(url, stage, nameOf(uri.getPath()), size, null, headers);
-                        rejectWebPage(stage, url);
-                    });
-        } catch (IOException e) {
-            throw new UncheckedIOException("could not fetch " + url + ": " + why(e), e);
-        }
-        return dest;
-    }
-
-    /**
-     * The ref a browser URL of a known host spells, or null for any other URL. {@code
-     * https://huggingface.co/owner/repo} is the repository, {@code .../tree/rev} pins its revision,
-     * {@code .../blob/rev/file} and {@code .../resolve/rev/file} name a file in it; the host's
-     * default revision is dropped so the ref reads as a user would write it.
-     */
-    static String repositoryRef(URI uri) {
-        String hostName = uri.getHost();
-        ModelRef.Host host = hostName == null ? null : ModelRef.lookup(hostName);
-        if (host == null) {
-            return null;
-        }
-        String path = uri.getPath() == null ? "" : uri.getPath();
-        if (!host.prefix.isEmpty() && path.startsWith(host.prefix + "/")) {
-            path = path.substring(host.prefix.length());
-        }
-        List<String> parts = new ArrayList<>();
-        for (String segment : path.split("/")) {
-            if (!segment.isEmpty()) {
-                parts.add(segment);
-            }
-        }
-        if (parts.size() < 2) {
-            return null;
-        }
-        String repo = host.name + "/" + parts.get(0) + "/" + parts.get(1);
-        if (parts.size() == 2) {
-            return repo;
-        }
-        String view = parts.get(2);
-        if (parts.size() < 4
-                || !(view.equals("tree") || view.equals("blob") || view.equals("resolve"))) {
-            return null; // discussions, settings and the like: not a model
-        }
-        String revision = parts.get(3);
-        if (!revision.equals(host.defaultRevision)) {
-            repo += "@" + revision;
-        }
-        List<String> file = parts.subList(4, parts.size());
-        return file.isEmpty() ? repo : repo + "/" + String.join("/", file);
-    }
-
-    /**
-     * A URL that answers with HTML is a page, never a model: reject the staged file and the caller
-     * learns what to write instead (an hf.co page has already been turned into a ref above, so this
-     * is the mirror or the private server that redirected to a login page).
-     */
-    static void rejectWebPage(Path file, String url) throws IOException {
-        byte[] head;
-        try (var in = Files.newInputStream(file)) {
-            head = in.readNBytes(256);
-        }
-        String text = new String(head, StandardCharsets.ISO_8859_1).stripLeading();
-        if (text.regionMatches(true, 0, "<!doctype", 0, 9)
-                || text.regionMatches(true, 0, "<html", 0, 5)) {
-            throw new IllegalArgumentException(
-                    "'"
-                            + url
-                            + "' served a web page, not a model file. A repository is"
-                            + " owner/repo[:quant]; a file in it is owner/repo/path/file.gguf");
+    /** A URL is never a model: download it and pass the path, or pass the ref a hub page names. */
+    private static void refuseUrl(String pathOrRef) {
+        if (pathOrRef != null && pathOrRef.contains("://")) {
+            throw new IllegalArgumentException(ModelRef.notAReference(pathOrRef));
         }
     }
 
@@ -530,9 +389,8 @@ public final class ModelStore {
      * {@link #resolve} without the download: the cached file this ref or path names, or empty. Same
      * lookup order as resolve - jinfer's own cache first, then the Hugging Face hub cache - so a
      * hit here is exactly the file resolve would return without fetching. Never touches the
-     * network, which is what makes it safe to call from a test or a {@code list} command. A browser
-     * URL of a known host is the ref it spells; a plain URL is refused: it carries no checksum, so
-     * finding one in the cache would vouch for bytes nothing verified.
+     * network, which is what makes it safe to call from a test or a {@code list} command. A URL is
+     * refused, as {@link #resolve} refuses it.
      */
     public Optional<Path> find(String pathOrRef) {
         if (ModelRef.isRef(pathOrRef)) {
@@ -542,13 +400,7 @@ public final class ModelStore {
                 throw new UncheckedIOException("could not look up " + pathOrRef + ": " + why(e), e);
             }
         }
-        if (isHttpUrl(pathOrRef)) {
-            String ref = repositoryRef(URI.create(pathOrRef));
-            if (ref != null) return find(ref);
-            throw new IllegalArgumentException(
-                    "a plain URL is not looked up offline, as it carries no checksum: "
-                            + pathOrRef);
-        }
+        refuseUrl(pathOrRef);
         return Optional.ofNullable(localFile(pathOrRef));
     }
 
@@ -634,10 +486,10 @@ public final class ModelStore {
      * of them are refs.
      *
      * <p>A file under a known host is returned as its REF, rendered with {@code /} whatever the
-     * platform separator is. Anything else - a tree predating the hub, a file fetched from a plain
-     * URL whose scheme we did not record - is returned as its absolute PATH. Both forms are valid
-     * {@code --model} arguments, and neither is guessed: this never invents a ref for a file that
-     * has none. Sorted; the cache's own scaffolding is never a GGUF.
+     * platform separator is. Anything else - a tree predating the hub, a file an older jinfer
+     * fetched from a plain URL - is returned as its absolute PATH. Both forms are valid {@code
+     * --model} arguments, and neither is guessed: this never invents a ref for a file that has
+     * none. Sorted; the cache's own scaffolding is never a GGUF.
      *
      * <p>GGUF files in the shared Hugging Face hub cache are listed too, as refs - they resolve
      * without a download, whichever tool put them there, and with the default root that tool may
@@ -746,10 +598,7 @@ public final class ModelStore {
      * caller's. False when nothing was cached; {@link #pullAll} refreshes without removing.
      */
     public boolean remove(String pathOrRef) {
-        if (isHttpUrl(pathOrRef)) { // a browser URL is the ref it spells, as find reads it
-            String ref = repositoryRef(URI.create(pathOrRef));
-            return ref != null && remove(ref);
-        }
+        refuseUrl(pathOrRef);
         if (!ModelRef.isRef(pathOrRef)) {
             return removeOwnFile(pathOrRef);
         }

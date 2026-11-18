@@ -69,7 +69,8 @@ class JinferSpeechAutoConfigurationTest {
                         context -> {
                             assertThat(context).hasFailed();
                             assertThat(context.getStartupFailure())
-                                    .hasStackTraceContaining("download it first");
+                                    .hasStackTraceContaining(
+                                            "download the file and pass its local path");
                         });
     }
 
@@ -84,7 +85,8 @@ class JinferSpeechAutoConfigurationTest {
                             assertThat(context.getStartupFailure())
                                     .hasStackTraceContaining(
                                             "spring.ai.jinfer.speech.companions.lexicon")
-                                    .hasStackTraceContaining("download it first");
+                                    .hasStackTraceContaining(
+                                            "download the file and pass its local path");
                         });
     }
 

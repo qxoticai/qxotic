@@ -120,7 +120,8 @@ class JinferChatAutoConfigurationTest {
                         context -> {
                             assertThat(context).hasFailed();
                             assertThat(context.getStartupFailure())
-                                    .hasStackTraceContaining("download it first");
+                                    .hasStackTraceContaining(
+                                            "download the file and pass its local path");
                         });
     }
 
@@ -135,7 +136,8 @@ class JinferChatAutoConfigurationTest {
                             assertThat(context.getStartupFailure())
                                     .hasStackTraceContaining(
                                             "spring.ai.jinfer.chat.companions.media")
-                                    .hasStackTraceContaining("download it first");
+                                    .hasStackTraceContaining(
+                                            "download the file and pass its local path");
                         });
     }
 

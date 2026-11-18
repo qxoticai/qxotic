@@ -52,7 +52,7 @@ final class JinferSpeechModelTest {
                         () -> JinferSpeechModel.builder().companion("lexicon", "/tmp/lexicon.bin"));
         assertEquals(
                 "'/tmp/lexicon.bin' is not a companion model ref. Use companionPath(...) for a"
-                        + " local file; download plain URLs first.",
+                        + " local file.",
                 e.getMessage());
     }
 

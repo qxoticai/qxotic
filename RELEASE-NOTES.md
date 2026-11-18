@@ -111,7 +111,7 @@ The native libraries, the jinfer command and the wheels are built with Oracle Gr
   `jinfer list` names each cached model by the shortest reference that loads it (`LiquidAI/LFM2.5-350M-GGUF:Q8_0`), alphabetically, so a line pastes into `-m`, `pull`, `find` or `remove`.
   `jinfer find <ref>...` prints the file `-m` would load, without a request or a hash: `llama-server -m "$(jinfer find <ref>)"`.
   A model pulled at a branch or tag lists by it (`owner/repo@dev:Q8_0`), and is counted in the total.
-  `jinfer remove <ref>...` deletes the one file `find` prints for each reference, a browser URL or a path `list` prints included, and names it with its size; a repository holding several cached files is refused with their names, never guessed.
+  `jinfer remove <ref>...` deletes the one file `find` prints for each reference, a path `list` prints included, and names it with its size; a repository holding several cached files is refused with their names, never guessed.
   A model in the shared Hugging Face cache takes its blob along unless another snapshot links it, and a repository folder goes once it is empty.
   `ModelStore.evict(ref)` is `ModelStore.remove(ref)`, the command's name.
 - **`jinfer prune` frees the space older versions take.** A pull that updates a model keeps the version it replaced in the Hugging Face cache; `list` now ends with how much that is, and `prune` deletes them, as `hf cache prune` does. `ModelStore.detached()` lists them with what removing each frees.
@@ -271,8 +271,8 @@ First release on Maven Central: `com.qxotic` artifacts for jota, jam, jinfer, to
 - **Stringified arguments.** A small model that sends an array or object argument as a JSON string, Llama 3.2 1B does, gets it unwrapped where the tool's schema declares that shape.
 - **Gemma 4 video.** A `VideoContent` (langchain4j), a video `Media` (Spring AI) or a `video_url` part (server) renders the way the Gemma 4 processor does: every sampled frame is a timestamped image block, `mm:ss <|image>...<image|>`, one space between frames.
   Qwen 3.5 still refuses video: its vision tower takes images only.
-- **Browser URLs as model refs.** A repository page pasted from the browser (`https://huggingface.co/owner/repo`, its `tree`, `blob` and `resolve` views, ModelScope alike) is the ref it spells, so it lands in the same cache as `owner/repo`; `huggingface.co/owner/repo` is accepted as a host spelling.
-  A plain URL that answers with a web page is refused and never kept in the cache.
+- **A pasted link names the ref to pass.** A model's page pasted from the browser (`https://huggingface.co/owner/repo`, its `tree`, `blob` and `resolve` views, ModelScope's alike) is refused with the exact reference it spells, and the publisher it names to check; `huggingface.co/owner/repo` is accepted as a host spelling.
+  Any other URL is refused too: download the file and pass its path.
 - **Vector API check in the library.** A JVM started without `--add-modules jdk.incubator.vector` fails at model load with the one-line remedy, on every binding, instead of a NoClassDefFoundError inside a kernel.
 - **Builder ranges.** The langchain4j builders refuse an out-of-range temperature, top-p, top-k, min-p, output limit, timeout or speech speed where it is set, with the range in the message.
 - **`--raw-prompt` writes the start token.** The raw lane prepends the model's start tokens (BOS, where the family has one) unless the prompt already spells them, as llama.cpp's `add_bos_token` does; an LFM 2.5 raw prompt no longer decodes to noise.

@@ -65,7 +65,8 @@ class JinferTranscriptionAutoConfigurationTest {
                         context -> {
                             assertThat(context).hasFailed();
                             assertThat(context.getStartupFailure())
-                                    .hasStackTraceContaining("download it first");
+                                    .hasStackTraceContaining(
+                                            "download the file and pass its local path");
                         });
     }
 

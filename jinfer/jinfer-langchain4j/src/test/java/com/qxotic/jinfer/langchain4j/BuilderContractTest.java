@@ -273,7 +273,7 @@ final class BuilderContractTest {
                                         .companion("media", "/tmp/mmproj.gguf"));
         assertEquals(
                 "'/tmp/mmproj.gguf' is not a companion model ref. Use companionPath(...) for a"
-                        + " local file; download plain URLs first.",
+                        + " local file.",
                 e.getMessage());
     }
 

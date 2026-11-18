@@ -360,34 +360,6 @@ final class Fetch {
         }
     }
 
-    /**
-     * The size of {@code url}, or -1 when the server will not say. A one-byte ranged GET rather
-     * than a HEAD: every host that serves Range answers it, and some that redirect to a CDN handle
-     * HEAD badly. Knowing the size up front is what lets a plain URL use the parallel path and the
-     * disk check, neither of which can work from a stream of unknown length.
-     */
-    static long sizeOf(String url, Map<String, String> headers) {
-        Map<String, String> ranged = downloadHeaders(headers);
-        ranged.put("Range", "bytes=0-0");
-        try {
-            Transport.Response response =
-                    send(URI.create(url), ranged, LISTING_TIMEOUT, RateLimit.LISTING_BUDGET);
-            try (InputStream drain = response.body()) {
-                // NEVER readAllBytes here: a server that ignores Range answers 200 with the
-                // WHOLE file, and draining it would stream gigabytes into nothing
-                drain.readNBytes(8 * 1024);
-            }
-            String contentRange = header(response, "content-range", "");
-            int slash = contentRange.lastIndexOf('/');
-            if (response.status() == 206 && slash > 0) {
-                return Long.parseLong(contentRange.substring(slash + 1).strip());
-            }
-            return response.status() == 200 ? contentLength(response, -1) : -1;
-        } catch (IOException | NumberFormatException unknown) {
-            return -1; // a size we cannot learn is not a reason to refuse the download
-        }
-    }
-
     /** A GET whose body is a String - the listing APIs. */
     static String getString(String url, Map<String, String> headers) throws IOException {
         Transport.Response response =

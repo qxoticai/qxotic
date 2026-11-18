@@ -112,6 +112,8 @@ class ModelStoreFindTest {
                 assertThrows(
                         IllegalArgumentException.class,
                         () -> ModelStore.standard().find("https://example.org/models/x.gguf"));
-        assertTrue(failure.getMessage().contains("checksum"), failure.getMessage());
+        assertTrue(
+                failure.getMessage().contains("download the file and pass its local path"),
+                failure.getMessage());
     }
 }

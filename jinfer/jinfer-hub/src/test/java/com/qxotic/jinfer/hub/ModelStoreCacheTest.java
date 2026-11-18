@@ -139,9 +139,16 @@ class ModelStoreCacheTest {
         assertTrue(Files.notExists(model.getParent()), "the emptied repository folder goes");
         assertTrue(Files.exists(other), "its neighbours stay");
         assertFalse(store.remove("hf.co/acme/thing:Q8_0"), "the second remove is a miss");
+        var link =
+                assertThrows(
+                        IllegalArgumentException.class,
+                        () ->
+                                store.remove(
+                                        "https://huggingface.co/acme/other/blob/main/other-Q8_0.gguf"));
         assertTrue(
-                store.remove("https://huggingface.co/acme/other/blob/main/other-Q8_0.gguf"),
-                "a browser URL is the ref it spells, as find reads it");
+                link.getMessage().contains("Pass: hf.co/acme/other/other-Q8_0.gguf"),
+                "a link is refused with the ref it names: " + link.getMessage());
+        assertTrue(store.remove("hf.co/acme/other/other-Q8_0.gguf"));
         assertTrue(Files.notExists(other));
         assertTrue(Files.exists(root), "the root itself is never removed");
         assertTrue(Files.notExists(root.resolve("hf.co")));

@@ -16,9 +16,13 @@ final class Sources {
      * {@code path}. A URL is refused: the starter never downloads from one.
      */
     static void model(String key, String value, Consumer<String> ref, Consumer<Path> path) {
-        if (value.contains("://"))
-            throw new IllegalStateException(
-                    key + " is a URL; download it first and configure its local path");
+        if (value.contains("://")) {
+            try {
+                ModelStore.requireRef(value);
+            } catch (IllegalArgumentException url) { // naming the ref a hub link spells
+                throw new IllegalStateException(key + ": " + url.getMessage(), url);
+            }
+        }
         if (ModelStore.isRef(value)) ref.accept(value);
         else path.accept(Path.of(value));
     }

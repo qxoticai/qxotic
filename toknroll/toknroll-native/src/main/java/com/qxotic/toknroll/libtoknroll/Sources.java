@@ -103,8 +103,13 @@ final class Sources {
 
     static Located locate(String source, ModelStore store) {
         if (source == null || source.isBlank()) throw Errors.invalid("source is empty");
-        if (source.contains("://")) // a browser's URL, pasted: the grammar has no scheme
-        throw Errors.invalid("'" + source + "' is a URL, not a source: write [host/]owner/repo");
+        if (source.contains("://")) { // a pasted link: refused with the ref it names, as everywhere
+            try {
+                ModelStore.requireRef(source);
+            } catch (IllegalArgumentException url) {
+                throw Errors.invalid(url.getMessage());
+            }
+        }
         if (!ModelStore.isRef(source)) { // a path is taken as given: a name may end in a space
             // a dotted first segment is a misspelled host, never an owner or a missing file
             if (!Files.exists(Path.of(source)) && source.matches("[^/\\\\:]+\\.[^/\\\\:]+/.+"))

@@ -86,7 +86,8 @@ class JinferDecisionAutoConfigurationTest {
                 .run(
                         context ->
                                 assertThat(context.getStartupFailure())
-                                        .hasStackTraceContaining("download it first"));
+                                        .hasStackTraceContaining(
+                                                "download the file and pass its local path"));
         runner.withPropertyValues(
                         "spring.ai.model.decision=jinfer",
                         "spring.ai.jinfer.decision.model=/d1.gguf",
@@ -136,7 +137,8 @@ class JinferDecisionAutoConfigurationTest {
                         context -> {
                             assertThat(context).hasFailed();
                             assertThat(context.getStartupFailure())
-                                    .hasStackTraceContaining("download it first");
+                                    .hasStackTraceContaining(
+                                            "download the file and pass its local path");
                         });
     }
 

@@ -32,11 +32,10 @@ class ModelStoreRequireRefTest {
     }
 
     @Test
-    void rejectsHuggingFaceBrowserSpelling() {
+    void rejectsHuggingFaceBrowserSpellingWithTheRefToPass() {
         String message =
                 message(() -> ModelStore.requireRef("https://huggingface.co/owner/repo:Q8_0"));
-        assertTrue(message.contains("URL"));
-        assertTrue(message.contains("modelPath"));
+        assertTrue(message.contains("Pass: hf.co/owner/repo:Q8_0"), message);
     }
 
     // ---- rejected, each with its own remedy ----
@@ -52,10 +51,9 @@ class ModelStoreRequireRefTest {
     }
 
     @Test
-    void rejectsAUrlWithTheModelPathRemedy() {
+    void rejectsAUrlWithTheDownloadRemedy() {
         String message = message(() -> ModelStore.requireRef("https://example.org/model.gguf"));
-        assertTrue(message.contains("URL"));
-        assertTrue(message.contains("modelPath"));
+        assertTrue(message.contains("download the file and pass its local path"), message);
     }
 
     @Test

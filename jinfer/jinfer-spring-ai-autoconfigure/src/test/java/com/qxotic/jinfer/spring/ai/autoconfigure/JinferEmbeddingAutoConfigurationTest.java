@@ -50,7 +50,8 @@ class JinferEmbeddingAutoConfigurationTest {
                         context -> {
                             assertThat(context).hasFailed();
                             assertThat(context.getStartupFailure())
-                                    .hasStackTraceContaining("download it first");
+                                    .hasStackTraceContaining(
+                                            "download the file and pass its local path");
                         });
     }
 
@@ -175,8 +176,7 @@ class JinferEmbeddingAutoConfigurationTest {
                             assertThat(context).hasFailed();
                             assertThat(context.getStartupFailure())
                                     .hasStackTraceContaining(
-                                            "spring.ai.jinfer.embedding.companions.media is a URL;"
-                                                    + " download it first");
+                                            "spring.ai.jinfer.embedding.companions.media: '");
                         });
     }
 

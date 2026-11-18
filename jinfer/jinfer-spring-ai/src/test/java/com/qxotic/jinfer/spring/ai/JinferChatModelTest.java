@@ -124,8 +124,7 @@ class JinferChatModelTest {
                         () ->
                                 JinferChatModel.builder()
                                         .companion("media", "https://example.org/mmproj.gguf"));
-        assertTrue(url.getMessage().contains("companionPath"));
-        assertTrue(url.getMessage().contains("download"));
+        assertTrue(url.getMessage().contains("download the file and pass its local path"));
     }
 
     @Test

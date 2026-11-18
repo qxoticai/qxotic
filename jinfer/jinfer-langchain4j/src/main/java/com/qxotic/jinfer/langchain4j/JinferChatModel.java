@@ -613,12 +613,15 @@ public final class JinferChatModel implements ChatModel, AutoCloseable {
          */
         public Builder companion(String capability, String companionRef) {
             Objects.requireNonNull(capability, "capability");
+            if (companionRef != null && companionRef.contains("://")) {
+                ModelStore.requireRef(companionRef); // refused, naming the ref a link spells
+            }
             if (!ModelStore.isRef(companionRef)) {
                 throw new IllegalArgumentException(
                         "'"
                                 + companionRef
                                 + "' is not a companion model ref. Use companionPath(...) for a"
-                                + " local file; download plain URLs first.");
+                                + " local file.");
             }
             localCompanions.remove(capability);
             companionRefs.put(capability, companionRef);

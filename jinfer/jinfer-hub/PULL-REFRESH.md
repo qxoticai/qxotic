@@ -28,7 +28,6 @@ Jinfer names a blob by its hash only after verifying it; other HF clients check 
 A flat-cache entry has no such name, so it is stream-hashed and size-checked before reuse, a sequential local read.
 Bytes damaged after publication are not detected by an ordinary pull; `pull --force` replaces them.
 Without a published checksum, explicit pull downloads again; size or modification time alone cannot establish equality.
-Plain URLs follow this rule, while known-host browser URLs are normalized into repository references.
 
 Force bypasses the completed-file cache, not the existing resume protocol.
 Validated partial transfers may resume.

@@ -25,11 +25,17 @@ class ModelStringTest {
     }
 
     @Test
-    void aUrlIsRefusedAndPointsToModelPath() {
+    void aUrlIsRefusedWithTheRefToPassOrTheDownloadRemedy() {
+        assertThatThrownBy(
+                        () ->
+                                JinferChatModel.builder()
+                                        .model(
+                                                "https://huggingface.co/acme/m-GGUF/blob/main/m.gguf"))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("Pass: hf.co/acme/m-GGUF/m.gguf");
         assertThatThrownBy(() -> JinferChatModel.builder().model("https://example.org/model.gguf"))
                 .isInstanceOf(IllegalArgumentException.class)
-                .hasMessageContaining("URL")
-                .hasMessageContaining("modelPath");
+                .hasMessageContaining("download the file and pass its local path");
     }
 
     @Test
@@ -99,7 +105,6 @@ class ModelStringTest {
                                 JinferChatModel.builder()
                                         .companion("media", "https://example.org/mmproj.gguf"))
                 .isInstanceOf(IllegalArgumentException.class)
-                .hasMessageContaining("companionPath")
-                .hasMessageContaining("download");
+                .hasMessageContaining("download the file and pass its local path");
     }
 }
