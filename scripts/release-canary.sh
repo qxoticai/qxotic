@@ -495,4 +495,13 @@ if [ -n "$FETCHED" ]; then
     exit 1
 fi
 
+# --no-fonts keeps javadoc's 4 MB of web fonts out of every jar; a module that overrides the
+# javadoc options drops it unless it says it again
+FONTED=$(find "$REPO/com/qxotic" -name '*-javadoc.jar' \
+    -exec sh -c 'unzip -l "$1" | grep -q "fonts/.*[.]woff"' _ {} \; -print | sed 's|.*/||')
+if [ -n "$FONTED" ]; then
+    echo "canary: javadoc jars carry web fonts (pass --no-fonts):" $FONTED >&2
+    exit 1
+fi
+
 echo "==> canary green: published integration POMs resolve with and without BOMs"

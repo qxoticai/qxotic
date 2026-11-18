@@ -49,7 +49,10 @@
         <groupId>org.apache.maven.plugins</groupId>
         <artifactId>maven-javadoc-plugin</artifactId>
         <configuration>
-          <additionalOptions combine.self="override" />
+          <!-- jinfer's vector modules dropped, the root's no-fonts kept -->
+          <additionalOptions combine.self="override">
+            <additionalOption>--no-fonts</additionalOption>
+          </additionalOptions>
         </configuration>
       </plugin>
       <plugin>
