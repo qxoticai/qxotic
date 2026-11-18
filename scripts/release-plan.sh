@@ -20,9 +20,10 @@ BOM=jinfer/jinfer-bom
 
 # Element $1 of POM $2, as the POM states it about itself: outside <parent>, before any content.
 declared() {
-    sed -e '/<parent>/,/<\/parent>/d' "$2" | sed -n "
-        /<\(properties\|dependencies\|dependencyManagement\|build\|modules\|profiles\)>/q
-        s|^  <$1>\(.*\)</$1>.*|\1|p" | head -1
+    # one sed, quitting on its own: under pipefail a reader that quits early fails the pipeline
+    sed -n -e '/<parent>/,/<\/parent>/d' \
+        -e '/<\(properties\|dependencies\|dependencyManagement\|build\|modules\|profiles\)>/q' \
+        -e "s|^  <$1>\(.*\)</$1>.*|\1|p;t found" -e b -e ':found' -e q "$2"
 }
 
 # The version POM $1 is built with: its own, else its parent's.
