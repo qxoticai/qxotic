@@ -4,7 +4,7 @@ cached (or a network); the optional speech, transcription and reranking checks r
 model is cached and are skipped otherwise. Checks pin behaviour, not model prose: prompts have
 decisive answers, because a near-tie flips under different kernels."""
 import asyncio, base64, copy, ctypes, enum, json, logging, math, os, pickle, signal, struct, subprocess, sys, tempfile, threading, time, wave
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Literal, TypedDict
 HERE = os.path.dirname(os.path.abspath(__file__))
@@ -337,6 +337,46 @@ s = m.chat("List fifty animals.", max_tokens=200); next(iter(s)); s.close()
 after = m.chat("What is the capital of France? Answer in one word.", max_tokens=12, temperature=0).text
 ok("Paris" in after, f"usable after cancel: {after!r}")
 
+# a type that contains itself is a $ref into the root's $defs, which the grammar follows
+@dataclass
+class Node:
+    name: str
+    children: list["Node"] = field(default_factory=list)
+spec = jinfer._request([], Node | None, {})["response_format"]["json_schema"]["schema"]
+ok("Node" in spec["$defs"] and "$defs" not in spec["properties"]["value"], f"recursive schema, $defs at the root: {spec}")
+tree = m.chat("A tree: root 'a' with two children 'b' and 'c', which have no children. As JSON.", schema=Node, max_tokens=96, temperature=0).parsed
+ok(isinstance(tree, Node) and all(isinstance(c, Node) for c in tree.children), f"a recursive dataclass parses: {tree}")
+
+# a turn that fails in a later tool round leaves the history as it was, so the next turn works
+def fetch_page(url: str) -> str:
+    """Fetch a web page."""
+    return "word " * 6000  # past the context: the round that reads it fails
+tooling = m.conversation(tools=[fetch_page], max_tokens=32, temperature=0)
+try:
+    tooling.chat("Fetch https://example.com.", tool_choice=fetch_page).text; ok(False, "the over-context tool round must fail")
+except jinfer.InvalidArgument:
+    pass
+ok(tooling.messages == [], f"a failed turn leaves no orphan tool call: {[x['role'] for x in tooling.messages]}")
+ok(isinstance(tooling.chat("Say hi.", tool_choice="none").text, str) and len(tooling.messages) == 2, "the conversation carries on")
+try:
+    tooling.chat("Hi", temperature="hot"); ok(False, "a turn refused before it starts must raise")
+except TypeError:
+    ok(len(tooling.messages) == 2, f"a turn refused before it starts leaves no message behind: {[x['role'] for x in tooling.messages]}")
+
+# two threads iterating one reply share it: a step at a time, each chunk to exactly one of them
+r = m.chat("Count from one to twenty in words.", max_tokens=48, temperature=0)
+halves, errors = [[], []], []
+def drain(into):
+    try:
+        into.extend(r)
+    except Exception as e:
+        errors.append(e)
+threads = [threading.Thread(target=drain, args=(h,)) for h in halves]
+for t in threads: t.start()
+for t in threads: t.join(timeout=60)
+ok(not errors and r.finish_reason in ("stop", "length") and sum(len(c) for c in halves[0] + halves[1]) == len(r.text) > 0,
+   f"two threads share one reply: {len(halves[0])} + {len(halves[1])} chunks, {errors}, {r!r}")
+
 # schema: the reply is the Python type it was asked for
 @dataclass
 class Place:
@@ -435,6 +475,11 @@ with jinfer.load(LM, prompt_cache=catalog) as m1:
 with jinfer.load(LM, prompt_cache=catalog) as m2:
     r = m2.conversation(system="You are a terse assistant. " * 10).chat("Hi", max_tokens=2)
     ok(r.usage.cached_tokens > 0, f"prompt cache survives the model: {r.usage}")
+notes = os.path.join(tempfile.mkdtemp(), "notes.txt"); Path(notes).write_bytes(b"my notes, not a cache" * 1000)
+try:
+    jinfer.load(LM, prompt_cache=notes); ok(False, "a file that is not a cache must be refused")
+except jinfer.JinferError as e:
+    ok("name another file" in str(e) and "delete" not in str(e) and Path(notes).read_bytes().startswith(b"my notes"), f"someone's file is refused, never advised away: {e}")
 catalog = os.path.join(tempfile.mkdtemp(), "prompts.bin")
 m1 = jinfer.load(LM, prompt_cache=catalog)
 kept = m1.conversation(system="You are a curt assistant. " * 10, max_tokens=2)
@@ -523,7 +568,9 @@ with jinfer.load(EMB, context_capacity=600) as short:
     room = (ctypes.c_float * (2 * short.dimension - 1))()
     ok(N.lib.jinfer_embed(short._h, too_long, 2, 0, room, len(room)) == 2 * short.dimension, "too little room: the size, no model run")
     out = (ctypes.c_float * (2 * short.dimension))()
-    ok(N.lib.jinfer_embed(short._h, too_long, 2, 0, out, len(out)) == N.EINVAL and b"600" in N.lib.jinfer_last_error(None), "the run refuses the text")
+    rc = N.lib.jinfer_embed(short._h, too_long, 2, 0, out, len(out)); why = N.lib.jinfer_last_error(None)
+    ok(rc == N.EINVAL and b"600" in why and b"context_capacity" in why and b"contextCapacity" not in why,
+       f"the run refuses the text, naming the knob as C and Python spell it: {why!r}")
 n = 2**31 // e.dimension + 1
 many = (ctypes.c_char_p * n)(*([b"a"] * n))
 ok(N.lib.jinfer_embed(e._h, many, n, 0, None, 0) == N.EINVAL and b"2^31" in N.lib.jinfer_last_error(None), "a size past int32 is refused")

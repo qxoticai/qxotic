@@ -59,6 +59,9 @@ The native libraries, the jinfer command and the wheels are built with Oracle Gr
 - **Smaller fixes in Python.** `schema=float` gives a `float` when the model writes `3`, and the OpenAI adapter streams tool calls.
   `transcribe` reads a float WAV on Python 3.15, whose `wave` module reads them, where its samples were taken as integers; an older Python refuses one with an `InvalidArgument` naming the file.
   Speech text with a NUL character is refused, where espeak stopped reading at it, and a file that is not GGUF says so instead of printing its magic number.
+  A dataclass or TypedDict that contains itself works as `schema=`, through `$defs`, where it raised `RecursionError`.
+  A conversation turn that fails, before it starts or in any tool round, leaves the history as it was and its reply says why, where a tool call without its results stayed and failed every later turn.
+  libjinfer's errors name `context_capacity` as C and Python spell it, and a `prompt_cache` file that is not a cache is refused with "name another file", never advice to delete it.
 - **Tool calls are matched one to one.** A request offering two tools of one name is refused, since a call names its tool, and each tool result in a conversation answers exactly one earlier call, so a memory trim that drops a call but keeps its result is refused for families without call ids too.
 - **EmbeddingGemma 2.** Google EmbeddingGemma 2 (`jinfer-gemma-embedding2`, architecture `gemma-embedding2`) embeds text into 768 dimensions (Matryoshka down to 128), and images, audio and video through its mmproj with `GemmaEmbedding2.withMedia` and `embed`.
   It matches Google's official pipeline (sentence-transformers over `google/embeddinggemma-2`) for every task prompt on the model card, and for images, audio and video: cosine above 0.99999 with F32 weights.

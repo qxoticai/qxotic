@@ -114,27 +114,12 @@ final class Model {
                 switch (kind) {
                     case LANGUAGE -> engine.contextCapacity();
                     case EMBEDDING, RERANKING ->
-                            capacity(
+                            PromptCache.Options.contextCapacity(
                                     contextCapacity,
                                     contextModel().configuration().maxContextLength(),
                                     PromptCache.Options.DEFAULT_CONTEXT_CAPACITY);
                     default -> 0;
                 };
-    }
-
-    /** {@link PromptCache.Options#contextCapacity}, its refusal under the C field's own name. */
-    static int capacity(int requested, int max, int defaultCapacity) {
-        try {
-            return PromptCache.Options.contextCapacity(requested, max, defaultCapacity);
-        } catch (IllegalArgumentException refused) {
-            throw named(refused);
-        }
-    }
-
-    private static RuntimeException named(IllegalArgumentException refused) {
-        String message = refused.getMessage();
-        if (message == null || !message.startsWith("contextCapacity ")) return refused;
-        return Errors.invalid("context_capacity " + message.substring("contextCapacity ".length()));
     }
 
     static Model load(String ref, Options.Values options) throws IOException {
@@ -189,8 +174,6 @@ final class Model {
                 Arenas.close(arena); // best-effort: in the image the arena is ofAuto, not closeable
                 throw t;
             }
-        } catch (IllegalArgumentException refused) {
-            throw named(refused); // the cache's refusal of a capacity, under the C field's name
         }
         LOG.log(
                 System.Logger.Level.DEBUG,

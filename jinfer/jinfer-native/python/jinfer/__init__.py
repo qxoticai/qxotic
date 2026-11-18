@@ -245,7 +245,20 @@ def _messages(messages, system: str | None) -> list[dict]:
 
 def _schema(tp) -> dict:
     """A JSON schema for a dict (as is), a Pydantic class, a dataclass, a TypedDict, list[T],
-    Literal, Enum, Optional and the scalars."""
+    Literal, Enum, Optional and the scalars. A dataclass or TypedDict that contains itself is a
+    $ref into the root's $defs, the one way a JSON schema spells a recursive type."""
+    defs: dict[str, dict] = {}
+    spec = _node(tp, defs, ())
+    if not defs:
+        return spec
+    if "$ref" in spec:  # the root contains itself: its body stays at the root, an object
+        spec = defs[spec["$ref"].rsplit("/", 1)[1]]
+    return {**spec, "$defs": defs}
+
+
+def _node(tp, defs: dict, enclosing: tuple) -> dict:
+    """_schema's walk; `enclosing` holds the dataclasses and TypedDicts being described around tp.
+    ponytail: a $defs entry is keyed by class name; two recursive classes of one name would collide."""
     if isinstance(tp, dict):
         return tp
     if hasattr(tp, "model_json_schema"):
@@ -254,22 +267,30 @@ def _schema(tp) -> dict:
     if origin is Literal:
         return {"enum": list(args)}
     if origin in (typing.Union, types.UnionType):
-        return {"anyOf": [{"type": "null"} if a is type(None) else _schema(a) for a in args]}
+        return {"anyOf": [{"type": "null"} if a is type(None) else _node(a, defs, enclosing) for a in args]}
     if origin is list or tp is list:
-        return {"type": "array", "items": _schema(args[0]) if args else {}}
+        return {"type": "array", "items": _node(args[0], defs, enclosing) if args else {}}
     if origin is dict or tp is dict:
         if args and args[1] is not Any:
             # the grammar enforces named properties, not a value type on an open object
             raise InvalidArgument(f"schema: {tp!r} cannot be enforced; use dict for a free-form object, a dataclass or TypedDict for a typed one")
         return {"type": "object"}
-    if dataclasses.is_dataclass(tp):
-        hints = typing.get_type_hints(tp)
-        fields = dataclasses.fields(tp)
-        return {"type": "object", "properties": {f.name: _schema(hints[f.name]) for f in fields},
-                "required": [f.name for f in fields if f.default is dataclasses.MISSING and f.default_factory is dataclasses.MISSING]}
-    if typing.is_typeddict(tp):
-        hints = typing.get_type_hints(tp)
-        return {"type": "object", "properties": {k: _schema(v) for k, v in hints.items()}, "required": sorted(tp.__required_keys__)}
+    if dataclasses.is_dataclass(tp) or typing.is_typeddict(tp):
+        ref = {"$ref": f"#/$defs/{tp.__name__}"}
+        if tp in enclosing:  # it contains itself: a reference, its body defined once
+            defs.setdefault(tp.__name__, {})
+            return ref
+        hints, inside = typing.get_type_hints(tp), enclosing + (tp,)
+        if dataclasses.is_dataclass(tp):
+            fields = dataclasses.fields(tp)
+            body = {"type": "object", "properties": {f.name: _node(hints[f.name], defs, inside) for f in fields},
+                    "required": [f.name for f in fields if f.default is dataclasses.MISSING and f.default_factory is dataclasses.MISSING]}
+        else:
+            body = {"type": "object", "properties": {k: _node(v, defs, inside) for k, v in hints.items()}, "required": sorted(tp.__required_keys__)}
+        if tp.__name__ in defs:  # referenced from inside itself: this body is the definition
+            defs[tp.__name__] = body
+            return ref
+        return body
     if isinstance(tp, type) and issubclass(tp, enum.Enum):
         return {"enum": [m.value for m in tp]}
     if tp is Any:
@@ -361,8 +382,9 @@ def _request(messages: list[dict], schema, options: dict) -> dict:
     if schema is not None:
         spec = _schema(schema)
         name = getattr(schema, "__name__", None) or spec.get("title") or "response"
-        if _wrapped(spec):
-            spec = {"type": "object", "properties": {"value": spec}, "required": ["value"]}
+        if _wrapped(spec):  # $defs stay at the root, where a $ref's pointer starts
+            defs = {"$defs": spec["$defs"]} if "$defs" in spec else {}
+            spec = {"type": "object", "properties": {"value": {k: v for k, v in spec.items() if k != "$defs"}}, "required": ["value"], **defs}
         request["response_format"] = {"type": "json_schema", "json_schema": {"name": name, "schema": spec}}
     return request
 
@@ -794,26 +816,28 @@ class _Turn(Reply):
 
 class Conversation:
     """A chat with memory: `chat` adds your turn and returns the reply, which joins the history when
-    it finishes. Tools given as functions run here, until the model answers in words. The engine
-    keeps the state between turns, so a turn costs only its new tokens; `fork` branches that history
-    for free and `rewind` drops turns without recomputing."""
+    it finishes; a turn that fails, or is cancelled before a word, leaves the history as it was and
+    its reply says why. Tools given as functions run here, until the model answers in words. The
+    engine keeps the state between turns, so a turn costs only its new tokens; `fork` branches that
+    history for free and `rewind` drops turns without recomputing."""
 
     def __init__(self, model: "LanguageModel", messages: list[dict], options: dict):
         self._model = model
         self._messages = list(messages)
         self._options = options
         self._pending: Reply | None = None
+        self._turn = 0  # where the pending turn's messages begin: yours, then any tool rounds
 
     def _settle(self) -> None:
         if self._pending is not None:
             reply, self._pending = self._pending, None
             try:
                 message = reply._message
-            except JinferError:
-                self._messages.pop()  # the turn failed: your message leaves the history with it
-                raise
+            except JinferError:  # the reply says why, on every read; the history keeps the turns that happened
+                del self._messages[self._turn:]  # your message and its tool rounds go with it
+                return
             if reply.finish_reason == "cancelled" and not message.get("content"):
-                self._messages.pop()  # cancelled before a word: the turn never happened
+                del self._messages[self._turn:]  # cancelled before a word: the turn never happened
             else:
                 self._messages.append(message)
 
@@ -837,14 +861,18 @@ class Conversation:
         if not isinstance(content, (str, list, tuple)):
             raise TypeError(f"content: expected a string or a list of strings, Paths and bytes, got {type(content).__name__}")
         self._settle()
+        self._turn = len(self._messages)
         self._messages.append({"role": "user", "content": _content(content)})
         options = {**self._options, **{k: v for k, v in locals().items() if k in _OPTIONS and v is not None}}  # this turn's override the conversation's
-        tools = options.get("tools") or []
-        tools = [tools] if callable(tools) else list(tools)
-        if not all(callable(fn) for fn in tools):
-            self._messages.pop()
-            raise InvalidArgument("a conversation runs its tools, so they are functions; to run a tool yourself, use model.chat with your own messages")
-        self._pending = _Turn(self, schema, options, {fn.__name__: fn for fn in tools}) if tools else self._model._chat(self._messages, schema, options)
+        try:
+            tools = options.get("tools") or []
+            tools = [tools] if callable(tools) else list(tools)
+            if not all(callable(fn) for fn in tools):
+                raise InvalidArgument("a conversation runs its tools, so they are functions; to run a tool yourself, use model.chat with your own messages")
+            self._pending = _Turn(self, schema, options, {fn.__name__: fn for fn in tools}) if tools else self._model._chat(self._messages, schema, options)
+        except BaseException:
+            del self._messages[self._turn:]  # refused before it started: the turn never happened
+            raise
         return self._pending
 
     def prepare(self) -> None:

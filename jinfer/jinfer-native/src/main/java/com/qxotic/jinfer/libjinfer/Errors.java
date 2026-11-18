@@ -131,6 +131,8 @@ final class Errors {
             StackTraceElement[] frames = t.getStackTrace();
             message = t.getClass().getSimpleName() + (frames.length > 0 ? " at " + frames[0] : "");
         }
+        // the engine names the knob as Java spells it; C and Python spell it context_capacity
+        message = message.replace("contextCapacity", "context_capacity");
         // a caller logs it as it comes: one line, bounded, as toknroll's
         message = bounded(message.strip().replaceAll("\\s*\\R\\s*", " | "));
         // the full story reaches the host's log callback at debug level, before the error is kept:

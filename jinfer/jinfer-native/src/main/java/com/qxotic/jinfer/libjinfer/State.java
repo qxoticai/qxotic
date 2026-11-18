@@ -6,6 +6,7 @@ import com.qxotic.jinfer.ContextState;
 import com.qxotic.jinfer.EmbeddingModel;
 import com.qxotic.jinfer.LanguageModel;
 import com.qxotic.jinfer.Views;
+import com.qxotic.jinfer.cache.PromptCache;
 import com.qxotic.jota.memory.MemoryView;
 import java.lang.foreign.MemorySegment;
 import java.util.Arrays;
@@ -27,7 +28,7 @@ final class State {
         this.cm = typed;
         int max = typed.configuration().maxContextLength();
         // the options' rule: 0 the model's, -1 the maximum, past it refused, never clamped unsaid
-        int capacity = Model.capacity(contextCapacity, max, model.capacity);
+        int capacity = PromptCache.Options.contextCapacity(contextCapacity, max, model.capacity);
         this.state = cm.newState(capacity);
         model.retain();
     }

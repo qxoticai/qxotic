@@ -139,11 +139,11 @@ public final class FrozenBlocks {
     private static FrozenBlocks open(Path file, ContentKey modelSeed, FileChannel ch)
             throws IOException {
         long size = ch.size();
-        if (size < 8) throw corrupt(file, "truncated header");
+        if (size < 8) throw notACache(file, "truncated header");
         ByteBuffer prefix = ByteBuffer.allocate(8).order(ByteOrder.LITTLE_ENDIAN);
         readFully(ch, prefix, 0);
         prefix.flip();
-        if (prefix.getInt() != MAGIC) throw corrupt(file, "bad magic");
+        if (prefix.getInt() != MAGIC) throw notACache(file, "bad magic");
         int version = prefix.getInt();
         if (version != FORMAT_VERSION) {
             throw new IllegalStateException(
@@ -216,11 +216,11 @@ public final class FrozenBlocks {
             long size = ch.size();
             out.append("frozen prompt cache ").append(file).append('\n');
             out.append(row("file", bytes(size)));
-            if (size < HEADER_BYTES) throw corrupt(file, "truncated header");
+            if (size < HEADER_BYTES) throw notACache(file, "truncated header");
             ByteBuffer header = ByteBuffer.allocate(PAGE_BYTES).order(ByteOrder.LITTLE_ENDIAN);
             readFully(ch, header, 0);
             header.flip();
-            if (header.getInt(0) != MAGIC) throw corrupt(file, "bad magic");
+            if (header.getInt(0) != MAGIC) throw notACache(file, "bad magic");
             out.append(
                     row(
                             "format",
@@ -604,10 +604,24 @@ public final class FrozenBlocks {
         return slot;
     }
 
-    /** The one error a corrupt artifact fails with - stable wording for operators to grep. */
+    /**
+     * A cache this format wrote, damaged since; only a cache, so the fix is to drop it. The wording
+     * up to the parenthesis is stable, for operators to grep, and {@link #notACache} shares it.
+     */
     private static IllegalStateException corrupt(Path file, String what) {
         return new IllegalStateException(
-                file + " is not a valid frozen prompt cache (" + what + ")");
+                file
+                        + " is not a valid frozen prompt cache ("
+                        + what
+                        + "): delete it, and it is written anew");
+    }
+
+    /**
+     * A file this format never wrote, perhaps one of the caller's own: never advise deleting it.
+     */
+    private static IllegalStateException notACache(Path file, String what) {
+        return new IllegalStateException(
+                file + " is not a valid frozen prompt cache (" + what + "): name another file");
     }
 
     List<Entry> entries() {
