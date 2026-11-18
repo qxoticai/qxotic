@@ -124,11 +124,27 @@ final class Validation {
      * Chat fields whose advertised behavior the server cannot honor. Audio output is OpenAI's
      * shape: {@code modalities: ["text", "audio"]} with an {@code audio} object, whose {@code
      * format} is {@code wav} or {@code pcm16} (the only one a stream carries); whether the model
-     * can speak is the engine's to say.
+     * can speak is the engine's to say. {@code store}, {@code metadata}, {@code service_tier},
+     * {@code user} and {@code prompt_cache_key} pass: on OpenAI they steer logging and billing,
+     * never the reply.
      */
     static void validateChatOptions(Map<String, Object> request) {
         audioFormat(request);
         require(!present(request, "prediction"), "prediction is not supported");
+        require(
+                !present(request, "functions") && !present(request, "function_call"),
+                "functions and function_call are the deprecated spelling: send tools and"
+                        + " tool_choice");
+    }
+
+    /** Completions fields whose semantics the server does not implement. */
+    static void validateCompletionOptions(Map<String, Object> request) {
+        require(!Boolean.TRUE.equals(request.get("echo")), "echo is not supported");
+        require(Values.stringValue(request.get("suffix"), "").isEmpty(), "suffix is not supported");
+        requireParam(
+                Values.intValue(request.get("best_of"), "best_of", 1) == 1,
+                "best_of",
+                "Only best_of=1 is supported");
     }
 
     /**
@@ -171,6 +187,9 @@ final class Validation {
                 !Boolean.TRUE.equals(request.get("background")),
                 "background responses are not supported");
         require(!Boolean.TRUE.equals(request.get("store")), "stored responses are not supported");
+        require(
+                audioFormat(request) == null,
+                "audio output is not supported here: ask /v1/chat/completions");
         require(
                 !present(request, "truncation") || "disabled".equals(request.get("truncation")),
                 "Only truncation=disabled is supported");
@@ -276,12 +295,15 @@ final class Validation {
         if (present(request, "response_format")) {
             Values.asObject(request.get("response_format"), "response_format");
         }
-        boolean usesGrammar = request.get("grammar") instanceof String source && !source.isBlank();
-        if (request.get("response_format") instanceof Map<?, ?> format) {
-            usesGrammar |=
-                    "json_object".equals(format.get("type"))
-                            || "json_schema".equals(format.get("type"));
-        }
+        boolean grammar = request.get("grammar") instanceof String source && !source.isBlank();
+        boolean json =
+                request.get("response_format") instanceof Map<?, ?> format
+                        && ("json_object".equals(format.get("type"))
+                                || "json_schema".equals(format.get("type")));
+        require(
+                !(grammar && json),
+                "grammar and response_format both constrain the reply: send one of them");
+        boolean usesGrammar = grammar || json;
         require(
                 !usesGrammar || config.limits().grammar(),
                 "grammar constraints are disabled on this server");
@@ -353,13 +375,24 @@ final class Validation {
                 "max_reasoning_tokens",
                 "Invalid argument: max_reasoning_tokens must be -1 (uncapped) or non-negative");
         Values.longValue(request.get("seed"), "seed", 0); // type check only
+        // judged by VALUE: SDKs send their defaults (frequency_penalty 0, logprobs false), which
+        // ask for nothing; only a value that asks for something the server cannot do is refused
         require(
-                !present(request, "logprobs") && !present(request, "top_logprobs"),
+                !present(request, "logprobs") || Boolean.FALSE.equals(request.get("logprobs")),
                 "logprobs is not supported");
-        require(!present(request, "logit_bias"), "logit_bias is not supported");
         require(
-                !present(request, "frequency_penalty") && !present(request, "presence_penalty"),
-                "frequency_penalty and presence_penalty are not supported");
+                Values.intValue(request.get("top_logprobs"), "top_logprobs", 0) == 0,
+                "top_logprobs is not supported");
+        require(
+                !present(request, "logit_bias")
+                        || Values.asObject(request.get("logit_bias"), "logit_bias").isEmpty(),
+                "logit_bias is not supported");
+        for (String penalty : List.of("frequency_penalty", "presence_penalty")) {
+            requireParam(
+                    Values.floatValue(request.get(penalty), penalty, 0f) == 0,
+                    penalty,
+                    penalty + " is not supported: only 0, no penalty");
+        }
     }
 
     private static void validateStops(Object value) {

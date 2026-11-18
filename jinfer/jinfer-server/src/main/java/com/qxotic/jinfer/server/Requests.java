@@ -4,7 +4,6 @@ import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
-import java.util.stream.Collectors;
 
 /**
  * OpenAI request-shape adapters: maps the wire shapes of the various endpoints onto the single
@@ -47,10 +46,13 @@ final class Requests {
         Object promptValue = request.get("prompt");
         if (promptValue instanceof String prompt) return prompt;
         if (promptValue instanceof List<?> prompts) {
+            // OpenAI answers each prompt of an array; joining them answered none of them
+            Validation.require(
+                    prompts.size() <= 1, "prompt arrays take one prompt: send one per request");
             Validation.require(
                     prompts.stream().allMatch(String.class::isInstance),
                     "prompt array must contain only strings");
-            return prompts.stream().map(String.class::cast).collect(Collectors.joining("\n"));
+            return prompts.isEmpty() ? "" : (String) prompts.get(0);
         }
         if (promptValue == null) return "";
         throw new IllegalArgumentException("prompt must be a string or an array of strings");

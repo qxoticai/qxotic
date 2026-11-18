@@ -250,6 +250,73 @@ class ValidationTest {
                         .getMessage());
     }
 
+    /**
+     * SDKs send their defaults: a value asking for nothing passes, one asking for more does not.
+     */
+    @Test
+    void unsupportedSamplingFieldsAreJudgedByValue() {
+        ServerConfig config = ServerConfig.local(0);
+        Map<String, Object> noOps = new HashMap<>(user("hi"));
+        noOps.putAll(
+                Map.of(
+                        "frequency_penalty",
+                        0.0,
+                        "presence_penalty",
+                        0,
+                        "logprobs",
+                        false,
+                        "top_logprobs",
+                        0,
+                        "logit_bias",
+                        Map.of()));
+        Validation.validateGenerationParams(noOps, "model", config);
+        for (Map<String, Object> asks :
+                List.<Map<String, Object>>of(
+                        Map.of("frequency_penalty", 0.5),
+                        Map.of("presence_penalty", -1),
+                        Map.of("logprobs", true),
+                        Map.of("logprobs", 0), // /v1/completions: the sampled tokens' logprobs
+                        Map.of("top_logprobs", 2),
+                        Map.of("logit_bias", Map.of("42", -100)))) {
+            Map<String, Object> request = new HashMap<>(user("hi"));
+            request.putAll(asks);
+            assertThrows(
+                    IllegalArgumentException.class,
+                    () -> Validation.validateGenerationParams(request, "model", config),
+                    asks.toString());
+        }
+    }
+
+    /** Two constraints on one reply cannot both hold: neither silently wins. */
+    @Test
+    void grammarAndResponseFormatAreExclusive() {
+        Map<String, Object> request = new HashMap<>(user("json please"));
+        request.put("grammar", "root ::= \"x\"");
+        request.put("response_format", Map.of("type", "json_object"));
+        assertEquals(
+                "grammar and response_format both constrain the reply: send one of them",
+                assertThrows(
+                                IllegalArgumentException.class,
+                                () ->
+                                        Validation.validateGenerationParams(
+                                                request, "model", ServerConfig.local(0)))
+                        .getMessage());
+        request.put("response_format", Map.of("type", "text"));
+        Validation.validateGenerationParams(request, "model", ServerConfig.local(0));
+    }
+
+    @Test
+    void completionOptionsWithoutSemanticsAreRefused() {
+        Validation.validateCompletionOptions(Map.of("echo", false, "suffix", "", "best_of", 1));
+        for (Map<String, Object> request :
+                List.<Map<String, Object>>of(
+                        Map.of("echo", true), Map.of("suffix", "}"), Map.of("best_of", 5)))
+            assertThrows(
+                    IllegalArgumentException.class,
+                    () -> Validation.validateCompletionOptions(request),
+                    request.toString());
+    }
+
     @Test
     void forcedToolMustBeOffered() {
         Map<String, Object> required = new HashMap<>(user("hi"));
@@ -334,6 +401,14 @@ class ValidationTest {
         assertThrows(
                 IllegalArgumentException.class,
                 () -> Validation.validateChatOptions(Map.of("prediction", Map.of())));
+        // the legacy tool API: accepted, it ran no tool loop and nothing said so
+        for (String legacy : List.of("functions", "function_call"))
+            assertTrue(
+                    assertThrows(
+                                    IllegalArgumentException.class,
+                                    () -> Validation.validateChatOptions(Map.of(legacy, "auto")))
+                            .getMessage()
+                            .contains("send tools and tool_choice"));
     }
 
     /** OpenAI's audio output shape; whether the model speaks is the engine's to refuse. */
@@ -374,7 +449,9 @@ class ValidationTest {
                         "truncation",
                         "disabled",
                         "include",
-                        List.of()));
+                        List.of(),
+                        "modalities",
+                        List.of("text")));
 
         for (Map<String, Object> request :
                 List.<Map<String, Object>>of(
@@ -383,7 +460,12 @@ class ValidationTest {
                         Map.of("background", true),
                         Map.of("store", true),
                         Map.of("truncation", "auto"),
-                        Map.of("include", List.of("message.input_image.image_url")))) {
+                        Map.of("include", List.of("message.input_image.image_url")),
+                        Map.of(
+                                "modalities",
+                                List.of("text", "audio"),
+                                "audio",
+                                Map.of("format", "wav")))) {
             assertThrows(
                     IllegalArgumentException.class,
                     () -> Validation.validateResponseOptions(request),

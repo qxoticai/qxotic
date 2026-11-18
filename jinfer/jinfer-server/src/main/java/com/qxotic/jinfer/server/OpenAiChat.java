@@ -74,14 +74,13 @@ public final class OpenAiChat {
         boolean speaks = Validation.audioFormat(request) != null;
         Map<String, Object> schema = schema(request);
         if (schema != null) describeSchema(prompt, schema);
-        String forcedTool = ToolUse.forced(request);
         ChatEngine.Request lowered =
                 new ChatEngine.Request(
                         prompt,
                         tools,
-                        thinking(request, config.defaults().think())
-                                && forcedTool == null
-                                && !speaks,
+                        // a forced call is the engine's to unthink: it seeds the call block, which
+                        // works on a model that always reasons, where thinking off is refused
+                        thinking(request, config.defaults().think()) && !speaks,
                         maxTokens(request, config),
                         maxReasoningTokensOrDefault(request, config),
                         reasoningCutoffMessageOrDefault(request, config),

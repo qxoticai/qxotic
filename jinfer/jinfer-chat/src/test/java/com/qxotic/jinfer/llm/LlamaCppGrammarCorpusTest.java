@@ -37,17 +37,6 @@ final class LlamaCppGrammarCorpusTest {
      */
     private static final Map<String, String> REFUSED =
             Map.ofEntries(
-                    Map.entry("min 0", "minimum"),
-                    Map.entry("min 2", "minimum"),
-                    Map.entry("min 456", "minimum"),
-                    Map.entry("min -123", "minimum"),
-                    Map.entry("max 9999", "maximum"),
-                    Map.entry("max -9999", "maximum"),
-                    Map.entry("min 5 max 30", "minimum"),
-                    Map.entry("min 1 max 900719925474091", "exclusiveMinimum"),
-                    Map.entry("min -1 max 1", "minimum"),
-                    Map.entry("min -123 max 42", "minimum"),
-                    Map.entry("exclusive min / max", "exclusiveMinimum"),
                     Map.entry("simple pattern", "pattern"),
                     Map.entry("pattern with escapes", "pattern"),
                     Map.entry(
@@ -68,8 +57,11 @@ final class LlamaCppGrammarCorpusTest {
                     // JSON Schema: {} is any JSON value; llama.cpp reads it as any object
                     "empty schema (object)", Set.of("[]", "null", "\"\"", "true"),
                     // JSON integers have no digit limit and JSON whitespace is free; llama.cpp
-                    // caps an integer at 16 digits and its trailing whitespace at one space
-                    "integer", Set.of("12345678901234567  "));
+                    // caps an integer at 16 digits, bounded or not, and its trailing whitespace at
+                    // one space
+                    "integer", Set.of("12345678901234567  "),
+                    "min 0", Set.of("100000000000000000000000000000000"),
+                    "min 2", Set.of("12345678900000000"));
 
     static Stream<Arguments> cases() throws IOException {
         List<?> cases = (List<?>) Json.parse(resource("/llama-cpp/grammar-corpus.json"));

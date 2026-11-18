@@ -155,5 +155,55 @@ final class GrammarTest {
                                 Grammar.schemaGbnf(
                                         Map.of("type", "array", "minItems", 2, "maxItems", 0)));
         assertTrue(arrays.getMessage().contains("minItems 2"), arrays.getMessage());
+        IllegalArgumentException integers =
+                assertThrows(
+                        IllegalArgumentException.class,
+                        () ->
+                                Grammar.schemaGbnf(
+                                        Map.of(
+                                                "type",
+                                                "integer",
+                                                "exclusiveMinimum",
+                                                3,
+                                                "maximum",
+                                                3.5)));
+        assertTrue(integers.getMessage().contains("no integer"), integers.getMessage());
+    }
+
+    /** Every integer from -1200 to 1200 against bounds of each sign, digit count and form. */
+    @Test
+    void integerBoundsAdmitExactlyTheirRange() {
+        long[][] bounds = {
+            {0, 3}, {1, 5}, {-1, 1}, {-123, 42}, {7, 1100}, {-1000, -10}, {99, 101}, {0, 0}
+        };
+        for (long[] b : bounds) {
+            Grammar.Spec spec =
+                    Grammar.fromSchema(
+                            Map.of("type", "integer", "minimum", b[0], "maximum", b[1]),
+                            GrammarMembership.BV);
+            for (long n = -1200; n <= 1200; n++)
+                assertEquals(
+                        b[0] <= n && n <= b[1],
+                        GrammarMembership.accepts(spec, GrammarMembership.BV, Long.toString(n)),
+                        n + " in [" + b[0] + ", " + b[1] + "]");
+        }
+        Grammar.Spec open =
+                Grammar.fromSchema(
+                        Map.of("type", "integer", "exclusiveMinimum", -0.5, "exclusiveMaximum", 2),
+                        GrammarMembership.BV);
+        for (String n : new String[] {"-1", "0", "1", "2", "01", "-0"})
+            assertEquals(
+                    n.equals("0") || n.equals("1"),
+                    GrammarMembership.accepts(open, GrammarMembership.BV, n),
+                    n);
+    }
+
+    @Test
+    void aNumbersBoundsAreRefused() {
+        IllegalArgumentException e =
+                assertThrows(
+                        IllegalArgumentException.class,
+                        () -> Grammar.schemaGbnf(Map.of("type", "number", "minimum", 0)));
+        assertTrue(e.getMessage().contains("\"minimum\""), e.getMessage());
     }
 }

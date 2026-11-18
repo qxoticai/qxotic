@@ -426,7 +426,7 @@ class ServerIntegrationTest {
                             """
                             {"messages": [{"role": "user", "content": "How old?"}], "max_tokens": 8,
                              "response_format": {"type": "json_schema", "json_schema": {"name": "age",
-                               "schema": {"type": "integer", "minimum": 0}}}}
+                               "schema": {"type": "number", "minimum": 0}}}}
                             """);
             assertEquals(400, reply.statusCode(), reply.body());
             assertTrue(reply.body().contains("minimum"), reply.body());

@@ -555,6 +555,7 @@ public final class Server {
                 "/v1/completions",
                 "cmpl-",
                 request -> {
+                    Validation.validateCompletionOptions(request);
                     Validation.validateGenerationParams(request, servedModel, config);
                     Validation.require(
                             !Requests.completionPrompt(request).isBlank(),

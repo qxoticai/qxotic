@@ -94,9 +94,13 @@ The native libraries, the jinfer command and the wheels are built with Oracle Gr
   An upload far past the body limit (`--max-body-mb`) reads its 413, where the connection was reset before the client saw why.
   A reply cut short by the deadline finishes with `"length"`, OpenAI's value for a truncated reply, where `"other"` failed clients that read the field as an enum; the Responses API still says `timeout`.
   `HEAD` works wherever `GET` does, as uptime monitors probe, and the README shows `/v1/systemone`'s answers.
-- **A JSON Schema is enforced whole, or refused.** `Grammar.fromSchema`, structured output in the server and the LangChain4j and Spring AI adapters refuse a schema using a constraint the grammar cannot enforce (numeric bounds, `pattern`, `allOf`, `uniqueItems`, `additionalProperties` other than `false`, …), naming the keyword; the server answers 400.
+- **The server judges a parameter by its value.** A default that asks for nothing passes (`frequency_penalty: 0`, `logprobs: false`, `logit_bias: {}`), where it was refused and broke the stock LangChain4j OpenAI client.
+  A request the server cannot honor is refused instead of answered without it: a `/v1/completions` array of several prompts (they were joined into one), `echo`, `suffix`, `best_of` above 1, the legacy `functions`, `grammar` together with `response_format`, and audio on `/v1/responses`.
+  `tool_choice: required` works on a model that always reasons, LFM2.5-8B-A1B, where it was refused.
+- **A JSON Schema is enforced whole, or refused.** `Grammar.fromSchema`, structured output in the server and the LangChain4j and Spring AI adapters refuse a schema using a constraint the grammar cannot enforce (a number's bounds, `pattern`, `allOf`, `uniqueItems`, `additionalProperties` other than `false`, …), naming the keyword; the server answers 400.
   These keywords were ignored before, so the model could produce documents the schema forbids.
   Annotations (`title`, `description`, an unknown `format`) and non-standard keywords are still ignored, as the JSON Schema spec asks.
+  An integer's `minimum`, `maximum` and their exclusive forms are enforced, so a rating from 0 to 3 is a schema.
 - **GBNF's `.` is one UTF-8 character,** as in llama.cpp, where it was one byte: a grammar written for llama.cpp means the same here, and `.{n}` cannot end inside a character.
 - **`retainSessions(n)` is `retainedSessions(n)`** on both chat-model builders, the knob's name on every face (the core's `withRetainedSessions`, Boot's `spring.ai.jinfer.chat.retained-sessions`).
 - **A first batch no longer allocates once per core.** Its first call built a SentencePiece tokenizer's 24 MB word cache, or a tiktoken tokenizer's fast engine, on every core at once and kept one; one thread builds it now, so a first batch fits the heap a single one does.

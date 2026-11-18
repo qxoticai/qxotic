@@ -1,6 +1,7 @@
 package com.qxotic.jinfer.server;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 
 import java.util.HashMap;
 import java.util.List;
@@ -8,6 +9,21 @@ import java.util.Map;
 import org.junit.jupiter.api.Test;
 
 class RequestsTest {
+
+    /** OpenAI answers each prompt of an array: joining them answered none, so one is the limit. */
+    @Test
+    void aCompletionPromptArrayTakesOnePrompt() {
+        assertEquals("Hi", Requests.completionPrompt(Map.of("prompt", List.of("Hi"))));
+        assertEquals("", Requests.completionPrompt(Map.of("prompt", List.of())));
+        assertEquals(
+                "prompt arrays take one prompt: send one per request",
+                assertThrows(
+                                IllegalArgumentException.class,
+                                () ->
+                                        Requests.completionPrompt(
+                                                Map.of("prompt", List.of("A", "B"))))
+                        .getMessage());
+    }
 
     @Test
     void responsesInputPreservesMediaAndNormalizesTextParts() {

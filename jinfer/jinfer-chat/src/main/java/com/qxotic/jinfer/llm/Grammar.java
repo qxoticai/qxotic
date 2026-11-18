@@ -1152,16 +1152,17 @@ public final class Grammar {
      * const}, {@code anyOf}/{@code oneOf}, and {@code $ref} into the root document ({@code $defs},
      * {@code definitions}, any local JSON Pointer) - how a generated schema spells a type it uses
      * twice, and the only way a RECURSIVE type can be written at all. Also honored: {@code
-     * minLength}/{@code maxLength} on strings, {@code minItems}/{@code maxItems} on arrays, tuple
-     * {@code items} (a list, one schema per position), {@code format} {@code date}, {@code time},
-     * {@code date-time} and {@code uuid}, and {@code additionalProperties: false} on an object
-     * without declared properties (the empty object). A node with {@code properties} or {@code
-     * items} but no {@code type} is an object or array.
+     * minLength}/{@code maxLength} on strings, {@code minimum}/{@code maximum} and their exclusive
+     * forms on integers, {@code minItems}/{@code maxItems} on arrays, tuple {@code items} (a list,
+     * one schema per position), {@code format} {@code date}, {@code time}, {@code date-time} and
+     * {@code uuid}, and {@code additionalProperties: false} on an object without declared
+     * properties (the empty object). A node with {@code properties} or {@code items} but no {@code
+     * type} is an object or array.
      *
      * <p>Object properties are emitted in the schema's DECLARATION order: every required property
      * first, then the optional ones as an ordered subset; {@code required} decides membership,
      * never order. An object with declared properties admits no other keys. A standard constraint
-     * the grammar cannot enforce (numeric bounds, {@code pattern}, {@code allOf}, {@code
+     * the grammar cannot enforce (a number's bounds, {@code pattern}, {@code allOf}, {@code
      * uniqueItems}, {@code additionalProperties} other than false, …) is refused with an {@link
      * IllegalArgumentException} naming it, never compiled away; annotations, an unknown {@code
      * format} and keywords outside the standard are ignored, and an unresolvable {@code $ref}
@@ -1361,6 +1362,10 @@ public final class Grammar {
                         "else",
                         "additionalProperties");
 
+        /** The {@link #UNSUPPORTED} keywords an integer honors (integerBody); a number cannot. */
+        private static final Set<String> INTEGER_BOUNDS =
+                Set.of("minimum", "maximum", "exclusiveMinimum", "exclusiveMaximum");
+
         private static void refuseUnsupported(Map<String, Object> m) {
             for (Map.Entry<String, Object> e : m.entrySet()) {
                 String key = e.getKey();
@@ -1369,7 +1374,11 @@ public final class Grammar {
                         Boolean.FALSE.equals(value)
                                 && (key.equals("uniqueItems")
                                         || key.equals("additionalProperties"));
-                if (UNSUPPORTED.contains(key) && !noOp)
+                boolean integerBound =
+                        "integer".equals(m.get("type"))
+                                && value instanceof Number
+                                && INTEGER_BOUNDS.contains(key);
+                if (UNSUPPORTED.contains(key) && !noOp && !integerBound)
                     throw new IllegalArgumentException(
                             "JSON Schema keyword \""
                                     + key
@@ -1430,7 +1439,7 @@ public final class Grammar {
             return switch (type) {
                 case "object" -> objectBody(m);
                 case "array" -> arrayBody(m);
-                case "integer" -> "integer";
+                case "integer" -> integerBody(m);
                 case "number" -> "number";
                 case "boolean" -> "(\"true\" | \"false\")";
                 case "null" -> "\"null\"";
@@ -1537,6 +1546,89 @@ public final class Grammar {
             if (formats.add(format))
                 rules.append("fmt-").append(format).append(" ::= ").append(body).append("\n");
             return "\"\\\"\" fmt-" + format + " \"\\\"\"";
+        }
+
+        /**
+         * An integer within {@code minimum}/{@code maximum}, the exclusive forms folded into
+         * inclusive ones: a sign, then each digit length split where the bounds' digits differ, as
+         * llama.cpp builds it. ponytail: bounds are read as doubles, exact to 2^53.
+         */
+        private static String integerBody(Map<String, Object> m) {
+            Long lo = integerBound(m, "minimum", "exclusiveMinimum", true);
+            Long hi = integerBound(m, "maximum", "exclusiveMaximum", false);
+            if (lo == null && hi == null) return "integer";
+            if (lo != null && hi != null && lo > hi)
+                throw new IllegalArgumentException(
+                        "unsatisfiable schema: no integer lies within its minimum and maximum");
+            List<String> signs = new ArrayList<>();
+            // a negative is "-" and its magnitude
+            if (lo == null || lo < 0)
+                signs.add(
+                        "\"-\" ("
+                                + naturals(hi != null && hi < 0 ? -hi : 1, lo == null ? -1 : -lo)
+                                + ")");
+            if (hi == null || hi >= 0)
+                signs.add(naturals(lo == null || lo < 0 ? 0 : lo, hi == null ? -1 : hi));
+            return "(" + String.join(" | ", signs) + ")";
+        }
+
+        /** The inclusive integer bound a node states, or null; {@code lower} picks the side. */
+        private static Long integerBound(
+                Map<String, Object> m, String key, String exclusive, boolean lower) {
+            Long inclusive = null;
+            if (m.get(key) instanceof Number n)
+                inclusive =
+                        (long) (lower ? Math.ceil(n.doubleValue()) : Math.floor(n.doubleValue()));
+            if (m.get(exclusive) instanceof Number n) {
+                long e =
+                        (long)
+                                (lower
+                                        ? Math.floor(n.doubleValue()) + 1
+                                        : Math.ceil(n.doubleValue()) - 1);
+                inclusive =
+                        inclusive == null
+                                ? e
+                                : lower ? Math.max(inclusive, e) : Math.min(inclusive, e);
+            }
+            return inclusive;
+        }
+
+        /**
+         * The integers from {@code lo} to {@code hi} without leading zeros; {@code hi < 0} is
+         * unbounded.
+         */
+        private static String naturals(long lo, long hi) {
+            String from = Long.toString(lo);
+            int top = hi < 0 ? from.length() : Long.toString(hi).length();
+            List<String> lengths = new ArrayList<>();
+            for (int n = from.length(); n <= top; n++)
+                lengths.add(
+                        digits(
+                                n == from.length() ? from : "1" + "0".repeat(n - 1),
+                                hi >= 0 && n == top ? Long.toString(hi) : "9".repeat(n)));
+            if (hi < 0) lengths.add("[1-9] [0-9]{" + from.length() + ",}");
+            return String.join(" | ", lengths);
+        }
+
+        /**
+         * The digit strings from {@code lo} to {@code hi}, both one length: a shared first digit,
+         * else the low digit's tail, the free middle, and the high digit's tail.
+         */
+        private static String digits(String lo, String hi) {
+            if (lo.isEmpty()) return "";
+            int rest = lo.length() - 1;
+            char l = lo.charAt(0), h = hi.charAt(0);
+            String any = rest == 0 ? "" : " [0-9]{" + rest + "}";
+            if (l == h)
+                return ("\"" + l + "\" " + digits(lo.substring(1), hi.substring(1))).strip();
+            if (lo.substring(1).equals("0".repeat(rest))
+                    && hi.substring(1).equals("9".repeat(rest)))
+                return "[" + l + "-" + h + "]" + any;
+            List<String> parts = new ArrayList<>();
+            parts.add(("\"" + l + "\" " + digits(lo.substring(1), "9".repeat(rest))).strip());
+            if (h - l > 1) parts.add("[" + (char) (l + 1) + "-" + (char) (h - 1) + "]" + any);
+            parts.add(("\"" + h + "\" " + digits("0".repeat(rest), hi.substring(1))).strip());
+            return "(" + String.join(" | ", parts) + ")";
         }
 
         /** {@code minLength}/{@code maxLength} bound a repetition of {@code char}. */

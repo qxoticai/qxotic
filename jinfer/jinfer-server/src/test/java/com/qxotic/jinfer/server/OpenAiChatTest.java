@@ -144,6 +144,35 @@ class OpenAiChatTest {
                 OpenAiChat.reply(done, Message.assistant("ignored"), List.of(), false).text());
     }
 
+    /**
+     * A forced call keeps the request's thinking: the engine unthinks the call it seeds, and an
+     * always-reasoning model refuses an explicit thinking off, so forcing it here broke {@code
+     * tool_choice: required} there.
+     */
+    @Test
+    void aForcedCallLeavesThinkingToTheEngine() {
+        Map<String, Object> request =
+                Map.of(
+                        "messages",
+                        List.of(Map.of("role", "user", "content", "What time is it?")),
+                        "tools",
+                        List.of(Map.of("type", "function", "function", Map.of("name", "get_time"))),
+                        "tool_choice",
+                        "required",
+                        "chat_template_kwargs",
+                        Map.of("enable_thinking", true));
+        ChatEngine.Request lowered =
+                OpenAiChat.lower(
+                                request,
+                                Values.asArray(request.get("messages"), "messages"),
+                                ServerConfig.local(0),
+                                Sampling.GREEDY,
+                                null)
+                        .request();
+        assertTrue(lowered.thinking());
+        assertEquals(ChatEngine.ForcedTool.ANY, lowered.forcedTool());
+    }
+
     @Test
     void anOmittedSeedStaysUnseeded() {
         Sampling defaults = new Sampling(0.8f, 0.95f, 40, 0.05f, null);
