@@ -420,10 +420,8 @@ final class Options {
     private static List<Path> resolveFiles(List<String> refs, Supplier<List<Path>> resolve)
             throws IOException {
         for (String ref : refs) {
-            String lower = ref.toLowerCase(Locale.ROOT);
-            if (ModelStore.isRef(ref)
-                    || lower.startsWith("http://")
-                    || lower.startsWith("https://")) continue;
+            // a URL goes on to the store, which refuses it naming the ref to pass
+            if (ModelStore.isRef(ref) || ref.contains("://")) continue;
             if (!java.nio.file.Files.exists(Path.of(ref))) throw new IOException(noSuchModel(ref));
             requireFile(Path.of(ref));
         }

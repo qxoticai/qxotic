@@ -51,7 +51,7 @@ If the OS refuses replacement of an open file, the update fails without deleting
 
 1. **No pre-eviction.** Never unlink or truncate a published file to initiate refresh.
 2. **Old or complete new.** Readers see a complete published file, never partial replacement bytes or a deliberately introduced gap.
-3. **Validate first.** Expected size, available checksum, and plain-URL HTML rejection are checked before publication.
+3. **Validate first.** Expected size and available checksum are checked before publication.
    Checksum-free transfers are size-checked, not described as cryptographically verified.
 4. **Preserve availability on failure.** Metadata, transfer, verification, cancellation, and pre-commit publication failures preserve the previously usable requested entry and its lookup path.
    An already corrupt or missing entry has no such availability guarantee.
@@ -138,7 +138,6 @@ Subprocess pipes coordinate competing publishers without correctness assertions 
 | `ModelStorePullTest` | Use/update/repair call counts, same-size changes/corruption, custom-source failures, offline rules, pinned transfer, destination naming, default-quant coexistence, and multi-input preservation |
 | `ModelStoreFindTest` | Exact-file and directory lookup, including a same-named child |
 | `HubRefreshTest` | Ref-last publication, failed snapshot publication, unchanged-ref idempotence, shared-blob repair, wrong-link repair, and no-symlink copy fallback |
-| `ModelStoreUrlTest` | URL refresh and HTML rejection before replacing working content |
 | CLI `HubTest` | Failed force-pull preserves the flat cache; unchanged content avoids another payload fetch |
 | CLI `DistributionIT` | Packaged offline preservation/exact-file rules and fake-HF updates, same-hash force, corrupt-ref repair, and flat-cache precedence |
 
