@@ -36,6 +36,20 @@ class ModelStringTest {
         assertThatThrownBy(() -> JinferChatModel.builder().model("https://example.org/model.gguf"))
                 .isInstanceOf(IllegalArgumentException.class)
                 .hasMessageContaining("download the file and pass its local path");
+        assertThatThrownBy(
+                        () ->
+                                JinferChatModel.builder()
+                                        .model(
+                                                "https://modelscope.cn/models/Qwen/Qwen3-0.6B-GGUF/files"))
+                .hasMessageContaining("Pass: modelscope.cn/Qwen/Qwen3-0.6B-GGUF")
+                .hasMessageContaining("Qwen's repository on modelscope.cn");
+        assertThatThrownBy(
+                        () ->
+                                JinferChatModel.builder()
+                                        .companion(
+                                                "media",
+                                                "https://huggingface.co/acme/m-GGUF/resolve/main/mmproj-F16.gguf?download=true"))
+                .hasMessageContaining("Pass: hf.co/acme/m-GGUF/mmproj-F16.gguf");
     }
 
     @Test

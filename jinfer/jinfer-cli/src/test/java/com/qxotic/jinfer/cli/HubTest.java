@@ -90,6 +90,36 @@ class HubTest {
 
     /** find answers what -m would load: a browser URL too, and a bare word gets the ref shape. */
     @Test
+    void everyCommandAnswersALinkWithTheRefToPass() {
+        var store = ModelStore.of(dir); // no sources: a refused link must not reach the network
+        String link = "https://huggingface.co/acme/m/blob/main/m-Q8_0.gguf";
+        String ref = "Pass: hf.co/acme/m/m-Q8_0.gguf";
+        String[][] commands = {
+            {"-m", link, "instruct", "hi"},
+            {"instruct", "-m", link, "hi"},
+            {"-m", "hf.co/acme/m:Q8_0", "--with", "speculation=" + link, "instruct", "hi"},
+            {"pull", link},
+            {"pull", "--force", link},
+            {"pull", "hf.co/acme/m:Q8_0", link},
+            {"find", link},
+            {"remove", link},
+        };
+        for (String[] command : commands) {
+            var run = new CliFixtures.Capture("");
+            assertNotEquals(0, Main.run(command, run.io, store), String.join(" ", command));
+            assertTrue(run.err().contains(ref), String.join(" ", command) + ": " + run.err());
+        }
+        var plain = new CliFixtures.Capture("");
+        assertNotEquals(
+                0,
+                Main.run(
+                        new String[] {"-m", "https://example.org/m.gguf", "instruct", "hi"},
+                        plain.io,
+                        store));
+        assertTrue(plain.err().contains("download the file and pass its local path"), plain.err());
+    }
+
+    @Test
     void findAnswersALinkWithTheRefToPass() throws Exception {
         Path file = dir.resolve("hf.co/acme/m/m-Q8_0.gguf");
         Files.createDirectories(file.getParent());

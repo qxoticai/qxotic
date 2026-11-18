@@ -57,7 +57,7 @@
  *              empty folder keeps every load to the root. -Dtoknroll.offline=true never fetches: false,
  *              0, off, no and an empty value, in any case, mean online, any other value offline, so a misspelled true
  *              never fetches either. Missing is TOKNROLL_ENOTFOUND; a malformed reference, an unknown
- *              host, a file named twice (by /path and :quant), a file of no known kind or one that does
+ *              host, a URL (a hub page's names the reference to pass), a file named twice (by /path and :quant), a file of no known kind or one that does
  *              not parse is TOKNROLL_EINVAL. A valid one toknroll does not implement (the README lists
  *              the families it tests) is TOKNROLL_EUNSUPPORTED.
  *                Qwen/Qwen3-0.6B                         the repository's tokenizer.json

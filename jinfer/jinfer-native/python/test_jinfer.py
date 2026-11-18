@@ -135,6 +135,13 @@ try:
     jinfer.load(LM, context_capacity=None); ok(False, "None is no capacity: 0 is the default")
 except TypeError as e:
     ok("context_capacity: got NoneType" in str(e), f"None refused: {e}")
+for url, says in [("https://huggingface.co/LiquidAI/LFM2.5-350M-GGUF/blob/main/LFM2.5-350M-Q8_0.gguf",
+                   "Pass: hf.co/LiquidAI/LFM2.5-350M-GGUF/LFM2.5-350M-Q8_0.gguf"),
+                  ("https://example.org/model.gguf", "download the file and pass its local path")]:
+    try:
+        jinfer.load(url); ok(False, f"a URL must be refused: {url}")
+    except jinfer.InvalidArgument as e:
+        ok(says in str(e), f"a URL names the ref to pass or the download remedy: {e}")
 try:
     jinfer.load(LM, context_capacity=2**32 - 1); ok(False, "a capacity past int32 must be refused, not wrapped to -1")
 except jinfer.InvalidArgument as e:

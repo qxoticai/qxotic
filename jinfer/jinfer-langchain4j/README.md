@@ -150,7 +150,7 @@ file. Companions follow the same pattern with `.companion(...)` and `.companionP
 
 A reference is `owner/repo[:quant]`, which Hugging Face carries. Name a host to reach another
 source, as in `modelscope.cn/Qwen/Qwen3-0.6B-GGUF:Q8_0`. Examples pin `Q8_0`; a reference with no
-quant follows llama.cpp and selects `Q4_K_M`.
+quant follows llama.cpp and selects `Q4_K_M`. A URL is refused, naming the reference to pass.
 
 ## Parameters
 

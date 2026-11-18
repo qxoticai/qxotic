@@ -56,6 +56,7 @@ The native executable runs without a JVM.
 
 `--model` / `-m` accepts a local GGUF file or a hub reference.
 Hub models are downloaded on first use and reused from the cache; like the hubs, a reference reads its owner and repository in any case.
+A URL is refused, naming the reference to pass.
 These examples use a small language model:
 
 ```sh

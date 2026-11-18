@@ -59,11 +59,14 @@ class toknroll implements Callable<Integer> {
             required = true,
             paramLabel = "SOURCE",
             description = {
-                "Tokenizer source: [host/]owner/repo[@revision][/path][:quant] or a local path.",
-                "  google/gemma-4-e2b-it                      the repository's tokenizer.json",
-                "  unsloth/Llama-3.2-1B-Instruct-GGUF:Q8_0    a GGUF's tokenizer, its header only",
-                "  modelscope.cn/Qwen/Qwen3-4B                from ModelScope",
-                "  ./model.gguf or ./tokenizer-dir            a local GGUF file or tokenizer folder"
+                "A hub reference or a local path:",
+                "  owner/repo          its tokenizer.json",
+                "  owner/repo:Q8_0     a GGUF's tokenizer, header only",
+                "  owner/repo/x.gguf   that GGUF's, header only",
+                "  owner/repo@v2       at a branch, tag or commit",
+                "  modelscope.cn/...   the same, from ModelScope",
+                "  ./x.gguf, ./dir     a local GGUF or tokenizer folder",
+                "A URL is refused, naming the reference to pass."
             })
     String source;
 

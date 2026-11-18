@@ -24,7 +24,7 @@ print(chat.chat("What is my name?").text)     # only the new tokens are computed
 
 Three ideas, and the whole API follows from them.
 
-- **A model is whatever the file is.** `jinfer_model_load` takes a hub reference or a path and the model selects its face: language, embedding, reranking, speech or transcription. `jinfer_model_property` says what it can do; `jinfer_model_info` describes it as JSON.
+- **A model is whatever the file is.** `jinfer_model_load` takes a hub reference or a path (a URL is refused, naming the reference to pass) and the model selects its face: language, embedding, reranking, speech or transcription. `jinfer_model_property` says what it can do; `jinfer_model_info` describes it as JSON.
 - **Every generation is a stream, stepped like a statement.** `jinfer_chat`, `jinfer_speak` and `jinfer_transcribe` return a `jinfer_stream`; `jinfer_stream_step` blocks and says whether a chunk is ready, `jinfer_stream_text` or `jinfer_stream_samples` is the chunk, `jinfer_stream_result` the finished result as JSON. `jinfer_stream_cancel` may be called from any thread; the blocked step returns `JINFER_ECANCELLED` and the result still carries the text produced so far and counts what ran, with `finish_reason` `"cancelled"`. Freeing a running stream cancels it. Blocking is `while (jinfer_stream_step(s) == JINFER_OK) {}`.
 - **OpenAI JSON in and out.** `jinfer_speak` takes the OpenAI `/v1/audio/speech` fields that apply (`input`, `speed`); `jinfer_chat` takes exactly the jinfer server's `/v1/chat/completions` request and returns its response: messages, tools, `response_format` with a JSON schema, images and audio as data URLs. The same code lowers both; a reply constrained to a schema cannot come back malformed.
 

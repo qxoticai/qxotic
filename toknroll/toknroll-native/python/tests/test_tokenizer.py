@@ -72,6 +72,10 @@ class LoadTest(unittest.TestCase):
         with self.assertRaises(toknroll.InvalidArgument) as e:  # a browser's URL, pasted
             toknroll.load("https://huggingface.co/Qwen/Qwen3-0.6B")
         self.assertIn("Pass: hf.co/Qwen/Qwen3-0.6B", str(e.exception))       # the ref to pass instead
+        for url in ("https://example.org/tokenizer.json", "ftp://huggingface.co/Qwen/Qwen3-0.6B"):
+            with self.assertRaises(toknroll.InvalidArgument) as e:
+                toknroll.load(url)
+            self.assertIn("download the file and pass its local path", str(e.exception))
         with tempfile.TemporaryDirectory() as empty:
             with self.assertRaises(toknroll.NotFound) as e:
                 toknroll.load(empty)

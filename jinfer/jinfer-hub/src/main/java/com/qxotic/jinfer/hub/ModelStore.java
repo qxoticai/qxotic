@@ -346,6 +346,7 @@ public final class ModelStore {
     }
 
     private List<Path> resolveAll(List<String> pathOrRefs, Policy policy) {
+        pathOrRefs.forEach(ModelStore::refuseUrl); // before any download starts, not after
         if (pathOrRefs.size() <= 1 || Fetch.oneAtATime()) {
             return pathOrRefs.stream().map(ref -> resolve(ref, policy)).toList();
         }

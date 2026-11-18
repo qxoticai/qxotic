@@ -126,6 +126,19 @@ class JinferChatAutoConfigurationTest {
     }
 
     @Test
+    void aHubLinkIsAnsweredWithTheRefToPass() {
+        runner.withPropertyValues(
+                        "spring.ai.jinfer.chat.model=https://huggingface.co/acme/m-GGUF/tree/v2")
+                .run(
+                        context -> {
+                            assertThat(context).hasFailed();
+                            assertThat(context.getStartupFailure())
+                                    .hasStackTraceContaining("spring.ai.jinfer.chat.model: '")
+                                    .hasStackTraceContaining("Pass: hf.co/acme/m-GGUF@v2");
+                        });
+    }
+
+    @Test
     void companionUrlIsRejectedBeforeResolution() {
         runner.withPropertyValues(
                         "spring.ai.jinfer.chat.model=/missing.gguf",

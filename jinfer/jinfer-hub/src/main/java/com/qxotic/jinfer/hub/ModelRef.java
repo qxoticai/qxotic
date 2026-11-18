@@ -175,13 +175,26 @@ public record ModelRef(
                 + ": check it is the publisher you meant to trust.";
     }
 
+    /** Hugging Face's own sections, names no user can take: never an owner. */
+    private static final List<String> HF_SECTIONS =
+            List.of(
+                    "datasets",
+                    "spaces",
+                    "docs",
+                    "blog",
+                    "papers",
+                    "collections",
+                    "learn",
+                    "posts");
+
     /**
      * The ref to suggest for a hub page's URL, never a way in: a URL is refused, and this only
      * names what to pass instead, or null. The pages: the repository page, a folder ({@code
-     * tree/<rev>[/dir]}, ModelScope's {@code files}) or a file ({@code blob/<rev>/<file>}, {@code
-     * resolve/<rev>/<file>}, ModelScope's {@code file/view/<rev>/<file>}). The default branch is
-     * dropped, any other revision kept. Segments are split before they are decoded, and one holding
-     * an encoded slash gives no ref: a wrong suggestion is worse than none.
+     * tree/<rev>[/dir]}, ModelScope's {@code files} and {@code summary}) or a file ({@code
+     * blob/<rev>/<file>}, {@code resolve/<rev>/<file>}, ModelScope's {@code
+     * file/view/<rev>/<file>}). The default branch is dropped, any other revision kept. Segments
+     * are split before they are decoded, and one holding an encoded slash gives no ref: a wrong
+     * suggestion is worse than none.
      */
     static ModelRef suggestionFor(String url) {
         URI uri;
@@ -190,8 +203,13 @@ public record ModelRef(
         } catch (URISyntaxException e) {
             return null;
         }
+        String scheme = uri.getScheme() == null ? "" : uri.getScheme().toLowerCase(Locale.ROOT);
         Host host = uri.getHost() == null ? null : lookup(uri.getHost());
-        if (host == null || uri.getRawPath() == null) return null;
+        if (!List.of("http", "https").contains(scheme)
+                || host == null
+                || uri.getRawPath() == null) {
+            return null; // a browser's link to a hub, nothing else
+        }
         List<String> parts = new ArrayList<>();
         for (String raw : uri.getRawPath().split("/")) {
             String part = URLDecoder.decode(raw.replace("+", "%2B"), StandardCharsets.UTF_8);
@@ -201,8 +219,8 @@ public record ModelRef(
         if (!host.prefix.isEmpty()) { // ModelScope's models live under /models
             if (parts.isEmpty() || !parts.getFirst().equals(host.prefix.substring(1))) return null;
             parts.removeFirst();
-        } else if (!parts.isEmpty() && List.of("datasets", "spaces").contains(parts.getFirst())) {
-            return null; // Hugging Face's other kinds of repository
+        } else if (!parts.isEmpty() && HF_SECTIONS.contains(parts.getFirst())) {
+            return null; // the site's own pages and its other kinds of repository
         }
         if (parts.size() < 2) return null;
         String ref = host.name + "/" + parts.get(0) + "/" + parts.get(1);
@@ -210,7 +228,10 @@ public record ModelRef(
         if (rest.size() >= 2 && rest.get(0).equals("file") && rest.get(1).equals("view")) {
             rest = rest.subList(1, rest.size()); // ModelScope's file page: file/view/<rev>/<file>
         }
-        if (!rest.isEmpty() && !rest.equals(List.of("files"))) { // files: ModelScope's file list
+        if (rest.size() == 1 && List.of("files", "summary").contains(rest.getFirst())) {
+            rest = List.of(); // ModelScope's file list and model card: the repository
+        }
+        if (!rest.isEmpty()) {
             if (rest.size() < 2
                     || !List.of("tree", "blob", "resolve", "view").contains(rest.get(0))) {
                 return null;

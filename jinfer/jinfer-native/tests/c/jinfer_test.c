@@ -132,6 +132,9 @@ static void configure_through_toknroll(void) {
     CHECK_EQ(toknroll_configure(one, 1), TOKNROLL_OK);
     CHECK_ERROR(jinfer_configure(one, 1), JINFER_EINVAL, LE, "jinfer_configure must come once");
     CHECK_NULL_ERROR(jinfer_model_load("ctest-nobody/no-such-GGUF:Q8_0", NULL), JINFER_ENOTFOUND, LE, "not cached");   /* offline held */
+    /* a URL is never a model: a hub page's names the ref to pass, any other the download remedy */
+    CHECK_NULL_ERROR(jinfer_model_load("https://huggingface.co/LiquidAI/LFM2.5-350M-GGUF/blob/main/LFM2.5-350M-Q8_0.gguf", NULL), JINFER_EINVAL, LE, "Pass: hf.co/LiquidAI/LFM2.5-350M-GGUF/LFM2.5-350M-Q8_0.gguf");
+    CHECK_NULL_ERROR(jinfer_model_load("https://example.org/model.gguf", NULL), JINFER_EINVAL, LE, "download the file and pass its local path");
 }
 
 static void configure_rejected(void) {

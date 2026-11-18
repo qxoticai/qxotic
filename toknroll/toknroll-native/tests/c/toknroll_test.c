@@ -512,6 +512,11 @@ static void load_paths(void) {
     CHECK_NULL_ERROR(toknroll_tokenizer_load("owner/ctest-missing.gguf"), TOKNROLL_ENOTFOUND, LE, "does not exist");   /* a path, no repository */
     CHECK_NULL_ERROR(toknroll_tokenizer_load("ctest-mydir/tokenizer.json"), TOKNROLL_ENOTFOUND, LE, "ctest-mydir/tokenizer.json does not exist");   /* nor one */
     CHECK_NULL_ERROR(toknroll_tokenizer_load("ctest-missing.json"), TOKNROLL_EINVAL, LE, "is neither a file here nor a reference");
+    /* a URL is never a source: a hub page's names the ref to pass, any other the download remedy */
+    CHECK_NULL_ERROR(toknroll_tokenizer_load("https://huggingface.co/Qwen/Qwen3-0.6B/tree/v2"), TOKNROLL_EINVAL, LE, "Pass: hf.co/Qwen/Qwen3-0.6B@v2");
+    CHECK_NULL_ERROR(toknroll_tokenizer_load("https://www.modelscope.cn/models/Qwen/Qwen3-0.6B-GGUF/file/view/master/Qwen3-0.6B-Q8_0.gguf"), TOKNROLL_EINVAL, LE, "Pass: modelscope.cn/Qwen/Qwen3-0.6B-GGUF/Qwen3-0.6B-Q8_0.gguf");
+    CHECK_NULL_ERROR(toknroll_tokenizer_load("https://example.org/tokenizer.json"), TOKNROLL_EINVAL, LE, "download the file and pass its local path");
+    CHECK_NULL_ERROR(toknroll_tokenizer_load("https://evil.huggingface.co/Qwen/Qwen3-0.6B"), TOKNROLL_EINVAL, LE, "download the file and pass its local path");
 }
 
 #ifndef _WIN32

@@ -29,7 +29,7 @@ tokenizer.encode_batch(["Hello", "world"])       # spread over every core
 
 ## What it reads
 
-`toknroll.load` reads a `tokenizer.json` or its folder, a GGUF file (its header only, never the weights), or a tiktoken checkout, on disk or by Hugging Face or ModelScope reference (`owner/repo[@rev][:quant]`), fetched once and cached.
+`toknroll.load` reads a `tokenizer.json` or its folder, a GGUF file (its header only, never the weights), or a tiktoken checkout, on disk or by Hugging Face or ModelScope reference (`owner/repo[@rev][:quant]`), fetched once and cached; a URL is refused, naming the reference to pass.
 Parity is tested on the tokenizers of 18 vendors' models, Qwen, Llama, Gemma 4, gpt-oss, DeepSeek, Mistral, Granite, Kimi and [more](https://github.com/qxoticai/qxotic/blob/v0.4.0/toknroll/README.md#tested-implementations); a tokenizer toknroll cannot reproduce exactly is refused at load, never approximated.
 
 ## Requirements

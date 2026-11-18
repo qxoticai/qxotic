@@ -54,6 +54,7 @@ try (var model = JinferChatModel.builder()
 ```
 
 `.model(String)` accepts a model ref (`owner/repo:quant`, or `modelscope.cn/...` for another source); a local path is `.modelPath(Path)`.
+A URL is refused, naming the reference to pass.
 Ref downloads happen at `build()` into the shared cache (resumable, sha256-verified; warm builds make no request, `JINFER_OFFLINE=1` forbids the network).
 
 Companions use the same split: `.companion(capability, String)` accepts a model reference; `.companionPath(capability, Path)` accepts a local file.

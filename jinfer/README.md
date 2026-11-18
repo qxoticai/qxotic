@@ -127,6 +127,7 @@ try (var model = JinferChatModel.builder()
 A model reference is defined as `[provider.com/]owner/repository[@revision][/path][:quant]`, downloaded once from Hugging Face and cached.  
 Other providers and hosts are supported, for example `modelscope.cn/Qwen/Qwen3-0.6B-GGUF:Q8_0`.
 Use `.modelPath(Path modelPath)` to specify a model file already on disk.
+A URL is refused, naming the reference to pass.
 
 Run with `--add-modules jdk.incubator.vector --enable-native-access=ALL-UNNAMED`, and add
 `jam-native` at runtime scope to accelerate matrix multiplications.  
