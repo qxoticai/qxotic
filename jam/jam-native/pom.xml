@@ -159,8 +159,8 @@
               <!-- a build without natives (-Djam.native.skip=true on a fresh clone) has none to sum;
                    whether a jar may ship without them is the release gate's call -->
               <target xmlns:if="ant:if">
-                <available property="natives" file="${project.build.outputDirectory}/com/qxotic/jam/native" type="dir" />
-                <checksum if:set="natives" algorithm="SHA-256" fileext=".sha256" forceoverwrite="yes">
+                <available file="${project.build.outputDirectory}/com/qxotic/jam/native" property="natives" type="dir" />
+                <checksum algorithm="SHA-256" fileext=".sha256" forceoverwrite="yes" if:set="natives">
                   <fileset dir="${project.build.outputDirectory}/com/qxotic/jam/native" includes="*/*.so,*/*.dylib,*/*.dll" />
                 </checksum>
               </target>
