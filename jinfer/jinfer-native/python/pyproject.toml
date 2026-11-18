@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "jinfer"
-version = "0.4.0rc1"
+version = "0.4.0"
 description = "Local AI inference for Python: chat, vision, audio, embeddings, speech and transcription in one wheel, no server, no ML stack."
 readme = "README.md"
 requires-python = ">=3.10"
@@ -29,7 +29,7 @@ classifiers = [
     "Topic :: Software Development :: Libraries",
     "Typing :: Typed",
 ]
-dependencies = ["toknroll==0.4.0rc1"]   # the toknroll inside libjinfer, exactly: its Python layer is bound to this library (make check-pin)
+dependencies = ["toknroll==0.4.0"]   # the toknroll inside libjinfer, exactly: its Python layer is bound to this library (make check-pin)
 
 [project.urls]
 Homepage = "https://qxotic.ai"

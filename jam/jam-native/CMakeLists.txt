@@ -26,7 +26,7 @@ if (NOT WIN32)
     set(CMAKE_VISIBILITY_INLINES_HIDDEN ON)
 endif()
 
-# The version is jam.h's JAM_VERSION, 0.4.0, or 0.4.0-rc1 for a release candidate, and it must be the jam
+# The version is jam.h's JAM_VERSION, 0.4.0, or 0.4.0-rcN for a release candidate, and it must be the jam
 # Maven project's: one release for the jar and the library. The soname follows its numbers, JAM_VERSION_*,
 # never set by hand, as native.mk derives libtoknroll's and libjinfer's: all three while the major is 0
 # (any release may break; a candidate shares its release's), libjam.so.<major> from 1.0.

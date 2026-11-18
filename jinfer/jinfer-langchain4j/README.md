@@ -58,7 +58,7 @@ Every knob here has the same name on the other faces (CLI, server, Spring AI, Ja
 
 ## Add the provider
 
-These examples target jinfer **0.4.0-rc1**, LangChain4j **1.23.0**, and Java **25**.
+These examples target jinfer **0.4.0**, LangChain4j **1.23.0**, and Java **25**.
 For an unreleased checkout, first install the artifacts locally from the repository root:
 
 ```bash
@@ -71,7 +71,7 @@ mvn -pl jinfer/jinfer-bom,jinfer/jinfer-langchain4j,jinfer/jinfer-gemma-embeddin
     <dependency>
       <groupId>com.qxotic</groupId>
       <artifactId>jinfer-bom</artifactId>
-      <version>0.4.0-rc1</version>
+      <version>0.4.0</version>
       <type>pom</type>
       <scope>import</scope>
     </dependency>
@@ -100,7 +100,7 @@ mvn -pl jinfer/jinfer-bom,jinfer/jinfer-langchain4j,jinfer/jinfer-gemma-embeddin
 Use `jinfer-models-all` instead of `jinfer-lfm2` for every model family.
 The `AiServices` examples also need `dev.langchain4j:langchain4j`.
 The BOMs manage versions only.
-Without them, pin the versions `jinfer-bom` 0.4.0-rc1 lists (0.4.0-rc1 for `jinfer-langchain4j` and `jinfer-lfm2`) and `1.23.0` on each LangChain4j one.
+Without them, pin the versions `jinfer-bom` 0.4.0 lists (0.4.0 for `jinfer-langchain4j` and `jinfer-lfm2`) and `1.23.0` on each LangChain4j one.
 
 Optional runtime backends are `jam-native` (hand-tuned SIMD) and `jam-vector` (Panama Vector API):
 
@@ -125,7 +125,7 @@ Vector one; with neither, it uses its built-in kernels.
 ```java
 //JAVA 25
 //RUNTIME_OPTIONS --add-modules jdk.incubator.vector --enable-native-access=ALL-UNNAMED
-//DEPS com.qxotic:jinfer-bom:0.4.0-rc1@pom
+//DEPS com.qxotic:jinfer-bom:0.4.0@pom
 //DEPS com.qxotic:jinfer-langchain4j
 //DEPS com.qxotic:jinfer-lfm2
 //DEPS com.qxotic:jam-native com.qxotic:jam-vector
@@ -352,7 +352,7 @@ Segments are packed into context-sized ragged batches: one forward pass embeds m
 ### EmbeddingGemma 2 text
 
 Alongside `jinfer-langchain4j`, add the Gemma provider below instead of `jinfer-lfm2` for an embedding-only application.
-Its version comes from `jinfer-bom:0.4.0-rc1`; applications already using `jinfer-models-all` have this provider.
+Its version comes from `jinfer-bom:0.4.0`; applications already using `jinfer-models-all` have this provider.
 
 ```xml
 <dependency>

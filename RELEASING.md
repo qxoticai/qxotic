@@ -102,12 +102,12 @@ Smoke-test any native executables intended for distribution on their target plat
 ## Release candidates
 
 A release candidate is a release of its own, built, checked and published as above, on the version `<release>-rcN`.
-It is `0.4.0-rc1` on Maven Central, in the native libraries and their archives, and in the tag `v0.4.0-rc1`; it is `0.4.0rc1` on PyPI, PEP 440's spelling.
-The headers carry it as text, `PREFIX_VERSION "0.4.0-rc1"`, beside the numbers 0, 4 and 0; `make check-version` holds the text, the numbers, the POM and the Python package to the one release.
+It is `<release>-rcN` on Maven Central, in the native libraries and their archives, and in the tag `v<release>-rcN`; it is `<release>rcN` on PyPI, PEP 440's spelling.
+The headers carry it as text, `PREFIX_VERSION "<release>-rcN"`, beside the release's numbers; `make check-version` holds the text, the numbers, the POM and the Python package to the one release.
 The soname takes the numbers alone, so the candidate and its release share it, and a candidate may not change the API or the ABI: a change makes the next release `0.4.1`.
-Its GitHub release is a pre-release, `gh release create v0.4.0-rc1 --prerelease`; PyPI and pip know it as one by its version, and pip installs it only with `--pre` or an exact `==0.4.0rc1`.
-The release after it changes the versions to `0.4.0` everywhere, its release notes' heading too, and rebuilds every binary from its own tag: a candidate's binaries are never promoted.
-The docs and the jbang scripts name the version being published, `0.4.0-rc1` for the candidate, and the release changes them to `0.4.0` with everything else.
+Its GitHub release is a pre-release, `gh release create v<release>-rcN --prerelease`; PyPI and pip know it as one by its version, and pip installs it only with `--pre` or an exact `==<release>rcN`.
+The release after it changes the versions to `<release>` everywhere, its release notes' heading too, and rebuilds every binary from its own tag: a candidate's binaries are never promoted.
+The docs and the jbang scripts name the version being published, `<release>-rcN` for the candidate, and the release changes them to `<release>` with everything else.
 
 ## Before publishing
 

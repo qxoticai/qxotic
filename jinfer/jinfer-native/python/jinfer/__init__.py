@@ -79,7 +79,7 @@ __all__ = ["load", "configure", "Model", "LanguageModel", "Embedder", "Reranker"
            "Conversation", "Reply", "Speech", "Transcript", "Word", "ToolCall", "Usage",
            "JinferError", "InvalidArgument", "NotFound", "Cancelled", "MAXIMUM_CONTEXT"]
 
-__version__ = N.lib.jinfer_version().decode().replace("-", "")  # the library's 0.4.0-rc1 is Python's 0.4.0rc1
+__version__ = N.lib.jinfer_version().decode().replace("-", "")  # a candidate's 0.4.0-rcN is Python's 0.4.0rcN
 # built from $Format:%H$
 
 MAXIMUM_CONTEXT = -1

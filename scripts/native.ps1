@@ -50,8 +50,8 @@ function Build-Library {   # the pom's optimization unless -Quick (-Ob -march=na
         finally { Pop-Location }
     } finally { $env:NATIVE_IMAGE_OPTIONS = $options }
 }
-# The release as the header spells it, 0.4.0, or 0.4.0-rc1 for a release candidate, as native.mk's VERSION;
-# Python's spelling drops the dash (0.4.0rc1, PEP 440's).
+# The release as the header spells it, 0.4.0, or 0.4.0-rcN for a release candidate, as native.mk's VERSION;
+# Python's spelling drops the dash (0.4.0rcN, PEP 440's).
 function Get-Version { (Select-String "include\$Name.h" -Pattern "^#define $($Name.ToUpper())_VERSION `"([^`"]+)`"").Matches[0].Groups[1].Value }
 # The version the pom builds with, as native.mk's POM_VERSION and release-plan.sh read it: a pom's own <version>,
 # outside <parent> and before any content, else the nearest enclosing directory's pom's.

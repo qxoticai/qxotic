@@ -11,7 +11,7 @@
 
   <artifactId>jinfer-parent</artifactId>
   <!-- The version of a jinfer release, and of every artifact that declares none of its own. -->
-  <version>0.4.0-rc1</version>
+  <version>0.4.0</version>
   <packaging>pom</packaging>
 
   <name>Jinfer Parent</name>

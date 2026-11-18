@@ -74,7 +74,7 @@ import TabItem from '@theme/TabItem';
 <dependency>
     <groupId>com.qxotic</groupId>
     <artifactId>gguf</artifactId>
-    <version>0.4.0-rc1</version>
+    <version>0.4.0</version>
 </dependency>
 ```
 
@@ -82,14 +82,14 @@ import TabItem from '@theme/TabItem';
   <TabItem value="gradle" label="Gradle">
 
 ```groovy
-implementation 'com.qxotic:gguf:0.4.0-rc1'
+implementation 'com.qxotic:gguf:0.4.0'
 ```
 
   </TabItem>
   <TabItem value="mill" label="Mill">
 
 ```scala
-mvn"com.qxotic:gguf:0.4.0-rc1"
+mvn"com.qxotic:gguf:0.4.0"
 ```
 
   </TabItem>

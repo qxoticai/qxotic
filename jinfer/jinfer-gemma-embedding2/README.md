@@ -29,7 +29,7 @@ The strings are the card's, from `config_sentence_transformers.json`; `GemmaEmbe
 
 ## Input template
 
-In `0.4.0-rc1`, Gemma's input template uses `Specials` to recognize special-token spellings such as `<bos>`, `<eos>`, and `<pad>`, matching the reference pipeline.
+In `0.4.0`, Gemma's input template uses `Specials` to recognize special-token spellings such as `<bos>`, `<eos>`, and `<pad>`, matching the reference pipeline.
 Toknroll's tokenizer remains raw-text-only; special-token interpretation belongs to the template.
 The template adds BOS/EOS unless the rendered text already starts with `<bos>`, in which case the reference processor disables both automatic boundary tokens.
 This rule applies independently to each input, so batch neighbors do not change its framing.

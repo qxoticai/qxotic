@@ -11,7 +11,7 @@ The `post_processor` is not read: encoding is pure tokenization, with no BOS or 
 <dependency>
   <groupId>com.qxotic</groupId>
   <artifactId>toknroll-hf</artifactId>
-  <version>0.4.0-rc1</version>
+  <version>0.4.0</version>
 </dependency>
 ```
 

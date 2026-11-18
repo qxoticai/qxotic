@@ -9,8 +9,8 @@ ARCH  := $(shell uname -m | sed -e 's/x86_64/x86-64/' -e 's/arm64/aarch64/')
 PLATFORM := $(OS)-$(ARCH)
 UPPER := $(shell echo $(NAME) | tr a-z A-Z)
 LIB   := target/lib$(NAME).$(if $(filter darwin,$(OS)),dylib,so)
-# The release as the header spells it, 0.4.0, or 0.4.0-rc1 for a release candidate; Python's spelling
-# drops the dash (0.4.0rc1, PEP 440's); the soname takes only the numbers, so a candidate and its release
+# The release as the header spells it, 0.4.0, or 0.4.0-rcN for a release candidate; Python's spelling
+# drops the dash (0.4.0rcN, PEP 440's); the soname takes only the numbers, so a candidate and its release
 # share one ABI name.
 VERSION := $(shell sed -n 's/^\#define $(UPPER)_VERSION "\(.*\)"/\1/p' include/$(NAME).h)
 BASE := $(firstword $(subst -, ,$(VERSION)))

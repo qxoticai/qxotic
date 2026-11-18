@@ -1,9 +1,8 @@
 # Release notes
 
-## 0.4.0-rc1
+## 0.4.0
 
-A release candidate for 0.4.0: Maven Central `0.4.0-rc1`, PyPI `0.4.0rc1` (`pip install --pre`), the native libraries and their archives `0.4.0-rc1`.
-The libraries keep the soname of 0.4.0, `libtoknroll.so.0.4.0` and `libjinfer.so.0.4.0`, so a program built against the candidate runs on the release.
+Maven Central, PyPI, the native libraries and their archives all carry `0.4.0`; the libraries' sonames are `libtoknroll.so.0.4.0` and `libjinfer.so.0.4.0`.
 The native libraries, the jinfer command and the wheels are built with Oracle GraalVM and carry its runtime under the GraalVM Free Terms and Conditions: free to use, commercially too, but a product sold for a fee that bundles them is not covered; see the [libtoknroll](toknroll/toknroll-native/README.md#license) and [libjinfer](jinfer/jinfer-native/README.md#license) License sections and their NOTICE files.
 
 - **Decisions.** A decision model answers yes/no, choice and rating questions about an input with probabilities, in one forward pass and without generating text: Liquid AI's d1 and d1-Omni (`jinfer-lfm3`) and vLLM Semantic Router's d3 (`jinfer-qwen35`).
@@ -14,12 +13,12 @@ The native libraries, the jinfer command and the wheels are built with Oracle Gr
   `jinfer server` serves `POST /v1/systemone` in llama.cpp's System One shape, and LangChain4j and Spring AI get a `JinferDecisionModel`, with `spring.ai.model.decision=jinfer` in the starter.
   d1 matches Liquid's reference and llama.cpp, and d3 matches llama.cpp.
   Every face reports a choice's and a rating's confidence alike, the likeliest outcome's probability, and Spring AI's `JinferDecisionModel` is observed as `gen_ai.client.operation` through its `observationRegistry`.
-- **json 0.4.0-rc1.** A Java string holding a lone surrogate prints it as an escape, `\uD800`, so the JSON can be encoded as UTF-8; a surrogate pair prints as itself.
+- **json 0.4.0.** A Java string holding a lone surrogate prints it as an escape, `\uD800`, so the JSON can be encoded as UTF-8; a surrogate pair prints as itself.
   With `decimalsAsBigDecimal(false)`, a decimal past `double`'s range is refused at its first digit instead of read as `Infinity`.
   Errors count a line at `\r` and `\r\n` as at `\n`, and `unescapeString`'s errors carry line and column too.
   A duplicate key is reported at the key, and an invalid escape at its backslash.
-  jinfer-jinja, which depends on json, moves to `0.4.0-rc1` with it.
-- **safetensors 0.4.0-rc1.** A file read and written back keeps its own header layout, so its tensor offsets stay valid; writing one used to fail with a header size mismatch.
+  jinfer-jinja, which depends on json, moves to `0.4.0` with it.
+- **safetensors 0.4.0.** A file read and written back keeps its own header layout, so its tensor offsets stay valid; writing one used to fail with a header size mismatch.
   A new file's tensor data starts at a multiple of 8 bytes, as upstream pads it.
   A header that is not UTF-8, and a shape or offset written as `1.0` or `1e0`, are refused, as upstream refuses them.
 - **jinfer-fetch, new.** `com.qxotic:jinfer-fetch` is the HTTP GET jinfer-hub, toknroll-hf and toknroll-gguf download through, on Java 11 with no dependencies: the JDK's `HttpClient`, or `curl` as a process in native images, which then carry no TLS stack.
