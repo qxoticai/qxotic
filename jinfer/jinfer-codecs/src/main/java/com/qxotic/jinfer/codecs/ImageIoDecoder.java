@@ -42,15 +42,9 @@ public final class ImageIoDecoder implements ImageDecoder {
     }
 
     private static Media.Image read(ImageInputStream input, String src) throws IOException {
-        if (input == null) {
-            throw new IOException(
-                    "javax.imageio could not decode " + src + " (unsupported format?)");
-        }
+        if (input == null) throw unreadable(src);
         var readers = ImageIO.getImageReaders(input);
-        if (!readers.hasNext()) {
-            throw new IOException(
-                    "javax.imageio could not decode " + src + " (unsupported format?)");
-        }
+        if (!readers.hasNext()) throw unreadable(src);
         ImageReader reader = readers.next();
         try {
             reader.setInput(input, true, true);
@@ -59,6 +53,15 @@ public final class ImageIoDecoder implements ImageDecoder {
         } finally {
             reader.dispose();
         }
+    }
+
+    /** A format the JDK has no reader for: WEBP, HEIC and AVIF among them. */
+    private static IOException unreadable(String src) {
+        return new IOException(
+                "javax.imageio cannot read "
+                        + src
+                        + ": it reads PNG, JPEG, GIF, BMP and TIFF;"
+                        + " -Djinfer.imageDecoder=ffmpeg reads the rest");
     }
 
     private static Media.Image fromBuffered(BufferedImage bi) throws IOException {

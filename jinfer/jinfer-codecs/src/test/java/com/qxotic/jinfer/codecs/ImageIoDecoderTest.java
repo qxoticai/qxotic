@@ -11,6 +11,7 @@ import java.nio.ByteBuffer;
 import java.nio.file.Files;
 import java.nio.file.NoSuchFileException;
 import java.nio.file.Path;
+import java.util.Base64;
 import java.util.zip.CRC32;
 import javax.imageio.ImageIO;
 import org.junit.jupiter.api.Test;
@@ -42,7 +43,19 @@ class ImageIoDecoderTest {
         Path text = Files.writeString(dir.resolve("notes.png"), "not an image");
         IOException notImage =
                 assertThrows(IOException.class, () -> new ImageIoDecoder().load(text));
-        assertTrue(notImage.getMessage().contains("unsupported format"), notImage.getMessage());
+        assertTrue(notImage.getMessage().contains("cannot read"), notImage.getMessage());
+    }
+
+    /** WEBP is not a JDK format: the refusal names the decoder that reads it. */
+    @Test
+    void aFormatTheJdkCannotReadNamesTheRemedy() {
+        byte[] webp =
+                Base64.getDecoder().decode("UklGRhoAAABXRUJQVlA4TA0AAAAvAAAAEAcQERGIiP4HAA==");
+        IOException refused =
+                assertThrows(IOException.class, () -> new ImageIoDecoder().decode(webp));
+        assertTrue(
+                refused.getMessage().endsWith("-Djinfer.imageDecoder=ffmpeg reads the rest"),
+                refused.getMessage());
     }
 
     private static byte[] hugePng(byte[] small) {
