@@ -101,14 +101,14 @@ sensors | grep -i tctl                           # watch it between runs
 mvn -pl jinfer/jinfer-bench -am -DskipTests package
 
 java --add-modules jdk.incubator.vector -Djdk.incubator.vector.VECTOR_ACCESS_OOB_CHECK=0 \
-  -Djinfer.audioDecoder=ffmpeg \
   -cp jinfer/jinfer-bench/target/jinfer-bench.jar com.qxotic.jinfer.bench.TranscriptionBench \
   --model ~/.cache/huggingface/hub/**/tdt-0.6b-v3-q4_k.gguf \
   --librispeech test-fixtures/librispeech/LibriSpeech/test-clean \
   --limit 100 --dump /tmp/jinfer-q4_k.tsv
 ```
 
-The vector flags are what the native image is built with, and the corpus's FLAC is read by ffmpeg, as the native image reads it.
+Those two JVM flags and no others: they are what the native image is built with.
+The corpus's FLAC is read by ffmpeg, which must be on PATH.
 The corpus runs on
 one reused state, as a server holds one per pipeline, so the timed region is decoding rather than
 allocating. `--dump` writes id, audio seconds, decode seconds, hypothesis and reference per

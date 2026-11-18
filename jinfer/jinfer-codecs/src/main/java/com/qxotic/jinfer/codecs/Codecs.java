@@ -1,5 +1,6 @@
 package com.qxotic.jinfer.codecs;
 
+import java.io.IOException;
 import java.util.Locale;
 
 /**
@@ -23,15 +24,32 @@ final class Codecs {
     }
 
     /**
-     * The configured backend name, normalized: the {@code -D} property value lowercased, or the
-     * platform default - ffmpeg under native-image (no java.desktop SPI discovery there), {@code
-     * jvmDefault} on a JVM.
+     * The configured backend name, normalized: the {@code -D} property value lowercased, else
+     * ffmpeg - always in a native image, which has no {@code java.desktop} decoders, and on a JVM
+     * with ffmpeg on PATH, so both runtimes read every format alike - else the JDK's own {@code
+     * jdkBackend}. A selected backend is the only one asked.
      */
-    static String choice(String property, String jvmDefault) {
+    static String choice(String property, String jdkBackend) {
         String c = System.getProperty(property);
-        return c == null || c.isBlank()
-                ? (nativeImage() ? "ffmpeg" : jvmDefault)
-                : c.toLowerCase(Locale.ROOT);
+        if (c != null && !c.isBlank()) return c.toLowerCase(Locale.ROOT);
+        return nativeImage() || ffmpegOnPath() ? "ffmpeg" : jdkBackend;
+    }
+
+    /** Whether {@code ffmpeg -version} runs: asked once per facade, when it picks its decoder. */
+    static boolean ffmpegOnPath() {
+        try {
+            return new ProcessBuilder("ffmpeg", "-version")
+                            .redirectErrorStream(true)
+                            .redirectOutput(ProcessBuilder.Redirect.DISCARD)
+                            .start()
+                            .waitFor()
+                    == 0;
+        } catch (IOException e) {
+            return false;
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+            return false;
+        }
     }
 
     /**

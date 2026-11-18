@@ -5,8 +5,8 @@ import java.io.IOException;
 import java.nio.file.Path;
 
 /**
- * Selects and caches an {@link ImageDecoder}: ffmpeg under native-image, ImageIO on a JVM,
- * overridden by {@code -Djinfer.imageDecoder=ffmpeg|imageio}.
+ * Selects and caches an {@link ImageDecoder}: ffmpeg, else ImageIO on a JVM without it (see {@link
+ * Codecs#choice}), overridden by {@code -Djinfer.imageDecoder=ffmpeg|imageio}.
  *
  * <p>ImageIO is loaded through a NON-CONSTANT class name on purpose (see {@link Codecs#reflect}) -
  * a constant one would let native-image fold the {@code Class.forName} and pull {@code
@@ -65,7 +65,7 @@ public final class ImageCodec {
         return d;
     }
 
-    private static ImageDecoder select() {
+    static ImageDecoder select() {
         String choice = Codecs.choice("jinfer.imageDecoder", "imageio");
         return switch (choice) {
             case "ffmpeg" -> new FfmpegImageDecoder();

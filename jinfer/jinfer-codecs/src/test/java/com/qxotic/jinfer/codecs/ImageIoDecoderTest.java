@@ -54,7 +54,7 @@ class ImageIoDecoderTest {
         IOException refused =
                 assertThrows(IOException.class, () -> new ImageIoDecoder().decode(webp));
         assertTrue(
-                refused.getMessage().endsWith("-Djinfer.imageDecoder=ffmpeg reads the rest"),
+                refused.getMessage().endsWith("select it with -Djinfer.imageDecoder=ffmpeg)"),
                 refused.getMessage());
     }
 

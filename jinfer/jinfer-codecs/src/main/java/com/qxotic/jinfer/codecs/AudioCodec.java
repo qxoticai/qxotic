@@ -10,8 +10,9 @@ import java.nio.file.Path;
 /**
  * The audio seam in both directions: {@link #wav}/{@link #pcm16} encode a {@link
  * com.qxotic.jinfer.media.Media.Audio}, and {@link #decoder()} selects and caches an {@link
- * AudioDecoder} - ffmpeg under native-image, {@code javax.sound} on a JVM, overridden by {@code
- * -Djinfer.audioDecoder=ffmpeg|javasound}. Decoded output is always 16 kHz mono.
+ * AudioDecoder} - ffmpeg, else {@code javax.sound} on a JVM without it (see {@link Codecs#choice}),
+ * overridden by {@code -Djinfer.audioDecoder=ffmpeg|javasound}. Decoded output is always 16 kHz
+ * mono.
  *
  * <p>{@code javax.sound} is loaded through a NON-CONSTANT class name on purpose (see {@link
  * Codecs#reflect}) - a constant one would let native-image fold the {@code Class.forName} and pull
@@ -100,7 +101,7 @@ public final class AudioCodec {
         return d;
     }
 
-    private static AudioDecoder select() {
+    static AudioDecoder select() {
         String choice = Codecs.choice("jinfer.audioDecoder", "javasound");
         return switch (choice) {
             case "ffmpeg" -> new FfmpegAudioDecoder();

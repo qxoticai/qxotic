@@ -17,7 +17,7 @@ class JavaSoundAudioDecoderTest {
         IOException refused =
                 assertThrows(IOException.class, () -> new JavaSoundAudioDecoder().decode(mp3));
         assertTrue(
-                refused.getMessage().endsWith("-Djinfer.audioDecoder=ffmpeg reads the rest"),
+                refused.getMessage().endsWith("select it with -Djinfer.audioDecoder=ffmpeg)"),
                 refused.getMessage());
     }
 

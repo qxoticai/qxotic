@@ -13,7 +13,7 @@ import javax.sound.sampled.UnsupportedAudioFileException;
 
 /**
  * The {@code javax.sound.sampled} decoder: WAV, AIFF and AU with no external process, refusing the
- * rest with the switch that reads it. JVM only - {@code AudioSystem}'s SPI discovery is fragile
+ * rest naming ffmpeg, which reads it. JVM only - {@code AudioSystem}'s SPI discovery is fragile
  * under native-image, so {@link AudioCodec} loads this reflectively.
  */
 public final class JavaSoundAudioDecoder implements AudioDecoder {
@@ -50,8 +50,8 @@ public final class JavaSoundAudioDecoder implements AudioDecoder {
         return new IOException(
                 "javax.sound cannot read "
                         + src
-                        + ": it reads WAV, AIFF and AU; -Djinfer.audioDecoder=ffmpeg reads the"
-                        + " rest",
+                        + ": it reads WAV, AIFF and AU, and ffmpeg reads the rest"
+                        + " (install it, or select it with -Djinfer.audioDecoder=ffmpeg)",
                 cause);
     }
 

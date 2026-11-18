@@ -11,9 +11,9 @@ import javax.imageio.ImageReader;
 import javax.imageio.stream.ImageInputStream;
 
 /**
- * The {@code javax.imageio} decoder, and the JVM default: no external process. Never referenced
- * statically - {@link ImageCodec} loads it reflectively so a native image does not pull in {@code
- * java.desktop}.
+ * The {@code javax.imageio} decoder, the JVM's when ffmpeg is not on PATH: no external process,
+ * PNG, JPEG, GIF, BMP and TIFF. Never referenced statically - {@link ImageCodec} loads it
+ * reflectively so a native image does not pull in {@code java.desktop}.
  */
 public final class ImageIoDecoder implements ImageDecoder {
 
@@ -60,8 +60,8 @@ public final class ImageIoDecoder implements ImageDecoder {
         return new IOException(
                 "javax.imageio cannot read "
                         + src
-                        + ": it reads PNG, JPEG, GIF, BMP and TIFF;"
-                        + " -Djinfer.imageDecoder=ffmpeg reads the rest");
+                        + ": it reads PNG, JPEG, GIF, BMP and TIFF, and ffmpeg reads the rest"
+                        + " (install it, or select it with -Djinfer.imageDecoder=ffmpeg)");
     }
 
     private static Media.Image fromBuffered(BufferedImage bi) throws IOException {

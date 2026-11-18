@@ -195,10 +195,10 @@ public final class FrozenBlocks {
                             + " Load the cache the way it was built, or rebuild it here."
                             // only a load that projects media has a decoder to pin
                             + (modelSeed.value().contains("Decoder=")
-                                    ? " A JVM and a native image resolve different media"
-                                            + " decoders; pin one with -Djinfer.imageDecoder /"
-                                            + " -Djinfer.audioDecoder to share a media model's"
-                                            + " cache between them."
+                                    ? " A JVM without ffmpeg decodes media with the JDK"
+                                            + " instead; pin one decoder with"
+                                            + " -Djinfer.imageDecoder / -Djinfer.audioDecoder to"
+                                            + " share a media model's cache."
                                     : ""));
         }
     }
