@@ -173,7 +173,7 @@ int[] tokens = tokenizer.encodeToArray("Hello world");
 ## toknroll@qxoticai CLI
 
 The [toknroll CLI](https://github.com/qxoticai/qxotic/blob/main/toknroll/scripts/toknroll.java) encodes, decodes and counts tokens.
-It loads tokenizers from Hugging Face or ModelScope repositories, from full URLs on huggingface.co, hf.co or modelscope.cn, and from GGUF files, local or remote.
+It loads tokenizers from Hugging Face or ModelScope repositories and from GGUF files, local or remote, reading only a remote GGUF's header.
 
 ```bash
 # Pass input directly with --input
@@ -197,7 +197,7 @@ echo 'Hello, World!' | jbang toknroll@qxoticai --source Qwen/Qwen3.6-35B-A3B
 
 # Any source: Hugging Face, ModelScope, GGUF, local
 jbang toknroll@qxoticai \
-    --source modelscope:deepseek-ai/DeepSeek-V4-Pro \
+    --source modelscope.cn/deepseek-ai/DeepSeek-V4-Pro \
     --input "Hello, DeepSeek-V4-Pro 🐋"
 # 19923
 # 14
@@ -212,7 +212,7 @@ jbang toknroll@qxoticai \
 # 236
 
 # GGUF from huggingface.co
-jbang toknroll@qxoticai --source unsloth/granite-4.1-3b-GGUF/Q8_0 --input "Hello, Granite 4.1"
+jbang toknroll@qxoticai --source unsloth/granite-4.1-3b-GGUF:Q8_0 --input "Hello, Granite 4.1"
 # 9906
 # 11
 # 65594
@@ -230,15 +230,17 @@ echo 'Hello, World!' | jbang toknroll@qxoticai --count --source google/gemma-4-e
 # 4
 ```
 
-The `--source` flag accepts several formats:
+`--source` takes jinfer's model reference, `[host/]owner/repo[@revision][/path][:quant]`, or a local path:
 
 | Source | Loads | Example |
 |--------|-------|---------|
-| `user/repo` | HF tokenizer.json | `google/gemma-4-e2b-it` |
-| `user/repo/Q8_0` | GGUF metadata from HF | `unsloth/Llama-3.2-1B-Instruct-GGUF/Q8_0` |
-| `ms:user/repo` | ModelScope | `ms:Qwen/Qwen3-4B` |
-| `./path` or `/path` | Local .gguf or HF dir | `./model.gguf` |
-| Full URL | hf.co / modelscope.cn | `https://huggingface.co/user/repo` |
+| `owner/repo` | the repository's tokenizer.json | `google/gemma-4-e2b-it` |
+| `owner/repo:quant` | a GGUF's tokenizer, picked from the listing, header only | `unsloth/Llama-3.2-1B-Instruct-GGUF:Q8_0` |
+| `owner/repo/file.gguf` | that GGUF's tokenizer, header only | `unsloth/gemma-4-E2B-it-GGUF/gemma-4-E2B-it-Q8_0.gguf` |
+| `modelscope.cn/owner/repo` | the same from ModelScope | `modelscope.cn/Qwen/Qwen3-4B` |
+| `./path` or `/path` | a local .gguf or tokenizer folder | `./model.gguf` |
+
+A URL is refused, naming the reference to pass instead.
 
 First run caches the tokenizer on disk. Public models need no API key.
 
