@@ -182,17 +182,14 @@ public final class OpenAiChat {
     }
 
     /**
-     * OpenAI's {@code finish_reason}. A deadline or a cancel is "other": neither the model nor the
-     * token budget ended the reply, and "stop" would claim the model did - the providers say OTHER.
+     * OpenAI's {@code finish_reason}. A reply the deadline cut short is "length", OpenAI's value
+     * for a truncated reply: "stop" would claim the model ended it, and a value outside OpenAI's
+     * set fails clients that read it as an enum. The Responses API names the deadline itself.
      */
     static String finishReason(Generator.FinishReason reason, boolean hasCalls, boolean stopped) {
         if (hasCalls) return "tool_calls";
-        if (stopped) return "stop";
-        return switch (reason) {
-            case STOP -> "stop";
-            case LENGTH -> "length";
-            default -> "other";
-        };
+        if (stopped || reason == Generator.FinishReason.STOP) return "stop";
+        return "length";
     }
 
     private static void collect(

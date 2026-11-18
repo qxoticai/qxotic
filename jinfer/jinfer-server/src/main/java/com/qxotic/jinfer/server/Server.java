@@ -82,7 +82,10 @@ public final class Server {
             stopped.await();
         }
 
-        /** Stops admission, releases queued callers, and terminates handler threads. Idempotent. */
+        /**
+         * Stops admission, answers queued callers, lets the reply in flight finish within the
+         * shutdown timeout, and terminates handler threads. Idempotent.
+         */
         @Override
         public synchronized void close() {
             if (closed) return;
@@ -90,8 +93,11 @@ public final class Server {
             // queued callers first: their handlers write the 503 while the server still delivers
             // it. Stopping HTTP first parked them for the whole stop delay and then cut the
             // connections, so the "shutting down" answer went to a closed socket.
-            worker.close();
+            worker.stopAdmission();
+            // the reply in flight finishes and is delivered: stop() waits for running exchanges
+            // up to the shutdown timeout. Interrupting first cut it, so the wait had nothing left.
             http.stop(stopDelaySeconds);
+            worker.close(); // still running past the timeout: interrupted
             reaper.interrupt();
             // the fixed handler pool is non-daemon and stop() does not touch it - without this an
             // embedder's JVM never exits

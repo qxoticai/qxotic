@@ -93,13 +93,21 @@ final class Worker implements AutoCloseable {
         return busy;
     }
 
-    @Override
-    public synchronized void close() {
-        if (closed) return;
+    /**
+     * Admits no more work and answers the queued callers now; the job in flight runs to its end,
+     * after which the thread exits.
+     */
+    synchronized void stopAdmission() {
         closed = true;
-        if (thread != null) thread.interrupt();
         Job job;
         while ((job = queue.poll()) != null) job.finish(false);
+    }
+
+    /** As {@link #stopAdmission}, and interrupts the job in flight. */
+    @Override
+    public synchronized void close() {
+        stopAdmission();
+        if (thread != null) thread.interrupt();
     }
 
     private static final class Job implements Runnable {

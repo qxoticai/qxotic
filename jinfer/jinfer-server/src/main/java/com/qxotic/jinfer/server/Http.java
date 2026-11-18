@@ -107,11 +107,13 @@ final class Http {
 
     /**
      * Rejects a wrong method with 405 + Allow; returns {@code true} when it did so (caller
-     * returns).
+     * returns). HEAD is GET without the body (RFC 9110), as monitoring probes send it.
      */
     static boolean requireMethod(HttpExchange exchange, String method) throws IOException {
-        if (method.equals(exchange.getRequestMethod())) return false;
-        exchange.getResponseHeaders().set("Allow", method + ", OPTIONS");
+        String asked = exchange.getRequestMethod();
+        if (method.equals(asked) || ("GET".equals(method) && "HEAD".equals(asked))) return false;
+        exchange.getResponseHeaders()
+                .set("Allow", method + ("GET".equals(method) ? ", HEAD" : "") + ", OPTIONS");
         sendError(exchange, 405, "Method not allowed");
         return true;
     }
@@ -146,6 +148,11 @@ final class Http {
         boolean beforeDeadline;
         try {
             body = exchange.getRequestBody().readNBytes(probe);
+            // over the limit: read the rest before answering, under this same deadline. Closing
+            // with an upload still arriving resets the connection, and the client never reads
+            // the 413 that says why.
+            if (body.length > maxBodyBytes)
+                exchange.getRequestBody().transferTo(OutputStream.nullOutputStream());
         } catch (IOException e) {
             readFailure = e;
         } finally {
@@ -187,6 +194,11 @@ final class Http {
     static void sendBytes(HttpExchange exchange, int status, String contentType, byte[] bytes)
             throws IOException {
         exchange.getResponseHeaders().set("Content-Type", contentType);
+        if ("HEAD".equals(exchange.getRequestMethod())) {
+            exchange.sendResponseHeaders(status, -1); // the headers GET would send, no body
+            exchange.close();
+            return;
+        }
         try (OutputStream out = exchange.getResponseBody()) {
             // JDK 25 can leak its active-exchange count when a fixed-length write fails.
             // HTTP/1.1 chunked close completes the exchange even after a failed write.

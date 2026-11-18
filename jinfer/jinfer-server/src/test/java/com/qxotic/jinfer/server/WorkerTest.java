@@ -69,6 +69,46 @@ class WorkerTest {
     }
 
     @Test
+    void stopAdmissionAnswersTheQueueAndLetsTheJobInFlightFinish() throws Exception {
+        // a graceful shutdown: queued callers hear "closed" at once, the reply in flight is not cut
+        Worker worker = new Worker(1);
+        worker.start();
+        CountDownLatch running = new CountDownLatch(1), release = new CountDownLatch(1);
+        AtomicReference<Worker.Result> inFlight = new AtomicReference<>(),
+                queued = new AtomicReference<>();
+        AtomicBoolean interrupted = new AtomicBoolean();
+        Thread first =
+                Thread.ofPlatform()
+                        .start(
+                                () ->
+                                        inFlight.set(
+                                                worker.submitAndWait(
+                                                        () -> {
+                                                            running.countDown();
+                                                            try {
+                                                                release.await();
+                                                            } catch (InterruptedException e) {
+                                                                interrupted.set(true);
+                                                            }
+                                                        })));
+        assertTrue(running.await(5, TimeUnit.SECONDS));
+        Thread second = Thread.ofPlatform().start(() -> queued.set(worker.submitAndWait(() -> {})));
+        long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(5);
+        while (worker.queued() != 1 && System.nanoTime() < deadline) Thread.onSpinWait();
+
+        worker.stopAdmission();
+        second.join(5_000);
+        assertEquals(Worker.Result.CLOSED, queued.get());
+        assertEquals(Worker.Result.CLOSED, worker.submitAndWait(() -> {}));
+        assertTrue(first.isAlive(), "the job in flight was cut");
+        release.countDown();
+        first.join(5_000);
+        assertEquals(Worker.Result.COMPLETED, inFlight.get());
+        assertFalse(interrupted.get(), "the job in flight was interrupted");
+        worker.close();
+    }
+
+    @Test
     void closeReleasesQueuedSubmitters() throws Exception {
         Worker worker = new Worker(1);
         worker.start();

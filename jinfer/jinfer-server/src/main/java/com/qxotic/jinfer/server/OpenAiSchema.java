@@ -3,7 +3,6 @@
 // no transport, no generation logic.
 package com.qxotic.jinfer.server;
 
-import com.qxotic.jinfer.llm.Generator;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -189,18 +188,17 @@ final class OpenAiSchema {
     /**
      * Why a Responses reply is incomplete; null when the model or a tool call ended it. The chat
      * finish reason already knows what "ended" means (a stop string and a tool call both come from
-     * the generator as ABORT); the generator's reason splits its "other" into the deadline and a
-     * cancel. {@code timeout} and {@code cancelled} are not among OpenAI's documented reasons, but
-     * a truncated reply reported as completed would be worse than a reason a client does not know.
+     * the generator as ABORT); the generator's reason tells a cut-short reply's budget from the
+     * deadline and a cancel. {@code timeout} and {@code cancelled} are not among OpenAI's
+     * documented reasons, but a truncated reply reported as completed would be worse than a reason
+     * a client does not know.
      */
     private static String incompleteReason(Reply result) {
-        return switch (result.finishReason()) {
-            case "length" -> "max_output_tokens";
-            case "other" ->
-                    result.result().finishReason() == Generator.FinishReason.TIMEOUT
-                            ? "timeout"
-                            : "cancelled";
-            default -> null;
+        if (!"length".equals(result.finishReason())) return null;
+        return switch (result.result().finishReason()) {
+            case TIMEOUT -> "timeout";
+            case ABORT -> "cancelled";
+            default -> "max_output_tokens";
         };
     }
 
@@ -272,7 +270,7 @@ final class OpenAiSchema {
         response.put("status", status);
         response.put("model", modelId);
         response.put("output", output);
-        response.put("parallel_tool_calls", false);
+        response.put("parallel_tool_calls", true); // not enforced: a reply may carry several
         response.put("tool_choice", "auto");
         response.put("usage", usage);
         return response;

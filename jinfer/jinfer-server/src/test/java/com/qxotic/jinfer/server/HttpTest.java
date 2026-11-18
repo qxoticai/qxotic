@@ -10,7 +10,9 @@ import com.sun.net.httpserver.HttpServer;
 import java.io.ByteArrayOutputStream;
 import java.io.IOException;
 import java.io.InputStream;
+import java.io.OutputStream;
 import java.net.InetSocketAddress;
+import java.net.Socket;
 import java.net.URI;
 import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
@@ -89,6 +91,76 @@ class HttpTest {
         assertEquals(413, oversized.getResponseCode());
         assertTrue(
                 new String(oversized.responseBytes(), StandardCharsets.UTF_8).contains("4-byte"));
+    }
+
+    @Test
+    void headIsGetWithoutTheBody() throws Exception {
+        // RFC 9110: wherever GET works, HEAD does; uptime monitors probe with it
+        HttpServer server = HttpServer.create(new InetSocketAddress("127.0.0.1", 0), 0);
+        server.createContext(
+                "/",
+                exchange -> {
+                    if (Http.requireMethod(exchange, "GET")) return;
+                    Http.sendJson(exchange, 200, java.util.Map.of("status", "ok"));
+                });
+        server.start();
+        try (HttpClient client = HttpClient.newHttpClient()) {
+            URI uri = URI.create("http://127.0.0.1:" + server.getAddress().getPort() + "/");
+            HttpResponse<String> head =
+                    client.send(
+                            HttpRequest.newBuilder(uri).HEAD().build(),
+                            HttpResponse.BodyHandlers.ofString());
+            assertEquals(200, head.statusCode());
+            assertEquals("", head.body());
+            assertTrue(
+                    head.headers()
+                            .firstValue("Content-Type")
+                            .orElse("")
+                            .startsWith("application/json"));
+            HttpResponse<String> post =
+                    client.send(
+                            HttpRequest.newBuilder(uri)
+                                    .POST(HttpRequest.BodyPublishers.noBody())
+                                    .build(),
+                            HttpResponse.BodyHandlers.ofString());
+            assertEquals(405, post.statusCode());
+            assertEquals("GET, HEAD, OPTIONS", post.headers().firstValue("Allow").orElse(""));
+        } finally {
+            server.stop(0);
+        }
+    }
+
+    @Test
+    @Timeout(30)
+    void anUploadFarPastTheLimitStillReadsItsFourThirteen() throws Exception {
+        // a client that sends its whole request before reading, as most do: closing with the
+        // upload still arriving reset the connection, and it never saw the 413 that says why
+        HttpServer server = HttpServer.create(new InetSocketAddress("127.0.0.1", 0), 0);
+        server.createContext(
+                "/", exchange -> Http.readBody(exchange, 1024, Duration.ofSeconds(20)));
+        server.start();
+        try (Socket client = new Socket("127.0.0.1", server.getAddress().getPort())) {
+            client.setSoTimeout(20_000);
+            byte[] body = new byte[8 << 20];
+            OutputStream out = client.getOutputStream();
+            out.write(
+                    ("POST / HTTP/1.1\r\nHost: localhost\r\nContent-Length: "
+                                    + body.length
+                                    + "\r\n\r\n")
+                            .getBytes(StandardCharsets.US_ASCII));
+            out.write(body);
+            out.flush();
+            InputStream in = client.getInputStream();
+            StringBuilder response = new StringBuilder();
+            byte[] chunk = new byte[4096];
+            for (int n;
+                    !response.toString().contains("1024-byte limit") && (n = in.read(chunk)) > 0; )
+                response.append(new String(chunk, 0, n, StandardCharsets.UTF_8));
+            assertTrue(response.toString().startsWith("HTTP/1.1 413"), response.toString());
+            assertTrue(response.toString().contains("1024-byte limit"), response.toString());
+        } finally {
+            server.stop(0);
+        }
     }
 
     @Test

@@ -269,6 +269,19 @@ curl -sS http://127.0.0.1:8080/v1/systemone \
          "urgency":{"type":"score","instructions":"How urgent is this?","criteria":["Can wait","Today","Right now"]}}}'
 ```
 
+The answers come back under the questions' names (the numbers here are an example):
+
+```json
+{"model": "d1-2B-Q8_0.gguf",
+ "answers": {
+   "refund":  {"type": "noul", "noul": 0.97},
+   "team":    {"type": "choice", "choice": "billing",
+               "probabilities": {"billing": 0.92, "shipping": 0.08}, "confidence": 0.92},
+   "urgency": {"type": "score", "score": 1.6,
+               "legend": {"0": "Can wait", "1": "Today", "2": "Right now"},
+               "probabilities": {"0": 0.05, "1": 0.3, "2": 0.65}, "confidence": 0.65}}}
+```
+
 `state` is a text, any other JSON value (read as JSON), or `null` when the files alone are judged.
 `files` holds images, audio and video as base64 `data:` URIs, read before the state.
 d1 reads images and video, d1-Omni also audio, vLLM's d3 images; `/v1/models` lists the modalities the loaded checkpoint really reads.

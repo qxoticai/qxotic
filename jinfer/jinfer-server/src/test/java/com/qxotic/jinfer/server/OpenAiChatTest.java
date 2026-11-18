@@ -198,9 +198,9 @@ class OpenAiChatTest {
         assertEquals("stop", OpenAiChat.finishReason(Generator.FinishReason.STOP, false, false));
         assertEquals(
                 "length", OpenAiChat.finishReason(Generator.FinishReason.LENGTH, false, false));
-        // a deadline is neither the model's end nor the token budget: "other", never "stop"
+        // a reply cut short is "length", OpenAI's value for it; never "stop", never outside the set
         assertEquals(
-                "other", OpenAiChat.finishReason(Generator.FinishReason.TIMEOUT, false, false));
-        assertEquals("other", OpenAiChat.finishReason(Generator.FinishReason.ABORT, false, false));
+                "length", OpenAiChat.finishReason(Generator.FinishReason.TIMEOUT, false, false));
+        assertEquals("length", OpenAiChat.finishReason(Generator.FinishReason.ABORT, false, false));
     }
 }

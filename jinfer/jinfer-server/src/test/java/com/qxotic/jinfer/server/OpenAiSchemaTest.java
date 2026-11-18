@@ -115,7 +115,7 @@ class OpenAiSchemaTest {
                             cut.getKey(),
                             Duration.ZERO,
                             Duration.ZERO);
-            var partial = new Reply(generation, 3, 0, "part", null, List.of(), "other", null);
+            var partial = new Reply(generation, 3, 0, "part", null, List.of(), "length", null);
             Map<String, Object> response = OpenAiSchema.responseResponse("id", "m", partial);
             assertEquals("incomplete", response.get("status"), cut.getValue());
             assertEquals(Map.of("reason", cut.getValue()), response.get("incomplete_details"));
