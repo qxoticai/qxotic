@@ -144,7 +144,10 @@ final class Fixtures {
         }
     }
 
-    /** Text and timing exactly; confidence to 1e-6, since JIT tiers round differently. */
+    /**
+     * Text and timing exactly; confidence to 1e-5, since JIT tiers round differently (1.6e-6 seen
+     * on a loaded machine, where more of the run executes before C2 compiles it).
+     */
     static void assertSameTranscript(Transcription expected, Transcription actual, String what) {
         assertEquals(expected.text(), actual.text(), what);
         assertEquals(expected.tokens().size(), actual.tokens().size(), what);
@@ -153,7 +156,7 @@ final class Fixtures {
             assertEquals(e.text(), a.text(), what);
             assertEquals(e.start(), a.start(), what);
             assertEquals(e.end(), a.end(), what);
-            assertEquals(e.confidence(), a.confidence(), 1e-6, what);
+            assertEquals(e.confidence(), a.confidence(), 1e-5, what);
         }
     }
 }
