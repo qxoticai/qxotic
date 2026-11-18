@@ -1,6 +1,8 @@
 package com.qxotic.jinfer.codecs;
 
 import java.io.IOException;
+import java.time.Duration;
+import java.util.List;
 import java.util.Locale;
 
 /**
@@ -9,8 +11,6 @@ import java.util.Locale;
  * java.desktop-backed decoders.
  */
 final class Codecs {
-
-    static final System.Logger LOG = System.getLogger("jinfer.media");
 
     private Codecs() {}
 
@@ -38,16 +38,9 @@ final class Codecs {
     /** Whether {@code ffmpeg -version} runs: asked once per facade, when it picks its decoder. */
     static boolean ffmpegOnPath() {
         try {
-            return new ProcessBuilder("ffmpeg", "-version")
-                            .redirectErrorStream(true)
-                            .redirectOutput(ProcessBuilder.Redirect.DISCARD)
-                            .start()
-                            .waitFor()
-                    == 0;
-        } catch (IOException e) {
-            return false;
-        } catch (InterruptedException e) {
-            Thread.currentThread().interrupt();
+            Subprocess.run(List.of("ffmpeg", "-version"), null, Duration.ofSeconds(2), 64 << 10);
+            return true;
+        } catch (IOException missingOrMute) {
             return false;
         }
     }
