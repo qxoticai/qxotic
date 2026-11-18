@@ -117,7 +117,7 @@ final class Speak {
                                                 "First audio after %.2f s%n",
                                                 (System.nanoTime() - start) / 1e9));
             } catch (IOException e) {
-                throw Main.failure("cannot stream speech", e);
+                throw Main.failure("cannot stream speech; --output FILE writes a WAV instead", e);
             }
             return;
         }
@@ -128,7 +128,7 @@ final class Speak {
             try {
                 player.play(audio);
             } catch (IOException e) {
-                throw Main.failure("cannot play speech", e);
+                throw Main.failure("cannot play speech; --output FILE writes a WAV instead", e);
             }
         } else {
             byte[] wav = AudioCodec.wav(audio);
@@ -136,7 +136,7 @@ final class Speak {
             if (output.toString().equals("-")) {
                 io.out().write(wav);
                 io.out().flush();
-                if (io.out().checkError()) throw new IOException("cannot write WAV to stdout");
+                if (io.out().checkError()) throw io.outputFailed("cannot write WAV to stdout");
             } else {
                 try {
                     Files.write(output, wav);

@@ -319,7 +319,11 @@ final class SpeakTest {
                                         new CliFixtures.Capture("").io,
                                         failing));
         assertTrue(failure.getMessage().contains("no player"));
-        assertTrue(failure.getMessage().startsWith("cannot play speech\n  no player available"));
+        assertTrue(
+                failure.getMessage()
+                        .startsWith(
+                                "cannot play speech; --output FILE writes a WAV instead\n"
+                                        + "  no player available"));
         assertEquals("no player available", failure.getCause().getMessage());
         assertEquals(1, model.closed);
     }

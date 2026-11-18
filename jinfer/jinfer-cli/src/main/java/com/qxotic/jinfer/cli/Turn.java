@@ -7,7 +7,6 @@ import com.qxotic.jinfer.llm.Generator;
 import com.qxotic.jinfer.llm.SpecialTokens;
 import com.qxotic.toknroll.IntSequence;
 import com.qxotic.toknroll.Tokenizer;
-import java.io.IOException;
 import java.io.PrintStream;
 import java.io.UncheckedIOException;
 import java.util.ArrayList;
@@ -189,7 +188,7 @@ final class Turn implements ChatEngine.ReplySink, AutoCloseable {
         // checkError flushes, so this is also the streaming flush point.
         if (io.out().checkError())
             throw new UncheckedIOException(
-                    new IOException("cannot write generated text to stdout"));
+                    io.outputFailed("cannot write generated text to stdout"));
     }
 
     /**

@@ -18,6 +18,7 @@ import java.io.PrintStream;
 import java.io.UncheckedIOException;
 import java.lang.foreign.Arena;
 import java.nio.charset.StandardCharsets;
+import java.nio.file.Files;
 import java.nio.file.Path;
 
 /** Process setup and dispatch. All work returns through this boundary before the process exits. */
@@ -55,6 +56,18 @@ public final class Main {
                     "-".equals(input) ? new String(read("text"), StandardCharsets.UTF_8) : input;
             Options.require(text != null && !text.isBlank(), "input requires non-blank text");
             return text;
+        }
+
+        /**
+         * A write to {@link #out} failed. When that is the process's stdout and not a file, its
+         * reader went away, as {@code | head} does once it has its lines: {@link ClosedOutput},
+         * which ends the run quietly. A file (a full disk) or a borrowed stream is an error, said
+         * as {@code message}. ponytail: Windows has no /dev/stdout, so there every stdout failure
+         * reads as a reader that left.
+         */
+        IOException outputFailed(String message) {
+            boolean file = out != System.out || Files.isRegularFile(Path.of("/dev/stdout"));
+            return file ? new IOException(message) : new ClosedOutput();
         }
 
         byte[] read(String kind) throws IOException {
@@ -97,7 +110,7 @@ public final class Main {
                         };
             }
             if (status == 0 && io.out().checkError())
-                throw new IOException("cannot write to stdout");
+                throw io.outputFailed("cannot write to stdout");
             return status;
         } catch (Options.UsageException e) {
             String command = options == null ? e.command : options.command;
@@ -116,6 +129,9 @@ public final class Main {
                 | IllegalArgumentException
                 | IllegalStateException
                 | UnsupportedOperationException e) {
+            for (Throwable t = e; t != null; t = t.getCause())
+                if (t instanceof ClosedOutput)
+                    return 141; // a broken pipe's status, printed nowhere
             io.err().println(name(options) + ": " + Options.rootMessage(e));
             return Thread.currentThread().isInterrupted() ? 130 : 1;
         } catch (ExceptionInInitializerError e) {
@@ -130,6 +146,15 @@ public final class Main {
             io.err().println(name(options) + ": unexpected failure: " + Options.rootMessage(e));
             e.printStackTrace(io.err());
             return 1;
+        }
+    }
+
+    /**
+     * stdout's reader went away: the end of the run, not a failure (see {@link IO#outputFailed}).
+     */
+    static final class ClosedOutput extends IOException {
+        ClosedOutput() {
+            super("stdout's reader went away");
         }
     }
 

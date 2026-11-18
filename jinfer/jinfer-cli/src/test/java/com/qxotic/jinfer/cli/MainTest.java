@@ -7,10 +7,12 @@ import java.io.IOException;
 import java.io.InputStream;
 import java.io.OutputStream;
 import java.io.PrintStream;
+import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.concurrent.TimeUnit;
 import java.util.regex.MatchResult;
 import java.util.regex.Pattern;
 import org.junit.jupiter.api.Test;
@@ -188,6 +190,30 @@ class MainTest {
         assertEquals(1, Main.run(new String[] {"--help"}, io, ModelStore.of(dir)));
         assertTrue(capture.err().contains("cannot write to stdout"));
         assertFalse(capture.err().contains("null"));
+    }
+
+    /**
+     * {@code jinfer ... | head}: a reader that leaves ends the run quietly with a broken pipe's
+     * 141, as cat and git do. The test above stays an error: a borrowed stream is not the process's
+     * stdout.
+     */
+    @Test
+    void aReaderThatLeavesEndsTheRunQuietly() throws Exception {
+        String java = ProcessHandle.current().info().command().orElseThrow();
+        Process cli =
+                new ProcessBuilder(
+                                java,
+                                "--enable-native-access=ALL-UNNAMED",
+                                "-cp",
+                                System.getProperty("java.class.path"),
+                                Main.class.getName(),
+                                "--help")
+                        .start();
+        cli.getInputStream().close(); // the reader leaves before the first line arrives
+        String err = new String(cli.getErrorStream().readAllBytes(), StandardCharsets.UTF_8);
+        assertTrue(cli.waitFor(60, TimeUnit.SECONDS));
+        assertEquals(141, cli.exitValue(), err);
+        assertEquals("", err);
     }
 
     @ParameterizedTest

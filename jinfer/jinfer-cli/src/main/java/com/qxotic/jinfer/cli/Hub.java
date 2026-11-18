@@ -315,6 +315,10 @@ final class Hub {
                             Deletes the one file 'jinfer find' prints for each reference. A
                             repository holding several cached files asks for one of their names.
                             Files outside the cache are never deleted.
+
+                            The Hugging Face cache ($HF_HUB_CACHE, $HF_HOME/hub or
+                            ~/.cache/huggingface/hub) is shared: a model removed from it is gone
+                            for every tool that reads it, whatever JINFER_MODELS says.
                             """;
                     case "prune" ->
                             """

@@ -717,9 +717,11 @@ final class Options {
                   -c, --context-capacity <int|max>
                                               default 0: min(4096, model); max or -1: maximum
                   --batch-capacity <int>      prefill/scratch width; default 512
-                  -n, --max-output-tokens <int>  generated-token budget; -1: remaining context
+                  -n, --max-output-tokens <int>
+                                              budget incl. reasoning; -1: rest of context
                   --think <off|on>            off: do not reason; on: allow model reasoning
-                  --max-reasoning-tokens <int>  reasoning budget; -1: uncapped
+                  --max-reasoning-tokens <int>
+                                              reasoning cap; default -n / 2; -1: uncapped
                   --reasoning-cutoff-message <text>  forced text when the reasoning budget runs out
                   --speculation-depth <int>   draft depth in [0, 8]; default 0: off
                   --with tokenizer=<path|ref>  another GGUF's tokenizer; its ids must match
