@@ -12,7 +12,7 @@ Versions compared, as of 2026-10-25:
 
 | Library | Version | What it is |
 |---|---|---|
-| jinfer | 0.1.0, unpublished | an in-process library over `libjinfer`, one C API, GGUF models |
+| jinfer | 0.4.0 | an in-process library over `libjinfer`, one C API, GGUF models |
 | ollama | Python client 0.6.3, server 0.33.3 | an HTTP client for a separately installed and running server |
 | transformers | 5.20.2 | the PyTorch model zoo, with `pipeline`, `generate` and chat templates |
 | llama-cpp-python | 0.3.36 | ctypes bindings over llama.cpp, with an OpenAI-shaped high-level API |
