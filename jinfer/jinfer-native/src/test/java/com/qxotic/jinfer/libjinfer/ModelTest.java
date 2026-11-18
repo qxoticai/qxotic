@@ -181,13 +181,13 @@ class ModelTest {
                                         new Options.Values(Map.of(), null, max + 1)));
         assertEquals(Errors.EINVAL, Errors.code(above));
         assertTrue(above.getMessage().contains(Integer.toString(max)), above.getMessage());
-        Errors.Failure negative =
+        RuntimeException negative =
                 assertThrows(
-                        Errors.Failure.class,
+                        RuntimeException.class,
                         () ->
                                 Model.load(
                                         lmPath.toString(), new Options.Values(Map.of(), null, -2)));
-        assertEquals(Errors.EINVAL, negative.code);
+        assertEquals(Errors.EINVAL, Errors.code(negative));
         Model emb =
                 Model.load(
                         TestModels.require(EMB).toString(),
