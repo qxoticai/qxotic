@@ -15,18 +15,21 @@ import org.graalvm.nativeimage.hosted.Feature;
  * alone it would take the width the build machine prefers, not {@code -march}'s: an x86-64-v3 image
  * built on an AVX-512 host would carry 512-bit species and run them through the Vector API's
  * fallback, a hundred times slower. This sets {@code jam.vector.width} first: 512 with AVX-512, 256
- * with AVX2, 128 otherwise. An explicit {@code -Djam.vector.width} or {@code JAM_VECTOR_WIDTH}
- * still narrows it, within what the target executes. It reads the knob itself: calling {@link
- * VectorSupport} would initialize it, and fix the species, before the width is set.
+ * with AVX2, 128 otherwise. An explicit {@code -Djam.vector.width}, or {@code JAM_VECTOR_WIDTH}
+ * passed with {@code -E} (the builder filters the environment), still narrows it, within what the
+ * target executes. It reads the knob itself: calling {@link VectorSupport} would initialize it, and
+ * fix the species, before the width is set.
+ *
+ * <p>ponytail: jinfer-core, jam-vector and toknroll-vector each carry a copy, as they are released
+ * independently; a shared module is the jinfer-image this replaced.
  */
 final class VectorWidth implements Feature {
     @Override
     public void beforeAnalysis(BeforeAnalysisAccess access) {
         Set<String> features = targetFeatures();
         int max = features.contains("AVX512F") ? 512 : features.contains("AVX2") ? 256 : 128;
-        String requested = System.getProperty("jam.vector.width");
-        if (requested == null) requested = System.getenv("JAM_VECTOR_WIDTH");
-        requested = requested == null ? "" : requested.strip();
+        String env = System.getenv("JAM_VECTOR_WIDTH");
+        String requested = System.getProperty("jam.vector.width", env == null ? "" : env).strip();
         int bits = requested.isEmpty() ? max : Integer.parseInt(requested);
         if (bits > max)
             throw new IllegalArgumentException(
@@ -40,10 +43,9 @@ final class VectorWidth implements Feature {
     }
 
     /**
-     * The target's CPU features, from the builder's {@code CPUFeatureAccess}: an internal API, so
-     * reached by reflection (the jar compiles against GraalVM's public SDK only), and a GraalVM
-     * that moves it gets its default target's features (AVX2 on x86-64, NEON elsewhere) instead of
-     * a failed build.
+     * The target's CPU features. {@code CPUFeatureAccess} is the builder's internal API, so it is
+     * reached by reflection, and a GraalVM that moves it gets its default target's features (AVX2
+     * on x86-64, NEON elsewhere) instead of a failed build.
      */
     private static Set<String> targetFeatures() {
         Set<String> features = new TreeSet<>();

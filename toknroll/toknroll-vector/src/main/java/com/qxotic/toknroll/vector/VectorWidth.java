@@ -22,6 +22,9 @@ import org.graalvm.nativeimage.hosted.RuntimeSystemProperties;
  * <p>An x86 target without AVX gets no vector code for these operations at all, and the engine
  * would run several times slower than core's own encoder: there the image starts with {@code
  * toknroll.engine=none}, which a {@code -Dtoknroll.engine} at run time overrides.
+ *
+ * <p>ponytail: jinfer-core, jam-vector and toknroll-vector each carry a copy, as they are released
+ * independently; a shared module is the jinfer-image this replaced.
  */
 final class VectorWidth implements Feature {
     @Override
@@ -49,10 +52,9 @@ final class VectorWidth implements Feature {
     }
 
     /**
-     * The target's CPU features, from the builder's {@code CPUFeatureAccess}: an internal API, so
-     * reached by reflection (the jar compiles against GraalVM's public SDK only), and a GraalVM
-     * that moves it gets its default target's features (AVX2 on x86-64, NEON elsewhere) instead of
-     * a failed build.
+     * The target's CPU features. {@code CPUFeatureAccess} is the builder's internal API, so it is
+     * reached by reflection, and a GraalVM that moves it gets its default target's features (AVX2
+     * on x86-64, NEON elsewhere) instead of a failed build.
      */
     private static Set<String> targetFeatures() {
         Set<String> features = new TreeSet<>();

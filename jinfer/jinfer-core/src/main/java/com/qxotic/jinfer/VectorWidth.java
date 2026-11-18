@@ -16,8 +16,10 @@ import org.graalvm.nativeimage.hosted.Feature;
  * on an AVX-512 host would carry 512-bit species and run them through the Vector API's fallback, a
  * hundred times slower. This sets {@code jinfer.vector.width} first: 512 with AVX-512, 256 with
  * AVX2, 128 otherwise. An explicit {@code -Djinfer.vector.width} still narrows it, within what the
- * target executes, and {@code 0} selects the scalar kernels. jam-vector and toknroll-vector pin
- * their own widths the same way.
+ * target executes, and {@code 0} selects the scalar kernels.
+ *
+ * <p>ponytail: jinfer-core, jam-vector and toknroll-vector each carry a copy, as they are released
+ * independently; a shared module is the jinfer-image this replaced.
  */
 final class VectorWidth implements Feature {
     @Override
@@ -39,10 +41,9 @@ final class VectorWidth implements Feature {
     }
 
     /**
-     * The target's CPU features, from the builder's {@code CPUFeatureAccess}: an internal API, so
-     * reached by reflection (the jar compiles against GraalVM's public SDK only), and a GraalVM
-     * that moves it gets its default target's features (AVX2 on x86-64, NEON elsewhere) instead of
-     * a failed build.
+     * The target's CPU features. {@code CPUFeatureAccess} is the builder's internal API, so it is
+     * reached by reflection, and a GraalVM that moves it gets its default target's features (AVX2
+     * on x86-64, NEON elsewhere) instead of a failed build.
      */
     private static Set<String> targetFeatures() {
         Set<String> features = new TreeSet<>();
