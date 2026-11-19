@@ -1,6 +1,6 @@
 # jinfer test models - ONE line per file: {source} {user} {repo} {file}
 # Layout on disk: <models-root>/{source}/{user}/{repo}/{file}
-# Kept identical to testkit ModelFixture by ModelFixtureManifestTest.
+# The refs suites pass to TestModels.require belong here: a requireModels run (make provider-it) fails on a missing one.
 hf.co LiquidAI LFM2.5-8B-A1B-GGUF LFM2.5-8B-A1B-Q8_0.gguf
 hf.co LiquidAI LFM2-8B-A1B-GGUF LFM2-8B-A1B-Q8_0.gguf
 hf.co LiquidAI LFM2.5-2.6B-GGUF LFM2.5-2.6B-Q8_0.gguf
@@ -9,6 +9,8 @@ hf.co LiquidAI LFM2.5-Embedding-350M-GGUF LFM2.5-Embedding-350M-Q8_0.gguf
 hf.co LiquidAI LFM2.5-ColBERT-350M-GGUF LFM2.5-ColBERT-350M-Q8_0.gguf
 hf.co LiquidAI LFM2.5-VL-3B-GGUF LFM2.5-VL-3B-Q4_K_M.gguf
 hf.co LiquidAI LFM2.5-VL-3B-GGUF mmproj-LFM2.5-VL-3B-Q8_0.gguf
+hf.co LiquidAI LFM2.5-VL-450M-GGUF LFM2.5-VL-450M-Q8_0.gguf
+hf.co LiquidAI LFM2.5-VL-450M-GGUF mmproj-LFM2.5-VL-450m-Q8_0.gguf
 hf.co LiquidAI LFM3-1.7B-GGUF LFM3-1.7B-Q8_0.gguf
 hf.co LiquidAI LFM3-VL-2B-GGUF LFM3-VL-2B-Q8_0.gguf
 hf.co LiquidAI LFM3-VL-2B-GGUF mmproj-LFM3-VL-2B-F16.gguf
@@ -35,6 +37,7 @@ hf.co unsloth gemma-4-12B-it-qat-GGUF mmproj-F32.gguf
 hf.co unsloth gemma-4-26B-A4B-it-GGUF gemma-4-26B-A4B-it-Q8_0.gguf
 hf.co unsloth Qwen3.5-2B-GGUF Qwen3.5-2B-Q8_0.gguf
 hf.co unsloth Qwen3.5-4B-GGUF Qwen3.5-4B-Q8_0.gguf
+hf.co unsloth Qwen3.5-4B-GGUF mmproj-F32.gguf
 hf.co unsloth gpt-oss-20b-GGUF gpt-oss-20b-Q8_0.gguf
 hf.co poolside Laguna-XS-2.1-GGUF Laguna-XS-2.1-Q4_K_M.gguf
 hf.co JetBrains Mellum2-12B-A2.5B-Instruct-GGUF-Q8_0 Mellum2-12B-A2.5B-Instruct-Q8_0.gguf

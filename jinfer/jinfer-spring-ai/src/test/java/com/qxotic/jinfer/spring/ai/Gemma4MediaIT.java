@@ -49,7 +49,10 @@ class Gemma4MediaIT {
                         .modelPath(MODEL)
                         .companionPath("media", MMPROJ)
                         .contextCapacity(4096)
-                        .options(JinferChatOptions.builder().maxTokens(512).build())
+                        // greedy: the GGUF's sampling defaults made a blue scene "Black" now and
+                        // then
+                        .options(
+                                JinferChatOptions.builder().maxTokens(512).temperature(0.0).build())
                         .build();
     }
 

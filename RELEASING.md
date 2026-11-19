@@ -29,6 +29,15 @@ mvn -B -pl jinfer/jinfer-cli,jinfer/jinfer-langchain4j -am test \
 ```
 
 This is a smoke gate, not full model coverage.
+
+On one machine that holds the test models, run the provider suites, LangChain4j, Spring AI and its Boot modules, and the server, with their integration tests on:
+
+```sh
+jinfer/scripts/download-models.sh
+make test-fixtures provider-it
+```
+
+CI cannot run them, as their models come to about 100 GB, so this run is their gate: a missing model or fixture fails it instead of skipping.
 Run the opt-in suites documented by each affected module, including tokenizer parity, chat and speech integrations, and native backend parity where applicable.
 Record missing models, tools and hardware explicitly rather than treating their skips as release evidence.
 

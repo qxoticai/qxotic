@@ -57,6 +57,14 @@ jota-test: ## jota full suite (closed subtree): core, memory + the tensor suite 
 jam-test: ## jam and its cross-backend parity suite (NativeJAM included when libjam loads)
 	$(MAVEN) $(MAVEN_FLAGS) -pl jam/jam-vector -am verify
 
+PROVIDERS = jinfer/jinfer-langchain4j,jinfer/jinfer-spring-ai,jinfer/jinfer-spring-ai-autoconfigure,jinfer/jinfer-spring-ai-spring-boot-starter,jinfer/jinfer-server
+
+provider-it: ## The LangChain4j, Spring AI and server suites with their integration tests, against real models: a missing model or fixture fails (fetch them with jinfer/scripts/download-models.sh and make test-fixtures)
+	$(MAVEN) $(MAVEN_FLAGS) -q -pl $(PROVIDERS) -am install -DskipTests
+	@failed=; for m in $$(echo $(PROVIDERS) | tr , ' '); do \
+	  $(MAVEN) $(MAVEN_FLAGS) -pl $$m test -Dsurefire.excludedGroups=bench,driver -Djinfer.test.requireModels=true || failed="$$failed $$m"; \
+	done; [ -z "$$failed" ] || { echo "provider-it failed:$$failed"; exit 1; }
+
 toknroll-fixtures: ## Download the enwik benchmark corpora into the cache (FIXTURES="enwik8" to fetch just one; ~350MB for both)
 	$(MAVEN) $(MAVEN_FLAGS) -q -pl toknroll/toknroll-benchmarks -am install -DskipTests -Dspotless.check.skip=true
 	$(MAVEN) $(MAVEN_FLAGS) -q -pl toknroll/toknroll-benchmarks exec:java -Dexec.mainClass=com.qxotic.toknroll.benchmarks.FetchCorpus -Dexec.classpathScope=test -Dexec.args="$(FIXTURES)"

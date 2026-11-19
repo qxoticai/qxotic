@@ -2,10 +2,7 @@ package com.qxotic.jinfer.spring.ai;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
-import static org.junit.jupiter.api.Assumptions.assumeTrue;
 
-import com.qxotic.format.gguf.GGUF;
-import com.qxotic.format.gguf.TensorEntry;
 import com.qxotic.jinfer.RuntimeState;
 import com.qxotic.jinfer.Transcription;
 import com.qxotic.jinfer.TranscriptionModel;
@@ -17,15 +14,10 @@ import io.micrometer.observation.tck.TestObservationRegistry;
 import io.micrometer.observation.tck.TestObservationRegistryAssert;
 import java.io.IOException;
 import java.lang.foreign.MemorySegment;
-import java.nio.ByteBuffer;
-import java.nio.ByteOrder;
-import java.nio.channels.FileChannel;
 import java.nio.file.Files;
 import java.nio.file.Path;
-import java.nio.file.StandardOpenOption;
 import java.time.Duration;
 import java.util.List;
-import java.util.Optional;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 import org.springframework.ai.audio.transcription.AudioTranscriptionOptions;
@@ -147,17 +139,11 @@ class JinferTranscriptionModelTest {
     @Test
     @Tag("integration")
     void transcribesWavBytesThroughTheSpringAiDoor() throws IOException {
-        Optional<Path> fixturePath = fixture("tdt-0.6b-v3-q8_0-jfk.fixture.gguf");
-        assumeTrue(fixturePath.isPresent(), "parakeet fixture not checked out");
+        // the JFK sentence, a public clip (make test-fixtures), and what it says (golden.tsv)
+        byte[] wav = Files.readAllBytes(TestModels.fixture("parakeet/en.wav"));
+        String expected =
+                "Ask not what your country can do for you, ask what you can do for your country.";
         Path model = TestModels.require("mudler/parakeet-cpp-gguf/tdt-0.6b-v3-q8_0.gguf");
-
-        byte[] wav;
-        String expected;
-        try (FileChannel channel = FileChannel.open(fixturePath.get(), StandardOpenOption.READ)) {
-            GGUF fixture = GGUF.read(fixturePath.get());
-            wav = AudioCodec.wav(new Media.Audio(floats(channel, fixture, "pcm"), 16_000, 1));
-            expected = fixture.getValue(String.class, "fixture.transcript");
-        }
 
         try (JinferTranscriptionModel transcriber =
                 JinferTranscriptionModel.builder().modelPath(model).build()) {
@@ -171,32 +157,6 @@ class JinferTranscriptionModelTest {
             assertThat(typed.text()).isEqualTo(expected);
             assertThat(typed.words()).isNotEmpty();
         }
-    }
-
-    private static float[] floats(FileChannel channel, GGUF gguf, String name) throws IOException {
-        TensorEntry tensor =
-                gguf.getTensors().stream()
-                        .filter(entry -> entry.name().equals(name))
-                        .findFirst()
-                        .orElseThrow(() -> new IllegalStateException("fixture misses " + name));
-        ByteBuffer bytes =
-                ByteBuffer.allocate(Math.toIntExact(tensor.byteSize()))
-                        .order(ByteOrder.LITTLE_ENDIAN);
-        channel.read(bytes, gguf.getTensorDataOffset() + tensor.offset());
-        bytes.flip();
-        float[] values = new float[Math.toIntExact(tensor.totalNumberOfElements())];
-        bytes.asFloatBuffer().get(values);
-        return values;
-    }
-
-    private static Optional<Path> fixture(String name) {
-        for (Path directory = Path.of("").toAbsolutePath();
-                directory != null;
-                directory = directory.getParent()) {
-            Path candidate = directory.resolve("test-fixtures").resolve("parakeet").resolve(name);
-            if (Files.isRegularFile(candidate)) return Optional.of(candidate);
-        }
-        return Optional.empty();
     }
 
     // ── doubles ───────────────────────────────────────────────────────────
