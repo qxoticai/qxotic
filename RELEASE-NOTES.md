@@ -126,6 +126,10 @@ The native libraries, the jinfer command and the wheels are built with Oracle Gr
 - **`jinfer pull` of a cached model no longer reads it whole.** A blob in the shared Hugging Face cache is named by its verified SHA-256, so name and size say it is current: 0.75 s instead of 17 s for a 25 GB model.
   A fresh download is checked once, not twice. Bytes damaged after download are replaced by `pull --force`.
 
+### Known limits
+
+- **The first calls in a fresh JVM can differ slightly.** Until the JIT compiles the Vector API's reductions, they sum in another order, so a decision's probabilities and a reply's logits can differ by a few thousandths on those calls; warm, the same input gives the same numbers in every instance.
+
 ## 0.3.1
 
 A command-based CLI, embeddings and reranking over HTTP, faster prefill, and a release-wide round of fixes.
@@ -176,6 +180,7 @@ The one unchanged artifact is `json`, at 0.2.0.
   The starter configures 2.1's session memory (`SessionService`, `SessionAdvisors`) in place of the chat memory it deprecates for 3.0; it requires Spring Boot 4.2.
   `JinferDecisionModel` takes a conversation as the transcript Spring AI's System One and Ollama decision models send d1, text, tool calls and tool results.
   The starter brings Spring AI's chat, embedding, decision and audio observation auto-configurations, so an application with a `MeterRegistry` records the `gen_ai` metrics; the speech and transcription models are observed too, and follow `spring.ai.model.audio.speech` and `spring.ai.model.audio.transcription` like Spring AI's own providers.
+  A model built from a path or a ref names its GGUF as `gen_ai.request.model` in its observations when the request names none, as Spring AI's providers name theirs.
 - **Spoken replies in Spring AI.** `JinferChatOptions.outputModalities` says what a reply is made of: unset is text alone, `TEXT` and `AUDIO` a spoken reply with its transcript from LFM3-Omni, `AUDIO` speech alone; the option decides, never the prompt.
   The speech is a `MediaPart` of `audio/wav` beside the transcript, whole from `call` and a part per stretch from `stream`; `spring.ai.jinfer.chat.output-modalities` sets the default in Spring Boot.
 - **Spoken replies in LangChain4j.** `JinferChatRequestParameters.outputModalities` says what a reply may be made of, the engine's own `Modality` enum: unset, text alone; text and audio, a spoken reply with its transcript; audio alone, speech without one; the parameter decides, never the prompt.
@@ -193,7 +198,7 @@ Coming from 0.3.0, these act differently:
   `ChatEngine.Completion.reasoningTokens` is a component, counted as the reply streams, and a thinking span the prompt seeded empty no longer appears as an empty `Content.Reasoning` part: prompt-owned tokens are the record's, not the reply's.
   A reply's parts are its stream folded, in emission order: `Content.Reasoning` is a run of reasoning text, and a call the model claimed while thinking is a `Content.ToolCall` between the runs it interrupted, no longer a part nested inside the reasoning; `Message.reasoning()` joins the runs as `text()` joins the text.
 - **A reply's record in LangChain4j and Spring AI.** The `jinfer.reply` attribute (LangChain4j) and metadata entry (Spring AI) are gone, so JSON chat memory and session stores keep a reply like any other.
-  Each chat model remembers its recent replies' records instead (up to 16M token ids): an echo that says the same replays the exact generated tokens, and an older, edited or restarted one renders from its text.
+  Each chat model remembers its recent replies' records instead (up to 16M token ids): an echo that says the same replays the exact generated tokens, and an older, edited or restarted one renders from its text, so its next reply can differ.
 - **Speech and transcription selection in Spring Boot.** `spring.ai.model.audio.speech` or `spring.ai.model.audio.transcription` set to another provider switches jinfer's model off.
 - **Refusals instead of silent defaults.** A generative model loaded as an embedder throws `IncompatibleModelException`, and the positive-integer tuning properties (`jinfer.decodeBlockSize` and the like) refuse a value they cannot use instead of ignoring it; the undocumented `vis.squareResize` switch is gone.
 - **Spring AI.** Sampling options are validated when they are built, naming the property, a blank rerank model is refused at boot, and `getReasoningBudget()` / `getReasoningBudgetMessage()` are deprecated for `getMaxReasoningTokens()` / `getReasoningCutoffMessage()`.

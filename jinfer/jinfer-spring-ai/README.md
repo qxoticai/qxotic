@@ -241,7 +241,7 @@ chat.prompt("What is my name?").advisors(SessionAdvisors.session("s1")).call().c
 
 Replies go back into the session as they came, reasoning and tool calls included, so a retained prompt cache keeps hitting across turns.
 That holds for a session stored in a database too: a reply carries nothing of jinfer's, and the model remembers its recent replies (up to 16M token ids), so an echo that says the same replays the exact generated tokens.
-An older echo, or one after a restart, renders from its text.
+An older echo, or one after a restart, renders from its text instead, re-tokenized, so its next reply can differ.
 
 ## Without Spring Boot
 

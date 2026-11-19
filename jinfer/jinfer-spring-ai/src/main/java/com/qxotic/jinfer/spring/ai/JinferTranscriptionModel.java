@@ -46,11 +46,13 @@ public final class JinferTranscriptionModel
     // Requests take the READ lock and run in PARALLEL - a state is per-call. close() takes the
     // WRITE lock, so it waits for every in-flight transcription before freeing the weights arena.
     private final ReentrantReadWriteLock lifecycle = new ReentrantReadWriteLock();
+    private final String modelName; // the GGUF's file name; null for a model the caller loaded
     private final ObservationRegistry observationRegistry;
     private final TranscriptionModelObservationConvention observationConvention; // null: default
     private volatile boolean closed;
 
     private JinferTranscriptionModel(Builder b) {
+        this.modelName = b.modelPath == null ? null : b.modelPath.getFileName().toString();
         this.observationRegistry = b.observationRegistry;
         this.observationConvention = b.observationConvention;
         Arena created = b.model == null ? Arenas.newCrossThread() : null;
@@ -91,7 +93,13 @@ public final class JinferTranscriptionModel
         }
         var context =
                 TranscriptionModelObservationContext.builder()
-                        .prompt(prompt)
+                        // the request as served names the model that hears it (a caller's own
+                        // model is refused above), as Spring AI's providers observe theirs
+                        .prompt(
+                                modelName == null
+                                        ? prompt
+                                        : new AudioTranscriptionPrompt(
+                                                prompt.getInstructions(), () -> modelName))
                         .provider("jinfer")
                         .build();
         return TranscriptionModelObservationDocumentation.TRANSCRIPTION_MODEL_OPERATION

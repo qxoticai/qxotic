@@ -316,16 +316,19 @@ public final class JinferEmbeddingModel implements EmbeddingModel, AutoCloseable
     }
 
     /**
-     * The caller's options with the builder's width filled in when they name none, so the
-     * observation records the width embedded. The model's own width is left unstated, as before.
+     * The caller's options with the model's name and the builder's width filled in where they name
+     * none, so the observation records the model and the width embedded. The model's own width is
+     * left unstated, as before.
      */
     private EmbeddingOptions withDefaults(EmbeddingOptions options) {
-        if (dimensions == loaded.dimension()
-                || (options != null && options.getDimensions() != null)) {
-            return options;
-        }
-        EmbeddingOptions.Builder merged = EmbeddingOptions.builder().dimensions(dimensions);
-        if (options != null && options.getModel() != null) merged.model(options.getModel());
+        String model = options == null ? null : options.getModel();
+        Integer width = options == null ? null : options.getDimensions();
+        boolean widthStated = width != null || dimensions == loaded.dimension();
+        if (model != null && widthStated) return options;
+        EmbeddingOptions.Builder merged =
+                EmbeddingOptions.builder().model(model != null ? model : modelName);
+        if (width != null) merged.dimensions(width);
+        else if (!widthStated) merged.dimensions(dimensions);
         return merged.build();
     }
 

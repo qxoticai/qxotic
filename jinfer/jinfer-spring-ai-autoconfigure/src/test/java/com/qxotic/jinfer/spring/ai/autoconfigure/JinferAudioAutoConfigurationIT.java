@@ -7,6 +7,7 @@ import com.qxotic.jinfer.spring.ai.JinferTranscriptionModel;
 import com.qxotic.jinfer.testkit.TestModels;
 import io.micrometer.observation.tck.TestObservationRegistry;
 import io.micrometer.observation.tck.TestObservationRegistryAssert;
+import java.nio.file.Path;
 import java.util.Locale;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
@@ -23,6 +24,10 @@ class JinferAudioAutoConfigurationIT {
 
     @Test
     void aSpokenPhraseIsHeardAndBothCallsAreObserved() {
+        Path speech =
+                TestModels.require(
+                        "hf.co/remixerdec/Inflect-Nano-v2-GGUF/inflect_nano_v2_q8_0.gguf");
+        Path transcription = TestModels.require("mudler/parakeet-cpp-gguf/tdt-0.6b-v3-q8_0.gguf");
         new ApplicationContextRunner()
                 .withConfiguration(
                         AutoConfigurations.of(
@@ -30,12 +35,8 @@ class JinferAudioAutoConfigurationIT {
                                 JinferTranscriptionAutoConfiguration.class))
                 .withBean(TestObservationRegistry.class, TestObservationRegistry::create)
                 .withPropertyValues(
-                        "spring.ai.jinfer.speech.model="
-                                + TestModels.require(
-                                        "hf.co/remixerdec/Inflect-Nano-v2-GGUF/inflect_nano_v2_q8_0.gguf"),
-                        "spring.ai.jinfer.transcription.model="
-                                + TestModels.require(
-                                        "mudler/parakeet-cpp-gguf/tdt-0.6b-v3-q8_0.gguf"))
+                        "spring.ai.jinfer.speech.model=" + speech,
+                        "spring.ai.jinfer.transcription.model=" + transcription)
                 .run(
                         context -> {
                             assertThat(context).hasNotFailed();
@@ -52,7 +53,13 @@ class JinferAudioAutoConfigurationIT {
                                             "gen_ai.client.operation", 2)
                                     .hasAnObservationWithAKeyValue(
                                             "gen_ai.operation.name", "text_to_speech")
-                                    .hasAnObservationWithAKeyValue("gen_ai.system", "jinfer");
+                                    .hasAnObservationWithAKeyValue("gen_ai.system", "jinfer")
+                                    // each names the GGUF that answered it
+                                    .hasAnObservationWithAKeyValue(
+                                            "gen_ai.request.model", speech.getFileName().toString())
+                                    .hasAnObservationWithAKeyValue(
+                                            "gen_ai.request.model",
+                                            transcription.getFileName().toString());
                         });
     }
 }

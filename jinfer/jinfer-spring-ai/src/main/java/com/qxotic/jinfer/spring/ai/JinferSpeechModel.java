@@ -65,6 +65,7 @@ public final class JinferSpeechModel implements TextToSpeechModel, AutoCloseable
     private final ReentrantReadWriteLock lifecycle = new ReentrantReadWriteLock();
     private final TextToSpeechOptions defaultOptions;
     private final int maxInputChars;
+    private final String modelName; // the GGUF's file name; null for a model the caller loaded
     private final ObservationRegistry observationRegistry;
     private final TextToSpeechModelObservationConvention observationConvention; // null: default
     private volatile boolean closed;
@@ -72,6 +73,7 @@ public final class JinferSpeechModel implements TextToSpeechModel, AutoCloseable
     private JinferSpeechModel(Builder b) {
         this.defaultOptions = TextToSpeechOptions.builder().speed(b.speed).build();
         this.maxInputChars = b.maxInputChars;
+        this.modelName = b.modelPath == null ? null : b.modelPath.getFileName().toString();
         this.observationRegistry = b.observationRegistry;
         this.observationConvention = b.observationConvention;
         // an arena this instance creates is this instance's to free on EVERY path out of here,
@@ -124,10 +126,22 @@ public final class JinferSpeechModel implements TextToSpeechModel, AutoCloseable
         }
     }
 
-    private static TextToSpeechModelObservationContext context(
+    /**
+     * The request as served, observed: its text, the model that speaks it and the speed in effect
+     * (the other knobs are refused before it is served), as Spring AI's providers observe theirs.
+     */
+    private TextToSpeechModelObservationContext context(
             TextToSpeechPrompt prompt, boolean streaming) {
+        TextToSpeechOptions asked = prompt.getOptions();
+        TextToSpeechOptions.Builder served =
+                TextToSpeechOptions.builder()
+                        .speed(
+                                asked != null && asked.getSpeed() != null
+                                        ? asked.getSpeed()
+                                        : defaultOptions.getSpeed());
+        if (modelName != null) served.model(modelName);
         return TextToSpeechModelObservationContext.builder()
-                .prompt(prompt)
+                .prompt(new TextToSpeechPrompt(prompt.getInstructions(), served.build()))
                 .provider("jinfer")
                 .streaming(streaming)
                 .build();

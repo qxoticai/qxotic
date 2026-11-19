@@ -26,7 +26,8 @@ import org.springframework.ai.chat.messages.AssistantMessage;
 final class Replies {
 
     // ponytail: 16M token ids (~64 MiB), least recently used first; an evicted echo renders from
-    // its parts (one re-prefill, never another answer). A builder knob if a deployment needs more.
+    // its parts instead, re-tokenized: one re-prefill, and its next reply can differ. A builder
+    // knob if a deployment needs more.
     private static final long BUDGET = 1L << 24;
 
     private final long budget;

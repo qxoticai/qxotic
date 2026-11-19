@@ -579,6 +579,9 @@ class JinferEmbeddingModelIT {
                 .hasNumberOfObservationsWithNameEqualTo("gen_ai.client.operation", 1);
         TestObservationRegistryAssert.assertThat(observations)
                 .hasAnObservationWithAKeyValue("gen_ai.system", "jinfer");
+        // a request naming no model is observed naming the one that embeds it
+        TestObservationRegistryAssert.assertThat(observations)
+                .hasAnObservationWithAKeyValue("gen_ai.request.model", model.modelName);
         TestObservationRegistryAssert.assertThat(observations)
                 .hasAnObservationWithAKeyName("gen_ai.usage.input_tokens");
     }

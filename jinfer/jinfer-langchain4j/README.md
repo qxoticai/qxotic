@@ -648,7 +648,9 @@ They share the weights and nothing else: listeners, defaults and cached prompts 
   whenever the reply carries tool calls.
 - A reply carries nothing of jinfer's, so chat memory stored as JSON (the JDBC, Redis and other `ChatMemoryStore`s) keeps it like any other.
   The model remembers its recent replies (up to 16M token ids): an echo that says the same replays the exact generated tokens, so a stored conversation still extends the retained session.
-  An older echo, or one after a restart, renders from its text.
+  An older echo, or one after a restart, renders from its text instead, re-tokenized, so its next reply can differ.
+- The models are synchronous: `chatAsync`, `decideAsync`, the decision router's `routeAsync` and AI Services returning `CompletableFuture` or `Mono` fail with `AsyncNotSupportedException`.
+  Inference is local computation, so wrap the blocking call in an executor of your choice; streaming, through a handler or a `Flow.Publisher`, needs no wrapping.
 - Shaded JARs must preserve `ServiceLoader` entries. With Maven Shade, add
   `ServicesResourceTransformer`.
 
