@@ -126,6 +126,7 @@ test-fixtures
 
 # Docusaurus
 node_modules/
+package-lock.json
 .docusaurus/
 .cache-loader/
 

@@ -41,10 +41,10 @@ CI cannot run them, as their models come to about 100 GB, so this run is their g
 Run the opt-in suites documented by each affected module, including tokenizer parity, chat and speech integrations, and native backend parity where applicable.
 Record missing models, tools and hardware explicitly rather than treating their skips as release evidence.
 
-Check the documentation site with the locked dependencies:
+Check the documentation site:
 
 ```sh
-npm ci
+npm install
 npm run typecheck
 npm run build
 ```
