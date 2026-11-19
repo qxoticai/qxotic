@@ -126,6 +126,22 @@
       <artifactId>jinfer-gemma-embedding2</artifactId>
       <scope>test</scope>
     </dependency>
+    <!-- JinferAudioAutoConfigurationIT speaks with Inflect and hears with Parakeet. -->
+    <dependency>
+      <groupId>com.qxotic</groupId>
+      <artifactId>jinfer-inflect2</artifactId>
+      <scope>test</scope>
+    </dependency>
+    <dependency>
+      <groupId>com.qxotic</groupId>
+      <artifactId>jinfer-parakeet</artifactId>
+      <scope>test</scope>
+    </dependency>
+    <dependency>
+      <groupId>io.micrometer</groupId>
+      <artifactId>micrometer-observation-test</artifactId>
+      <scope>test</scope>
+    </dependency>
     <dependency>
       <groupId>com.qxotic</groupId>
       <artifactId>jinfer-testkit</artifactId>

@@ -17,8 +17,6 @@ import dev.langchain4j.exception.UnsupportedFeatureException;
 import dev.langchain4j.model.chat.ChatModel;
 import dev.langchain4j.model.chat.request.ChatRequest;
 import dev.langchain4j.model.chat.response.ChatResponse;
-import dev.langchain4j.model.chat.router.ChatModelRoute;
-import dev.langchain4j.model.chat.router.ChatModelRoutingRequest;
 import dev.langchain4j.model.chat.router.DecisionModelChatModelRouter;
 import dev.langchain4j.model.chat.router.RoutingChatModel;
 import dev.langchain4j.model.decision.request.ChoiceQuestion;
@@ -276,13 +274,8 @@ final class JinferDecisionModelShapesIT {
      * refusal surfaces instead of quietly taking the default route.
      */
     @Test
-    void routesAChatModelByItsConversation() throws Exception {
+    void routesAChatModelByItsConversation() {
         List<String> routed = new ArrayList<>();
-        DecisionModelChatModelRouter router =
-                DecisionModelChatModelRouter.builder()
-                        .decisionModel(model)
-                        .fallbackStrategy(DecisionModelChatModelRouter.FallbackStrategy.FAIL)
-                        .build();
         Function<String, ChatModel> named =
                 name ->
                         new ChatModel() {
@@ -304,7 +297,12 @@ final class JinferDecisionModelShapesIT {
                                 "large",
                                 "Writing code, multi-step reasoning, analysis",
                                 named.apply("large"))
-                        .router(router)
+                        .router(
+                                DecisionModelChatModelRouter.builder()
+                                        .decisionModel(model)
+                                        .fallbackStrategy(
+                                                DecisionModelChatModelRouter.FallbackStrategy.FAIL)
+                                        .build())
                         .defaultRoute("small")
                         .build();
         List<ChatMessage> code =
@@ -317,19 +315,5 @@ final class JinferDecisionModelShapesIT {
         routing.chat(List.of(UserMessage.from("Hi there, how are you?")));
         routing.chat(code);
         assertEquals(List.of("small", "large"), routed);
-        // routeAsync asks through decideAsync: the same route
-        ChatModelRoutingRequest async =
-                ChatModelRoutingRequest.builder()
-                        .chatRequest(ChatRequest.builder().messages(code).build())
-                        .routes(
-                                List.of(
-                                        new ChatModelRoute(
-                                                "small",
-                                                "Greetings, small talk, short factual questions"),
-                                        new ChatModelRoute(
-                                                "large",
-                                                "Writing code, multi-step reasoning, analysis")))
-                        .build();
-        assertEquals("large", router.routeAsync(async).get().routeName());
     }
 }

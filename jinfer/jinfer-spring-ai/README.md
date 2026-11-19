@@ -85,14 +85,15 @@ The starter creates beans from these properties:
 | Embeddings | `spring.ai.model.embedding=jinfer` | `spring.ai.jinfer.embedding.model` |
 | Decisions | `spring.ai.model.decision=jinfer` | `spring.ai.jinfer.decision.model` |
 | Reranking | configured when a model is present | `spring.ai.jinfer.rerank.model` |
-| Speech | configured when a model is present | `spring.ai.jinfer.speech.model` |
-| Transcription | configured when a model is present | `spring.ai.jinfer.transcription.model` |
+| Speech | `spring.ai.model.audio.speech=jinfer` | `spring.ai.jinfer.speech.model` |
+| Transcription | `spring.ai.model.audio.transcription=jinfer` | `spring.ai.jinfer.transcription.model` |
 
-Chat is enabled when its model is configured and no other chat provider is selected.
+Chat, speech and transcription are also enabled when their model is configured and no other provider of that type is selected.
 Model sources may be remote references or local paths and resolve during application startup.
 Add companions under `spring.ai.jinfer.chat.companions`, keyed by capability such as `media` or `speculation`.
 `spring.ai.jinfer.chat.output-modalities=text,audio` lets a model with a voice answer in speech, see [Spoken replies](#spoken-replies).
 An embedder takes its projector the same way, as `spring.ai.jinfer.embedding.companions.media`.
+With a `MeterRegistry` in the application (Spring Boot Actuator, for example), the starter records Spring AI's `gen_ai` metrics for the chat, embedding, decision, speech and transcription models: token usage and operation timings.
 
 The [translation table](https://github.com/qxoticai/qxotic/blob/main/docs/jinfer/index.md#the-same-knob-at-each-face) maps settings between Spring AI, LangChain4j, the CLI and the server.
 
@@ -239,6 +240,8 @@ chat.prompt("What is my name?").advisors(SessionAdvisors.session("s1")).call().c
 ```
 
 Replies go back into the session as they came, reasoning and tool calls included, so a retained prompt cache keeps hitting across turns.
+That holds for a session stored in a database too: a reply carries nothing of jinfer's, and the model remembers its recent replies (up to 16M token ids), so an echo that says the same replays the exact generated tokens.
+An older echo, or one after a restart, renders from its text.
 
 ## Without Spring Boot
 
@@ -524,7 +527,7 @@ try (var model = JinferDecisionModel.builder()
 The input can be text and media parts (`DecisionInput.content(...)`) or fields (`DecisionInput.fields(...)`).
 Fields are put to the model as JSON, the form d1 was trained on; a field holding content parts adds its text (or its media's kinds) to the JSON, and its media to the input, never as base64 in the prompt.
 d1 reads images and video, d1-Omni also audio, d3 images.
-A conversation is not an input and is refused.
+A conversation (`DecisionInput.conversation(...)`) is put to the model as `{"messages": [...]}`, the transcript Spring AI's System One and Ollama decision models send d1: text, tool calls and tool results; reasoning stays out and media is refused.
 
 The questions of a call are taken the way the model was trained to, with no isolation between them guaranteed.
 On d1 and d1-Omni the input is read once for all of them, several times faster, and an answer can then shift with the questions asked beside it.

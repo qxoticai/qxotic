@@ -92,6 +92,9 @@ public final class JinferChatModel implements ChatModel, AutoCloseable {
     final JinferChatOptions options;
     final ObservationRegistry observationRegistry;
     final ChatModelObservationConvention observationConvention; // null = the default convention
+    // the engine's recent replies, shared by every view: an echo of one replays the exact tokens
+    // the model generated
+    final Replies replies;
     // cached-prompt view state: EMPTY for the base model. Converted to jinfer types ONCE at view
     // creation (media decoded once, not per request); a view's conversations all start with this
     // prefix, its KV restored from the engine's block tree instead of re-prefilled.
@@ -132,6 +135,7 @@ public final class JinferChatModel implements ChatModel, AutoCloseable {
                 engine.speculationDepth(b.speculationDepth);
             }
             this.videoSampler = b.videoSampler;
+            this.replies = new Replies();
             this.prefix = CachedPrompt.NONE;
             this.observationRegistry =
                     b.observationRegistry == null
@@ -184,6 +188,7 @@ public final class JinferChatModel implements ChatModel, AutoCloseable {
         this.observationRegistry = base.observationRegistry;
         this.observationConvention = base.observationConvention;
         this.videoSampler = base.videoSampler;
+        this.replies = base.replies;
         this.prefix = prefix;
     }
 
@@ -225,7 +230,7 @@ public final class JinferChatModel implements ChatModel, AutoCloseable {
         Objects.requireNonNull(tools, "tools");
         return withPrefix(
                 prefix.merge(
-                        JinferMappings.toMessages(prefixMessages, videoSampler),
+                        JinferMappings.toMessages(prefixMessages, videoSampler, replies),
                         JinferMappings.toTools(tools)));
     }
 
@@ -246,6 +251,12 @@ public final class JinferChatModel implements ChatModel, AutoCloseable {
 
     /** Framework types mapped away; every policy below this line lives in {@link ChatEngine}. */
     private ChatEngine.Prepared prepare(Prompt prompt) {
+        return prepare(
+                prompt, JinferMappings.toMessages(prompt.getInstructions(), videoSampler, replies));
+    }
+
+    /** As {@link #prepare(Prompt)}, the prompt's messages already mapped: media decoded once. */
+    private ChatEngine.Prepared prepare(Prompt prompt, List<Message> request) {
         JinferChatOptions options = JinferChatOptions.from(prompt.getOptions());
         validate(options);
         List<ToolCallback> callbacks = options.getToolCallbacks();
@@ -262,7 +273,7 @@ public final class JinferChatModel implements ChatModel, AutoCloseable {
             LOG.warn(prefix.toolsOverrideWarning(tools));
         }
         List<Message> messages = new ArrayList<>(prefix.messages());
-        messages.addAll(JinferMappings.toMessages(prompt.getInstructions(), videoSampler));
+        messages.addAll(request);
         // a spoken reply does not reason: allowing audio turns thinking off, as the server does,
         // so one option opens the voice
         boolean speaks =
@@ -380,6 +391,8 @@ public final class JinferChatModel implements ChatModel, AutoCloseable {
             AssistantMessage ai = JinferMappings.toAssistantMessage(done.reply());
             if (done.stopped()) {
                 ai = ai.mutate().content(TextStops.apply(ai.getText(), p.stops()).text()).build();
+            } else {
+                replies.remember(ai, done.reply().verbatim()); // the reply as delivered
             }
             return response(ai, done, UUID.randomUUID().toString());
         }
@@ -410,9 +423,12 @@ public final class JinferChatModel implements ChatModel, AutoCloseable {
     @Override
     public Flux<ChatResponse> stream(Prompt prompt) {
         Prompt effective = effectivePrompt(prompt, options);
+        // the media decoded once, for the validation below and every subscription
+        List<Message> request =
+                JinferMappings.toMessages(effective.getInstructions(), videoSampler, replies);
         // invalid requests throw here, not on the thread: prepare once eagerly (a Prepared is
         // single-use in this engine, so each subscription re-prepares below)
-        try (ChatEngine.Prepared validated = prepare(effective)) {
+        try (ChatEngine.Prepared validated = prepare(effective, request)) {
             // validation only
         }
         // per-subscription observation state: a flux is re-subscribable, and a shared
@@ -445,7 +461,7 @@ public final class JinferChatModel implements ChatModel, AutoCloseable {
                                                         // queued): the sink must hear it, or the
                                                         // subscriber waits forever
                                                         try (ChatEngine.Prepared p =
-                                                                prepare(effective)) {
+                                                                prepare(effective, request)) {
                                                             streamInto(p, sink);
                                                         } catch (Throwable t) {
                                                             sink.error(t);
@@ -520,6 +536,8 @@ public final class JinferChatModel implements ChatModel, AutoCloseable {
             // the final chunk: no text (the deltas carried it), but the tool calls the stream
             // never showed, complete, and the metadata, from the same parse that streamed
             AssistantMessage parsed = JinferMappings.toAssistantMessage(done.reply());
+            // what the chunks add up to, for a subscriber that aggregates them as ChatClient does
+            if (!done.stopped()) replies.remember(parsed, done.reply().verbatim());
             List<MessagePart> calls = new ArrayList<>();
             for (AssistantMessage.ToolCall call : parsed.getToolCalls())
                 calls.add(indexer.stamp(ToolCallPart.of(call)));

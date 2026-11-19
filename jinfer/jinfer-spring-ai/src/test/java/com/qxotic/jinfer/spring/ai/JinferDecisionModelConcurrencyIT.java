@@ -171,10 +171,9 @@ final class JinferDecisionModelConcurrencyIT {
                     UnsupportedOperationException.class,
                     () ->
                             model.call(
-                                    DecisionInput.conversation(
-                                            List.of(
-                                                    new org.springframework.ai.chat.messages
-                                                            .UserMessage("hi"))),
+                                    DecisionInput.content(
+                                            org.springframework.ai.chat.messages.part.ReasoningPart
+                                                    .of("not something to judge")),
                                     questions()));
             DecisionResponse again = model.call(TICKET, questions());
             assertEquals(

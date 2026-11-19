@@ -7,16 +7,19 @@ import com.qxotic.jinfer.testkit.TestModels;
 import dev.langchain4j.data.message.ImageContent;
 import dev.langchain4j.model.chat.StreamingChatModel;
 import dev.langchain4j.model.chat.common.AbstractStreamingChatModelIT;
+import dev.langchain4j.model.chat.common.StreamingMode;
 import dev.langchain4j.model.chat.listener.ChatModelListener;
 import dev.langchain4j.model.chat.request.ChatRequest;
 import dev.langchain4j.model.chat.request.ChatRequestParameters;
 import dev.langchain4j.model.chat.request.DefaultChatRequestParameters;
+import dev.langchain4j.model.chat.response.ChatModelStreamingEvent;
 import dev.langchain4j.model.chat.response.StreamingChatResponseHandler;
 import dev.langchain4j.model.output.TokenUsage;
 import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
+import java.util.concurrent.Flow.Publisher;
 import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
@@ -101,8 +104,14 @@ class JinferStreamingChatModelTckIT extends AbstractStreamingChatModelIT {
                         model);
     }
 
+    /** Every case twice: through the handler, and through the reactive publisher. */
     @Override
-    protected List<StreamingChatModel> models() {
+    protected List<StreamingMode> streamingModes() {
+        return List.of(StreamingMode.HANDLER, StreamingMode.PUBLISHER);
+    }
+
+    @Override
+    protected List<StreamingChatModel> baseModels() {
         // one shared model behind a non-AutoCloseable wrapper - see the blocking TCK's
         // models() note for why (JUnit autocloses arguments; fresh-per-call OOMs collection)
         if (shared == null) {
@@ -119,6 +128,11 @@ class JinferStreamingChatModelTckIT extends AbstractStreamingChatModelIT {
                     @Override
                     public void doChat(ChatRequest request, StreamingChatResponseHandler handler) {
                         m.chat(request, handler);
+                    }
+
+                    @Override
+                    public Publisher<ChatModelStreamingEvent> doChat(ChatRequest request) {
+                        return m.doChat(request);
                     }
 
                     @Override
@@ -203,7 +217,7 @@ class JinferStreamingChatModelTckIT extends AbstractStreamingChatModelIT {
     @Override
     protected void verifyToolCallbacks(
             StreamingChatResponseHandler handler, InOrder io, String id) {
-        io.verify(handler, Mockito.atLeast(0)).onPartialThinking(any());
+        io.verify(handler, Mockito.atLeast(0)).onPartialThinking(any(), any());
         io.verify(handler, Mockito.atLeast(0)).onPartialResponse(any(), any());
         io.verify(handler)
                 .onCompleteToolCall(
@@ -218,7 +232,7 @@ class JinferStreamingChatModelTckIT extends AbstractStreamingChatModelIT {
     @Override
     protected void verifyToolCallbacks(
             StreamingChatResponseHandler handler, InOrder io, StreamingChatModel model) {
-        io.verify(handler, Mockito.atLeast(0)).onPartialThinking(any());
+        io.verify(handler, Mockito.atLeast(0)).onPartialThinking(any(), any());
         io.verify(handler, Mockito.atLeast(0)).onPartialResponse(any(), any());
         io.verify(handler).onCompleteToolCall(any());
     }
@@ -226,7 +240,7 @@ class JinferStreamingChatModelTckIT extends AbstractStreamingChatModelIT {
     @Override
     protected void verifyToolCallbacks(
             StreamingChatResponseHandler handler, InOrder io, String id1, String id2) {
-        io.verify(handler, Mockito.atLeast(0)).onPartialThinking(any());
+        io.verify(handler, Mockito.atLeast(0)).onPartialThinking(any(), any());
         io.verify(handler, Mockito.atLeast(0)).onPartialResponse(any(), any());
         io.verify(handler)
                 .onCompleteToolCall(

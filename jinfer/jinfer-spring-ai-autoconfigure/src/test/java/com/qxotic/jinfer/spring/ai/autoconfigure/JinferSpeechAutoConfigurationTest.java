@@ -8,7 +8,7 @@ import org.springframework.boot.autoconfigure.AutoConfigurations;
 import org.springframework.boot.context.properties.EnableConfigurationProperties;
 import org.springframework.boot.test.context.runner.ApplicationContextRunner;
 
-/** Context behavior, no model needed: activation by model path, and property binding. */
+/** Context behavior, no model needed: selection, and property binding. */
 class JinferSpeechAutoConfigurationTest {
 
     private final ApplicationContextRunner runner =
@@ -23,6 +23,18 @@ class JinferSpeechAutoConfigurationTest {
                     assertThat(context).hasNotFailed();
                     assertThat(context).doesNotHaveBean(JinferSpeechModel.class);
                 });
+    }
+
+    @Test
+    void backsOffWhenAnotherProviderIsSelected() {
+        runner.withPropertyValues(
+                        "spring.ai.model.audio.speech=openai",
+                        "spring.ai.jinfer.speech.model=/inflect.gguf")
+                .run(
+                        context -> {
+                            assertThat(context).hasNotFailed();
+                            assertThat(context).doesNotHaveBean(JinferSpeechModel.class);
+                        });
     }
 
     @Test

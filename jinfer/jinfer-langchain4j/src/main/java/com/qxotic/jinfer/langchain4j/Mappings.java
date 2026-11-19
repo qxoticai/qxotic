@@ -8,6 +8,7 @@ import com.qxotic.jinfer.chat.JsonCodec;
 import com.qxotic.jinfer.chat.Message;
 import com.qxotic.jinfer.chat.Role;
 import com.qxotic.jinfer.chat.Tool;
+import com.qxotic.jinfer.chat.Verbatim;
 import com.qxotic.jinfer.codecs.AudioCodec;
 import com.qxotic.jinfer.codecs.ImageCodec;
 import com.qxotic.jinfer.codecs.VideoSampler;
@@ -70,13 +71,18 @@ final class Mappings {
 
     // ---- langchain4j -> jinfer ----
 
-    static List<Message> toMessages(List<ChatMessage> messages, VideoSampler videoSampler) {
+    /**
+     * The messages as the engine's: an echo of a reply this model produced replays its record,
+     * recalled from {@code replies}; any other assistant message renders from its parts.
+     */
+    static List<Message> toMessages(
+            List<ChatMessage> messages, VideoSampler videoSampler, Replies replies) {
         List<Message> out = new ArrayList<>(messages.size());
         for (ChatMessage m : messages) {
             switch (m) {
                 case SystemMessage s -> out.add(new Message(Role.SYSTEM, s.text()));
                 case UserMessage u -> out.add(new Message(Role.USER, userParts(u, videoSampler)));
-                case AiMessage ai -> out.add(assistant(ai));
+                case AiMessage ai -> out.add(assistant(ai, replies.recall(ai)));
                 case ToolExecutionResultMessage r -> {
                     // A tool result reaches the model as TEXT: the chat templates render it into
                     // the family's tool-result span, and no family has a syntax for an image (or
@@ -228,13 +234,7 @@ final class Mappings {
         return Path.of(url);
     }
 
-    private static Message assistant(AiMessage ai) {
-        // an UNMODIFIED echo of a reply this provider produced restores the parsed Message with
-        // its record; an edited echo (or one from another provider) renders from its parts
-        if (ai.attributes().get(REPLY_ATTRIBUTE) instanceof Message reply
-                && toAiMessage(reply).equals(ai)) {
-            return reply;
-        }
+    private static Message assistant(AiMessage ai, Verbatim record) {
         List<Content> parts = new ArrayList<>();
         if (ai.thinking() != null && !ai.thinking().isEmpty()) {
             parts.add(new Content.Reasoning(ai.thinking()));
@@ -249,7 +249,7 @@ final class Mappings {
                                 r.id() == null ? "" : r.id(), r.name(), args(r.arguments())));
             }
         }
-        return new Message(Role.ASSISTANT, parts);
+        return new Message(Role.ASSISTANT, parts, record);
     }
 
     /** A call's arguments JSON as the map jinfer's tools speak; empty/blank = no arguments. */
@@ -560,14 +560,6 @@ final class Mappings {
 
     // ---- jinfer reply -> langchain4j ----
 
-    /**
-     * The attribute carrying the parsed reply {@link Message} - its {@code Verbatim} record
-     * included - across the langchain4j wire. An unmodified echo restores it ({@link #assistant}),
-     * letting the template replay the turn as the EXACT generated tokens (the round-trip law; what
-     * makes retained-session hits deterministic instead of tokenization luck).
-     */
-    static final String REPLY_ATTRIBUTE = "jinfer.reply";
-
     static AiMessage toAiMessage(Message reply) {
         StringBuilder text = new StringBuilder();
         StringBuilder thinking = new StringBuilder();
@@ -577,10 +569,7 @@ final class Mappings {
         if (!text.isEmpty()) b.text(text.toString());
         if (!thinking.isEmpty()) b.thinking(thinking.toString());
         if (!calls.isEmpty()) b.toolExecutionRequests(calls);
-        // the parsed reply rides along whole: an unmodified echo restores its record instead of
-        // re-tokenizing (what makes retained-session extension hits byte-exact)
         Map<String, Object> attributes = new LinkedHashMap<>();
-        attributes.put(REPLY_ATTRIBUTE, reply);
         // the speech under langchain4j's own key, so AiMessage.audios() is the clip: WAV, so the
         // bytes name their own sample rate and channels; the transcript is the text
         reply.speech()
@@ -625,8 +614,8 @@ final class Mappings {
     }
 
     /**
-     * The same reply with replaced text - a stop-sequence cut. Attributes ride along: the reply
-     * attribute is what lets an unmodified echo re-encode to the exact generated tokens.
+     * The same reply with replaced text - a stop-sequence cut. Attributes ride along; a cut reply's
+     * record is never remembered, so its echo renders from what the caller saw.
      */
     static AiMessage withText(AiMessage ai, String text) {
         AiMessage.Builder b = AiMessage.builder();

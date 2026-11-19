@@ -131,6 +131,7 @@ A local model needs the schema for two jobs:
 
 `streaming()` shares the loaded model.
 Reasoning models stream on two lanes: content to `onPartialResponse`, thinking to `onPartialThinking`.
+Both carry the cancellation handle, so a stream can stop while the model is still thinking.
 
 ```java
 StreamingChatModel streaming = model.streaming();
@@ -158,6 +159,9 @@ assistant.chat("Tell me a haiku about rivers.")
         .onError(Throwable::printStackTrace)
         .start();
 ```
+
+AI Service methods returning a `Flow.Publisher` (or `Flux`) of text or of `AiServiceStreamingEvent`s stream through the same model, as reactive events.
+Cancelling the subscription stops the generation at its next token.
 
 ## Tools
 
@@ -596,4 +600,7 @@ The same `model(loaded)` seam exists on `JinferEmbeddingModel` (`Models.loadEmbe
 - One generation runs at a time per loaded model; concurrent `chat` calls queue fairly.
 - The response model name is the GGUF file name.
 - `FinishReason.TOOL_EXECUTION` reports whenever the reply carries tool calls.
+- A reply carries nothing of jinfer's, so chat memory stored as JSON (the JDBC, Redis and other `ChatMemoryStore`s) keeps it like any other.
+  The model remembers its recent replies (up to 16M token ids): an echo that says the same replays the exact generated tokens, so a stored conversation still extends the retained session.
+  An older echo, or one after a restart, renders from its text.
 - Shaded jars need Maven Shade's `ServicesResourceTransformer` (architecture ports register via `ServiceLoader`).

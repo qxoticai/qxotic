@@ -1420,7 +1420,7 @@ class ParallelTest {
             long[] ids =
                     Thread.getAllStackTraces().keySet().stream()
                             .filter(t -> workers.contains(t.getName()))
-                            .mapToLong(Thread::getId)
+                            .mapToLong(Thread::threadId)
                             .toArray();
             long cpu0 = 0;
             for (long id : ids) cpu0 += mx.getThreadCpuTime(id);
@@ -1479,9 +1479,9 @@ class ParallelTest {
             long[] ids =
                     workers.stream()
                             .filter(t -> t != Thread.currentThread())
-                            .mapToLong(Thread::getId)
+                            .mapToLong(Thread::threadId)
                             .toArray();
-            long me = Thread.currentThread().getId();
+            long me = Thread.currentThread().threadId();
             int regions = 100_000;
             long selfBefore = sun.getThreadAllocatedBytes(me), workersBefore = 0;
             for (long id : ids) workersBefore += sun.getThreadAllocatedBytes(id);

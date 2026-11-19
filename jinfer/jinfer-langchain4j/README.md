@@ -223,6 +223,9 @@ assistant.chat("Tell me a haiku about rivers.")
         .start();
 ```
 
+AI Service methods returning a `Flow.Publisher` (or `Flux`) of text or of `AiServiceStreamingEvent`s stream through the same model, as reactive events.
+Cancelling the subscription stops the generation at its next token.
+
 ## Tool calling
 
 Use LangChain4j tools; `AiServices` runs the loop:
@@ -643,6 +646,9 @@ They share the weights and nothing else: listeners, defaults and cached prompts 
 - One generation runs at a time per loaded model; concurrent `chat` calls queue fairly.
 - The model name in responses is the GGUF file name; `FinishReason.TOOL_EXECUTION` is reported
   whenever the reply carries tool calls.
+- A reply carries nothing of jinfer's, so chat memory stored as JSON (the JDBC, Redis and other `ChatMemoryStore`s) keeps it like any other.
+  The model remembers its recent replies (up to 16M token ids): an echo that says the same replays the exact generated tokens, so a stored conversation still extends the retained session.
+  An older echo, or one after a restart, renders from its text.
 - Shaded JARs must preserve `ServiceLoader` entries. With Maven Shade, add
   `ServicesResourceTransformer`.
 

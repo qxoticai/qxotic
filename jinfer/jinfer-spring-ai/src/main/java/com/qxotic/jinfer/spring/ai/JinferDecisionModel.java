@@ -25,9 +25,12 @@ import java.util.Locale;
 import java.util.Map;
 import java.util.Objects;
 import java.util.concurrent.locks.ReentrantLock;
+import org.springframework.ai.chat.messages.Message;
 import org.springframework.ai.chat.messages.part.MediaPart;
 import org.springframework.ai.chat.messages.part.MessagePart;
 import org.springframework.ai.chat.messages.part.TextPart;
+import org.springframework.ai.chat.messages.part.ToolCallPart;
+import org.springframework.ai.chat.messages.part.ToolResultPart;
 import org.springframework.ai.decision.DecisionModel;
 import org.springframework.ai.decision.DecisionPrompt;
 import org.springframework.ai.decision.DecisionResponse;
@@ -59,7 +62,9 @@ import org.springframework.ai.decision.question.YesNoQuestion;
  * <p>The input is content - text, images, audio and video parts in their order, the media read
  * through the model's towers, its {@code media} companion - or fields, put to the model as JSON, a
  * member a line. A field holding content parts is its text; its media join the input's, and a field
- * of media alone is named by their kinds. A conversation is not an input and is refused.
+ * of media alone is named by their kinds. A conversation is its transcript, {@code {"messages":
+ * [...]}}, as Spring AI's System One and Ollama decision models send d1: text, tool calls and tool
+ * results; reasoning stays out and media is refused.
  *
  * <p>The questions of a prompt are answered in its order, the model's own way unless {@link
  * Builder#independent} asks for each alone.
@@ -218,12 +223,90 @@ public final class JinferDecisionModel implements DecisionModel, AutoCloseable {
                 parts.add(new Content.Text(JsonCodec.stringify(plain, true)));
                 yield parts;
             }
-            case ConversationInput conversation ->
-                    throw new UnsupportedOperationException(
-                            "a jinfer decision model judges content or fields, not a conversation:"
-                                    + " put what is to be judged as DecisionInput.text(...),"
-                                    + " content(...) or fields(...)");
+            case ConversationInput conversation -> {
+                // ponytail: text only, as Spring AI's System One and Ollama decision models send
+                // d1; media refused until a caller needs it (accepting it later breaks nobody)
+                List<Map<String, Object>> messages = new ArrayList<>();
+                for (Message message : conversation.getMessages()) {
+                    Map<String, Object> entry = message(message);
+                    if (entry != null) messages.add(entry);
+                }
+                if (messages.isEmpty())
+                    throw new IllegalArgumentException(
+                            "the conversation has nothing to judge: only reasoning or blank"
+                                    + " messages");
+                yield List.of(
+                        new Content.Text(JsonCodec.stringify(Map.of("messages", messages), true)));
+            }
         };
+    }
+
+    /**
+     * A message as Spring AI's System One mapper writes it: its role, its text as content, its tool
+     * calls (JSON arguments nested) and tool results. Reasoning and unknown parts are not what is
+     * judged and stay out; a message with nothing else is null.
+     */
+    private static Map<String, Object> message(Message message) {
+        String role = message.getMessageType().getValue();
+        StringBuilder content = new StringBuilder();
+        List<Map<String, Object>> calls = new ArrayList<>(), results = new ArrayList<>();
+        for (MessagePart part : ConversationInput.parts(message)) {
+            switch (part) {
+                case TextPart t -> content.append(t.text());
+                case MediaPart m -> throw refusedMedia(role);
+                case ToolCallPart c -> {
+                    Map<String, Object> call = new LinkedHashMap<>();
+                    call.put("id", c.toolCall().id());
+                    call.put("name", c.toolCall().name());
+                    call.put("arguments", arguments(c.toolCall().arguments()));
+                    calls.add(call);
+                }
+                case ToolResultPart r -> {
+                    Map<String, Object> result = new LinkedHashMap<>();
+                    result.put("id", r.id());
+                    result.put("name", r.name());
+                    result.put("result", plain(r.content(), role));
+                    if (r.isError()) result.put("error", true);
+                    results.add(result);
+                }
+                default -> {} // reasoning, unknown parts
+            }
+        }
+        boolean hasContent = !content.toString().isBlank();
+        if (!hasContent && calls.isEmpty() && results.isEmpty()) return null;
+        Map<String, Object> entry = new LinkedHashMap<>();
+        entry.put("role", role);
+        if (hasContent) entry.put("content", content.toString());
+        if (!calls.isEmpty()) entry.put("tool_calls", calls);
+        if (!results.isEmpty()) entry.put("tool_results", results);
+        return entry;
+    }
+
+    /** JSON-object arguments nest; anything else, malformed included, stays the string it is. */
+    private static Object arguments(String arguments) {
+        if (arguments == null || !arguments.strip().startsWith("{")) return arguments;
+        try {
+            return JsonCodec.parse(arguments);
+        } catch (RuntimeException notJson) {
+            return arguments;
+        }
+    }
+
+    /** A tool result's text; media refused as in a message. */
+    private static String plain(List<MessagePart> parts, String role) {
+        StringBuilder text = new StringBuilder();
+        for (MessagePart part : parts) {
+            if (part instanceof MediaPart) throw refusedMedia(role);
+            if (part instanceof TextPart t) text.append(t.text());
+        }
+        return text.toString();
+    }
+
+    private static UnsupportedOperationException refusedMedia(String role) {
+        return new UnsupportedOperationException(
+                "a conversation is judged as text: a "
+                        + role
+                        + " message carries media; put media in DecisionInput.content(...)");
     }
 
     private Content part(MessagePart part) {

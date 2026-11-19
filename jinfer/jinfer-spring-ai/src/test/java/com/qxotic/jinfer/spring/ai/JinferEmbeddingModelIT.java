@@ -9,6 +9,7 @@ import com.qxotic.jinfer.chat.ModelProvider.IncompatibleModelException;
 import com.qxotic.jinfer.chat.Models;
 import com.qxotic.jinfer.testkit.TestModels;
 import io.micrometer.observation.tck.TestObservationRegistry;
+import io.micrometer.observation.tck.TestObservationRegistryAssert;
 import java.lang.foreign.Arena;
 import java.nio.file.Path;
 import java.util.ArrayList;
@@ -337,7 +338,8 @@ class JinferEmbeddingModelIT {
                                 .asString();
                 seen.clear();
                 narrow.call(new EmbeddingRequest(List.of(text), null));
-                seen.assertThat().hasAnObservationWithAKeyValue(dimensionsKey, "256");
+                TestObservationRegistryAssert.assertThat(seen)
+                        .hasAnObservationWithAKeyValue(dimensionsKey, "256");
                 seen.clear();
                 assertEquals(
                         512,
@@ -348,7 +350,8 @@ class JinferEmbeddingModelIT {
                                 .getResult()
                                 .getOutput()
                                 .length);
-                seen.assertThat().hasAnObservationWithAKeyValue(dimensionsKey, "512");
+                TestObservationRegistryAssert.assertThat(seen)
+                        .hasAnObservationWithAKeyValue(dimensionsKey, "512");
 
                 // the store sizes nothing itself: add and search agree on 256 or fail
                 var store = SimpleVectorStore.builder(narrow).build();
@@ -572,11 +575,12 @@ class JinferEmbeddingModelIT {
     void observationOnCall() {
         observations.clear();
         model.call(new EmbeddingRequest(corpus(3), null));
-        observations
-                .assertThat()
+        TestObservationRegistryAssert.assertThat(observations)
                 .hasNumberOfObservationsWithNameEqualTo("gen_ai.client.operation", 1);
-        observations.assertThat().hasAnObservationWithAKeyValue("gen_ai.system", "jinfer");
-        observations.assertThat().hasAnObservationWithAKeyName("gen_ai.usage.input_tokens");
+        TestObservationRegistryAssert.assertThat(observations)
+                .hasAnObservationWithAKeyValue("gen_ai.system", "jinfer");
+        TestObservationRegistryAssert.assertThat(observations)
+                .hasAnObservationWithAKeyName("gen_ai.usage.input_tokens");
     }
 
     @Test

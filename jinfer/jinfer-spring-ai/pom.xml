@@ -140,6 +140,12 @@
       <artifactId>spring-ai-test</artifactId>
       <scope>test</scope>
     </dependency>
+    <!-- the session store's own codec: a reply's record survives the JSON a session repository writes -->
+    <dependency>
+      <groupId>org.springframework.ai</groupId>
+      <artifactId>spring-ai-session</artifactId>
+      <scope>test</scope>
+    </dependency>
     <dependency>
       <groupId>org.assertj</groupId>
       <artifactId>assertj-core</artifactId>

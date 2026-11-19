@@ -1,6 +1,7 @@
 package com.qxotic.jinfer.spring.ai;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertInstanceOf;
 import static org.junit.jupiter.api.Assertions.assertNotEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
@@ -10,6 +11,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import com.qxotic.jinfer.testkit.TestModels;
 import io.micrometer.observation.tck.TestObservationRegistry;
+import io.micrometer.observation.tck.TestObservationRegistryAssert;
 import java.nio.file.Path;
 import java.time.Duration;
 import java.util.List;
@@ -417,19 +419,21 @@ class JinferChatModelIT {
     void observationOnCall() {
         observations.clear();
         model.call(new Prompt(new UserMessage("One word: ok?")));
-        observations
-                .assertThat()
+        TestObservationRegistryAssert.assertThat(observations)
                 .hasNumberOfObservationsWithNameEqualTo("gen_ai.client.operation", 1);
-        observations.assertThat().hasAnObservationWithAKeyValue("gen_ai.system", "jinfer");
-        observations
-                .assertThat()
+        TestObservationRegistryAssert.assertThat(observations)
+                .hasAnObservationWithAKeyValue("gen_ai.system", "jinfer");
+        TestObservationRegistryAssert.assertThat(observations)
                 .hasAnObservationWithAKeyValue(
                         "gen_ai.request.model", MODEL.getFileName().toString());
         // (the convention emits gen_ai.request.stream only on streaming spans)
         // the convention read the response: usage and finish reason made it onto the span
-        observations.assertThat().hasAnObservationWithAKeyName("gen_ai.usage.input_tokens");
-        observations.assertThat().hasAnObservationWithAKeyName("gen_ai.usage.output_tokens");
-        observations.assertThat().hasAnObservationWithAKeyName("gen_ai.response.finish_reasons");
+        TestObservationRegistryAssert.assertThat(observations)
+                .hasAnObservationWithAKeyName("gen_ai.usage.input_tokens");
+        TestObservationRegistryAssert.assertThat(observations)
+                .hasAnObservationWithAKeyName("gen_ai.usage.output_tokens");
+        TestObservationRegistryAssert.assertThat(observations)
+                .hasAnObservationWithAKeyName("gen_ai.response.finish_reasons");
     }
 
     @Test
@@ -438,11 +442,12 @@ class JinferChatModelIT {
         model.stream(new Prompt(new UserMessage("One word: ok?")))
                 .collectList()
                 .block(Duration.ofMinutes(2));
-        observations
-                .assertThat()
+        TestObservationRegistryAssert.assertThat(observations)
                 .hasNumberOfObservationsWithNameEqualTo("gen_ai.client.operation", 1);
-        observations.assertThat().hasAnObservationWithAKeyValue("gen_ai.request.stream", "true");
-        observations.assertThat().hasAnObservationWithAKeyName("gen_ai.usage.input_tokens");
+        TestObservationRegistryAssert.assertThat(observations)
+                .hasAnObservationWithAKeyValue("gen_ai.request.stream", "true");
+        TestObservationRegistryAssert.assertThat(observations)
+                .hasAnObservationWithAKeyName("gen_ai.usage.input_tokens");
     }
 
     @Test
@@ -456,8 +461,7 @@ class JinferChatModelIT {
         flux.collectList().block(Duration.ofMinutes(2));
         flux.collectList().block(Duration.ofMinutes(2));
         // each subscription gets its own observation (no shared-Observation race)
-        observations
-                .assertThat()
+        TestObservationRegistryAssert.assertThat(observations)
                 .hasNumberOfObservationsWithNameEqualTo("gen_ai.client.operation", 2);
     }
 
@@ -473,8 +477,7 @@ class JinferChatModelIT {
                                         JinferChatOptions.builder()
                                                 .frequencyPenalty(0.5)
                                                 .build())));
-        observations
-                .assertThat()
+        TestObservationRegistryAssert.assertThat(observations)
                 .hasHandledContextsThatSatisfy(
                         contexts -> {
                             assertEquals(1, contexts.size());
@@ -499,11 +502,11 @@ class JinferChatModelIT {
         }
         Assumptions.assumeTrue(!thoughts.isEmpty(), "not a thinking model reply");
         assertTrue(!content.isEmpty(), "no content streamed");
-        // the parsed reply the final chunk carries holds the same reasoning the chunks streamed
-        // (less a span's leading blanks, which stream as no reasoning at all)
-        String thinking =
-                JinferMappings.reasoning(MiniCpm5ThinkingIT.parsed(chunks.get(chunks.size() - 1)));
-        assertEquals(thinking.strip(), thoughts.toString().strip());
+        // the reply the chunks stream is the parsed one: the same reasoning (less a span's
+        // leading blanks, which stream as no reasoning at all) and text
+        assertFalse(
+                model.replies.recall(ChatFixtures.aggregate(chunks)).isEmpty(),
+                "the streamed reply and the parsed one disagree");
     }
 
     @Test

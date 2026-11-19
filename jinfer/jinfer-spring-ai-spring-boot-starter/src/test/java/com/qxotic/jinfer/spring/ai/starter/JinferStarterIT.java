@@ -7,7 +7,9 @@ import com.qxotic.jinfer.spring.ai.JinferChatModel;
 import com.qxotic.jinfer.spring.ai.autoconfigure.JinferChatAutoConfiguration;
 import com.qxotic.jinfer.spring.ai.autoconfigure.JinferSessionAutoConfiguration;
 import com.qxotic.jinfer.testkit.TestModels;
+import io.micrometer.core.instrument.MeterRegistry;
 import io.micrometer.observation.tck.TestObservationRegistry;
+import io.micrometer.observation.tck.TestObservationRegistryAssert;
 import java.nio.file.Path;
 import java.util.concurrent.atomic.AtomicReference;
 import org.junit.jupiter.api.BeforeAll;
@@ -15,6 +17,7 @@ import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 import org.springframework.ai.chat.client.ChatClient;
 import org.springframework.ai.model.chat.client.autoconfigure.ChatClientAutoConfiguration;
+import org.springframework.ai.model.chat.observation.autoconfigure.ChatObservationAutoConfiguration;
 import org.springframework.ai.model.session.autoconfigure.SessionServiceAutoConfiguration;
 import org.springframework.ai.model.tool.autoconfigure.ToolCallingAutoConfiguration;
 import org.springframework.ai.session.SessionService;
@@ -23,6 +26,10 @@ import org.springframework.ai.support.ToolCallbacks;
 import org.springframework.ai.tool.ToolCallback;
 import org.springframework.ai.tool.annotation.Tool;
 import org.springframework.boot.autoconfigure.AutoConfigurations;
+import org.springframework.boot.micrometer.metrics.autoconfigure.CompositeMeterRegistryAutoConfiguration;
+import org.springframework.boot.micrometer.metrics.autoconfigure.MetricsAutoConfiguration;
+import org.springframework.boot.micrometer.metrics.autoconfigure.export.simple.SimpleMetricsExportAutoConfiguration;
+import org.springframework.boot.micrometer.observation.autoconfigure.ObservationAutoConfiguration;
 import org.springframework.boot.test.context.runner.ApplicationContextRunner;
 
 /**
@@ -73,7 +80,7 @@ class JinferStarterIT {
                                     context.getBean(ChatClient.Builder.class)
                                             .build()
                                             .prompt("What is the weather in Paris?")
-                                            .toolCallbacks(weather)
+                                            .tools(weather)
                                             .call()
                                             .content();
                             assertThat(answer).contains("18");
@@ -132,6 +139,37 @@ class JinferStarterIT {
                         });
     }
 
+    /** The starter records the gen_ai metrics once the application has a meter registry. */
+    @Test
+    void aChatRecordsTheGenAiMetrics() {
+        new ApplicationContextRunner()
+                .withConfiguration(
+                        AutoConfigurations.of(
+                                ObservationAutoConfiguration.class,
+                                MetricsAutoConfiguration.class,
+                                CompositeMeterRegistryAutoConfiguration.class,
+                                SimpleMetricsExportAutoConfiguration.class,
+                                ChatObservationAutoConfiguration.class,
+                                JinferChatAutoConfiguration.class))
+                .withPropertyValues(
+                        "spring.ai.jinfer.chat.model=" + MODEL,
+                        "spring.ai.jinfer.chat.context-capacity=4096",
+                        "spring.ai.jinfer.chat.max-tokens=32")
+                .run(
+                        context -> {
+                            assertThat(context).hasNotFailed();
+                            context.getBean(JinferChatModel.class).call("One word: ok?");
+                            MeterRegistry meters = context.getBean(MeterRegistry.class);
+                            assertThat(
+                                            meters.find("gen_ai.client.token.usage")
+                                                    .tag("gen_ai.token.type", "input")
+                                                    .tag("gen_ai.system", "jinfer")
+                                                    .counter())
+                                    .isNotNull()
+                                    .satisfies(c -> assertThat(c.count()).isPositive());
+                        });
+    }
+
     @Test
     void observationRegistryIsWiredFromTheContext() {
         new ApplicationContextRunner()
@@ -145,12 +183,12 @@ class JinferStarterIT {
                         context -> {
                             assertThat(context).hasNotFailed();
                             context.getBean(JinferChatModel.class).call("One word: ok?");
-                            context.getBean(TestObservationRegistry.class)
-                                    .assertThat()
+                            TestObservationRegistryAssert.assertThat(
+                                            context.getBean(TestObservationRegistry.class))
                                     .hasNumberOfObservationsWithNameEqualTo(
                                             "gen_ai.client.operation", 1);
-                            context.getBean(TestObservationRegistry.class)
-                                    .assertThat()
+                            TestObservationRegistryAssert.assertThat(
+                                            context.getBean(TestObservationRegistry.class))
                                     .hasAnObservationWithAKeyValue("gen_ai.system", "jinfer");
                         });
     }

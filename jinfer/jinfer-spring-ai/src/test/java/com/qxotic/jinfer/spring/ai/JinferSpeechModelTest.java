@@ -14,6 +14,8 @@ import com.qxotic.jinfer.chat.Models;
 import com.qxotic.jinfer.media.Media;
 import com.qxotic.jinfer.testkit.TestModels;
 import com.qxotic.jota.memory.MemoryArena;
+import io.micrometer.observation.tck.TestObservationRegistry;
+import io.micrometer.observation.tck.TestObservationRegistryAssert;
 import java.lang.foreign.Arena;
 import java.lang.foreign.MemorySegment;
 import java.nio.charset.StandardCharsets;
@@ -233,6 +235,25 @@ final class JinferSpeechModelTest {
                     24000, (int) clips.get(0).getMetadata().get(JinferSpeechModel.SAMPLE_RATE));
             assertEquals(1, (int) clips.get(0).getMetadata().get(JinferSpeechModel.CHANNELS));
         }
+    }
+
+    /** A call and a stream are one observation each, the stream's ending with the stream. */
+    @Test
+    void callsAndStreamsAreObserved() {
+        TestObservationRegistry observations = TestObservationRegistry.create();
+        try (var speech =
+                JinferSpeechModel.builder()
+                        .model(new ToyModel())
+                        .observationRegistry(observations)
+                        .build()) {
+            speech.call(new TextToSpeechPrompt("hello"));
+            speech.stream(new TextToSpeechPrompt("hello")).blockLast();
+        }
+        TestObservationRegistryAssert.assertThat(observations)
+                .hasNumberOfObservationsWithNameEqualTo("gen_ai.client.operation", 2)
+                .hasAnObservationWithAKeyValue("gen_ai.system", "jinfer")
+                .hasAnObservationWithAKeyValue("gen_ai.operation.name", "text_to_speech")
+                .doesNotHaveAnyRemainingCurrentObservation();
     }
 
     @Test

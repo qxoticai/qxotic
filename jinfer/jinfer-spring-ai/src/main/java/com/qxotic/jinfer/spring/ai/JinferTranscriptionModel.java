@@ -10,6 +10,7 @@ import com.qxotic.jinfer.chat.Models;
 import com.qxotic.jinfer.codecs.AudioCodec;
 import com.qxotic.jinfer.hub.ModelStore;
 import com.qxotic.jinfer.media.Media;
+import io.micrometer.observation.ObservationRegistry;
 import java.io.IOException;
 import java.io.UncheckedIOException;
 import java.lang.foreign.Arena;
@@ -20,6 +21,10 @@ import org.springframework.ai.audio.transcription.AudioTranscription;
 import org.springframework.ai.audio.transcription.AudioTranscriptionOptions;
 import org.springframework.ai.audio.transcription.AudioTranscriptionPrompt;
 import org.springframework.ai.audio.transcription.AudioTranscriptionResponse;
+import org.springframework.ai.audio.transcription.observation.DefaultTranscriptionModelObservationConvention;
+import org.springframework.ai.audio.transcription.observation.TranscriptionModelObservationContext;
+import org.springframework.ai.audio.transcription.observation.TranscriptionModelObservationConvention;
+import org.springframework.ai.audio.transcription.observation.TranscriptionModelObservationDocumentation;
 import org.springframework.core.io.Resource;
 
 /**
@@ -33,14 +38,21 @@ import org.springframework.core.io.Resource;
 public final class JinferTranscriptionModel
         implements org.springframework.ai.audio.transcription.TranscriptionModel, AutoCloseable {
 
+    private static final TranscriptionModelObservationConvention DEFAULT_CONVENTION =
+            new DefaultTranscriptionModelObservationConvention();
+
     private final TranscriptionModel<?, ?, ?> model;
     private final Arena owned; // null unless this instance loaded the weights
     // Requests take the READ lock and run in PARALLEL - a state is per-call. close() takes the
     // WRITE lock, so it waits for every in-flight transcription before freeing the weights arena.
     private final ReentrantReadWriteLock lifecycle = new ReentrantReadWriteLock();
+    private final ObservationRegistry observationRegistry;
+    private final TranscriptionModelObservationConvention observationConvention; // null: default
     private volatile boolean closed;
 
     private JinferTranscriptionModel(Builder b) {
+        this.observationRegistry = b.observationRegistry;
+        this.observationConvention = b.observationConvention;
         Arena created = b.model == null ? Arenas.newCrossThread() : null;
         try {
             this.model = b.model != null ? b.model : Models.loadTranscription(b.modelPath, created);
@@ -77,7 +89,25 @@ public final class JinferTranscriptionModel
         } catch (IOException e) {
             throw new UncheckedIOException("failed to read " + audio.getDescription(), e);
         }
-        return new AudioTranscriptionResponse(new AudioTranscription(transcribe(bytes).text()));
+        var context =
+                TranscriptionModelObservationContext.builder()
+                        .prompt(prompt)
+                        .provider("jinfer")
+                        .build();
+        return TranscriptionModelObservationDocumentation.TRANSCRIPTION_MODEL_OPERATION
+                .observation(
+                        observationConvention,
+                        DEFAULT_CONVENTION,
+                        () -> context,
+                        observationRegistry)
+                .observe(
+                        () -> {
+                            var response =
+                                    new AudioTranscriptionResponse(
+                                            new AudioTranscription(transcribe(bytes).text()));
+                            context.setResponse(response);
+                            return response;
+                        });
     }
 
     /** Transcribes an audio file (any format {@code jinfer-codecs} decodes). */
@@ -138,6 +168,8 @@ public final class JinferTranscriptionModel
         private Object source; // Path | model-ref String | TranscriptionModel: last setter wins
         private TranscriptionModel<?, ?, ?> model; // derived at build()
         private Path modelPath; // derived from source at build()
+        private ObservationRegistry observationRegistry = ObservationRegistry.NOOP;
+        private TranscriptionModelObservationConvention observationConvention;
 
         /**
          * A model you loaded yourself - the typed path, where a port's own knobs are expressible.
@@ -168,6 +200,22 @@ public final class JinferTranscriptionModel
         public Builder model(String modelRef) {
             ModelStore.requireRef(modelRef);
             this.source = modelRef;
+            return this;
+        }
+
+        /** Metrics/tracing registry; default {@link ObservationRegistry#NOOP} (zero cost). */
+        public Builder observationRegistry(ObservationRegistry observationRegistry) {
+            this.observationRegistry = Objects.requireNonNull(observationRegistry);
+            return this;
+        }
+
+        /**
+         * Custom observation convention; default {@link
+         * DefaultTranscriptionModelObservationConvention}.
+         */
+        public Builder observationConvention(
+                TranscriptionModelObservationConvention observationConvention) {
+            this.observationConvention = observationConvention;
             return this;
         }
 

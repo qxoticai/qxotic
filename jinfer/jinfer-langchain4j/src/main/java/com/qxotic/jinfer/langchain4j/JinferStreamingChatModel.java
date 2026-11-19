@@ -12,26 +12,38 @@ import dev.langchain4j.model.chat.StreamingChatModel;
 import dev.langchain4j.model.chat.listener.ChatModelListener;
 import dev.langchain4j.model.chat.request.ChatRequest;
 import dev.langchain4j.model.chat.request.ChatRequestParameters;
+import dev.langchain4j.model.chat.response.ChatModelStreamingEvent;
 import dev.langchain4j.model.chat.response.ChatResponse;
+import dev.langchain4j.model.chat.response.CompleteResponse;
 import dev.langchain4j.model.chat.response.CompleteToolCall;
 import dev.langchain4j.model.chat.response.PartialResponse;
 import dev.langchain4j.model.chat.response.PartialResponseContext;
 import dev.langchain4j.model.chat.response.PartialThinking;
+import dev.langchain4j.model.chat.response.PartialThinkingContext;
+import dev.langchain4j.model.chat.response.RawStreamingEvent;
 import dev.langchain4j.model.chat.response.StreamingChatResponseHandler;
 import dev.langchain4j.model.chat.response.StreamingHandle;
 import java.util.List;
 import java.util.Set;
+import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.Executor;
+import java.util.concurrent.Flow;
+import java.util.concurrent.Flow.Publisher;
+import java.util.concurrent.SubmissionPublisher;
 import java.util.concurrent.atomic.AtomicBoolean;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 /**
  * Streaming twin of {@link JinferChatModel} - built via {@code
  * JinferChatModel.builder()....buildStreaming()}, or from a live model via {@code streaming()} (the
  * GGUF loads once either way): the engine's single lazy driver thread runs the generation and
  * forwards the native {@link ReplyParser}'s two lanes to langchain4j's two streaming channels -
- * content fragments to {@code onPartialResponse} (with a cancellation handle), reasoning fragments
- * to {@code onPartialThinking}; a spoken reply's speech comes a stretch at a time through {@code
- * onUnmappedRawEvent} as the engine's {@code Media.Audio}, and whole on the complete response.
- * Models without a native parser stream raw decoded text.
+ * content fragments to {@code onPartialResponse}, reasoning fragments to {@code onPartialThinking},
+ * each with the cancellation handle; a spoken reply's speech comes a stretch at a time through
+ * {@code onUnmappedRawEvent} as the engine's {@code Media.Audio}, and whole on the complete
+ * response. Models without a native parser stream raw decoded text. The reactive {@code
+ * chat(ChatRequest)} publishes the same callbacks as events.
  *
  * <p>Lifecycle: the twin shares the blocking model's engine - {@code close()} on either closes
  * both, and with them every cached-prompt view (see {@link JinferChatModel}'s Lifecycle paragraph).
@@ -53,6 +65,14 @@ import java.util.concurrent.atomic.AtomicBoolean;
  * chat} for those, or use the blocking twin's listeners.
  */
 public final class JinferStreamingChatModel implements StreamingChatModel, AutoCloseable {
+
+    private static final Logger LOG = LoggerFactory.getLogger(JinferStreamingChatModel.class);
+
+    /** Where events reach subscribers: the pool CompletableFuture runs async work on. */
+    private static final Executor DELIVERY = new CompletableFuture<Void>().defaultExecutor();
+
+    /** Past any context window, so submit never blocks; the buffer grows only as events queue. */
+    private static final int MAX_BUFFERED_EVENTS = 1 << 20;
 
     private final JinferChatModel model; // the blocking twin: engine, defaults, prefix, listeners
 
@@ -111,6 +131,111 @@ public final class JinferStreamingChatModel implements StreamingChatModel, AutoC
         }
     }
 
+    /**
+     * The callbacks as a {@code Flow.Publisher} of events, what AI Services returning a {@code
+     * Publisher} or {@code Flux} of events subscribe to. Each subscriber gets its own generation
+     * through a {@link SubmissionPublisher}, which keeps the subscriber's demand and delivers off
+     * the engine's thread. Its buffer outgrows any reply, so a subscriber that stops requesting
+     * holds one buffered reply, never the engine; a cancelled subscription stops the generation at
+     * its next streamed token.
+     */
+    @Override
+    public Publisher<ChatModelStreamingEvent> doChat(ChatRequest request) {
+        return subscriber -> {
+            SubmissionPublisher<ChatModelStreamingEvent> events =
+                    new SubmissionPublisher<>(DELIVERY, MAX_BUFFERED_EVENTS);
+            events.subscribe(new Guarded(subscriber));
+            try {
+                doChat(request, new Relay(events));
+            } catch (RuntimeException | Error refused) {
+                events.closeExceptionally(refused);
+            }
+        };
+    }
+
+    /**
+     * A subscriber whose throwing {@code onNext} is cancelled, as langchain4j's publisher contract
+     * asks (Reactive Streams rule 2.13): left to it, {@link SubmissionPublisher} would report the
+     * exception to {@code onError}, and the listeners with it. The cancel stops the generation.
+     */
+    private static final class Guarded implements Flow.Subscriber<ChatModelStreamingEvent> {
+        private final Flow.Subscriber<? super ChatModelStreamingEvent> downstream;
+        private Flow.Subscription subscription;
+
+        Guarded(Flow.Subscriber<? super ChatModelStreamingEvent> downstream) {
+            this.downstream = downstream;
+        }
+
+        @Override
+        public void onSubscribe(Flow.Subscription subscription) {
+            this.subscription = subscription;
+            downstream.onSubscribe(subscription);
+        }
+
+        @Override
+        public void onNext(ChatModelStreamingEvent event) {
+            try {
+                downstream.onNext(event);
+            } catch (RuntimeException broken) {
+                LOG.warn(
+                        "a stream subscriber threw from onNext; its subscription is cancelled",
+                        broken);
+                subscription.cancel();
+            }
+        }
+
+        @Override
+        public void onError(Throwable error) {
+            downstream.onError(error);
+        }
+
+        @Override
+        public void onComplete() {
+            downstream.onComplete();
+        }
+    }
+
+    /** The handler callbacks submitted as events; a gone subscriber cancels the generation. */
+    private record Relay(SubmissionPublisher<ChatModelStreamingEvent> events)
+            implements StreamingChatResponseHandler {
+
+        @Override
+        public void onPartialResponse(PartialResponse partial, PartialResponseContext context) {
+            submit(partial, context.streamingHandle());
+        }
+
+        @Override
+        public void onPartialThinking(PartialThinking partial, PartialThinkingContext context) {
+            submit(partial, context.streamingHandle());
+        }
+
+        private void submit(ChatModelStreamingEvent event, StreamingHandle handle) {
+            if (events.hasSubscribers()) events.submit(event);
+            else handle.cancel();
+        }
+
+        @Override
+        public void onUnmappedRawEvent(Object raw) {
+            events.submit((RawStreamingEvent) () -> raw);
+        }
+
+        @Override
+        public void onCompleteToolCall(CompleteToolCall call) {
+            events.submit(call);
+        }
+
+        @Override
+        public void onCompleteResponse(ChatResponse response) {
+            events.submit(new CompleteResponse(response));
+            events.close();
+        }
+
+        @Override
+        public void onError(Throwable error) {
+            events.closeExceptionally(error);
+        }
+    }
+
     private void stream(
             ChatEngine.Prepared p, List<Tool> offered, StreamingChatResponseHandler handler) {
         ChatEngine engine = model.engine;
@@ -128,6 +253,7 @@ public final class JinferStreamingChatModel implements StreamingChatModel, AutoC
                     }
                 };
         PartialResponseContext context = new PartialResponseContext(handle);
+        PartialThinkingContext thinkingContext = new PartialThinkingContext(handle);
         ChatEngine.Completion done =
                 engine.complete(
                         p,
@@ -146,7 +272,8 @@ public final class JinferStreamingChatModel implements StreamingChatModel, AutoC
                                             handler,
                                             () ->
                                                     handler.onPartialThinking(
-                                                            new PartialThinking(delta.text())));
+                                                            new PartialThinking(delta.text()),
+                                                            thinkingContext));
                                 }
                                 // other channels are structural: a claimed call span surfaces
                                 // nothing until the finished reply's parsed calls
@@ -173,6 +300,8 @@ public final class JinferStreamingChatModel implements StreamingChatModel, AutoC
                 Mappings.unwrapStringifiedArguments(Mappings.toAiMessage(done.reply()), offered);
         if (done.stopped()) {
             ai = Mappings.withText(ai, TextStops.apply(ai.text(), p.stops()).text());
+        } else {
+            model.replies.remember(ai, done.reply().verbatim()); // the reply as delivered
         }
         if (ai.hasToolExecutionRequests()) {
             for (int i = 0; i < ai.toolExecutionRequests().size(); i++) {

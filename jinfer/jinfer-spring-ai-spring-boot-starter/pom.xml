@@ -78,6 +78,24 @@
       <groupId>org.springframework.ai</groupId>
       <artifactId>spring-ai-session-advisor</artifactId>
     </dependency>
+    <!-- the gen_ai metrics (token usage, operation timings) of every jinfer model type, recorded
+         once the application has a MeterRegistry, as Spring AI's own provider starters do -->
+    <dependency>
+      <groupId>org.springframework.ai</groupId>
+      <artifactId>spring-ai-autoconfigure-model-chat-observation</artifactId>
+    </dependency>
+    <dependency>
+      <groupId>org.springframework.ai</groupId>
+      <artifactId>spring-ai-autoconfigure-model-embedding-observation</artifactId>
+    </dependency>
+    <dependency>
+      <groupId>org.springframework.ai</groupId>
+      <artifactId>spring-ai-autoconfigure-model-decision-observation</artifactId>
+    </dependency>
+    <dependency>
+      <groupId>org.springframework.ai</groupId>
+      <artifactId>spring-ai-autoconfigure-model-audio-observation</artifactId>
+    </dependency>
     <dependency>
       <groupId>org.springframework.boot</groupId>
       <artifactId>spring-boot-starter-test</artifactId>
@@ -87,6 +105,17 @@
     <dependency>
       <groupId>io.micrometer</groupId>
       <artifactId>micrometer-observation-test</artifactId>
+      <scope>test</scope>
+    </dependency>
+    <!-- the metrics IT: Boot's observation registry and a simple meter registry -->
+    <dependency>
+      <groupId>org.springframework.boot</groupId>
+      <artifactId>spring-boot-micrometer-observation</artifactId>
+      <scope>test</scope>
+    </dependency>
+    <dependency>
+      <groupId>org.springframework.boot</groupId>
+      <artifactId>spring-boot-micrometer-metrics</artifactId>
       <scope>test</scope>
     </dependency>
     <!-- the dogfood IT needs one architecture port -->

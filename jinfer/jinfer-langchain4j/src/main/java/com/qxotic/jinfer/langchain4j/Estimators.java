@@ -32,12 +32,17 @@ final class Estimators implements TokenCountEstimator {
     private final Tokenizer tokenizer;
     private final ToIntFunction<Media> mediaPositions; // null = this model cannot ingest media
     private final VideoSampler videoSampler; // the MODEL's sampler: counts what chat ingests
+    private final Replies replies; // the MODEL's replies: an echo counts the record it replays
 
     Estimators(
-            Tokenizer tokenizer, ToIntFunction<Media> mediaPositions, VideoSampler videoSampler) {
+            Tokenizer tokenizer,
+            ToIntFunction<Media> mediaPositions,
+            VideoSampler videoSampler,
+            Replies replies) {
         this.tokenizer = tokenizer;
         this.mediaPositions = mediaPositions;
         this.videoSampler = videoSampler;
+        this.replies = replies;
     }
 
     @Override
@@ -59,7 +64,7 @@ final class Estimators implements TokenCountEstimator {
             }
         }
         int sum = 0;
-        for (Message m : Mappings.toMessages(List.of(message), videoSampler)) {
+        for (Message m : Mappings.toMessages(List.of(message), videoSampler, replies)) {
             // a turn with its record replays position for position
             sum +=
                     m.verbatim().isEmpty()

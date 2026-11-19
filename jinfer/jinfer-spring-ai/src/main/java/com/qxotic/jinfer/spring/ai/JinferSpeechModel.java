@@ -10,6 +10,9 @@ import com.qxotic.jinfer.chat.Models;
 import com.qxotic.jinfer.codecs.AudioCodec;
 import com.qxotic.jinfer.hub.ModelStore;
 import com.qxotic.jinfer.media.Media;
+import io.micrometer.observation.Observation;
+import io.micrometer.observation.ObservationRegistry;
+import io.micrometer.observation.contextpropagation.ObservationThreadLocalAccessor;
 import java.io.IOException;
 import java.io.UncheckedIOException;
 import java.lang.foreign.Arena;
@@ -27,6 +30,10 @@ import org.springframework.ai.audio.tts.TextToSpeechOptions;
 import org.springframework.ai.audio.tts.TextToSpeechPrompt;
 import org.springframework.ai.audio.tts.TextToSpeechResponse;
 import org.springframework.ai.audio.tts.TextToSpeechResponseMetadata;
+import org.springframework.ai.audio.tts.observation.DefaultTextToSpeechModelObservationConvention;
+import org.springframework.ai.audio.tts.observation.TextToSpeechModelObservationContext;
+import org.springframework.ai.audio.tts.observation.TextToSpeechModelObservationConvention;
+import org.springframework.ai.audio.tts.observation.TextToSpeechModelObservationDocumentation;
 import reactor.core.publisher.Flux;
 import reactor.core.scheduler.Schedulers;
 
@@ -47,6 +54,9 @@ public final class JinferSpeechModel implements TextToSpeechModel, AutoCloseable
 
     public static final String CHANNELS = "channels";
 
+    private static final TextToSpeechModelObservationConvention DEFAULT_CONVENTION =
+            new DefaultTextToSpeechModelObservationConvention();
+
     private final SpeechSynthesisModel<?, ?, ?> model;
     private final Arena owned; // null unless this instance loaded the weights
     // Requests take the READ lock and run in PARALLEL - a state is per-call, so there is nothing
@@ -55,11 +65,15 @@ public final class JinferSpeechModel implements TextToSpeechModel, AutoCloseable
     private final ReentrantReadWriteLock lifecycle = new ReentrantReadWriteLock();
     private final TextToSpeechOptions defaultOptions;
     private final int maxInputChars;
+    private final ObservationRegistry observationRegistry;
+    private final TextToSpeechModelObservationConvention observationConvention; // null: default
     private volatile boolean closed;
 
     private JinferSpeechModel(Builder b) {
         this.defaultOptions = TextToSpeechOptions.builder().speed(b.speed).build();
         this.maxInputChars = b.maxInputChars;
+        this.observationRegistry = b.observationRegistry;
+        this.observationConvention = b.observationConvention;
         // an arena this instance creates is this instance's to free on EVERY path out of here,
         // including a state allocation that fails after the weights are already mapped
         Arena created = b.model == null ? Arenas.newCrossThread() : null;
@@ -86,6 +100,17 @@ public final class JinferSpeechModel implements TextToSpeechModel, AutoCloseable
     public TextToSpeechResponse call(TextToSpeechPrompt prompt) {
         String text = text(prompt);
         SpeechOptions options = resolveOptions(prompt.getOptions());
+        var context = context(prompt, false);
+        return observation(context)
+                .observe(
+                        () -> {
+                            TextToSpeechResponse response = speak(text, options);
+                            context.setResponse(response);
+                            return response;
+                        });
+    }
+
+    private TextToSpeechResponse speak(String text, SpeechOptions options) {
         lifecycle.readLock().lock(); // shared: concurrent requests proceed in parallel
         try {
             checkOpen();
@@ -97,6 +122,20 @@ public final class JinferSpeechModel implements TextToSpeechModel, AutoCloseable
         } finally {
             lifecycle.readLock().unlock();
         }
+    }
+
+    private static TextToSpeechModelObservationContext context(
+            TextToSpeechPrompt prompt, boolean streaming) {
+        return TextToSpeechModelObservationContext.builder()
+                .prompt(prompt)
+                .provider("jinfer")
+                .streaming(streaming)
+                .build();
+    }
+
+    private Observation observation(TextToSpeechModelObservationContext context) {
+        return TextToSpeechModelObservationDocumentation.TEXT_TO_SPEECH_MODEL_OPERATION.observation(
+                observationConvention, DEFAULT_CONVENTION, () -> context, observationRegistry);
     }
 
     /**
@@ -112,7 +151,23 @@ public final class JinferSpeechModel implements TextToSpeechModel, AutoCloseable
         String text = text(prompt);
         SpeechOptions options = resolveOptions(prompt.getOptions());
         // The state is scoped to the SUBSCRIPTION, not to this method: a Flux may be subscribed
-        // late, more than once, or never, and each subscription is its own synthesis.
+        // late, more than once, or never, and each subscription is its own synthesis - and its
+        // own observation.
+        return Flux.deferContextual(
+                view -> {
+                    var context = context(prompt, true);
+                    Observation observation = observation(context);
+                    observation.parentObservation(
+                            view.getOrDefault(ObservationThreadLocalAccessor.KEY, null));
+                    observation.start();
+                    return synthesis(text, options)
+                            .doOnNext(context::setResponse)
+                            .doOnError(observation::error)
+                            .doFinally(signal -> observation.stop());
+                });
+    }
+
+    private Flux<TextToSpeechResponse> synthesis(String text, SpeechOptions options) {
         return Flux.<TextToSpeechResponse>create(
                         emitter -> {
                             lifecycle.readLock().lock();
@@ -235,6 +290,8 @@ public final class JinferSpeechModel implements TextToSpeechModel, AutoCloseable
         private Path modelPath; // derived from source at build()
         private Double speed;
         private int maxInputChars = DEFAULT_MAX_INPUT_CHARS;
+        private ObservationRegistry observationRegistry = ObservationRegistry.NOOP;
+        private TextToSpeechModelObservationConvention observationConvention;
         private Map<String, Path> companionPaths; // resolved at build()
         private final Map<String, String> companionRefs = new LinkedHashMap<>();
         private final Map<String, Path> localCompanions = new LinkedHashMap<>();
@@ -324,6 +381,22 @@ public final class JinferSpeechModel implements TextToSpeechModel, AutoCloseable
             if (maxInputChars < 1)
                 throw new IllegalArgumentException("maxInputChars " + maxInputChars);
             this.maxInputChars = maxInputChars;
+            return this;
+        }
+
+        /** Metrics/tracing registry; default {@link ObservationRegistry#NOOP} (zero cost). */
+        public Builder observationRegistry(ObservationRegistry observationRegistry) {
+            this.observationRegistry = Objects.requireNonNull(observationRegistry);
+            return this;
+        }
+
+        /**
+         * Custom observation convention; default {@link
+         * DefaultTextToSpeechModelObservationConvention}.
+         */
+        public Builder observationConvention(
+                TextToSpeechModelObservationConvention observationConvention) {
+            this.observationConvention = observationConvention;
             return this;
         }
 

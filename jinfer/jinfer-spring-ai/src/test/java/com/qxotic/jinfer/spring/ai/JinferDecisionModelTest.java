@@ -17,6 +17,7 @@ import com.qxotic.jinfer.chat.DecisionModel.Rating;
 import com.qxotic.jinfer.media.Media;
 import com.qxotic.jota.memory.MemoryAllocators;
 import io.micrometer.observation.tck.TestObservationRegistry;
+import io.micrometer.observation.tck.TestObservationRegistryAssert;
 import java.awt.image.BufferedImage;
 import java.io.ByteArrayOutputStream;
 import java.lang.foreign.Arena;
@@ -29,9 +30,16 @@ import java.util.Map;
 import java.util.function.Function;
 import javax.imageio.ImageIO;
 import org.junit.jupiter.api.Test;
+import org.springframework.ai.chat.messages.AssistantMessage;
+import org.springframework.ai.chat.messages.Message;
+import org.springframework.ai.chat.messages.SystemMessage;
+import org.springframework.ai.chat.messages.ToolResponseMessage;
 import org.springframework.ai.chat.messages.UserMessage;
 import org.springframework.ai.chat.messages.part.MediaPart;
+import org.springframework.ai.chat.messages.part.ReasoningPart;
 import org.springframework.ai.chat.messages.part.TextPart;
+import org.springframework.ai.chat.messages.part.ToolCallPart;
+import org.springframework.ai.chat.messages.part.ToolResultPart;
 import org.springframework.ai.decision.DecisionResponse;
 import org.springframework.ai.decision.input.DecisionInput;
 import org.springframework.ai.decision.question.ChoiceQuestion;
@@ -155,10 +163,10 @@ class JinferDecisionModelTest {
                         .build()) {
             observed.call("x", asked("q", YesNoQuestion.of("?")));
         }
-        observations
-                .assertThat()
+        TestObservationRegistryAssert.assertThat(observations)
                 .hasNumberOfObservationsWithNameEqualTo("gen_ai.client.operation", 1);
-        observations.assertThat().hasAnObservationWithAKeyValue("gen_ai.system", "jinfer");
+        TestObservationRegistryAssert.assertThat(observations)
+                .hasAnObservationWithAKeyValue("gen_ai.system", "jinfer");
     }
 
     @Test
@@ -253,17 +261,141 @@ class JinferDecisionModelTest {
         assertEquals(new Content.Text("after"), stub.input.get(2));
     }
 
+    /**
+     * A conversation is the transcript Spring AI's System One mapper writes (its RC2 output for
+     * this conversation, read back as jinfer's /v1/systemone reads it): reasoning and a message of
+     * nothing else stay out, JSON arguments nest, others stay strings.
+     */
     @Test
-    void aConversationIsRefused() {
-        var refused =
+    void aConversationIsItsTranscript() {
+        List<Message> conversation =
+                List.of(
+                        new SystemMessage("You are the support assistant of a shop."),
+                        new UserMessage("I was charged twice for order A-17."),
+                        AssistantMessage.builder()
+                                .parts(
+                                        List.of(
+                                                TextPart.of("Let me check."),
+                                                ReasoningPart.of("left out"),
+                                                call(
+                                                        "call-1",
+                                                        "lookupOrder",
+                                                        "{\"order\": \"A-17\", \"qty\": 2}"),
+                                                call("call-2", "ping", "not json")))
+                                .build(),
+                        ToolResponseMessage.builder()
+                                .parts(
+                                        List.of(
+                                                result(
+                                                        "call-1",
+                                                        "lookupOrder",
+                                                        "charged twice",
+                                                        true),
+                                                result(null, "ping", "pong", false)))
+                                .build(),
+                        AssistantMessage.builder()
+                                .parts(List.of(ReasoningPart.of("nothing to send")))
+                                .build(),
+                        new UserMessage("Yes please."));
+        model.call(DecisionInput.conversation(conversation), asked("q", YesNoQuestion.of("?")));
+        assertEquals(
+                List.of(
+                        new Content.Text(
+                                """
+                                {
+                                  "messages": [
+                                    {
+                                      "role": "system",
+                                      "content": "You are the support assistant of a shop."
+                                    },
+                                    {
+                                      "role": "user",
+                                      "content": "I was charged twice for order A-17."
+                                    },
+                                    {
+                                      "role": "assistant",
+                                      "content": "Let me check.",
+                                      "tool_calls": [
+                                        {
+                                          "id": "call-1",
+                                          "name": "lookupOrder",
+                                          "arguments": {
+                                            "order": "A-17",
+                                            "qty": 2
+                                          }
+                                        },
+                                        {
+                                          "id": "call-2",
+                                          "name": "ping",
+                                          "arguments": "not json"
+                                        }
+                                      ]
+                                    },
+                                    {
+                                      "role": "tool",
+                                      "tool_results": [
+                                        {
+                                          "id": "call-1",
+                                          "name": "lookupOrder",
+                                          "result": "charged twice",
+                                          "error": true
+                                        },
+                                        {
+                                          "id": null,
+                                          "name": "ping",
+                                          "result": "pong"
+                                        }
+                                      ]
+                                    },
+                                    {
+                                      "role": "user",
+                                      "content": "Yes please."
+                                    }
+                                  ]
+                                }
+                                """
+                                        .strip())),
+                stub.input);
+    }
+
+    @Test
+    void aConversationRefusesMediaAndEmptiness() throws Exception {
+        UserMessage photo =
+                UserMessage.builder()
+                        .parts(List.of(TextPart.of("look"), MediaPart.of(png())))
+                        .build();
+        var media =
                 assertThrows(
                         UnsupportedOperationException.class,
                         () ->
                                 model.call(
-                                        DecisionInput.conversation(List.of(new UserMessage("hi"))),
+                                        DecisionInput.conversation(List.of(photo)),
                                         asked("q", YesNoQuestion.of("?"))));
-        assertTrue(refused.getMessage().contains("not a conversation"), refused.getMessage());
+        assertTrue(media.getMessage().contains("carries media"), media.getMessage());
+        var empty =
+                assertThrows(
+                        IllegalArgumentException.class,
+                        () ->
+                                model.call(
+                                        DecisionInput.conversation(
+                                                List.of(
+                                                        AssistantMessage.builder()
+                                                                .parts(
+                                                                        List.of(
+                                                                                ReasoningPart.of(
+                                                                                        "only")))
+                                                                .build())),
+                                        asked("q", YesNoQuestion.of("?"))));
+        assertTrue(empty.getMessage().contains("nothing to judge"), empty.getMessage());
         assertEquals(null, stub.input, "nothing reached the model");
+    }
+
+    private static ToolCallPart call(String id, String name, String arguments) {
+        return ToolCallPart.of(new AssistantMessage.ToolCall(id, "function", name, arguments));
+    }
+
+    private static ToolResultPart result(String id, String name, String text, boolean error) {
+        return new ToolResultPart(id, name, List.of(TextPart.of(text)), error, null, Map.of());
     }
 
     @Test

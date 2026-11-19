@@ -133,6 +133,12 @@ public class JinferChatRequestParameters extends DefaultChatRequestParameters {
         return builder().overrideWith(this).overrideWith(that).build();
     }
 
+    /** These over {@code that}: how AI Services merge parameters passed as a method argument. */
+    @Override
+    public JinferChatRequestParameters defaultedBy(ChatRequestParameters that) {
+        return builder().overrideWith(that).overrideWith(this).build();
+    }
+
     @Override
     public boolean equals(Object o) {
         return o instanceof JinferChatRequestParameters that

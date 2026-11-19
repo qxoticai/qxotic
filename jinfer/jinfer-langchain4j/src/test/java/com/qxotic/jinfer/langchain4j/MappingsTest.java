@@ -25,6 +25,8 @@ import dev.langchain4j.data.audio.Audio;
 import dev.langchain4j.data.message.AiMessage;
 import dev.langchain4j.data.message.AudioContent;
 import dev.langchain4j.data.message.ChatMessage;
+import dev.langchain4j.data.message.ChatMessageDeserializer;
+import dev.langchain4j.data.message.ChatMessageSerializer;
 import dev.langchain4j.data.message.CustomMessage;
 import dev.langchain4j.data.message.ImageContent;
 import dev.langchain4j.data.message.SystemMessage;
@@ -71,7 +73,8 @@ class MappingsTest {
                                                 UserMessage.from("hi"),
                                                 CustomMessage.from(
                                                         Map.of("role", "context", "content", "x"))),
-                                        VideoSampler.UNIFORM));
+                                        VideoSampler.UNIFORM,
+                                        new Replies()));
         assertTrue(e.getMessage().contains("CUSTOM"), e.getMessage());
     }
 
@@ -83,7 +86,7 @@ class MappingsTest {
                         UserMessage.from("hi"),
                         AiMessage.from("hello"),
                         ToolExecutionResultMessage.from("call1", "get_weather", "18C"));
-        List<Message> out = Mappings.toMessages(in, VideoSampler.UNIFORM);
+        List<Message> out = Mappings.toMessages(in, VideoSampler.UNIFORM, new Replies());
         assertEquals(Role.SYSTEM, out.get(0).role());
         assertEquals("be brief", out.get(0).text());
         assertEquals(Role.USER, out.get(1).role());
@@ -107,7 +110,8 @@ class MappingsTest {
                                                 .arguments("{\"city\": \"Paris\"}")
                                                 .build()))
                         .build();
-        Message m = Mappings.toMessages(List.of(withCall), VideoSampler.UNIFORM).get(0);
+        Message m =
+                Mappings.toMessages(List.of(withCall), VideoSampler.UNIFORM, new Replies()).get(0);
         Content.ToolCall call = assertInstanceOf(Content.ToolCall.class, m.content().get(0));
         assertEquals("get_weather", call.name());
         assertEquals(Map.of("city", "Paris"), call.arguments());
@@ -175,8 +179,8 @@ class MappingsTest {
     }
 
     /**
-     * A spoken reply's speech is the AiMessage's audio, one WAV clip beside the transcript, and an
-     * unmodified echo restores the reply whole: the speech and the record it replays from.
+     * A spoken reply's speech is the AiMessage's audio, one WAV clip beside the transcript, and its
+     * echo replays the record the speech is said from.
      */
     @Test
     void aSpokenReplyIsTheAiMessagesAudioAndEchoesWhole() {
@@ -198,12 +202,60 @@ class MappingsTest {
         assertEquals(1, ai.audios().size(), "one clip");
         assertEquals("audio/wav", ai.audios().get(0).mimeType());
         assertArrayEquals(AudioCodec.wav(clip), ai.audios().get(0).binaryData());
-        assertTrue(
-                Mappings.toMessages(List.of(ai), VideoSampler.UNIFORM).get(0) == spoken,
-                "an unmodified echo is the reply itself, record included");
+        Replies replies = new Replies();
+        replies.remember(ai, record);
+        assertEquals(
+                record,
+                Mappings.toMessages(List.of(ai), VideoSampler.UNIFORM, replies).get(0).verbatim(),
+                "the echo replays the record");
         assertTrue(
                 Mappings.toAiMessage(Message.assistant("Paris.")).audios().isEmpty(),
                 "a text reply has no audio");
+    }
+
+    /**
+     * A reply survives langchain4j's JSON chat memory (the JDBC, Redis, ... stores): the message
+     * carries langchain4j's fields only, and its stored echo still replays the record. An edited
+     * echo, or one this model never produced, renders from its parts.
+     */
+    @Test
+    void aStoredEchoReplaysItsRecord() {
+        Verbatim record =
+                new Verbatim(
+                        new ContentKey("test-model"), IntSequence.of(7, 8, 9), IntSequence.empty());
+        Message reply =
+                new Message(
+                        Role.ASSISTANT,
+                        List.of(
+                                new Content.Reasoning("checking"),
+                                new Content.Text("Sunny."),
+                                new Content.ToolCall("c1", "weather", Map.of("city", "Rome"))),
+                        record);
+        AiMessage delivered = Mappings.toAiMessage(reply);
+        assertTrue(delivered.attributes().isEmpty(), "nothing of jinfer's rides on the message");
+        Replies replies = new Replies();
+        replies.remember(delivered, record);
+
+        AiMessage stored =
+                (AiMessage)
+                        ChatMessageDeserializer.messageFromJson(
+                                ChatMessageSerializer.messageToJson(delivered));
+        Message echo = Mappings.toMessages(List.of(stored), VideoSampler.UNIFORM, replies).get(0);
+        assertEquals(record, echo.verbatim());
+        assertEquals(reply.content(), echo.content());
+
+        AiMessage edited = stored.toBuilder().text("Rainy.").build();
+        assertEquals(
+                Verbatim.NONE,
+                Mappings.toMessages(List.of(edited), VideoSampler.UNIFORM, replies)
+                        .get(0)
+                        .verbatim());
+        assertEquals(
+                Verbatim.NONE,
+                Mappings.toMessages(List.of(stored), VideoSampler.UNIFORM, new Replies())
+                        .get(0)
+                        .verbatim(),
+                "another model's table, or this one after a restart");
     }
 
     @Test
@@ -265,7 +317,8 @@ class MappingsTest {
         Message m =
                 Mappings.toMessages(
                                 List.of(UserMessage.from(ImageContent.from(base64, "image/png"))),
-                                VideoSampler.UNIFORM)
+                                VideoSampler.UNIFORM,
+                                new Replies())
                         .get(0);
         Content.Media blob = assertInstanceOf(Content.Media.class, m.content().get(0));
         var decoded = assertInstanceOf(Media.Image.class, blob.media());
@@ -299,7 +352,8 @@ class MappingsTest {
                 () ->
                         Mappings.toMessages(
                                 List.of(UserMessage.from(ImageContent.from("aGk=", "image/png"))),
-                                VideoSampler.UNIFORM));
+                                VideoSampler.UNIFORM,
+                                new Replies()));
         assertThrows(
                 UnsupportedFeatureException.class,
                 () ->
@@ -308,7 +362,8 @@ class MappingsTest {
                                         UserMessage.from(
                                                 ImageContent.from(
                                                         URI.create("https://example.com/a.png")))),
-                                VideoSampler.UNIFORM));
+                                VideoSampler.UNIFORM,
+                                new Replies()));
     }
 
     /** A decode failure names the input, inline or a file, and keeps the codec's reason. */

@@ -166,11 +166,15 @@ The one unchanged artifact is `json`, at 0.2.0.
 - **LangChain4j 1.24.0.** `jinfer-langchain4j` builds on it and passes its chat, streaming, AI-service, tools and JSON-schema TCKs.
   `JinferDecisionModel` takes a conversation (`inputMessages`) as its transcript, so LangChain4j's `DecisionModelChatModelRouter` and the guardrails' decision checks run on d1.
   `JinferScoringModel` takes `ScoringModelListener`s, notified of every scoring call.
+  The streaming model publishes its stream as reactive events too, so AI Services returning a `Flow.Publisher` or `Flux` stream on jinfer, and a cancelled subscription stops the generation.
+  A thinking delta carries the cancellation handle too (`onPartialThinking(PartialThinking, PartialThinkingContext)`), so a stream stops while the model reasons.
 - **Spring AI 2.1.** `jinfer-spring-ai` builds on 2.1 and its message parts: a reply's reasoning is a `ReasoningPart` (`AssistantMessage.getReasoning()`), before the text and the tool calls, and streams as its own part per delta, so `ChatClient` and `MessageAggregator` keep it off the content lane.
   The `thinking` metadata entry and the `isThought` chunk flag are gone.
   Prompts are read by parts too: a user message's text and media reach the model in the order written, and tool results are read from their parts (text; a media result is refused in words).
   `JinferEmbeddingModel.getEmbeddingContent` returns the framed document text, so Spring's default batched path embeds what the provider's own does.
   The starter configures 2.1's session memory (`SessionService`, `SessionAdvisors`) in place of the chat memory it deprecates for 3.0; it requires Spring Boot 4.2.
+  `JinferDecisionModel` takes a conversation as the transcript Spring AI's System One and Ollama decision models send d1, text, tool calls and tool results.
+  The starter brings Spring AI's chat, embedding, decision and audio observation auto-configurations, so an application with a `MeterRegistry` records the `gen_ai` metrics; the speech and transcription models are observed too, and follow `spring.ai.model.audio.speech` and `spring.ai.model.audio.transcription` like Spring AI's own providers.
 - **Spoken replies in Spring AI.** `JinferChatOptions.outputModalities` says what a reply may be made of: unset is text alone, `TEXT` and `AUDIO` let LFM3-Omni choose speech when the prompt asks, `AUDIO` alone makes it speak.
   The speech is a `MediaPart` of `audio/wav` beside the transcript, whole from `call` and a part per stretch from `stream`; `spring.ai.jinfer.chat.output-modalities` sets the default in Spring Boot.
 - **Spoken replies in LangChain4j.** `JinferChatRequestParameters.outputModalities` says what a reply may be made of, the engine's own `Modality` enum: unset, text alone; text and audio, the model's choice; audio alone, a spoken reply.
@@ -187,6 +191,9 @@ Coming from 0.3.0, these act differently:
   The parts are plain data: `Content.Text`, `Content.Reasoning` and `Content.ToolCall` lose their `verbatim` ids, `Content.Media` holds an image, audio or video the caller gives the model and, in a reply, the model's own speech, captioned with the words it spoke; `Content.Speech` and `SpokenTurn` are gone.
   `ChatEngine.Completion.reasoningTokens` is a component, counted as the reply streams, and a thinking span the prompt seeded empty no longer appears as an empty `Content.Reasoning` part: prompt-owned tokens are the record's, not the reply's.
   A reply's parts are its stream folded, in emission order: `Content.Reasoning` is a run of reasoning text, and a call the model claimed while thinking is a `Content.ToolCall` between the runs it interrupted, no longer a part nested inside the reasoning; `Message.reasoning()` joins the runs as `text()` joins the text.
+- **A reply's record in LangChain4j and Spring AI.** The `jinfer.reply` attribute (LangChain4j) and metadata entry (Spring AI) are gone, so JSON chat memory and session stores keep a reply like any other.
+  Each chat model remembers its recent replies' records instead (up to 16M token ids): an echo that says the same replays the exact generated tokens, and an older, edited or restarted one renders from its text.
+- **Speech and transcription selection in Spring Boot.** `spring.ai.model.audio.speech` or `spring.ai.model.audio.transcription` set to another provider switches jinfer's model off.
 - **Refusals instead of silent defaults.** A generative model loaded as an embedder throws `IncompatibleModelException`, and the positive-integer tuning properties (`jinfer.decodeBlockSize` and the like) refuse a value they cannot use instead of ignoring it; the undocumented `vis.squareResize` switch is gone.
 - **Spring AI.** Sampling options are validated when they are built, naming the property, a blank rerank model is refused at boot, and `getReasoningBudget()` / `getReasoningBudgetMessage()` are deprecated for `getMaxReasoningTokens()` / `getReasoningCutoffMessage()`.
 - **Stricter templates and grammars.** An unknown Jinja statement such as `{% endset %}` fails instead of rendering nothing, and malformed GBNF or unsatisfiable schema bounds (`minLength` over `maxLength`, `minItems` over `maxItems`) are refused instead of compiling to a different language.
@@ -204,6 +211,8 @@ Coming from 0.3.0, these act differently:
 - **Chat templates.** Jinja gains `{% raw %}`, `{% break %}` and `{% continue %}`, one-sided `strip` with characters, `split` with a limit, Python float formatting, and undefined (not None) missing macro arguments.
 - **Grammars.** `maxItems: 0` means the empty array, and logits past the vocabulary are masked.
 - **Server.** A Responses reply with text and tool calls streams both, the transcription server honours `--request-timeout 0`, and every request logs its status and duration.
+- **LangChain4j.** A `JinferChatRequestParameters` passed to an AI Service method keeps its jinfer fields (seed, grammar, thinking and the rest), and a reply no longer breaks LangChain4j's JSON chat-memory serializer.
+- **Spring AI.** `stream` decodes a request's images, audio and video once instead of twice.
 - **Libraries.** `jam-scalar` refuses a weight stride under `k`; `jam-vector` reports itself unavailable without native access and refuses an unknown `jam.vector.tile`.
   `jota-memory` frees its staging buffers, and safetensors reports a corrupt shape as a format error.
   `Tokenizer.countBytes` handles tokens longer than 256 bytes, SentencePiece decodes a run of byte tokens into a nearly full buffer, and `toknroll-hf` caches a 404 only under a commit SHA.

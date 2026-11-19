@@ -1,7 +1,6 @@
 package com.qxotic.jinfer.spring.ai;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
-import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import com.qxotic.jinfer.testkit.TestModels;
@@ -10,10 +9,12 @@ import java.nio.file.Path;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.function.Function;
 import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
+import org.springframework.ai.chat.messages.AssistantMessage;
 import org.springframework.ai.chat.messages.UserMessage;
 import org.springframework.ai.chat.messages.part.MediaPart;
 import org.springframework.ai.chat.messages.part.TextPart;
@@ -211,16 +212,27 @@ final class JinferDecisionModelIT {
         }
     }
 
+    /** A conversation is read whole: the same last words mean what the turns before make them. */
     @Test
-    void aConversationIsNotAnInput() {
-        UnsupportedOperationException refused =
-                assertThrows(
-                        UnsupportedOperationException.class,
-                        () ->
-                                model.call(
+    void aConversationIsReadWhole() {
+        Function<String, Double> refund =
+                offer ->
+                        model.call(
                                         DecisionInput.conversation(
-                                                List.of(new UserMessage("hello"))),
-                                        questions("refund", REFUND)));
-        assertTrue(refused.getMessage().contains("not a conversation"), refused.getMessage());
+                                                List.of(
+                                                        new UserMessage(
+                                                                "I was charged twice for order"
+                                                                        + " A-17."),
+                                                        AssistantMessage.builder()
+                                                                .content(offer)
+                                                                .build(),
+                                                        new UserMessage("Yes please."))),
+                                        questions("refund", REFUND))
+                                .getYesNo("refund")
+                                .getProbability();
+        double asked = refund.apply("Sorry about that! Shall I refund the duplicate charge?");
+        double declined = refund.apply("Sorry about that! Would you like our newsletter instead?");
+        assertTrue(asked > 0.5, "the offer accepted is a refund: " + asked);
+        assertTrue(declined < asked, "a newsletter accepted is less of one: " + declined);
     }
 }

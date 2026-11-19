@@ -7,6 +7,9 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 import com.qxotic.jinfer.testkit.TestModels;
 import dev.langchain4j.agent.tool.Tool;
 import dev.langchain4j.data.message.AiMessage;
+import dev.langchain4j.data.message.ChatMessage;
+import dev.langchain4j.data.message.ChatMessageDeserializer;
+import dev.langchain4j.data.message.ChatMessageSerializer;
 import dev.langchain4j.data.message.TextContent;
 import dev.langchain4j.data.message.ToolExecutionResultMessage;
 import dev.langchain4j.memory.ChatMemory;
@@ -24,10 +27,13 @@ import dev.langchain4j.service.UserMessage;
 import dev.langchain4j.service.V;
 import dev.langchain4j.service.tool.ToolErrorHandlerResult;
 import dev.langchain4j.service.tool.ToolExecution;
+import dev.langchain4j.store.memory.chat.ChatMemoryStore;
 import java.util.Collections;
 import java.util.HashSet;
 import java.util.List;
+import java.util.Map;
 import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.concurrent.TimeUnit;
 import org.junit.jupiter.api.AfterAll;
@@ -158,6 +164,46 @@ class AiServicesPatternsIT {
         assertTrue(bob.toLowerCase().contains("green"), "bob got: " + bob);
         assertFalse(alice.toLowerCase().contains("green"), "bob's memory leaked into alice's");
         assertFalse(bob.toLowerCase().contains("blue"), "alice's memory leaked into bob's");
+    }
+
+    @Test
+    void aPersistentMemoryStoreKeepsTheConversation() {
+        // the documented persistent ChatMemoryStore (JDBC, Redis, ...): every update is written
+        // as JSON through langchain4j's own serializer and every read parses it back
+        Map<Object, String> rows = new ConcurrentHashMap<>();
+        ChatMemoryStore store =
+                new ChatMemoryStore() {
+                    @Override
+                    public List<ChatMessage> getMessages(Object id) {
+                        return ChatMessageDeserializer.messagesFromJson(rows.get(id));
+                    }
+
+                    @Override
+                    public void updateMessages(Object id, List<ChatMessage> messages) {
+                        rows.put(id, ChatMessageSerializer.messagesToJson(messages));
+                    }
+
+                    @Override
+                    public void deleteMessages(Object id) {
+                        rows.remove(id);
+                    }
+                };
+        Concierge concierge =
+                AiServices.builder(Concierge.class)
+                        .chatModel(model)
+                        .chatMemoryProvider(
+                                id ->
+                                        MessageWindowChatMemory.builder()
+                                                .id(id)
+                                                .maxMessages(10)
+                                                .chatMemoryStore(store)
+                                                .build())
+                        .build();
+
+        concierge.chat("carol", "My favorite color is purple. Reply only OK.");
+        String color = concierge.chat("carol", "What is my favorite color? Answer in one word.");
+
+        assertTrue(color.toLowerCase().contains("purple"), color);
     }
 
     interface Translator {

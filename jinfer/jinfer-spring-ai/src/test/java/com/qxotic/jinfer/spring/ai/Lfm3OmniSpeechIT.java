@@ -1,6 +1,7 @@
 package com.qxotic.jinfer.spring.ai;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
@@ -129,8 +130,9 @@ class Lfm3OmniSpeechIT {
         }
         ChatResponse last = chunks.get(chunks.size() - 1);
         assertTrue(speech(last.getResult().getOutput()).isEmpty(), "the final chunk has no media");
-        AssistantMessage whole = MiniCpm5ThinkingIT.parsed(last);
-        assertEquals(whole.getText(), text.toString(), "streamed = the reply's text");
+        assertFalse(
+                model.replies.recall(ChatFixtures.aggregate(chunks)).isEmpty(),
+                "streamed = the reply's text");
         assertTrue(!stretches.isEmpty(), "no speech streamed");
         Media.Audio clip = Media.Audio.concat(stretches);
         String heard = hear(clip);

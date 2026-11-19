@@ -346,7 +346,7 @@ try (var model = JinferDecisionModel.builder()
 The input can be text and media parts (`DecisionInput.content(...)`) or fields (`DecisionInput.fields(...)`).
 Fields are put to the model as JSON, the form d1 was trained on; a field holding content parts adds its text (or its media's kinds) to the JSON, and its media to the input, never as base64 in the prompt.
 d1 reads images and video, d1-Omni also audio, d3 images.
-A conversation is not an input and is refused.
+A conversation (`DecisionInput.conversation(...)`) is put to the model as `{"messages": [...]}`, the transcript Spring AI's System One and Ollama decision models send d1: text, tool calls and tool results; reasoning stays out and media is refused.
 
 The questions of a call are taken the way the model was trained to, with no isolation between them guaranteed.
 On d1 and d1-Omni the input is read once for all of them, several times faster, and an answer can then shift with the questions asked beside it.
@@ -427,15 +427,16 @@ The starter creates beans from these properties:
 | Embeddings | `spring.ai.model.embedding=jinfer` | `spring.ai.jinfer.embedding.model` |
 | Decisions | `spring.ai.model.decision=jinfer` | `spring.ai.jinfer.decision.model` |
 | Reranking | configured when a model is present | `spring.ai.jinfer.rerank.model` |
-| Speech | configured when a model is present | `spring.ai.jinfer.speech.model` |
-| Transcription | configured when a model is present | `spring.ai.jinfer.transcription.model` |
+| Speech | `spring.ai.model.audio.speech=jinfer` | `spring.ai.jinfer.speech.model` |
+| Transcription | `spring.ai.model.audio.transcription=jinfer` | `spring.ai.jinfer.transcription.model` |
 
-Chat is enabled when its model is configured and no other chat provider is selected.
+Chat, speech and transcription are also enabled when their model is configured and no other provider of that type is selected.
 Embeddings and decisions need explicit selection, so a chat-only app is never asked for an embedding or decision GGUF.
 Add companions under `spring.ai.jinfer.chat.companions` (or `.embedding.companions`, `.decision.companions`), keyed by capability such as `media` or `speculation`.
 `spring.ai.jinfer.chat.output-modalities=text,audio` lets a model with a voice answer in speech, see [Spoken replies](#spoken-replies).
 Model sources may be remote references or local paths; model resolution happens at startup, and invalid configuration fails the boot.
 For `mvn spring-boot:run`, pass the JVM flags above through the plugin's `jvmArguments` and set `optimizedLaunch` to `false` for full JIT compilation.
+With a `MeterRegistry` in the application (Spring Boot Actuator, for example), the starter records Spring AI's `gen_ai` metrics for the chat, embedding, decision, speech and transcription models: token usage and operation timings.
 
 The [translation table](index.md#the-same-knob-at-each-face) maps settings between Spring AI, LangChain4j, the CLI and the server.
 
@@ -454,6 +455,8 @@ chat.prompt("What is my name?").advisors(SessionAdvisors.session("s1")).call().c
 ```
 
 Replies go back into the session as they came, reasoning and tool calls included, so a retained prompt cache keeps hitting across turns.
+That holds for a session stored in a database too: a reply carries nothing of jinfer's, and the model remembers its recent replies (up to 16M token ids), so an echo that says the same replays the exact generated tokens.
+An older echo, or one after a restart, renders from its text.
 
 ## Lifetime and concurrency
 

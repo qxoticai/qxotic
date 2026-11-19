@@ -2,11 +2,16 @@ package com.qxotic.jinfer.langchain4j;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertNotEquals;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
+import com.qxotic.jinfer.chat.Verbatim;
+import dev.langchain4j.data.message.AiMessage;
 import dev.langchain4j.data.message.UserMessage;
+import dev.langchain4j.model.chat.request.ChatRequest;
+import dev.langchain4j.model.chat.response.ChatModelStreamingEvent;
 import dev.langchain4j.model.chat.response.ChatResponse;
 import dev.langchain4j.model.chat.response.PartialResponse;
 import dev.langchain4j.model.chat.response.PartialResponseContext;
@@ -15,12 +20,16 @@ import dev.langchain4j.model.output.FinishReason;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
+import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.Executors;
+import java.util.concurrent.Flow;
 import java.util.concurrent.TimeUnit;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.Timeout;
 
 /** Callback ordering, cancellation and lifecycle over a fresh weightless model per test. */
 class StreamingContractTest {
@@ -121,6 +130,125 @@ class StreamingContractTest {
         assertTrue(r.partials >= 2, "partials flowed before cancel");
         assertNull(r.response, "cancellation has no completion callback");
         assertNull(r.error, "cancellation has no error callback");
+    }
+
+    private static ChatRequest ask(String text) {
+        return ChatRequest.builder().messages(UserMessage.from(text)).build();
+    }
+
+    /** Collects a publisher's events, requesting {@code demand} and cancelling once it is met. */
+    private static final class Collector implements Flow.Subscriber<ChatModelStreamingEvent> {
+        final List<ChatModelStreamingEvent> events = new CopyOnWriteArrayList<>();
+        final CompletableFuture<List<ChatModelStreamingEvent>> done = new CompletableFuture<>();
+        final long demand;
+        Flow.Subscription subscription;
+
+        Collector(long demand) {
+            this.demand = demand;
+        }
+
+        @Override
+        public void onSubscribe(Flow.Subscription subscription) {
+            this.subscription = subscription;
+            subscription.request(demand);
+        }
+
+        @Override
+        public void onNext(ChatModelStreamingEvent event) {
+            events.add(event);
+            if (events.size() == demand) {
+                subscription.cancel();
+                done.complete(events);
+            }
+        }
+
+        @Override
+        public void onError(Throwable error) {
+            done.completeExceptionally(error);
+        }
+
+        @Override
+        public void onComplete() {
+            done.complete(events);
+        }
+    }
+
+    /** A subscriber that cancels sees nothing more, and the engine is free for the next call. */
+    @Test
+    void aCancelledSubscriptionEndsTheGeneration() throws Exception {
+        try (JinferChatModel tiny =
+                ChatFixtures.builder().contextCapacity(64).maxOutputTokens(128).build()) {
+            Collector collector = new Collector(2);
+            tiny.streaming().chat(ask("hello")).subscribe(collector);
+            assertEquals(2, collector.done.get(10, TimeUnit.SECONDS).size());
+            CountDownLatch drained = new CountDownLatch(1);
+            tiny.engine.stream(drained::countDown);
+            assertTrue(drained.await(10, TimeUnit.SECONDS), "the generation did not end");
+            assertEquals(2, collector.events.size(), "events arrived after the cancel");
+            assertFalse(tiny.chat("hello").isEmpty());
+        }
+    }
+
+    /**
+     * A subscriber that stops requesting holds its buffered reply, never the engine. Held, the
+     * engine could not even close, so the timeout runs the test on its own thread.
+     */
+    @Test
+    @Timeout(value = 60, threadMode = Timeout.ThreadMode.SEPARATE_THREAD)
+    void aStalledSubscriberDoesNotHoldTheEngine() throws Exception {
+        try (JinferChatModel longer =
+                ChatFixtures.builder().contextCapacity(1024).maxOutputTokens(600).build()) {
+            // takes one event, then neither requests another nor cancels
+            Flow.Subscriber<ChatModelStreamingEvent> silent =
+                    new Flow.Subscriber<>() {
+                        @Override
+                        public void onSubscribe(Flow.Subscription subscription) {
+                            subscription.request(1);
+                        }
+
+                        @Override
+                        public void onNext(ChatModelStreamingEvent event) {}
+
+                        @Override
+                        public void onError(Throwable error) {}
+
+                        @Override
+                        public void onComplete() {}
+                    };
+            longer.streaming().chat(ask("hello")).subscribe(silent);
+            CompletableFuture<String> next =
+                    CompletableFuture.supplyAsync(() -> longer.chat("hello"));
+            assertFalse(next.get(30, TimeUnit.SECONDS).isEmpty(), "the engine was held");
+        }
+    }
+
+    /** The reply as delivered is remembered for its echo; a stop-sequence cut is not. */
+    @Test
+    void theDeliveredReplyIsRememberedAndACutOneIsNot() {
+        AiMessage whole = model.chat(ask("hello")).aiMessage();
+        assertNotEquals(Verbatim.NONE, model.replies.recall(whole));
+
+        String text = whole.text();
+        String stop = text.substring(text.length() / 2, text.length() / 2 + 1);
+        AiMessage cut =
+                model.chat(
+                                ChatRequest.builder()
+                                        .messages(UserMessage.from("hello"))
+                                        .stopSequences(List.of(stop))
+                                        .build())
+                        .aiMessage();
+        assertTrue(
+                cut.text() == null || cut.text().length() < text.length(),
+                "the stop sequence cut nothing");
+        assertEquals(Verbatim.NONE, model.replies.recall(cut));
+    }
+
+    @Test
+    void aStreamedReplyIsRemembered() throws Exception {
+        Recorder r = new Recorder();
+        model.streaming().chat("hello", r);
+        r.awaitCompletion();
+        assertNotEquals(Verbatim.NONE, model.replies.recall(r.response.aiMessage()));
     }
 
     @Test

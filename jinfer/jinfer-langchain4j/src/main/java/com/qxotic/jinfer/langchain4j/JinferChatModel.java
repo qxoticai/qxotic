@@ -85,6 +85,9 @@ public final class JinferChatModel implements ChatModel, AutoCloseable {
     final Duration timeout;
     final List<ChatModelListener> listeners;
     final VideoSampler videoSampler;
+    // the engine's recent replies, shared by every view and the streaming twin: an echo of one
+    // replays the exact tokens the model generated
+    final Replies replies;
     // cached-prompt view state: EMPTY for the base model. Converted to jinfer types ONCE at view
     // creation (media decoded once, not per request); a view's conversations all start with this
     // prefix, its KV restored from the engine's block tree instead of re-prefilled.
@@ -137,6 +140,7 @@ public final class JinferChatModel implements ChatModel, AutoCloseable {
             this.timeout = b.timeout == null ? Duration.ZERO : b.timeout;
             this.listeners = List.copyOf(b.listeners);
             this.videoSampler = b.videoSampler;
+            this.replies = new Replies();
             this.prefix = CachedPrompt.NONE;
             // Jinfer-typed ALWAYS: ChatModel.chat merges defaults.overrideWith(request), and only a
             // jinfer-typed receiver preserves grammar/seed from either side of the merge
@@ -193,6 +197,7 @@ public final class JinferChatModel implements ChatModel, AutoCloseable {
         this.timeout = base.timeout;
         this.listeners = base.listeners;
         this.videoSampler = base.videoSampler;
+        this.replies = base.replies;
         this.prefix = prefix;
     }
 
@@ -234,7 +239,7 @@ public final class JinferChatModel implements ChatModel, AutoCloseable {
         Objects.requireNonNull(tools, "tools");
         return withPrefix(
                 prefix.merge(
-                        Mappings.toMessages(prefixMessages, videoSampler),
+                        Mappings.toMessages(prefixMessages, videoSampler, replies),
                         Mappings.toTools(tools)));
     }
 
@@ -299,6 +304,8 @@ public final class JinferChatModel implements ChatModel, AutoCloseable {
                             Mappings.toAiMessage(done.reply()), offeredTools(request));
             if (done.stopped()) {
                 ai = Mappings.withText(ai, TextStops.apply(ai.text(), p.stops()).text());
+            } else {
+                replies.remember(ai, done.reply().verbatim()); // the reply as delivered
             }
             return Mappings.response(engine.modelName(), ai, done.promptTokens(), done);
         }
@@ -314,7 +321,8 @@ public final class JinferChatModel implements ChatModel, AutoCloseable {
         return new Estimators(
                 engine.loaded().tokenizer(),
                 template == null ? null : template::mediaPositions,
-                videoSampler);
+                videoSampler,
+                replies);
     }
 
     /** A streaming twin sharing this model's engine and cached prefix (the GGUF loads once). */
@@ -364,7 +372,7 @@ public final class JinferChatModel implements ChatModel, AutoCloseable {
         // is also appended to the prompt unless describeSchema(false), because a grammar alone
         // lets the model produce the shortest valid object rather than the whole one.
         Map<String, Object> schema = schemaOf(p);
-        messages.addAll(Mappings.toMessages(request.messages(), videoSampler));
+        messages.addAll(Mappings.toMessages(request.messages(), videoSampler, replies));
         if (schema != null && describeSchema && (tools.isEmpty() || afterAToolRound(messages))) {
             // with tools offered the line waits for the tool round: read on round one it made
             // models answer from memory instead of calling the tool they were told to use

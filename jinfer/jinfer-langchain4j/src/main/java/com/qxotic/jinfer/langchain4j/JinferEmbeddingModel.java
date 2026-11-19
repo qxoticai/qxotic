@@ -189,7 +189,7 @@ public final class JinferEmbeddingModel implements EmbeddingModel, AutoCloseable
      */
     public TokenCountEstimator tokenCountEstimator() {
         // no media plan, no sampler: the estimator refuses media messages before any decode
-        return new Estimators(loaded.tokenizer(), null, null);
+        return new Estimators(loaded.tokenizer(), null, null, new Replies()); // none to echo
     }
 
     /**

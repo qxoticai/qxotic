@@ -16,6 +16,7 @@ import dev.langchain4j.data.message.ImageContent;
 import dev.langchain4j.data.message.PdfFileContent;
 import dev.langchain4j.data.message.TextContent;
 import dev.langchain4j.data.message.VideoContent;
+import dev.langchain4j.exception.AsyncNotSupportedException;
 import dev.langchain4j.exception.UnsupportedFeatureException;
 import dev.langchain4j.model.decision.listener.DecisionModelErrorContext;
 import dev.langchain4j.model.decision.listener.DecisionModelListener;
@@ -41,6 +42,7 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.ExecutionException;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicReference;
 import org.junit.jupiter.api.AfterAll;
@@ -316,24 +318,19 @@ final class JinferDecisionModelComprehensiveIT {
                 empty.getMessage());
     }
 
-    /** The async entry point is the same pipeline off the caller's thread: the same answer. */
+    /** The synchronous pipeline is the model; the async entry point says so in its own channel. */
     @Test
-    void asyncAnswersAsDecideDoes() throws Exception {
-        DecisionRequest request =
-                DecisionRequest.builder()
-                        .input("I was charged twice and I want my money back today.")
-                        .question(
-                                "refund",
-                                YesNoQuestion.from("Is the customer asking for a refund?"))
-                        .build();
-        // warm-up: a cold first call runs partly interpreted, and jam's int8 activations
-        // magnify that past 1e-5
-        model.decide(request);
-        CompletableFuture<DecisionResponse> async = model.decideAsync(request);
-        assertEquals(
-                model.decide(request).yesNo("refund").probability(),
-                async.get().yesNo("refund").probability(),
-                1e-5);
+    void asyncIsNotImplementedAndSaysSo() {
+        CompletableFuture<DecisionResponse> future =
+                model.decideAsync(
+                        DecisionRequest.builder()
+                                .input("x")
+                                .question("q", YesNoQuestion.from("?"))
+                                .build());
+        ExecutionException failure = assertThrows(ExecutionException.class, future::get);
+        assertTrue(
+                failure.getCause() instanceof AsyncNotSupportedException,
+                String.valueOf(failure.getCause()));
     }
 
     @Test

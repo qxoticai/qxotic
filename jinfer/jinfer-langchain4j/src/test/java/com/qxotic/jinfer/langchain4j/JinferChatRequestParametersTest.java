@@ -6,10 +6,16 @@ import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 
 import com.qxotic.jinfer.chat.Modality;
+import dev.langchain4j.model.chat.listener.ChatModelListener;
+import dev.langchain4j.model.chat.listener.ChatModelRequestContext;
 import dev.langchain4j.model.chat.request.ChatRequestParameters;
 import dev.langchain4j.model.chat.request.DefaultChatRequestParameters;
+import dev.langchain4j.service.AiServices;
+import dev.langchain4j.service.UserMessage;
 import java.time.Duration;
+import java.util.List;
 import java.util.Set;
+import java.util.concurrent.atomic.AtomicReference;
 import org.junit.jupiter.api.Test;
 
 /**
@@ -108,6 +114,31 @@ class JinferChatRequestParametersTest {
         assertEquals(2L, merged.seed(), "request seed wins");
         assertEquals(YES_NO, merged.grammar(), "request grammar arrives");
         assertEquals(0.0, merged.temperature(), "unset request fields inherit defaults");
+    }
+
+    interface Assistant {
+        String chat(@UserMessage String message, ChatRequestParameters parameters);
+    }
+
+    /** AI Services merge a parameters argument the other way round: {@code p.defaultedBy(...)}. */
+    @Test
+    void aServiceMethodsParametersKeepTheirJinferFields() {
+        AtomicReference<ChatRequestParameters> seen = new AtomicReference<>();
+        ChatModelListener listener =
+                new ChatModelListener() {
+                    @Override
+                    public void onRequest(ChatModelRequestContext context) {
+                        seen.set(context.chatRequest().parameters());
+                    }
+                };
+        try (JinferChatModel model = ChatFixtures.builder().listeners(List.of(listener)).build()) {
+            AiServices.create(Assistant.class, model)
+                    .chat("hi", JinferChatRequestParameters.builder().seed(7L).minP(0.05).build());
+        }
+        JinferChatRequestParameters reached = (JinferChatRequestParameters) seen.get();
+        assertEquals(7L, reached.seed());
+        assertEquals(0.05, reached.minP());
+        assertEquals(0.0, reached.temperature(), "the model's defaults fill the rest");
     }
 
     @Test

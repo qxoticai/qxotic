@@ -3,6 +3,7 @@ package com.qxotic.jinfer.langchain4j;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import dev.langchain4j.agent.tool.ToolExecutionRequest;
@@ -14,13 +15,17 @@ import dev.langchain4j.model.chat.request.ChatRequest;
 import dev.langchain4j.model.chat.request.json.JsonObjectSchema;
 import dev.langchain4j.model.chat.response.ChatResponse;
 import dev.langchain4j.model.chat.response.PartialThinking;
+import dev.langchain4j.model.chat.response.PartialThinkingContext;
 import dev.langchain4j.model.chat.response.StreamingChatResponseHandler;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.List;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.CopyOnWriteArrayList;
+import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicInteger;
+import java.util.concurrent.atomic.AtomicReference;
 import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.Assumptions;
 import org.junit.jupiter.api.BeforeAll;
@@ -159,6 +164,49 @@ abstract class AbstractThinkingIT {
 
     private static String nullToEmpty(String s) {
         return s == null ? "" : s;
+    }
+
+    /** A Stop button works while the model is still reasoning: the handle rides every delta. */
+    @Test
+    void aStreamCancelsWhileItThinks() throws Exception {
+        CountDownLatch cancelled = new CountDownLatch(1);
+        AtomicInteger thoughts = new AtomicInteger();
+        AtomicReference<Object> after = new AtomicReference<>();
+        model.streaming()
+                .chat(
+                        ChatRequest.builder()
+                                .messages(UserMessage.from("Is 17 a prime number?"))
+                                .build(),
+                        new StreamingChatResponseHandler() {
+                            @Override
+                            public void onPartialThinking(
+                                    PartialThinking partial, PartialThinkingContext context) {
+                                if (thoughts.incrementAndGet() == 2) {
+                                    context.streamingHandle().cancel();
+                                    cancelled.countDown();
+                                }
+                            }
+
+                            @Override
+                            public void onPartialResponse(String partial) {
+                                after.compareAndSet(null, "content: " + partial);
+                            }
+
+                            @Override
+                            public void onCompleteResponse(ChatResponse response) {
+                                after.compareAndSet(null, response);
+                            }
+
+                            @Override
+                            public void onError(Throwable error) {
+                                after.compareAndSet(null, error);
+                            }
+                        });
+        assertTrue(cancelled.await(5, TimeUnit.MINUTES), "no reasoning streamed");
+        // a request behind the cancelled one runs only once the engine let it go
+        model.chat(ChatRequest.builder().messages(UserMessage.from("Say ok.")).build());
+        assertEquals(2, thoughts.get(), "reasoning streamed on after the cancel");
+        assertNull(after.get(), "a cancelled stream ends silently");
     }
 
     @Test

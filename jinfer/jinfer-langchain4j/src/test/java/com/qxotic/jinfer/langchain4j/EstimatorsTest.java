@@ -4,6 +4,8 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
+import com.qxotic.jinfer.ContentKey;
+import com.qxotic.jinfer.chat.Verbatim;
 import com.qxotic.toknroll.IntSequence;
 import com.qxotic.toknroll.Tokenizer;
 import com.qxotic.toknroll.Vocabulary;
@@ -53,7 +55,7 @@ final class EstimatorsTest {
             };
 
     /** Text-only, like the chat models without an mmproj companion. */
-    private static final Estimators ESTIMATOR = new Estimators(CHARS, null, null);
+    private static final Estimators ESTIMATOR = new Estimators(CHARS, null, null, new Replies());
 
     private static ToolExecutionRequest call(String arguments) {
         return ToolExecutionRequest.builder()
@@ -61,6 +63,22 @@ final class EstimatorsTest {
                 .name("get_weather")
                 .arguments(arguments)
                 .build();
+    }
+
+    /** An echo of the model's own reply counts the record it replays, not its text. */
+    @Test
+    void anEchoCountsTheRecordItReplays() {
+        AiMessage echo = AiMessage.from("hello");
+        assertEquals(5, ESTIMATOR.estimateTokenCountInMessage(echo), "its text, one per char");
+        Replies replies = new Replies();
+        replies.remember(
+                echo,
+                new Verbatim(
+                        new ContentKey("test-model"),
+                        IntSequence.of(1, 2, 3),
+                        IntSequence.empty()));
+        assertEquals(
+                3, new Estimators(CHARS, null, null, replies).estimateTokenCountInMessage(echo));
     }
 
     @Test

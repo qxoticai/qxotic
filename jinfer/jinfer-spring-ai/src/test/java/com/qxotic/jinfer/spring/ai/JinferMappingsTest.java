@@ -1,16 +1,18 @@
 package com.qxotic.jinfer.spring.ai;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
-import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
+import com.qxotic.jinfer.ContentKey;
 import com.qxotic.jinfer.chat.Content;
 import com.qxotic.jinfer.chat.Message;
 import com.qxotic.jinfer.chat.Role;
 import com.qxotic.jinfer.chat.Tool;
+import com.qxotic.jinfer.chat.Verbatim;
 import com.qxotic.jinfer.codecs.AudioCodec;
 import com.qxotic.jinfer.codecs.VideoSampler;
+import com.qxotic.toknroll.IntSequence;
 import java.awt.image.BufferedImage;
 import java.io.ByteArrayOutputStream;
 import java.io.DataOutputStream;
@@ -40,6 +42,8 @@ import org.springframework.ai.chat.messages.part.ToolCallPart;
 import org.springframework.ai.chat.messages.part.ToolResultPart;
 import org.springframework.ai.chat.messages.part.UnknownPart;
 import org.springframework.ai.content.Media;
+import org.springframework.ai.session.SessionEvent;
+import org.springframework.ai.session.support.SessionEventCodec;
 import org.springframework.ai.tool.ToolCallback;
 import org.springframework.ai.tool.definition.DefaultToolDefinition;
 import org.springframework.ai.tool.definition.ToolDefinition;
@@ -122,7 +126,8 @@ class JinferMappingsTest {
                                                         new ToolResponseMessage.ToolResponse(
                                                                 "abc", "get_weather", "18C sunny")))
                                         .build()),
-                        VideoSampler.UNIFORM);
+                        VideoSampler.UNIFORM,
+                        new Replies());
         assertEquals(Role.SYSTEM, out.get(0).role());
         assertEquals("be terse", out.get(0).text());
         assertEquals(Role.USER, out.get(1).role());
@@ -168,7 +173,7 @@ class JinferMappingsTest {
                         .build();
         assertThrows(
                 UnsupportedOperationException.class,
-                () -> JinferMappings.toMessages(List.of(u), VideoSampler.UNIFORM));
+                () -> JinferMappings.toMessages(List.of(u), VideoSampler.UNIFORM, new Replies()));
     }
 
     @Test
@@ -185,7 +190,8 @@ class JinferMappingsTest {
                                         .data(png.toByteArray())
                                         .build())
                         .build();
-        List<Message> out = JinferMappings.toMessages(List.of(u), VideoSampler.UNIFORM);
+        List<Message> out =
+                JinferMappings.toMessages(List.of(u), VideoSampler.UNIFORM, new Replies());
         assertTrue(out.get(0).content().get(1) instanceof Content.Media);
     }
 
@@ -200,7 +206,8 @@ class JinferMappingsTest {
                                         .data(silenceWav())
                                         .build())
                         .build();
-        List<Message> out = JinferMappings.toMessages(List.of(u), VideoSampler.UNIFORM);
+        List<Message> out =
+                JinferMappings.toMessages(List.of(u), VideoSampler.UNIFORM, new Replies());
         assertTrue(out.get(0).content().get(1) instanceof Content.Media);
     }
 
@@ -218,7 +225,9 @@ class JinferMappingsTest {
         UnsupportedOperationException e =
                 assertThrows(
                         UnsupportedOperationException.class,
-                        () -> JinferMappings.toMessages(List.of(u), VideoSampler.UNIFORM));
+                        () ->
+                                JinferMappings.toMessages(
+                                        List.of(u), VideoSampler.UNIFORM, new Replies()));
         assertEquals(
                 "media type application/pdf is not supported: jinfer takes image, audio and video",
                 e.getMessage());
@@ -266,7 +275,7 @@ class JinferMappingsTest {
                         .build();
         assertThrows(
                 UnsupportedOperationException.class,
-                () -> JinferMappings.toMessages(List.of(u), VideoSampler.UNIFORM));
+                () -> JinferMappings.toMessages(List.of(u), VideoSampler.UNIFORM, new Replies()));
     }
 
     @Test
@@ -286,7 +295,9 @@ class JinferMappingsTest {
                         .part(TextPart.of("After."))
                         .build();
         List<Content> parts =
-                JinferMappings.toMessages(List.of(u), VideoSampler.UNIFORM).get(0).content();
+                JinferMappings.toMessages(List.of(u), VideoSampler.UNIFORM, new Replies())
+                        .get(0)
+                        .content();
         assertEquals(3, parts.size());
         assertEquals("Before:", ((Content.Text) parts.get(0)).text());
         assertTrue(parts.get(1) instanceof Content.Media);
@@ -295,7 +306,9 @@ class JinferMappingsTest {
         // the legacy builder orders text, then media; an empty text adds no part
         UserMessage legacy = UserMessage.builder().text("").media(image).build();
         List<Content> legacyParts =
-                JinferMappings.toMessages(List.of(legacy), VideoSampler.UNIFORM).get(0).content();
+                JinferMappings.toMessages(List.of(legacy), VideoSampler.UNIFORM, new Replies())
+                        .get(0)
+                        .content();
         assertEquals(1, legacyParts.size());
         assertTrue(legacyParts.get(0) instanceof Content.Media);
     }
@@ -315,7 +328,7 @@ class JinferMappingsTest {
                         .build();
         Content.ToolResult result =
                 (Content.ToolResult)
-                        JinferMappings.toMessages(List.of(m), VideoSampler.UNIFORM)
+                        JinferMappings.toMessages(List.of(m), VideoSampler.UNIFORM, new Replies())
                                 .get(0)
                                 .content()
                                 .get(0);
@@ -344,7 +357,9 @@ class JinferMappingsTest {
         IllegalArgumentException e =
                 assertThrows(
                         IllegalArgumentException.class,
-                        () -> JinferMappings.toMessages(List.of(m), VideoSampler.UNIFORM));
+                        () ->
+                                JinferMappings.toMessages(
+                                        List.of(m), VideoSampler.UNIFORM, new Replies()));
         assertTrue(e.getMessage().contains("screenshot"), e.getMessage());
         assertTrue(e.getMessage().contains("image/png"), e.getMessage());
     }
@@ -365,7 +380,9 @@ class JinferMappingsTest {
             IllegalArgumentException e =
                     assertThrows(
                             IllegalArgumentException.class,
-                            () -> JinferMappings.toMessages(List.of(m), VideoSampler.UNIFORM));
+                            () ->
+                                    JinferMappings.toMessages(
+                                            List.of(m), VideoSampler.UNIFORM, new Replies()));
             assertTrue(
                     e.getMessage().endsWith("cannot carry this part: anthropic document"),
                     e.getMessage());
@@ -395,7 +412,9 @@ class JinferMappingsTest {
                         .part(ToolCallPart.of(call))
                         .build();
         List<Content> parts =
-                JinferMappings.toMessages(List.of(ai), VideoSampler.UNIFORM).get(0).content();
+                JinferMappings.toMessages(List.of(ai), VideoSampler.UNIFORM, new Replies())
+                        .get(0)
+                        .content();
         assertEquals(3, parts.size());
         assertTrue(parts.get(0) instanceof Content.Reasoning);
         assertEquals("The weather:", ((Content.Text) parts.get(1)).text());
@@ -415,7 +434,8 @@ class JinferMappingsTest {
                                                         new ToolResponseMessage.ToolResponse(
                                                                 "b", "g", "2")))
                                         .build()),
-                        VideoSampler.UNIFORM);
+                        VideoSampler.UNIFORM,
+                        new Replies());
         assertEquals(1, out.size());
         assertEquals(Role.TOOL, out.get(0).role());
         assertEquals("a", ((Content.ToolResult) out.get(0).content().get(0)).callId());
@@ -434,7 +454,8 @@ class JinferMappingsTest {
                                                         new AssistantMessage.ToolCall(
                                                                 "i", "function", "f", null)))
                                         .build()),
-                        VideoSampler.UNIFORM);
+                        VideoSampler.UNIFORM,
+                        new Replies());
         assertEquals(1, out.get(0).content().size());
         Content.ToolCall call = (Content.ToolCall) out.get(0).content().get(0);
         assertEquals(Map.of(), call.arguments()); // null arguments map to empty
@@ -532,7 +553,8 @@ class JinferMappingsTest {
 
         // history side: the part renders back as a Reasoning span on the next turn (the
         // Ollama/OpenAI convention)
-        List<Message> out = JinferMappings.toMessages(List.of(ai), VideoSampler.UNIFORM);
+        List<Message> out =
+                JinferMappings.toMessages(List.of(ai), VideoSampler.UNIFORM, new Replies());
         Content.Reasoning reasoning = (Content.Reasoning) out.get(0).content().get(0);
         assertEquals("hmm, let me think", reasoning.text());
         assertEquals("42", ((Content.Text) out.get(0).content().get(1)).text());
@@ -545,10 +567,16 @@ class JinferMappingsTest {
         for (int i = 0; i < pcm.length; i++) pcm[i] = (float) Math.sin(i * 0.1);
         com.qxotic.jinfer.media.Media.Audio clip =
                 new com.qxotic.jinfer.media.Media.Audio(pcm, 24000, 1);
+        Verbatim record =
+                new Verbatim(
+                        new ContentKey("test-model"),
+                        IntSequence.of(5, Verbatim.FRAME, 6),
+                        IntSequence.of(new int[8]));
         Message reply =
                 new Message(
                         Role.ASSISTANT,
-                        List.of(new Content.Text("Paris."), new Content.Media(clip)));
+                        List.of(new Content.Text("Paris."), new Content.Media(clip)),
+                        record);
         AssistantMessage ai = JinferMappings.toAssistantMessage(reply);
         assertEquals("Paris.", ai.getText());
         assertEquals(2, ai.getParts().size());
@@ -562,16 +590,70 @@ class JinferMappingsTest {
         assertEquals(pcm.length * 2, wav.getInt(40), "PCM16 bytes: the WAV is the clip");
         assertEquals(16000, AudioCodec.decode(wav.array()).sampleRate(), "decodable, resampled");
 
-        // history side: our own reply replays through its metadata, speech and all; a foreign
-        // assistant's media part is not something the template can say, so it is left out
-        assertSame(reply, JinferMappings.toMessages(List.of(ai), VideoSampler.UNIFORM).get(0));
+        // history side: our own reply replays its record, speech and all; a foreign assistant's
+        // media part is not something the template can say, so it is left out
+        Replies replies = new Replies();
+        replies.remember(ai, record);
+        assertEquals(
+                record,
+                JinferMappings.toMessages(List.of(ai), VideoSampler.UNIFORM, replies)
+                        .get(0)
+                        .verbatim());
         AssistantMessage foreign =
                 AssistantMessage.builder()
                         .part(TextPart.of("Paris."))
                         .part(MediaPart.of(JinferMappings.audio(clip)))
                         .build();
-        Message replayed = JinferMappings.toMessages(List.of(foreign), VideoSampler.UNIFORM).get(0);
+        Message replayed =
+                JinferMappings.toMessages(List.of(foreign), VideoSampler.UNIFORM, new Replies())
+                        .get(0);
         assertEquals(List.of(new Content.Text("Paris.")), replayed.content());
+    }
+
+    /**
+     * A reply survives a session store (Spring AI's own codec, the JSON its JDBC repository
+     * writes): the message carries Spring AI's fields only, and its stored echo still replays the
+     * record. An edited echo, or one this model never produced, renders from its parts.
+     */
+    @Test
+    void aStoredEchoReplaysItsRecord() {
+        Verbatim record =
+                new Verbatim(
+                        new ContentKey("test-model"), IntSequence.of(7, 8, 9), IntSequence.empty());
+        Message reply =
+                new Message(
+                        Role.ASSISTANT,
+                        List.of(
+                                new Content.Reasoning("checking"),
+                                new Content.Text("Sunny."),
+                                new Content.ToolCall("c1", "weather", Map.of("city", "Rome"))),
+                        record);
+        AssistantMessage delivered = JinferMappings.toAssistantMessage(reply);
+        Replies replies = new Replies();
+        replies.remember(delivered, record);
+        SessionEventCodec codec = new SessionEventCodec();
+        SessionEvent event = SessionEvent.builder().sessionId("s1").message(delivered).build();
+        AssistantMessage stored =
+                (AssistantMessage)
+                        codec.decode(codec.encode(event)).sessionId("s1").build().getMessage();
+
+        assertEquals(
+                record,
+                JinferMappings.toMessages(List.of(stored), VideoSampler.UNIFORM, replies)
+                        .get(0)
+                        .verbatim());
+        AssistantMessage edited = stored.mutate().content("Rainy.").build();
+        assertEquals(
+                Verbatim.NONE,
+                JinferMappings.toMessages(List.of(edited), VideoSampler.UNIFORM, replies)
+                        .get(0)
+                        .verbatim());
+        assertEquals(
+                Verbatim.NONE,
+                JinferMappings.toMessages(List.of(stored), VideoSampler.UNIFORM, new Replies())
+                        .get(0)
+                        .verbatim(),
+                "another model's table, or this one after a restart");
     }
 
     @Test

@@ -13,6 +13,8 @@ import com.qxotic.jinfer.codecs.AudioCodec;
 import com.qxotic.jinfer.media.Media;
 import com.qxotic.jinfer.testkit.TestModels;
 import com.qxotic.jota.memory.MemoryArena;
+import io.micrometer.observation.tck.TestObservationRegistry;
+import io.micrometer.observation.tck.TestObservationRegistryAssert;
 import java.io.IOException;
 import java.lang.foreign.MemorySegment;
 import java.nio.ByteBuffer;
@@ -69,6 +71,22 @@ class JinferTranscriptionModelTest {
                             .getOutput();
             assertThat(text).isEqualTo("hello world");
         }
+    }
+
+    @Test
+    void aCallIsObserved() {
+        TestObservationRegistry observations = TestObservationRegistry.create();
+        try (var transcriber =
+                JinferTranscriptionModel.builder()
+                        .model(new ToyModel())
+                        .observationRegistry(observations)
+                        .build()) {
+            byte[] wav = AudioCodec.wav(new Media.Audio(new float[16_000], 16_000, 1));
+            transcriber.call(new AudioTranscriptionPrompt(new ByteArrayResource(wav)));
+        }
+        TestObservationRegistryAssert.assertThat(observations)
+                .hasNumberOfObservationsWithNameEqualTo("gen_ai.client.operation", 1)
+                .hasAnObservationWithAKeyValue("gen_ai.system", "jinfer");
     }
 
     @Test

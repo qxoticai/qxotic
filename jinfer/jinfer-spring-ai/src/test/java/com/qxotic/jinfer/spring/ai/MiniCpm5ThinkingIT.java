@@ -1,9 +1,9 @@
 package com.qxotic.jinfer.spring.ai;
 
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
-import com.qxotic.jinfer.chat.Message;
 import com.qxotic.jinfer.testkit.TestModels;
 import java.nio.file.Path;
 import java.time.Duration;
@@ -78,16 +78,14 @@ class MiniCpm5ThinkingIT {
         assertTrue(
                 !thoughts.isEmpty(),
                 "no thought chunks streamed - the prompt-opened think span leaked to content");
-        String thinking = JinferMappings.reasoning(parsed(chunks.get(chunks.size() - 1)));
-        // the finished thinking is the streamed thoughts plus the seed's scaffold newline (the
-        // parser attributes the prompt-opened span's "\n" to reasoning; the chunks, generated
-        // after the seed, start fresh)
+        // the seed's scaffold newline aside, which the parser gives to reasoning while the chunks,
+        // generated after the seed, start fresh
+        AssistantMessage streamed = ChatFixtures.aggregate(chunks);
         assertTrue(
-                thinking.endsWith(thoughts.toString()),
-                "thinking metadata and streamed thought chunks disagree:\n"
-                        + thinking
-                        + "\n---\n"
-                        + thoughts);
+                JinferMappings.reasoning(streamed).endsWith(thoughts.toString()), "the reasoning");
+        assertFalse(
+                model.replies.recall(streamed).isEmpty(),
+                "the streamed reply and the parsed one disagree:\n" + streamed);
     }
 
     @Test
@@ -99,11 +97,5 @@ class MiniCpm5ThinkingIT {
                                 JinferChatOptions.builder().thinking(false).maxTokens(32).build()));
         assertTrue(r.getResult().getOutput().getReasoning().isEmpty());
         assertTrue(!r.getResult().getOutput().getText().isBlank());
-    }
-
-    /** The reply as parsed, which the final chunk carries whole. */
-    static AssistantMessage parsed(ChatResponse last) {
-        return JinferMappings.toAssistantMessage(
-                (Message) last.getResult().getOutput().getMetadata().get(JinferMappings.REPLY_KEY));
     }
 }

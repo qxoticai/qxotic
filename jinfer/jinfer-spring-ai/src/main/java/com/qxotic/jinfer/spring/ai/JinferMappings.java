@@ -6,6 +6,7 @@ import com.qxotic.jinfer.chat.Content;
 import com.qxotic.jinfer.chat.Message;
 import com.qxotic.jinfer.chat.Role;
 import com.qxotic.jinfer.chat.Tool;
+import com.qxotic.jinfer.chat.Verbatim;
 import com.qxotic.jinfer.codecs.AudioCodec;
 import com.qxotic.jinfer.codecs.ImageCodec;
 import com.qxotic.jinfer.codecs.VideoSampler;
@@ -18,7 +19,6 @@ import java.nio.file.Path;
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
 import java.util.ArrayList;
-import java.util.HashMap;
 import java.util.HexFormat;
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -55,15 +55,20 @@ final class JinferMappings {
 
     // ---- Spring AI -> jinfer ----
 
+    /**
+     * The messages as the engine's: an echo of a reply this model produced replays its record,
+     * recalled from {@code replies}; any other assistant message renders from its parts.
+     */
     static List<Message> toMessages(
             List<org.springframework.ai.chat.messages.Message> messages,
-            VideoSampler videoSampler) {
+            VideoSampler videoSampler,
+            Replies replies) {
         List<Message> out = new ArrayList<>(messages.size());
         for (org.springframework.ai.chat.messages.Message m : messages) {
             switch (m) {
                 case SystemMessage s -> out.add(new Message(Role.SYSTEM, s.getText()));
                 case UserMessage u -> out.add(new Message(Role.USER, userParts(u, videoSampler)));
-                case AssistantMessage ai -> out.add(assistant(ai));
+                case AssistantMessage ai -> out.add(assistant(ai, replies.recall(ai)));
                 case ToolResponseMessage r -> {
                     List<Content> results = new ArrayList<>(r.getResults().size());
                     for (ToolResultPart t : r.getResults()) {
@@ -275,24 +280,10 @@ final class JinferMappings {
         return data;
     }
 
-    /**
-     * Metadata key carrying the parsed reply {@link Message} whole, its {@code Verbatim} record
-     * with it. The round-trip law: an UNMODIFIED assistant echo replays as the exact tokens the
-     * model generated, which is what makes retained-session extension hits deterministic; an edited
-     * echo fails the equality check and renders from its parts instead.
-     */
-    static final String REPLY_KEY = "jinfer.reply";
-
     /** A spoken reply's media type: the container that carries its own rate and channels. */
     static final MimeType WAV = MimeType.valueOf("audio/wav");
 
-    private static Message assistant(AssistantMessage ai) {
-        // an UNMODIFIED echo of a reply this provider produced restores the parsed Message with
-        // its record (replayed token for token: what makes retained-session extension hits
-        // deterministic); an edited echo (or one from another provider) renders from its parts
-        if (ai.getMetadata().get(REPLY_KEY) instanceof Message reply && unchanged(ai, reply)) {
-            return reply;
-        }
+    private static Message assistant(AssistantMessage ai, Verbatim record) {
         // the message's parts in their order: the reasoning the model produced earlier is
         // replayed too, the Ollama/OpenAI convention
         List<Content> parts = new ArrayList<>();
@@ -313,19 +304,7 @@ final class JinferMappings {
                 default -> {} // empty, a streamed argument delta, media, another provider's block
             }
         }
-        return new Message(Role.ASSISTANT, parts);
-    }
-
-    /**
-     * Whether an echo says what the reply said: same text, reasoning and calls. A streamed echo's
-     * parts were rebuilt from the deltas, and a reasoning span's seed newline never streamed, so
-     * the parts themselves are not compared.
-     */
-    private static boolean unchanged(AssistantMessage echo, Message reply) {
-        AssistantMessage parsed = toAssistantMessage(reply);
-        return parsed.getText().equals(echo.getText())
-                && reasoning(parsed).strip().equals(reasoning(echo).strip())
-                && parsed.getToolCalls().equals(echo.getToolCalls());
+        return new Message(Role.ASSISTANT, parts, record);
     }
 
     /** A message's reasoning as one text. */
@@ -387,18 +366,12 @@ final class JinferMappings {
 
     // ---- jinfer reply -> Spring AI ----
 
-    /**
-     * The reply as a message of parts in the reply's own order: reasoning, text, tool calls. The
-     * parsed reply rides along whole, so an unmodified echo restores its record instead of
-     * re-tokenizing.
-     */
+    /** The reply as a message of parts in the reply's own order: reasoning, text, tool calls. */
     static AssistantMessage toAssistantMessage(Message reply) {
         List<MessagePart> parts = new ArrayList<>();
         collect(reply.content(), parts);
         if (parts.isEmpty()) parts.add(TextPart.of("")); // an empty reply has an empty text
-        Map<String, Object> properties = new HashMap<>();
-        properties.put(REPLY_KEY, reply);
-        return AssistantMessage.builder().parts(parts).properties(properties).build();
+        return AssistantMessage.builder().parts(parts).build();
     }
 
     /**
