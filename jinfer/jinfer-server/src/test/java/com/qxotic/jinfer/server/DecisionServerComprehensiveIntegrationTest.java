@@ -375,6 +375,9 @@ final class DecisionServerComprehensiveIntegrationTest {
                             "d3",
                             ServerConfig.local(0));
             String url = "http://127.0.0.1:" + d3Server.address().getPort() + "/v1/systemone";
+            // warm-up: a cold first call runs partly interpreted, and jam's int8 activations
+            // magnify that past 1e-5
+            postTo(url, "{" + body + "}");
             Reply each = postTo(url, "{" + body + "}");
             Reply packed = postTo(url, "{" + body + ", \"joint\": true}");
             assertEquals(200, each.status(), String.valueOf(each.body()));

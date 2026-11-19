@@ -21,11 +21,14 @@ import org.opentest4j.TestAbortedException;
  * fixture tree next to the git checkout that {@code scripts/download-models.sh} fills.
  *
  * <p>The per-model override: {@code -Djinfer.testModel.<last-ref-segment>=<path>} makes that file
- * serve the ref - e.g. {@code -Djinfer.testModel.LFM2.5-8B-A1B-Q8_0.gguf=/models/my-Q4_K_M.gguf}
- * runs every suite that requires the Q8_0 ref against your file instead (a quant-form ref keys on
- * its colon segment: {@code -Djinfer.testModel.stories15M_MOE:Q8_0=...}). The knob is derived, not
- * per-suite: nothing to invent, nothing to document per test. A stale override FAILS loudly - an
+ * serve the ref - e.g. {@code
+ * -Djinfer.testModel.LFM2.5-8B-A1B-Q8_0.gguf=/mnt/LFM2.5-8B-A1B-Q8_0.gguf} runs every suite that
+ * requires the Q8_0 ref against that copy (a quant-form ref keys on its colon segment: {@code
+ * -Djinfer.testModel.stories15M_MOE:Q8_0=...}). It is for the same file kept elsewhere: the suites'
+ * assertions are calibrated on the ref's quant, and another quant decides near-ties differently.
+ * Every override in use is printed, so a report shows it. A stale override FAILS loudly - an
  * explicit pointer that resolves to nothing is a tester error, never a silent skip.
+ *
  *
  * <p>CI uses {@code -Djinfer.test.noModels=true} for the model-free suite and {@code
  * -Djinfer.test.requireModels=true} for the fixture-backed gate, where missing models fail instead
@@ -121,6 +124,7 @@ public final class TestModels {
             throw new IllegalArgumentException(
                     "-D" + OVERRIDE_PREFIX + name + "=" + override + " does not exist");
         }
+        System.err.println("jinfer testkit: " + ref + " served by " + path);
         return Optional.of(path);
     }
 

@@ -117,6 +117,9 @@ final class JinferDecisionModelShapesIT {
                                                 "What does the picture show?",
                                                 List.of("cat", "dog", "dice", "landscape")))
                                 .build();
+        // warm-up: a cold first call runs partly interpreted, and jam's int8 activations
+        // magnify that past 1e-5
+        model.decide(request.apply("text", "image"));
         DecisionResponse textFirst = model.decide(request.apply("text", "image"));
         DecisionResponse imageFirst = model.decide(request.apply("image", "text"));
         assertEquals(textFirst.choice("shows").value(), imageFirst.choice("shows").value());

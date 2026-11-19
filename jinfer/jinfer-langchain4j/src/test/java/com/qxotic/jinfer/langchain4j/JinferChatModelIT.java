@@ -21,7 +21,9 @@ import dev.langchain4j.model.chat.response.ChatResponse;
 import dev.langchain4j.model.chat.response.StreamingChatResponseHandler;
 import dev.langchain4j.model.output.FinishReason;
 import dev.langchain4j.service.AiServices;
+import java.nio.file.Path;
 import java.util.List;
+import java.util.Locale;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicReference;
@@ -244,12 +246,14 @@ class JinferChatModelIT {
         assertTrue(!thinking.aiMessage().text().isBlank());
 
         // 8B-A1B has no non-thinking turn: off is refused at build, with the remedy
+        // resolved outside assertThrows, so a missing model skips the test instead of failing it
+        Path alwaysThinks = TestModels.require(MODEL_REF);
         UnsupportedFeatureException refused =
                 assertThrows(
                         UnsupportedFeatureException.class,
                         () ->
                                 JinferChatModel.builder()
-                                        .modelPath(TestModels.require(MODEL_REF))
+                                        .modelPath(alwaysThinks)
                                         .contextCapacity(2048)
                                         .maxOutputTokens(128)
                                         .thinking(false)
@@ -331,10 +335,14 @@ class JinferChatModelIT {
                 model.chat(
                         ChatRequest.builder()
                                 .messages(
-                                        UserMessage.from("Remember this codeword: PELICAN."),
-                                        AiMessage.from("Understood, I will remember it."),
-                                        UserMessage.from("What was the codeword? One word only."))
+                                        UserMessage.from("My favorite bird is the pelican."),
+                                        AiMessage.from("Noted."),
+                                        UserMessage.from(
+                                                "What is my favorite bird? One word only."))
                                 .build());
-        assertTrue(r.aiMessage().text().contains("PELICAN"), r.aiMessage().text());
+        // not a "codeword": the 8B reasons about whether a secret may be revealed, a near-tie
+        assertTrue(
+                r.aiMessage().text().toLowerCase(Locale.ROOT).contains("pelican"),
+                r.aiMessage().text());
     }
 }

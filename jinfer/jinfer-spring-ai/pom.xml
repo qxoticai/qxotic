@@ -114,6 +114,13 @@
       <artifactId>jinfer-testkit</artifactId>
       <scope>test</scope>
     </dependency>
+    <!-- The kernels users get: without a jam backend the tests run the pure-Java fallback,
+         whose float activations decide near-ties differently from jam's int8. -->
+    <dependency>
+      <groupId>com.qxotic</groupId>
+      <artifactId>jam-native</artifactId>
+      <scope>test</scope>
+    </dependency>
     <!-- the transcription test reads its expected transcript out of a GGUF fixture -->
     <dependency>
       <groupId>com.qxotic</groupId>

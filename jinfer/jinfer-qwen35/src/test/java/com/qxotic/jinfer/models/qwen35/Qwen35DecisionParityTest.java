@@ -253,11 +253,12 @@ final class Qwen35DecisionParityTest {
     /** What is refused, and how: a chat file, sound, too many options, a state too small. */
     @Test
     void refusalsSayWhatToDo() throws Exception {
+        // resolved outside assertThrows, so a missing model skips the test instead of failing it
+        Path edge = TestModels.require(EDGE);
         try (Arena arena = Arena.ofShared()) {
             assertThrows(
-                    ModelProvider.IncompatibleModelException.class,
-                    () -> Models.load(TestModels.require(EDGE), arena));
-            DecisionModel bare = Models.loadDecisionModel(TestModels.require(EDGE), arena);
+                    ModelProvider.IncompatibleModelException.class, () -> Models.load(edge, arena));
+            DecisionModel bare = Models.loadDecisionModel(edge, arena);
             try (ContextState state = bare.newState(256)) {
                 var noTower =
                         assertThrows(

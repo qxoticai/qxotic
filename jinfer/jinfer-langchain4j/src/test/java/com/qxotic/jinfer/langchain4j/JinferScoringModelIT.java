@@ -206,15 +206,12 @@ class JinferScoringModelIT {
         // the mistake to expect: pointing the scorer at the chat GGUF already on disk. LFM2 IS
         // a reranker family (ColBERT), so its provider refuses the wrong CHECKPOINT by name and
         // points at the right one - before any weight is mapped
+        // resolved outside assertThrows, so a missing model skips the test instead of failing it
+        var chatGguf = TestModels.require("hf.co/LiquidAI/LFM2.5-350M-GGUF/LFM2.5-350M-Q8_0.gguf");
         IllegalArgumentException e =
                 assertThrows(
                         IllegalArgumentException.class,
-                        () ->
-                                JinferScoringModel.builder()
-                                        .modelPath(
-                                                TestModels.require(
-                                                        "hf.co/LiquidAI/LFM2.5-350M-GGUF/LFM2.5-350M-Q8_0.gguf"))
-                                        .build());
+                        () -> JinferScoringModel.builder().modelPath(chatGguf).build());
         assertTrue(e.getMessage().contains("not the family's reranker"), e.getMessage());
         assertTrue(e.getMessage().contains("LFM2.5-ColBERT"), e.getMessage());
     }

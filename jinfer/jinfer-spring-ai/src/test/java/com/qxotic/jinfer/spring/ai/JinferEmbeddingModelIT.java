@@ -10,6 +10,7 @@ import com.qxotic.jinfer.chat.Models;
 import com.qxotic.jinfer.testkit.TestModels;
 import io.micrometer.observation.tck.TestObservationRegistry;
 import java.lang.foreign.Arena;
+import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
@@ -422,15 +423,12 @@ class JinferEmbeddingModelIT {
 
     @Test
     void generativeArchitectureFailsLoudly() {
+        // resolved outside assertThrows, so a missing model skips the test instead of failing it
+        Path generative = TestModels.require("hf.co/unsloth/gemma-4-E2B-it-GGUF:Q8_0");
         IncompatibleModelException e =
                 assertThrows(
                         IncompatibleModelException.class,
-                        () ->
-                                JinferEmbeddingModel.builder()
-                                        .modelPath(
-                                                TestModels.require(
-                                                        "hf.co/unsloth/gemma-4-E2B-it-GGUF:Q8_0"))
-                                        .build());
+                        () -> JinferEmbeddingModel.builder().modelPath(generative).build());
         assertTrue(e.getMessage().contains("not an embedding"), e.getMessage());
     }
 

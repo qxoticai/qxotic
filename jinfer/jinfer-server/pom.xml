@@ -44,6 +44,13 @@
       <artifactId>jinfer-testkit</artifactId>
       <scope>test</scope>
     </dependency>
+    <!-- The kernels users get: without a jam backend the tests run the pure-Java fallback,
+         whose float activations decide near-ties differently from jam's int8. -->
+    <dependency>
+      <groupId>com.qxotic</groupId>
+      <artifactId>jam-native</artifactId>
+      <scope>test</scope>
+    </dependency>
     <!-- ServerIntegrationTest loads its LFM model through ModelProvider's ServiceLoader. -->
     <dependency>
       <groupId>com.qxotic</groupId>

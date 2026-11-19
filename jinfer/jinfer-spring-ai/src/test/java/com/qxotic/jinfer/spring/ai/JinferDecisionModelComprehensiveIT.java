@@ -527,24 +527,28 @@ final class JinferDecisionModelComprehensiveIT {
                                         "hf.co/LiquidAI/d1-Omni-2B-GGUF/"
                                                 + "mmproj-d1-Omni-2B-F16.gguf"))
                         .build()) {
-            DecisionResponse response =
-                    omni.call(
-                            DecisionInput.content(
-                                    MediaPart.of(photo),
-                                    MediaPart.of(clip),
-                                    TextPart.of("A photo and a recording sent by a customer.")),
-                            questions(
+            DecisionInput input =
+                    DecisionInput.content(
+                            MediaPart.of(photo),
+                            MediaPart.of(clip),
+                            TextPart.of("A photo and a recording sent by a customer."));
+            Map<String, DecisionQuestion> asked =
+                    questions(
+                            "cat",
+                            YesNoQuestion.of("Is there a cat in the picture?"),
+                            "speech",
+                            YesNoQuestion.of("Is someone speaking in the recording?"),
+                            "shows",
+                            ChoiceQuestion.of(
+                                    "What does the picture show?",
                                     "cat",
-                                    YesNoQuestion.of("Is there a cat in the picture?"),
-                                    "speech",
-                                    YesNoQuestion.of("Is someone speaking in the recording?"),
-                                    "shows",
-                                    ChoiceQuestion.of(
-                                            "What does the picture show?",
-                                            "cat",
-                                            "dog",
-                                            "dice",
-                                            "landscape")));
+                                    "dog",
+                                    "dice",
+                                    "landscape"));
+            // warm-up: a cold first call runs partly interpreted, and jam's int8 activations
+            // magnify that past 1e-5
+            omni.call(input, asked);
+            DecisionResponse response = omni.call(input, asked);
             assertEquals("cat", response.getChoice("shows").getValue());
             // the two towers read the pair as the engine does: same input, same answer
             try (JinferDecisionModel sameModel =
@@ -559,24 +563,7 @@ final class JinferDecisionModelComprehensiveIT {
                                             "hf.co/LiquidAI/d1-Omni-2B-GGUF/"
                                                     + "mmproj-d1-Omni-2B-F16.gguf"))
                             .build()) {
-                DecisionResponse again =
-                        sameModel.call(
-                                DecisionInput.content(
-                                        MediaPart.of(photo),
-                                        MediaPart.of(clip),
-                                        TextPart.of("A photo and a recording sent by a customer.")),
-                                questions(
-                                        "cat",
-                                        YesNoQuestion.of("Is there a cat in the picture?"),
-                                        "speech",
-                                        YesNoQuestion.of("Is someone speaking in the recording?"),
-                                        "shows",
-                                        ChoiceQuestion.of(
-                                                "What does the picture show?",
-                                                "cat",
-                                                "dog",
-                                                "dice",
-                                                "landscape")));
+                DecisionResponse again = sameModel.call(input, asked);
                 assertEquals(
                         response.getYesNo("cat").getProbability(),
                         again.getYesNo("cat").getProbability(),
@@ -622,6 +609,9 @@ final class JinferDecisionModelComprehensiveIT {
                                                 "hf.co/ggml-org/vllm-d3-edge-GGUF/"
                                                         + "vllm-d3-edge-Q8_0.gguf"))
                                 .build()) {
+            // warm-up: a cold first call runs partly interpreted, and jam's int8 activations
+            // magnify that past 1e-5
+            each.call(ticket, asked);
             DecisionResponse one = each.call(ticket, asked);
             DecisionResponse all = packed.call(ticket, asked);
             assertEquals(

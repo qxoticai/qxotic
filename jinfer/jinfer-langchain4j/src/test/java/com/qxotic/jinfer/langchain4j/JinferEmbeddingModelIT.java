@@ -710,15 +710,14 @@ class JinferEmbeddingModelIT {
      */
     @Test
     void aRerankerIsNotAnEmbedder() {
+        // resolved outside assertThrows, so a missing model skips the test instead of failing it
+        Path colbert =
+                TestModels.require(
+                        "hf.co/LiquidAI/LFM2.5-ColBERT-350M-GGUF/LFM2.5-ColBERT-350M-Q8_0.gguf");
         IllegalArgumentException e =
                 assertThrows(
                         IllegalArgumentException.class,
-                        () ->
-                                JinferEmbeddingModel.builder()
-                                        .modelPath(
-                                                TestModels.require(
-                                                        "hf.co/LiquidAI/LFM2.5-ColBERT-350M-GGUF/LFM2.5-ColBERT-350M-Q8_0.gguf"))
-                                        .build());
+                        () -> JinferEmbeddingModel.builder().modelPath(colbert).build());
         assertTrue(e.getMessage().contains("LFM2.5-ColBERT"), e.getMessage());
         assertTrue(e.getMessage().contains("Models.loadReranker"), e.getMessage());
         assertFalse(e.getMessage().contains("generative"), e.getMessage());

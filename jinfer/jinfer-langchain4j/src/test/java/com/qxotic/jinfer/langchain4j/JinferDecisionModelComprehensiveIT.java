@@ -667,6 +667,9 @@ final class JinferDecisionModelComprehensiveIT {
         try (JinferDecisionModel each =
                         JinferDecisionModel.builder().modelPath(d3).independent(true).build();
                 JinferDecisionModel packed = JinferDecisionModel.builder().modelPath(d3).build()) {
+            // warm-up: a cold first call runs partly interpreted, and jam's int8 activations
+            // magnify that past 1e-5
+            each.decide(request);
             DecisionResponse one = each.decide(request);
             DecisionResponse all = packed.decide(request);
             assertEquals(
