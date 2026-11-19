@@ -9,7 +9,7 @@ import jdk.incubator.vector.VectorOperators;
 import jdk.incubator.vector.VectorSpecies;
 
 /**
- * Probe: pure F32 register-tiled gemm from native segments — establishes the JIT's practical
+ * Probe: pure F32 register-tiled gemm from native segments - establishes the JIT's practical
  * ceiling for the band sweep shape (no dequant, no quant decode).
  */
 final class F32Probe {
