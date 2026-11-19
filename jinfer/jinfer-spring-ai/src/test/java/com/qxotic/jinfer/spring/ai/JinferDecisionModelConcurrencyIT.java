@@ -166,6 +166,7 @@ final class JinferDecisionModelConcurrencyIT {
     @Test
     void aFailedCallLeavesTheModelUsable() {
         try (JinferDecisionModel model = JinferDecisionModel.builder().model(core).build()) {
+            model.call(TICKET, questions()); // warm: a cold first call differs by a hair (JIT)
             DecisionResponse first = model.call(TICKET, questions());
             assertThrows(
                     UnsupportedOperationException.class,

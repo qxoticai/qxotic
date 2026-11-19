@@ -4,6 +4,8 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import com.qxotic.jinfer.testkit.TestModels;
+import io.micrometer.observation.tck.TestObservationRegistry;
+import io.micrometer.observation.tck.TestObservationRegistryAssert;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.LinkedHashMap;
@@ -39,6 +41,7 @@ final class JinferDecisionModelIT {
 
     static final double TOLERANCE = 2e-2;
 
+    static final TestObservationRegistry observations = TestObservationRegistry.create();
     static JinferDecisionModel model;
 
     @BeforeAll
@@ -51,6 +54,7 @@ final class JinferDecisionModelIT {
                                 TestModels.require(
                                         "hf.co/LiquidAI/d1-2B-GGUF/mmproj-d1-2B-F16.gguf"))
                         .independent(true) // the pinned numbers are each question asked alone
+                        .observationRegistry(observations)
                         .build();
     }
 
@@ -77,6 +81,17 @@ final class JinferDecisionModelIT {
             questions.put(
                     (String) namesAndQuestions[i], (DecisionQuestion) namesAndQuestions[i + 1]);
         return questions;
+    }
+
+    /** The observation names the model that answered, as chat's does: d1 is told from d3. */
+    @Test
+    void theObservationNamesTheModel() {
+        observations.clear();
+        model.call("I was charged twice.", questions("refund", REFUND));
+        TestObservationRegistryAssert.assertThat(observations)
+                .hasAnObservationWithAKeyValue("gen_ai.request.model", "d1-2B-Q8_0.gguf");
+        TestObservationRegistryAssert.assertThat(observations)
+                .hasAnObservationWithAKeyValue("gen_ai.response.model", "d1-2B-Q8_0.gguf");
     }
 
     /** A map is put to the model as JSON, a member a line: llama.cpp's reading of the same map. */

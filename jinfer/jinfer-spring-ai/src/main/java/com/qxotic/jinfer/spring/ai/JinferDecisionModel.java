@@ -32,6 +32,7 @@ import org.springframework.ai.chat.messages.part.TextPart;
 import org.springframework.ai.chat.messages.part.ToolCallPart;
 import org.springframework.ai.chat.messages.part.ToolResultPart;
 import org.springframework.ai.decision.DecisionModel;
+import org.springframework.ai.decision.DecisionOptions;
 import org.springframework.ai.decision.DecisionPrompt;
 import org.springframework.ai.decision.DecisionResponse;
 import org.springframework.ai.decision.DecisionResponseMetadata;
@@ -131,7 +132,7 @@ public final class JinferDecisionModel implements DecisionModel, AutoCloseable {
     public DecisionResponse call(DecisionPrompt prompt) {
         DecisionModelObservationContext context =
                 DecisionModelObservationContext.builder()
-                        .decisionPrompt(prompt)
+                        .decisionPrompt(naming(prompt))
                         .provider(PROVIDER)
                         .build();
         return DecisionModelObservationDocumentation.DECISION_MODEL_OPERATION
@@ -188,6 +189,20 @@ public final class JinferDecisionModel implements DecisionModel, AutoCloseable {
                             + options
                             + " options");
         return row;
+    }
+
+    /**
+     * {@code prompt} naming the model that answers it, as the observation records it: the
+     * convention reads the request's model from the prompt's options, and Spring AI's own decision
+     * models observe their merged options the same way. A prompt naming one already, or a model
+     * loaded by the caller (which has no name), is left as it is.
+     */
+    private DecisionPrompt naming(DecisionPrompt prompt) {
+        DecisionOptions options = prompt.getOptions();
+        if (modelName == null || options != null && options.getModel() != null) return prompt;
+        DecisionOptions.Builder<?> named =
+                options == null ? DecisionOptions.builder() : options.mutate();
+        return prompt.mutate().options(named.model(modelName).build()).build();
     }
 
     /** One loaded GGUF a pipeline: a prompt naming another model is refused, never answered. */
