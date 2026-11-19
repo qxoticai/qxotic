@@ -23,7 +23,7 @@ No inference server, Python runtime or API key required.
 
 ## Spring Boot quick start
 
-The examples use Java 25, Spring Boot 4.2.0-RC2 and Spring AI 2.1.0-RC2.
+The examples use Java 25, Spring Boot 4.2.0 and Spring AI 2.1.0.
 A Spring Boot native image (`mvn -Pnative native:compile`), built with GraalVM 25.0.4 or later, needs no extra configuration.
 Add the [dependencies below](#add-the-provider) to your Spring Boot application, then set these JVM options:
 
@@ -116,7 +116,7 @@ Import the Spring AI and jinfer BOMs, then add the starter and model providers:
     <dependency>
       <groupId>org.springframework.ai</groupId>
       <artifactId>spring-ai-bom</artifactId>
-      <version>2.1.0-RC2</version>
+      <version>2.1.0</version>
       <type>pom</type>
       <scope>import</scope>
     </dependency>
@@ -145,7 +145,7 @@ Import the Spring AI and jinfer BOMs, then add the starter and model providers:
 `jinfer-models-all` includes the providers used by the examples below, not model weights.
 Only the models you load are downloaded.
 The BOMs manage versions; they do not add dependencies.
-Without them, pin the versions `jinfer-bom` 0.4.0 lists on each jinfer dependency and `2.1.0-RC2` on each Spring AI one.
+Without them, pin the versions `jinfer-bom` 0.4.0 lists on each jinfer dependency and `2.1.0` on each Spring AI one.
 
 Optional runtime backends are `jam-native` (hand-tuned SIMD) and `jam-vector` (Panama Vector API):
 
@@ -175,8 +175,8 @@ For scripts that use the core Spring AI provider without Spring Boot:
 //RUNTIME_OPTIONS --add-modules jdk.incubator.vector --enable-native-access=ALL-UNNAMED
 //DEPS com.qxotic:jinfer-bom:0.4.0@pom
 //DEPS com.qxotic:jinfer-spring-ai com.qxotic:jinfer-models-all
-//DEPS org.springframework.ai:spring-ai-client-chat:2.1.0-RC2
-//DEPS org.springframework.ai:spring-ai-rag:2.1.0-RC2
+//DEPS org.springframework.ai:spring-ai-client-chat:2.1.0
+//DEPS org.springframework.ai:spring-ai-rag:2.1.0
 //DEPS com.qxotic:jam-native com.qxotic:jam-vector
 ```
 

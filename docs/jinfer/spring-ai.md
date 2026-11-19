@@ -10,7 +10,7 @@ No server, no HTTP hop.
 
 ## Installation
 
-These examples target jinfer **0.4.0**, Spring AI **2.1.0-RC2**, and Java **25**; the starter targets Spring Boot **4.2.0-RC2**.
+These examples target jinfer **0.4.0**, Spring AI **2.1.0**, and Java **25**; the starter targets Spring Boot **4.2.0**.
 For an unreleased checkout, first install the artifacts locally from the repository root:
 
 ```bash
@@ -298,7 +298,7 @@ The starter brings in the RAG API; without it, add:
 <dependency>
   <groupId>org.springframework.ai</groupId>
   <artifactId>spring-ai-rag</artifactId>
-  <version>2.1.0-RC2</version>
+  <version>2.1.0</version>
 </dependency>
 ```
 
