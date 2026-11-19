@@ -39,9 +39,9 @@ import org.springframework.boot.context.properties.bind.DefaultValue;
  *     words; unset = a paragraph break
  * @param timeout wall-clock generation deadline; null = none; a reply it cuts off finishes with
  *     {@code "other"}
- * @param outputModalities what a reply may be made of, {@code text,audio} for a model with a voice
- *     to choose speech when the prompt asks for it, {@code audio} to make it speak; unset = text
- *     alone, which never switches into speech. A request's own options override it
+ * @param outputModalities what a reply is made of, {@code text,audio} for a spoken reply with its
+ *     transcript from a model with a voice, {@code audio} for speech alone; unset = text alone,
+ *     which never switches into speech. A request's own options override it
  * @param speculationDepth draft tokens per verify block for self-speculative decoding (0 disables,
  *     unset = the engine's default); inert unless the model carries a draft head (e.g. Gemma 4's
  *     MTP sidecar as companions.speculation)

@@ -43,8 +43,6 @@ class SpokenServerIntegrationTest {
     /** The voice's rate; a stream's pcm16 chunks name no rate, as OpenAI's do not. */
     private static final int VOICE_RATE = 24_000;
 
-    private static final Map<String, Object> VOICE_CHAT =
-            Map.of("role", "system", "content", "Respond with interleaved text and audio.");
     private static final Map<String, Object> FRANCE =
             Map.of("role", "user", "content", "What is the capital of France?");
 
@@ -181,7 +179,7 @@ class SpokenServerIntegrationTest {
                         JsonCodec.stringify(
                                 Map.of(
                                         "messages",
-                                        List.of(VOICE_CHAT, FRANCE),
+                                        List.of(FRANCE),
                                         "modalities",
                                         List.of("text", "audio"),
                                         "audio",
@@ -213,7 +211,7 @@ class SpokenServerIntegrationTest {
         return JsonCodec.stringify(
                 Map.of(
                         "messages",
-                        List.of(VOICE_CHAT, FRANCE),
+                        List.of(FRANCE),
                         "modalities",
                         List.of("text", "audio"),
                         "audio",
@@ -230,14 +228,13 @@ class SpokenServerIntegrationTest {
 
     /**
      * The conversation continued past the spoken turn kept under {@code id}, audio still allowed:
-     * asked for words alone after it spoke, the voice is masked and Omni may say nothing at all.
+     * the next reply speaks too, its words the transcript.
      */
     private static String followUp(String id, String question) {
         return JsonCodec.stringify(
                 Map.of(
                         "messages",
                         List.of(
-                                VOICE_CHAT,
                                 FRANCE,
                                 Map.of("role", "assistant", "audio", Map.of("id", id)),
                                 Map.of("role", "user", "content", question)),

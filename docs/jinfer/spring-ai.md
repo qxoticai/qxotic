@@ -111,7 +111,8 @@ jinfer never fetches media URLs on an inference path.
 ## Spoken replies
 
 A model with a voice, LFM3-Omni with its projector attached, can answer in speech through the chat model.
-What a reply may be made of is the `outputModalities` option: unset, a reply is text alone and the model never switches into speech; `TEXT` and `AUDIO` let the model choose, steered by the prompt; `AUDIO` alone makes it speak.
+What a reply is made of is the `outputModalities` option: unset, a reply is text alone and the model never switches into speech; `TEXT` and `AUDIO` is a spoken reply with its transcript; `AUDIO` alone is speech without one.
+The option decides, never the prompt.
 The speech is a `MediaPart` of `audio/wav` beside the transcript, whole from `call`, and a part per stretch from `stream`:
 
 ```java
@@ -123,9 +124,7 @@ try (var omni = JinferChatModel.builder()
                 .build())
         .build()) {
 
-    ChatResponse response = omni.call(new Prompt(List.of(
-            new SystemMessage("Respond with interleaved text and audio."),
-            new UserMessage("What is the capital of France?"))));
+    ChatResponse response = omni.call(new Prompt(new UserMessage("What is the capital of France?")));
 
     AssistantMessage reply = response.getResult().getOutput();
     System.out.println(reply.getText()); // the transcript
@@ -140,8 +139,9 @@ try (var omni = JinferChatModel.builder()
 The same option on a request's `JinferChatOptions` opens or closes the voice for that request alone, and `spring.ai.jinfer.chat.output-modalities=text,audio` sets the default in Spring Boot.
 A streamed reply's media chunks are not aggregated: `ChatClient.stream().content()` yields the transcript, and a subscriber to `ChatModel.stream` collects the audio parts, each chunk a WAV of its own.
 A spoken reply does not reason, so allowing audio turns `thinking` off, and it cannot offer tools or follow a grammar: such a request is refused in words.
+LiquidAI's voice-chat prompt, "Respond with interleaved text and audio." as the system message, shapes short spoken answers; a text-only reply under it can stop mid-sentence, so it belongs with requests that speak.
 There is no voice option: LFM3-Omni's spoken chat replies come in its one chat voice, whatever the system prompt asks for.
-A language clause is a request the model may not honour: it can answer in that language, in English, or in text alone (Japanese replies came back as text in every run).
+The chat voice speaks English, French and German clearly; Spanish and Italian come out accented and Japanese and Chinese partly garbled, so ask for text in those.
 For speech in a set language, LFM3-Omni's text-to-speech instruction takes the language explicitly (see [jinfer-lfm3](https://github.com/qxoticai/qxotic/blob/main/jinfer/jinfer-lfm3/README.md#text-to-speech)).
 
 ## Prompt caching
@@ -433,7 +433,7 @@ The starter creates beans from these properties:
 Chat, speech and transcription are also enabled when their model is configured and no other provider of that type is selected.
 Embeddings and decisions need explicit selection, so a chat-only app is never asked for an embedding or decision GGUF.
 Add companions under `spring.ai.jinfer.chat.companions` (or `.embedding.companions`, `.decision.companions`), keyed by capability such as `media` or `speculation`.
-`spring.ai.jinfer.chat.output-modalities=text,audio` lets a model with a voice answer in speech, see [Spoken replies](#spoken-replies).
+`spring.ai.jinfer.chat.output-modalities=text,audio` makes a model with a voice answer in speech, see [Spoken replies](#spoken-replies).
 Model sources may be remote references or local paths; model resolution happens at startup, and invalid configuration fails the boot.
 For `mvn spring-boot:run`, pass the JVM flags above through the plugin's `jvmArguments` and set `optimizedLaunch` to `false` for full JIT compilation.
 With a `MeterRegistry` in the application (Spring Boot Actuator, for example), the starter records Spring AI's `gen_ai` metrics for the chat, embedding, decision, speech and transcription models: token usage and operation timings.

@@ -220,7 +220,8 @@ Video arrives as sampled frames sent as timestamped image content, see [`GemmaVi
 ## Spoken replies
 
 A model with a voice, LFM3-Omni with its projector attached, can answer in speech through the chat model.
-What a reply may be made of is the `outputModalities` request parameter: unset, a reply is text alone and the model never switches into speech; `TEXT` and `AUDIO` let the model choose, steered by the prompt; `AUDIO` alone makes it speak.
+What a reply is made of is the `outputModalities` request parameter: unset, a reply is text alone and the model never switches into speech; `TEXT` and `AUDIO` is a spoken reply with its transcript; `AUDIO` alone is speech without one.
+The parameter decides, never the prompt.
 The speech is the reply's `audios()`, one `audio/wav` clip beside the transcript:
 
 ```java
@@ -232,9 +233,7 @@ try (var omni = JinferChatModel.builder()
                 .build())
         .build()) {
 
-    AiMessage reply = omni.chat(
-            SystemMessage.from("Respond with interleaved text and audio."),
-            UserMessage.from("What is the capital of France?")).aiMessage();
+    AiMessage reply = omni.chat(UserMessage.from("What is the capital of France?")).aiMessage();
 
     System.out.println(reply.text()); // the transcript
     for (Audio speech : reply.audios()) {
@@ -246,8 +245,9 @@ try (var omni = JinferChatModel.builder()
 The same parameter on a request opens or closes the voice for that request alone.
 The streaming model delivers the speech a stretch at a time, as the engine's `Media.Audio` through `onUnmappedRawEvent` (also on an `AiService`'s `TokenStream`), the transcript through `onPartialResponse`, and the whole clip on the complete response.
 A spoken reply does not reason, so allowing audio turns `thinking` off, and it cannot offer tools or follow a grammar: such a request is refused in words.
+LiquidAI's voice-chat prompt, "Respond with interleaved text and audio." as the system message, shapes short spoken answers; a text-only reply under it can stop mid-sentence, so it belongs with requests that speak.
 There is no voice option: LFM3-Omni's spoken chat replies come in its one chat voice, whatever the system prompt asks for.
-A language clause is a request the model may not honour: it can answer in that language, in English, or in text alone (Japanese replies came back as text in every run).
+The chat voice speaks English, French and German clearly; Spanish and Italian come out accented and Japanese and Chinese partly garbled, so ask for text in those.
 For speech in a set language, LFM3-Omni's text-to-speech instruction takes the language explicitly (see [jinfer-lfm3](https://github.com/qxoticai/qxotic/blob/main/jinfer/jinfer-lfm3/README.md#text-to-speech)).
 
 ## A local multi-model agent

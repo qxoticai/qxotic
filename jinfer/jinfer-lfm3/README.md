@@ -91,7 +91,7 @@ try (var vision = JinferChatModel.builder()
 ## Spoken replies
 
 Speech goes through jinfer's `ChatEngine`, from `jinfer-chat`.
-A request names the outputs it allows, and LFM3-Omni speaks when the conversation asks for it:
+A request names what its reply is made of, and with text and audio LFM3-Omni speaks and writes what it says:
 
 ```java
 ModelStore hub = ModelStore.standard();
@@ -100,9 +100,7 @@ try (var omni = new ChatEngine(
         Map.of("media", hub.resolve("LiquidAI/LFM3-Omni-2B-GGUF/mmproj-LFM3-Omni-2B-F16.gguf")),
         PromptCache.Options.DEFAULTS)) {
 
-    var messages = List.of(
-            Message.system("Respond with interleaved text and audio."),
-            Message.user("Tell me a fun fact about octopuses."));
+    var messages = List.of(Message.user("Tell me a fun fact about octopuses."));
 
     omni.complete(
             ChatEngine.Request.builder(messages, omni.loaded().samplingDefaults().resolve())
@@ -116,9 +114,11 @@ try (var omni = new ChatEngine(
 ```
 
 The words arrive as they are spoken, and the speech in parts of 80 ms at 24 kHz.
-With "Respond in text." as the system turn, the same request is answered in text.
-A spoken chat reply comes in the model's one chat voice, the female one: a "using a male voice" clause leaves the voice as it is and cuts the speech short.
-A language clause is a request the model may not honour: it can answer in that language, in English, or in text alone (Japanese replies came back as text in every run).
+The request decides whether the reply speaks, never the prompt; without audio it is answered in text.
+LiquidAI's voice-chat prompt, "Respond with interleaved text and audio." as the system turn, shapes short spoken answers, where without it the model speaks the answer it would write.
+A text-only reply under that prompt can stop mid-sentence, so it belongs with requests that speak.
+A spoken chat reply comes in the model's one chat voice, the female one; a voice clause leaves it as it is.
+The chat voice speaks English, French and German clearly; Spanish and Italian come out accented and Japanese and Chinese partly garbled, so ask for text in those.
 For speech in a set language, use the text-to-speech instruction, which takes the language explicitly.
 
 ## Text to speech

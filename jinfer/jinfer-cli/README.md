@@ -185,8 +185,7 @@ jinfer server -m LiquidAI/LFM3-Omni-2B-GGUF:Q8_0 \
   --with media=LiquidAI/LFM3-Omni-2B-GGUF/mmproj-LFM3-Omni-2B-F16.gguf --port 8080
 curl -sS http://127.0.0.1:8080/v1/chat/completions \
   -H 'Content-Type: application/json' \
-  -d '{"messages":[{"role":"system","content":"Respond with interleaved text and audio."},
-                   {"role":"user","content":"What is the capital of France?"}],
+  -d '{"messages":[{"role":"user","content":"What is the capital of France?"}],
        "modalities":["text","audio"],"audio":{"format":"wav"}}'
 ```
 
@@ -195,9 +194,10 @@ To continue the conversation, send the assistant turn back as `{"role":"assistan
 An id lives one hour on the server that minted it, among the last 4096; an unknown or expired one is refused.
 A streamed spoken reply carries the transcript and the speech in `delta.audio` chunks naming that id, the speech as `pcm16` only, 16-bit mono at the voice's rate, and the `expires_at` chunk last.
 `/v1/models` lists the `output_modalities` the served model has.
-A spoken reply cannot offer tools or follow a grammar, and does not reason; the server never speaks unless the request allows audio.
+A spoken reply cannot offer tools or follow a grammar, and does not reason; the server speaks exactly when `modalities` holds audio, never because the prompt asks.
+LiquidAI's voice-chat prompt, "Respond with interleaved text and audio." as the system message, shapes short spoken answers; a text-only reply under it can stop mid-sentence, so it belongs with requests that speak.
 `audio.voice`, which OpenAI's clients always send, is accepted and ignored: LFM3-Omni's spoken chat replies come in its one chat voice.
-A language clause is a request the model may not honour: it can answer in that language, in English, or in text alone (Japanese replies came back as text in every run).
+The chat voice speaks English, French and German clearly; Spanish and Italian come out accented and Japanese and Chinese partly garbled, so ask for text in those.
 For speech in a set language, LFM3-Omni's text-to-speech instruction takes the language explicitly (see [jinfer-lfm3](../jinfer-lfm3/README.md#text-to-speech)).
 
 To serve transcription instead, stop the language server and select the ASR model:

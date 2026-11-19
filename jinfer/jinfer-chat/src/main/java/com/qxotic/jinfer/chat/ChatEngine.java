@@ -487,8 +487,8 @@ public final class ChatEngine implements AutoCloseable {
      * @param templateKwargs extra variables for the Jinja whole-render (chat_template_kwargs);
      *     {@link #encode} skips the native codec when any key it does not understand is present. A
      *     boolean {@code enable_thinking} here overrides {@code thinking}
-     * @param output what the reply may be made of; null = text alone, which never switches into
-     *     speech. Allowing audio refuses offered tools, a grammar and a forced call
+     * @param output what the reply is made of, see {@link Modality}; null = text alone, which never
+     *     switches into speech. Allowing audio refuses offered tools, a grammar and a forced call
      */
     public record Request(
             List<Message> messages,
@@ -683,7 +683,7 @@ public final class ChatEngine implements AutoCloseable {
                 return this;
             }
 
-            /** What the reply may be made of; text alone by default. See {@link Modality}. */
+            /** What the reply is made of; text alone by default. See {@link Modality}. */
             public Builder output(Modality... output) {
                 this.output = Set.of(output);
                 return this;
@@ -931,11 +931,9 @@ public final class ChatEngine implements AutoCloseable {
                     "a spoken reply does not reason: ask for it with thinking off");
         Encoded encoded =
                 encode(conversation, request.templateKwargs(), MemoryAllocators.ofArena(memory));
-        if (!output.contains(Modality.TEXT)) {
-            // speech alone: its opener ends the prompt, as trained; with text allowed too the
-            // model chooses, and an opener it samples starts the speech
-            encoded = encoded.seeded(voice().opener(false));
-        }
+        // the request picks the lane, as LiquidAI's generate() does: its opener ends the prompt,
+        // speech with its transcript or speech alone
+        if (speaks) encoded = encoded.seeded(voice().opener(output.contains(Modality.TEXT)));
         if (request.tools().isEmpty()) encoded.parser().disableToolCalls();
         Sampler sampler =
                 sampler(
@@ -1792,12 +1790,12 @@ public final class ChatEngine implements AutoCloseable {
 
     /**
      * One reply that may speak, in the making: the speaker's inputs, and the record and audio it
-     * leaves - every position the reply took and the speech as it streamed out. Speech alone opens
-     * at once; with text allowed too, the speech opens on the opener the model samples.
+     * leaves - every position the reply took and the speech as it streamed out. It speaks from its
+     * first position, on the opener its request picked.
      */
     static final class Spoken {
-        private final boolean alone;
-        private final int rate, placeholder, audioOpener, mixedOpener;
+        private final boolean transcribed;
+        private final int rate, placeholder, mixedOpener;
         private final RandomGenerator random;
         private final ReplySink out;
         private final List<int[]> frames = new ArrayList<>();
@@ -1807,24 +1805,19 @@ public final class ChatEngine implements AutoCloseable {
         private boolean transcribing;
 
         Spoken(SpeechOutput<?> voice, Prepared prepared, ReplySink out) {
-            this.alone = !prepared.output().contains(Modality.TEXT);
+            this.transcribed = prepared.output().contains(Modality.TEXT);
             this.rate = voice.speechRate();
             this.placeholder = voice.framePlaceholder();
-            this.audioOpener = voice.opener(false);
             this.mixedOpener = voice.opener(true);
             this.random = new SplittableRandom(prepared.seed());
             this.out = out;
+            this.transcribing = transcribed;
         }
 
         /** A text token the reply took, in the lane the speaker gave it. */
         void text(int token, SpeechOutput.Lane lane) {
             if (lane == SpeechOutput.Lane.CONTROL) transcribing = token == mixedOpener;
             else if (transcribing) transcript.add(token);
-        }
-
-        /** Whether {@code token}, sampled as text, opens speech. */
-        boolean opens(int token) {
-            return token == audioOpener || token == mixedOpener;
         }
 
         /** Whether the reply spoke at all. */
@@ -1887,10 +1880,8 @@ public final class ChatEngine implements AutoCloseable {
         Generator.FinishReason finish = Generator.FinishReason.LENGTH;
         OptionalInt stop = OptionalInt.empty();
         SpeechOutput<S> voice = (SpeechOutput<S>) model;
-        // speech alone opens at once; else it opens on a sampled opener
-        SpeechOutput.Speaker speaker =
-                spoken.alone ? voice.speaker(state, false, spoken.random) : null;
-        try {
+        try (SpeechOutput.Speaker speaker =
+                voice.speaker(state, spoken.transcribed, spoken.random)) {
             boolean traced = new DecodeEvent().isEnabled(); // once, as Generator decides
             for (int n = 0; n < max; n++) {
                 if (System.nanoTime() >= deadline) {
@@ -1900,7 +1891,7 @@ public final class ChatEngine implements AutoCloseable {
                 DecodeEvent decode = traced ? new DecodeEvent() : null;
                 if (decode != null) decode.begin();
                 try {
-                    if (speaker != null && !speaker.textNext()) {
+                    if (!speaker.textNext()) {
                         if (state.position() >= capacity) break;
                         SpeechOutput.Frame frame = speaker.frame();
                         spoken.frame(frame); // its audio goes out before the backbone steps
@@ -1924,11 +1915,7 @@ public final class ChatEngine implements AutoCloseable {
                     SpeechOutput.Lane lane =
                             constraints.stopTokens().contains(token)
                                     ? SpeechOutput.Lane.END
-                                    : speaker != null
-                                            ? speaker.text(token)
-                                            : spoken.opens(token)
-                                                    ? SpeechOutput.Lane.CONTROL
-                                                    : SpeechOutput.Lane.TEXT;
+                                    : speaker.text(token);
                     boolean keepGoing =
                             lane == SpeechOutput.Lane.CONTROL
                                     ? !spoken.out.cancelled()
@@ -1947,9 +1934,6 @@ public final class ChatEngine implements AutoCloseable {
                     model.ingest(state, Batch.step(token));
                     serving.tail(token);
                     spoken.text(token, lane);
-                    // the first opener starts the speaker; later ones are its own lane markers
-                    if (speaker == null && lane == SpeechOutput.Lane.CONTROL)
-                        speaker = voice.speaker(state, token == spoken.mixedOpener, spoken.random);
                 } finally {
                     if (decode != null) {
                         decode.end();
@@ -1958,10 +1942,7 @@ public final class ChatEngine implements AutoCloseable {
                 }
             }
             // a cancelled reply hears nothing more: the decoder's tail goes out only on an end
-            if (speaker != null && finish != Generator.FinishReason.ABORT)
-                spoken.speak(speaker.flush());
-        } finally {
-            if (speaker != null) speaker.close();
+            if (finish != Generator.FinishReason.ABORT) spoken.speak(speaker.flush());
         }
         return new Generator.GenerationResult(
                 generated.build().toArray(),

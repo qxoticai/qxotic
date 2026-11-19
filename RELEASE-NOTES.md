@@ -40,8 +40,6 @@ The native libraries, the jinfer command and the wheels are built with Oracle Gr
   A write the format refuses, such as a tensor name past 63 bytes or an uppercase key, now writes nothing: no bytes reach the channel and no file is created.
   The reader refuses tensor names past 63 bytes too, as llama.cpp does.
 - **Model references read their repository in any case.** Hugging Face and ModelScope do, so `LiquidAI/d1-2B-gguf` now finds the cache of `LiquidAI/d1-2B-GGUF`, offline too, instead of downloading the model again.
-- **LFM3-Omni answers text requests under its voice prompt.** A text-only reply under "Respond with interleaved text and audio." ended before its first word, reported as a normal stop.
-  A text reply now bans every speech-lane token, not only the two lane openers, and answers in text.
 - **libtoknroll survives running out of memory.** A batch is encoded a chunk at a time, so its heap use is bounded whatever its length, and a batch larger than the heap now succeeds.
   An out-of-memory or stack overflow the runtime raises where no handler runs fails the call with `TOKNROLL_ERROR` and words naming the knob, where a batch could hang or abort the process before.
   The tokenizer goes on working, since encoding takes no locks; batch workers are the library's own threads, with 8 MB stacks, in libjinfer and on Windows too.
@@ -175,9 +173,9 @@ The one unchanged artifact is `json`, at 0.2.0.
   The starter configures 2.1's session memory (`SessionService`, `SessionAdvisors`) in place of the chat memory it deprecates for 3.0; it requires Spring Boot 4.2.
   `JinferDecisionModel` takes a conversation as the transcript Spring AI's System One and Ollama decision models send d1, text, tool calls and tool results.
   The starter brings Spring AI's chat, embedding, decision and audio observation auto-configurations, so an application with a `MeterRegistry` records the `gen_ai` metrics; the speech and transcription models are observed too, and follow `spring.ai.model.audio.speech` and `spring.ai.model.audio.transcription` like Spring AI's own providers.
-- **Spoken replies in Spring AI.** `JinferChatOptions.outputModalities` says what a reply may be made of: unset is text alone, `TEXT` and `AUDIO` let LFM3-Omni choose speech when the prompt asks, `AUDIO` alone makes it speak.
+- **Spoken replies in Spring AI.** `JinferChatOptions.outputModalities` says what a reply is made of: unset is text alone, `TEXT` and `AUDIO` a spoken reply with its transcript from LFM3-Omni, `AUDIO` speech alone; the option decides, never the prompt.
   The speech is a `MediaPart` of `audio/wav` beside the transcript, whole from `call` and a part per stretch from `stream`; `spring.ai.jinfer.chat.output-modalities` sets the default in Spring Boot.
-- **Spoken replies in LangChain4j.** `JinferChatRequestParameters.outputModalities` says what a reply may be made of, the engine's own `Modality` enum: unset, text alone; text and audio, the model's choice; audio alone, a spoken reply.
+- **Spoken replies in LangChain4j.** `JinferChatRequestParameters.outputModalities` says what a reply may be made of, the engine's own `Modality` enum: unset, text alone; text and audio, a spoken reply with its transcript; audio alone, speech without one; the parameter decides, never the prompt.
   The speech is the `AiMessage`'s `audios()`, one `audio/wav` clip beside the transcript, whole from `chat`; the streaming model hands each stretch to `onUnmappedRawEvent` as the engine's `Media.Audio`.
   An unmodified reply echoed in history replays its speech exactly, and an `AudioContent` built from binary data is now decoded like one built from base64 or a file.
 

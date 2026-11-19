@@ -91,7 +91,7 @@ The starter creates beans from these properties:
 Chat, speech and transcription are also enabled when their model is configured and no other provider of that type is selected.
 Model sources may be remote references or local paths and resolve during application startup.
 Add companions under `spring.ai.jinfer.chat.companions`, keyed by capability such as `media` or `speculation`.
-`spring.ai.jinfer.chat.output-modalities=text,audio` lets a model with a voice answer in speech, see [Spoken replies](#spoken-replies).
+`spring.ai.jinfer.chat.output-modalities=text,audio` makes a model with a voice answer in speech, see [Spoken replies](#spoken-replies).
 An embedder takes its projector the same way, as `spring.ai.jinfer.embedding.companions.media`.
 With a `MeterRegistry` in the application (Spring Boot Actuator, for example), the starter records Spring AI's `gen_ai` metrics for the chat, embedding, decision, speech and transcription models: token usage and operation timings.
 
@@ -317,7 +317,8 @@ Jinfer does not fetch media during inference.
 ## Spoken replies
 
 A model with a voice, LFM3-Omni with its projector attached, can answer in speech through the chat model.
-What a reply may be made of is the `outputModalities` option: unset, a reply is text alone and the model never switches into speech; `TEXT` and `AUDIO` let the model choose, steered by the prompt; `AUDIO` alone makes it speak.
+What a reply is made of is the `outputModalities` option: unset, a reply is text alone and the model never switches into speech; `TEXT` and `AUDIO` is a spoken reply with its transcript; `AUDIO` alone is speech without one.
+The option decides, never the prompt.
 The speech is a `MediaPart` of `audio/wav` beside the transcript, whole from `call`, and a part per stretch from `stream`:
 
 ```java
@@ -329,9 +330,7 @@ try (var omni = JinferChatModel.builder()
                 .build())
         .build()) {
 
-    ChatResponse response = omni.call(new Prompt(List.of(
-            new SystemMessage("Respond with interleaved text and audio."),
-            new UserMessage("What is the capital of France?"))));
+    ChatResponse response = omni.call(new Prompt(new UserMessage("What is the capital of France?")));
 
     AssistantMessage reply = response.getResult().getOutput();
     System.out.println(reply.getText()); // the transcript
@@ -346,9 +345,10 @@ try (var omni = JinferChatModel.builder()
 The same option on a request's `JinferChatOptions` opens or closes the voice for that request alone, and `spring.ai.jinfer.chat.output-modalities=text,audio` sets the default in Spring Boot.
 A streamed reply's media chunks are not aggregated: `ChatClient.stream().content()` yields the transcript, and a subscriber to `ChatModel.stream` collects the audio parts, each chunk a WAV of its own.
 A spoken reply does not reason, so allowing audio turns `thinking` off, and it cannot offer tools or follow a grammar: such a request is refused in words.
-Allowing audio is not requiring it: a model without a voice answers `TEXT, AUDIO` in text, and `AUDIO` alone is the form refused with the remedy.
+A model without a voice answers `TEXT, AUDIO` in text, and `AUDIO` alone is refused with the remedy.
+LiquidAI's voice-chat prompt, "Respond with interleaved text and audio." as the system message, shapes short spoken answers; a text-only reply under it can stop mid-sentence, so it belongs with requests that speak.
 There is no voice option: LFM3-Omni's spoken chat replies come in its one chat voice, whatever the system prompt asks for.
-A language clause is a request the model may not honour: it can answer in that language, in English, or in text alone (Japanese replies came back as text in every run).
+The chat voice speaks English, French and German clearly; Spanish and Italian come out accented and Japanese and Chinese partly garbled, so ask for text in those.
 For speech in a set language, LFM3-Omni's text-to-speech instruction takes the language explicitly (see [jinfer-lfm3](../jinfer-lfm3/README.md#text-to-speech)).
 
 ## Embeddings and reranking

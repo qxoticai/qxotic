@@ -322,15 +322,16 @@ The same model behind the CLI's `transcribe` command handles audio files, while 
 OpenAI-compatible `POST /v1/audio/transcriptions` (multipart; `response_format` of `json`,
 `text`, or `verbose_json` with word timestamps).
 
-**Spoken replies.** A request names what its reply may be made of: text (the default), audio, or both.
-Where several are allowed the model chooses, as LiquidAI's reference does: under "Respond with interleaved text and audio." LFM3-Omni speaks, under "Respond in text." it writes.
-Audio alone has it speak at once; a request that does not allow audio is answered in text and never switches on its own.
-A model refuses a request only when it can produce none of the allowed outputs:
+**Spoken replies.** A request names what its reply is made of: text (the default), text and audio, or audio alone.
+Text and audio is a spoken reply with its transcript, audio alone is speech without one: the request decides, as in LiquidAI's reference and llama.cpp, never the prompt.
+LiquidAI's voice-chat prompt, "Respond with interleaved text and audio.", shapes short spoken answers; a text-only reply under it can stop mid-sentence, so it belongs with requests that speak.
+A request without audio is answered in text and never switches on its own.
+A model refuses a request only when it can produce none of the outputs, so a model without a voice answers text and audio in text:
 
 ```java
 ChatEngine.Completion reply = engine.complete(
         ChatEngine.Request.builder(messages, sampling)
-                .output(Modality.TEXT, Modality.AUDIO)   // the model chooses; AUDIO alone speaks
+                .output(Modality.TEXT, Modality.AUDIO)   // speech and its transcript
                 .build(),
         new ChatEngine.ReplySink() {
             @Override public void on(ChatEngine.Delta delta) { show(delta.text()); }

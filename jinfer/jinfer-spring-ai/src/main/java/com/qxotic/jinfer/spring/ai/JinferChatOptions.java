@@ -127,12 +127,12 @@ public final class JinferChatOptions extends DefaultToolCallingChatOptions
     }
 
     /**
-     * What the reply may be made of; null = text alone, which never switches into speech. Allowed,
-     * not required: with text and audio allowed the model chooses, steered by the prompt, and audio
-     * alone makes it speak. Speech comes as a {@code MediaPart} of {@code audio/wav}, whole from
-     * {@code call}, a part per stretch from {@code stream}. Only a model loaded with its voice can
-     * speak; a spoken reply cannot offer tools or follow a grammar, and does not reason: allowing
-     * audio turns {@code thinking} off. See {@link Modality}.
+     * What the reply is made of; null = text alone, which never switches into speech. Text and
+     * audio is a spoken reply with its transcript, audio alone speech without one: the option
+     * decides, never the prompt. Speech comes as a {@code MediaPart} of {@code audio/wav}, whole
+     * from {@code call}, a part per stretch from {@code stream}. Only a model loaded with its voice
+     * can speak; a spoken reply cannot offer tools or follow a grammar, and does not reason:
+     * allowing audio turns {@code thinking} off. See {@link Modality}.
      */
     public Set<Modality> getOutputModalities() {
         return outputModalities;

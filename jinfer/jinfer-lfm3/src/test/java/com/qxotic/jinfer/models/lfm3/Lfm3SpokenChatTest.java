@@ -43,8 +43,6 @@ import org.junit.jupiter.api.Test;
 final class Lfm3SpokenChatTest {
 
     private static final Sampling SEEDED = new Sampling(0f, 1f, 0, 0f, 42L);
-    private static final Message VOICE_CHAT =
-            Message.system("Respond with interleaved text and audio.");
     private static Arena weights;
     private static ChatEngine engine;
 
@@ -123,7 +121,7 @@ final class Lfm3SpokenChatTest {
     @Test
     void voiceChatSaysWhatItWrites() throws IOException {
         Streamed out = new Streamed();
-        ChatEngine.Completion reply = engine.complete(chat(List.of(VOICE_CHAT, france())), out);
+        ChatEngine.Completion reply = engine.complete(chat(List.of(france())), out);
         String text = reply.reply().text();
         String heard = hear(reply.reply().speech().orElseThrow());
         System.out.println("wrote: " + text + "\nheard: " + heard);
@@ -135,64 +133,40 @@ final class Lfm3SpokenChatTest {
     }
 
     /**
-     * A text reply under the voice-chat prompt answers in text: no speech-lane token ends it empty.
+     * A language is asked for in the conversation's own words, and the reply speaks it: French,
+     * written and heard back as French.
      */
     @Test
-    void aTextReplyUnderTheVoicePromptAnswers() {
-        Message question = Message.user("Name one animal.");
+    void aLanguageIsAskedInTheConversationsOwnWords() throws IOException {
         Message reply =
                 engine.complete(
-                                ChatEngine.Request.builder(List.of(VOICE_CHAT, question), SEEDED)
-                                        .maxOutputTokens(60)
-                                        .build(),
-                                ChatEngine.ReplySink.NONE)
+                                chat(
+                                        List.of(
+                                                Message.system("Always answer in French."),
+                                                Message.user(
+                                                        "Tell me a fun fact about octopuses."))))
                         .reply();
-        assertTrue(reply.text().toLowerCase().contains("dog"), "[" + reply.text() + "]");
-        assertEquals(Optional.empty(), reply.speech(), "text alone");
+        String heard = hear(reply.speech().orElseThrow(), "French");
+        System.out.println("wrote: " + reply.text() + "\nheard: " + heard);
+        assertTrue(reply.text().matches("(?s).*\\b(les|est|ont|sont|des)\\b.*"), reply.text());
+        assertTrue(heard.matches("(?s).*\\b(les|est|ont|sont|des)\\b.*"), heard);
     }
 
     /**
-     * The voice is fixed, the language is a request the model may not honour, as the READMEs say: a
-     * French clause is spoken in French, a Japanese one comes back as text alone.
+     * The request decides, never the prompt: with text and audio allowed the reply speaks, even
+     * under a system turn that asks for text, and a request allowing an output this model lacks
+     * still answers in what it has.
      */
     @Test
-    void aLanguageClauseIsARequest() {
-        Message question = Message.user("Tell me a fun fact about octopuses.");
-        Message reply = inLanguage("French", question);
-        Media.Audio speech = reply.speech().orElseThrow();
-        assertTrue(speech.pcm().length > speech.sampleRate(), "a second of speech at least");
-        assertTrue(reply.text().matches("(?s).*\\b(les|est|ont|sont)\\b.*"), reply.text());
-
-        reply = inLanguage("Japanese", question);
-        assertEquals(Optional.empty(), reply.speech(), "text alone");
-        assertTrue(
-                reply.text().codePoints().anyMatch(c -> c >= 0x3040 && c <= 0x30FF), reply.text());
-    }
-
-    private static Message inLanguage(String language, Message question) {
-        Message system =
-                Message.system("Respond with interleaved text and audio in " + language + ".");
-        return engine.complete(chat(List.of(system, question)), ChatEngine.ReplySink.NONE).reply();
-    }
-
-    /**
-     * Allowed outputs are a choice the model makes: with text and audio allowed, a prompt that asks
-     * for text gets a reply in text alone, and one that allows an output this model lacks still
-     * answers in what it has.
-     */
-    @Test
-    void allowedOutputsLeaveTheModelItsChoice() {
-        ChatEngine.Completion text =
-                engine.complete(
-                        ChatEngine.Request.builder(
-                                        List.of(Message.system("Respond in text."), france()),
-                                        SEEDED)
-                                .maxOutputTokens(64)
-                                .output(Modality.TEXT, Modality.AUDIO)
-                                .build());
-        System.out.println("text allowed with audio: " + text.reply().text());
-        assertTrue(text.reply().text().contains("Paris"), text.reply().text());
-        assertTrue(text.reply().speech().isEmpty(), "chose text");
+    void textAndAudioAlwaysSpeak() throws IOException {
+        ChatEngine.Completion spoken =
+                engine.complete(chat(List.of(Message.system("Respond in text."), france())));
+        String text = spoken.reply().text();
+        String heard = hear(spoken.reply().speech().orElseThrow());
+        System.out.println("wrote: " + text + "\nheard: " + heard);
+        assertTrue(text.contains("Paris"), text);
+        assertTrue(heard.contains("paris"), heard);
+        assertEquals(Optional.of(text), caption(spoken), "the transcript is the words");
         ChatEngine.Completion drawn =
                 engine.complete(
                         ChatEngine.Request.builder(List.of(france()), SEEDED)
@@ -210,16 +184,11 @@ final class Lfm3SpokenChatTest {
     @Test
     void aSpokenTurnReplaysFromTheCache() {
         ChatEngine.Completion first =
-                engine.complete(chat(List.of(VOICE_CHAT, france())), ChatEngine.ReplySink.NONE);
+                engine.complete(chat(List.of(france())), ChatEngine.ReplySink.NONE);
         Verbatim turn = first.reply().verbatim();
         ChatEngine.Completion second =
                 engine.complete(
-                        chat(
-                                List.of(
-                                        VOICE_CHAT,
-                                        france(),
-                                        first.reply(),
-                                        Message.user("And of Germany?"))),
+                        chat(List.of(france(), first.reply(), Message.user("And of Germany?"))),
                         ChatEngine.ReplySink.NONE);
         int live = first.promptTokens() + first.result().tokens().length;
         System.out.printf(
@@ -329,11 +298,16 @@ final class Lfm3SpokenChatTest {
 
     /** What Omni's own ears make of {@code speech}, at 16 kHz as its audio input takes it. */
     private static String hear(Media.Audio speech) throws IOException {
+        return hear(speech, "English");
+    }
+
+    /** What the model's own speech recognition hears in {@code speech}, in {@code language}. */
+    private static String hear(Media.Audio speech, String language) throws IOException {
         Media.Audio heard = AudioCodec.decode(AudioCodec.wav(speech));
         return engine.complete(
                         ChatEngine.Request.builder(
                                         List.of(
-                                                Message.system("Perform ASR in English."),
+                                                Message.system("Perform ASR in " + language + "."),
                                                 new Message(
                                                         Role.USER,
                                                         List.of(new Content.Media(heard)))),

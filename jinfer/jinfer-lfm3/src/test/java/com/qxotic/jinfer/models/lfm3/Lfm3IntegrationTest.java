@@ -20,6 +20,7 @@ import com.qxotic.jinfer.chat.Models;
 import com.qxotic.jinfer.chat.Role;
 import com.qxotic.jinfer.chat.Tool;
 import com.qxotic.jinfer.codecs.ImageCodec;
+import com.qxotic.jinfer.llm.Generator;
 import com.qxotic.jinfer.llm.Sampling;
 import com.qxotic.jinfer.media.Media;
 import com.qxotic.jinfer.testkit.TestModels;
@@ -168,12 +169,12 @@ final class Lfm3IntegrationTest {
     }
 
     /**
-     * Asked for audio, Omni opens a spoken reply ({@code <|mixed_start|>}), which the control rule
-     * used to cut before a word; a text reply forbids every speech-lane token and answers in words,
-     * under LiquidAI's voice-chat prompt too ({@code Lfm3SpokenChatTest}).
+     * A text reply is whole text: it never opens speech, and it ends a sentence on the model's own
+     * stop - the cut-short reply a text lane gave under LiquidAI's voice-chat prompt, which no text
+     * request carries any more ({@code Lfm3SpokenChatTest} has speech, asked for by the request).
      */
     @Test
-    void aTextReplyNeverSwitchesToSpeech() throws Exception {
+    void aTextReplyIsWholeAndNeverSpeaks() throws Exception {
         Arena weights = Arenas.newCrossThread();
         try {
             LoadedModel<?> loaded =
@@ -182,18 +183,26 @@ final class Lfm3IntegrationTest {
                             weights,
                             Map.of("media", TestModels.require(OMNI_MMPROJ)));
             ChatEngine engine = new ChatEngine(loaded, "lfm3-test", PromptCache.Options.DEFAULTS);
-            ChatEngine.Completion reply =
-                    engine.complete(
-                            request(
-                                    List.of(
-                                            Message.system("Respond with audio."),
-                                            Message.user("Hi! How are you?")),
-                                    List.of(),
-                                    false),
-                            ChatEngine.ReplySink.NONE);
-            assertTrue(reply.reply().text().contains("well"), reply.reply().text());
             Set<Integer> lanes = loaded.template().orElseThrow().replyForbidden();
-            for (int token : reply.result().tokens()) assertTrue(!lanes.contains(token));
+            for (String system : new String[] {null, "Respond in text."}) {
+                for (String question : new String[] {"Hi! How are you?", "Name three colours."}) {
+                    List<Message> messages =
+                            system == null
+                                    ? List.of(Message.user(question))
+                                    : List.of(Message.system(system), Message.user(question));
+                    ChatEngine.Completion reply =
+                            engine.complete(
+                                    request(messages, List.of(), false, 120),
+                                    ChatEngine.ReplySink.NONE);
+                    String text = reply.reply().text().strip();
+                    assertTrue(
+                            text.matches("(?s).*[.!?]"), system + " / " + question + ": " + text);
+                    assertEquals(Generator.FinishReason.STOP, reply.result().finishReason(), text);
+                    assertTrue(reply.reply().speech().isEmpty(), text);
+                    for (int token : reply.result().tokens())
+                        assertTrue(!lanes.contains(token), "lane token " + token + ": " + text);
+                }
+            }
         } finally {
             Arenas.close(weights);
         }

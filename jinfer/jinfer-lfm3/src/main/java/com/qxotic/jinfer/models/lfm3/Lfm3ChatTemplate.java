@@ -382,11 +382,13 @@ final class Lfm3ChatTemplate implements ChatTemplate {
     }
 
     /**
-     * A text reply never samples a speech-lane token: sampled, any of them ends the reply on the
-     * control rule. LiquidAI's {@code generation_mode="text"} and llama.cpp's text mode ban only
-     * the two openers, and under Omni's voice-chat prompt the model's next choice is then {@code
-     * <|text_end|>}: the reply ends empty. With every lane token banned it answers in text and ends
-     * on {@code <|im_end|>}.
+     * A text reply never samples a speech-lane token. Speech is the request's to ask for, which
+     * opens the reply on its lane's opener; the model reaches for one in a text reply only under a
+     * prompt that asks it to speak. LiquidAI's {@code generation_mode="text"} and llama.cpp's text
+     * mode ban the two openers alone, and the model's next choice is then {@code <|text_end|>}: the
+     * reply ends empty. With every lane token banned it writes on, as well as it can: its words
+     * under that prompt are trained beside its speech, and a text-only reply under it can stop
+     * mid-sentence, so the prompt is not for text-only requests.
      */
     @Override
     public Set<Integer> replyForbidden() {

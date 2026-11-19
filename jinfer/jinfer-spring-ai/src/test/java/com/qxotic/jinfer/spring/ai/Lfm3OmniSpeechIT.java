@@ -43,8 +43,6 @@ class Lfm3OmniSpeechIT {
     static final String OMNI_MMPROJ =
             "hf.co/LiquidAI/LFM3-Omni-2B-GGUF/mmproj-LFM3-Omni-2B-F16.gguf";
 
-    private static final SystemMessage VOICE_CHAT =
-            new SystemMessage("Respond with interleaved text and audio.");
     private static final UserMessage FRANCE = new UserMessage("What is the capital of France?");
     private static final JinferChatOptions SPOKEN =
             JinferChatOptions.builder()
@@ -72,25 +70,18 @@ class Lfm3OmniSpeechIT {
         if (model != null) model.close();
     }
 
-    /**
-     * Unset, the reply is text alone: the voice's opener is masked, whatever the prompt asks. Asked
-     * for audio it cannot give, Omni may say nothing at all (HF's reference does the same), so the
-     * masked case checks the absence of speech only.
-     */
+    /** Unset, the reply is text alone: only the request opens the voice. */
     @Test
     void textAloneUnlessAudioIsAllowed() {
         AssistantMessage out = model.call(new Prompt(FRANCE)).getResult().getOutput();
         assertTrue(out.getText().contains("Paris"), out.getText());
         assertTrue(speech(out).isEmpty(), "no media part: " + out.getParts());
-        AssistantMessage asked =
-                model.call(new Prompt(List.of(VOICE_CHAT, FRANCE))).getResult().getOutput();
-        assertTrue(speech(asked).isEmpty(), "no media part: " + asked.getParts());
     }
 
     /** Allowed, the reply speaks: one WAV media part after the transcript, saying what it wrote. */
     @Test
     void aSpokenReplyIsAWavMediaPartSayingWhatItWrote() throws IOException {
-        ChatResponse r = model.call(new Prompt(List.of(VOICE_CHAT, FRANCE), SPOKEN));
+        ChatResponse r = model.call(new Prompt(List.of(FRANCE), SPOKEN));
         AssistantMessage out = r.getResult().getOutput();
         String text = out.getText();
         List<MediaPart> speech = speech(out);
@@ -114,7 +105,7 @@ class Lfm3OmniSpeechIT {
     @Test
     void aStreamedReplyIsTranscriptDeltasAndMediaChunks() throws IOException {
         List<ChatResponse> chunks =
-                model.stream(new Prompt(List.of(VOICE_CHAT, FRANCE), SPOKEN))
+                model.stream(new Prompt(List.of(FRANCE), SPOKEN))
                         .collectList()
                         .block(Duration.ofMinutes(5));
         assertNotNull(chunks);
@@ -143,9 +134,7 @@ class Lfm3OmniSpeechIT {
 
         // ChatClient's view is the aggregator's: the transcript, the audio left to a subscriber
         String content =
-                ChatClient.create(model)
-                        .prompt(new Prompt(List.of(VOICE_CHAT, FRANCE), SPOKEN))
-                        .stream()
+                ChatClient.create(model).prompt(new Prompt(List.of(FRANCE), SPOKEN)).stream()
                         .content()
                         .collect(StringBuilder::new, StringBuilder::append)
                         .block(Duration.ofMinutes(5))
@@ -162,7 +151,7 @@ class Lfm3OmniSpeechIT {
                         () ->
                                 model.call(
                                         new Prompt(
-                                                List.of(VOICE_CHAT, FRANCE),
+                                                List.of(FRANCE),
                                                 SPOKEN.mutate()
                                                         .toolCallbacks(List.of(noopTool()))
                                                         .build())));

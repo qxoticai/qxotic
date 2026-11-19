@@ -44,8 +44,6 @@ class Lfm3OmniSpeechIT {
     static final String OMNI_MMPROJ =
             "hf.co/LiquidAI/LFM3-Omni-2B-GGUF/mmproj-LFM3-Omni-2B-F16.gguf";
 
-    private static final SystemMessage VOICE_CHAT =
-            SystemMessage.from("Respond with interleaved text and audio.");
     private static final UserMessage FRANCE = UserMessage.from("What is the capital of France?");
     private static final JinferChatRequestParameters SPOKEN =
             JinferChatRequestParameters.builder()
@@ -74,24 +72,18 @@ class Lfm3OmniSpeechIT {
         if (model != null) model.close();
     }
 
-    /**
-     * Unset, the reply is text alone: the voice's opener is masked, whatever the prompt asks. Asked
-     * for audio it cannot give, Omni may say nothing at all (HF's reference does the same), so the
-     * masked case checks the absence of speech only.
-     */
+    /** Unset, the reply is text alone: only the request opens the voice. */
     @Test
     void textAloneUnlessAudioIsAllowed() {
         AiMessage out = model.chat(FRANCE).aiMessage();
         assertTrue(out.text().contains("Paris"), out.text());
         assertTrue(out.audios().isEmpty(), "no audio: " + out);
-        AiMessage asked = model.chat(VOICE_CHAT, FRANCE).aiMessage();
-        assertTrue(asked.audios().isEmpty(), "no audio: " + asked);
     }
 
     /** Allowed, the reply speaks: one WAV audio beside the transcript, saying what it wrote. */
     @Test
     void aSpokenReplyIsAWavAudioSayingWhatItWrote() throws IOException {
-        AiMessage out = model.chat(spoken(VOICE_CHAT, FRANCE)).aiMessage();
+        AiMessage out = model.chat(spoken(FRANCE)).aiMessage();
         String text = out.text();
         assertEquals(1, out.audios().size(), "one clip: " + out);
         Audio speech = out.audios().get(0);
@@ -117,7 +109,7 @@ class Lfm3OmniSpeechIT {
         List<Media.Audio> stretches = new CopyOnWriteArrayList<>();
         model.streaming()
                 .chat(
-                        spoken(VOICE_CHAT, FRANCE),
+                        spoken(FRANCE),
                         new StreamingChatResponseHandler() {
                             @Override
                             public void onPartialResponse(String partial) {
@@ -170,7 +162,7 @@ class Lfm3OmniSpeechIT {
                         () ->
                                 model.chat(
                                         ChatRequest.builder()
-                                                .messages(VOICE_CHAT, FRANCE)
+                                                .messages(FRANCE)
                                                 .parameters(
                                                         JinferChatRequestParameters.builder()
                                                                 .overrideWith(SPOKEN)
