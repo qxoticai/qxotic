@@ -475,6 +475,7 @@ The input can be a text, fields or contents.
 Fields are put to the model as JSON, the form d1 was trained on; a field holding contents contributes its text (or its media's kinds) to the JSON, and its media to the input, never as base64 in the prompt.
 Contents take images, audio and video beside text; d1 reads images and video, d1-Omni also audio, d3 images.
 A conversation (`inputMessages`) is put to the model as its transcript, `{"messages": [...]}`, the form LangChain4j's Ollama decision model sends d1; its images, audio and video are referred to as `[image 1]`, `[audio 1]`, `[video 1]` and join the input in that order.
+Spring AI's decision conversation refuses media; a service moving there puts its media in `DecisionInput.content(...)` instead.
 So LangChain4j's `DecisionModelChatModelRouter` can route a `RoutingChatModel` on d1, in process:
 
 ```java

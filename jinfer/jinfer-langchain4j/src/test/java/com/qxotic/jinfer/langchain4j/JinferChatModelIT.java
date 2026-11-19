@@ -1,6 +1,7 @@
 package com.qxotic.jinfer.langchain4j;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertInstanceOf;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
@@ -11,6 +12,7 @@ import dev.langchain4j.data.message.AiMessage;
 import dev.langchain4j.data.message.SystemMessage;
 import dev.langchain4j.data.message.ToolExecutionResultMessage;
 import dev.langchain4j.data.message.UserMessage;
+import dev.langchain4j.exception.TimeoutException;
 import dev.langchain4j.exception.UnsupportedFeatureException;
 import dev.langchain4j.model.chat.listener.ChatModelListener;
 import dev.langchain4j.model.chat.listener.ChatModelResponseContext;
@@ -22,6 +24,7 @@ import dev.langchain4j.model.chat.response.StreamingChatResponseHandler;
 import dev.langchain4j.model.output.FinishReason;
 import dev.langchain4j.service.AiServices;
 import java.nio.file.Path;
+import java.time.Duration;
 import java.util.List;
 import java.util.Locale;
 import java.util.concurrent.CompletableFuture;
@@ -344,5 +347,53 @@ class JinferChatModelIT {
         assertTrue(
                 r.aiMessage().text().toLowerCase(Locale.ROOT).contains("pelican"),
                 r.aiMessage().text());
+    }
+
+    interface Counter {
+        String count(String request);
+    }
+
+    /**
+     * A reply its deadline cuts is langchain4j's TimeoutException: from chat, as the streaming
+     * model's error, and through an AI Service, which would otherwise hand back null.
+     */
+    @Test
+    void aReplyItsDeadlineCutsIsATimeoutException() throws Exception {
+        ChatRequest hurried =
+                ChatRequest.builder()
+                        .messages(UserMessage.from("Count from one to fifty."))
+                        .parameters(
+                                JinferChatRequestParameters.builder()
+                                        .timeout(Duration.ofMillis(1))
+                                        .build())
+                        .build();
+        TimeoutException cut = assertThrows(TimeoutException.class, () -> model.chat(hurried));
+        assertTrue(cut.getMessage().contains("timeout"), cut.getMessage());
+
+        CompletableFuture<Throwable> streamed = new CompletableFuture<>();
+        model.streaming()
+                .chat(
+                        hurried,
+                        new StreamingChatResponseHandler() {
+                            @Override
+                            public void onCompleteResponse(ChatResponse response) {
+                                streamed.complete(null);
+                            }
+
+                            @Override
+                            public void onError(Throwable error) {
+                                streamed.complete(error);
+                            }
+                        });
+        assertInstanceOf(TimeoutException.class, streamed.get(60, TimeUnit.SECONDS));
+
+        try (JinferChatModel tiny =
+                JinferChatModel.builder()
+                        .modelPath(TestModels.require(TINY_MODEL_REF))
+                        .timeout(Duration.ofMillis(1))
+                        .build()) {
+            Counter counter = AiServices.create(Counter.class, tiny);
+            assertThrows(TimeoutException.class, () -> counter.count("Count from one to fifty."));
+        }
     }
 }

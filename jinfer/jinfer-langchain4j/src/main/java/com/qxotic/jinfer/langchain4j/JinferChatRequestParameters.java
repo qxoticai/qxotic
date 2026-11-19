@@ -108,8 +108,8 @@ public class JinferChatRequestParameters extends DefaultChatRequestParameters {
     }
 
     /**
-     * Wall-clock deadline for this request; null = the model's builder default. A reply it cuts off
-     * finishes with OTHER.
+     * Wall-clock deadline for this request; null = the model's builder default. A reply it cuts
+     * fails with langchain4j's {@code TimeoutException}.
      */
     public Duration timeout() {
         return timeout;

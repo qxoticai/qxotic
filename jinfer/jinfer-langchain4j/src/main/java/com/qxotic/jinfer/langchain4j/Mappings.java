@@ -26,6 +26,7 @@ import dev.langchain4j.data.message.TextContent;
 import dev.langchain4j.data.message.ToolExecutionResultMessage;
 import dev.langchain4j.data.message.UserMessage;
 import dev.langchain4j.data.message.VideoContent;
+import dev.langchain4j.exception.TimeoutException;
 import dev.langchain4j.exception.UnsupportedFeatureException;
 import dev.langchain4j.model.chat.request.json.JsonAnyOfSchema;
 import dev.langchain4j.model.chat.request.json.JsonArraySchema;
@@ -48,6 +49,7 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
+import java.time.Duration;
 import java.util.ArrayList;
 import java.util.Base64;
 import java.util.Collections;
@@ -624,6 +626,22 @@ final class Mappings {
         if (ai.hasToolExecutionRequests()) b.toolExecutionRequests(ai.toolExecutionRequests());
         b.attributes(ai.attributes());
         return b.build();
+    }
+
+    /**
+     * A reply its deadline cut is langchain4j's {@link TimeoutException}, as a remote provider's
+     * timeout is: as a response it would carry only what the deadline allowed, and an AI Service
+     * would return its missing text as null, a failure no caller could tell from an empty answer.
+     */
+    static void requireInTime(ChatEngine.Completion done, Duration timeout) {
+        Generator.GenerationResult result = done.result();
+        if (result.finishReason() == Generator.FinishReason.TIMEOUT)
+            throw new TimeoutException(
+                    "the reply ran past its timeout of "
+                            + timeout.toMillis()
+                            + " ms after "
+                            + result.completionTokens()
+                            + " tokens: raise the timeout, or ask for fewer tokens");
     }
 
     static ChatResponse response(

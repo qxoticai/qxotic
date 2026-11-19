@@ -299,6 +299,7 @@ public final class JinferChatModel implements ChatModel, AutoCloseable {
     public ChatResponse doChat(ChatRequest request) {
         try (ChatEngine.Prepared p = prepare(request)) {
             ChatEngine.Completion done = engine.complete(p, ChatEngine.ReplySink.NONE);
+            Mappings.requireInTime(done, p.timeout());
             AiMessage ai =
                     Mappings.unwrapStringifiedArguments(
                             Mappings.toAiMessage(done.reply()), offeredTools(request));
@@ -816,8 +817,8 @@ public final class JinferChatModel implements ChatModel, AutoCloseable {
         }
 
         /**
-         * Wall-clock deadline per request; unset = none. Exceeding it finishes with OTHER: the
-         * reply is what the deadline allowed, ended by neither the model nor the token budget.
+         * Wall-clock deadline per request; unset = none. A reply it cuts fails with langchain4j's
+         * {@code TimeoutException}, as a remote provider's timeout does.
          */
         public Builder timeout(Duration timeout) {
             Objects.requireNonNull(timeout, "timeout (use Duration.ZERO for none)");

@@ -296,6 +296,7 @@ public final class JinferStreamingChatModel implements StreamingChatModel, AutoC
         if (done.cancelled()) {
             return; // a cancelled stream ends silently: no complete callback
         }
+        Mappings.requireInTime(done, p.timeout()); // its onError, after the deltas it had sent
         AiMessage ai =
                 Mappings.unwrapStringifiedArguments(Mappings.toAiMessage(done.reply()), offered);
         if (done.stopped()) {

@@ -528,6 +528,7 @@ The input can be text and media parts (`DecisionInput.content(...)`) or fields (
 Fields are put to the model as JSON, the form d1 was trained on; a field holding content parts adds its text (or its media's kinds) to the JSON, and its media to the input, never as base64 in the prompt.
 d1 reads images and video, d1-Omni also audio, d3 images.
 A conversation (`DecisionInput.conversation(...)`) is put to the model as `{"messages": [...]}`, the transcript Spring AI's System One and Ollama decision models send d1: text, tool calls and tool results; reasoning stays out and media is refused.
+Media goes in `DecisionInput.content(...)`; LangChain4j's decision conversation does carry it, as numbered markers like `[image 1]`.
 
 The questions of a call are taken the way the model was trained to, with no isolation between them guaranteed.
 On d1 and d1-Omni the input is read once for all of them, several times faster, and an answer can then shift with the questions asked beside it.
