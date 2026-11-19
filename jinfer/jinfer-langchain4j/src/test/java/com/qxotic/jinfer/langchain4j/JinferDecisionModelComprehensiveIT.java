@@ -611,9 +611,11 @@ final class JinferDecisionModelComprehensiveIT {
                 IllegalArgumentException.class, () -> response.answer("team", YesNoAnswer.class));
         assertTrue(!response.isRefused("team") && !response.isRefused("refund"));
 
-        // a decision generates nothing: no usage. This instance was built over a caller-loaded
-        // model, so it names none; from a path or a ref the metadata carries the checkpoint
-        assertNull(response.tokenUsage());
+        // a decision reads its input and generates nothing: the usage counts what it read. This
+        // instance was built over a caller-loaded model, so it names none; from a path or a ref
+        // the metadata carries the checkpoint
+        assertTrue(response.tokenUsage().inputTokenCount() > 0, response.tokenUsage().toString());
+        assertEquals(0, response.tokenUsage().outputTokenCount());
         assertNull(response.modelName());
         assertNull(response.metadata().modelName());
     }

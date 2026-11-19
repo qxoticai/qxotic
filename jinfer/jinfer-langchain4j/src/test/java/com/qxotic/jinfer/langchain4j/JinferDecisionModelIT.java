@@ -54,6 +54,9 @@ final class JinferDecisionModelIT {
         if (model != null) model.close();
     }
 
+    /** What the ticket below costs: each question asked alone, and the three packed together. */
+    static final int EACH_TOKENS = 203, PACKED_TOKENS = 139;
+
     static final YesNoQuestion REFUND = YesNoQuestion.from("Is the customer asking for a refund?");
     static final ChoiceQuestion TEAM =
             ChoiceQuestion.builder()
@@ -119,6 +122,9 @@ final class JinferDecisionModelIT {
         assertTrue(each.yesNo("refund").isYes(0.5));
         assertEquals("billing", each.choice("team").value());
         assertEquals(0.60066, each.scale("urgency").probabilities().get(2), TOLERANCE);
+        // the ticket read once a question; the same count on every surface (Spring AI, the server)
+        assertEquals(EACH_TOKENS, each.tokenUsage().inputTokenCount());
+        assertEquals(0, each.tokenUsage().outputTokenCount(), "a decision generates nothing");
 
         try (JinferDecisionModel together =
                 JinferDecisionModel.builder()
@@ -127,6 +133,7 @@ final class JinferDecisionModelIT {
             DecisionResponse packed = together.decide(request);
             assertTrue(packed.yesNo("refund").isYes(0.5));
             assertEquals("billing", packed.choice("team").value());
+            assertEquals(PACKED_TOKENS, packed.tokenUsage().inputTokenCount(), "read once");
         }
     }
 

@@ -20,6 +20,7 @@ public abstract class ContextState extends RuntimeState {
     private final int contextCapacity;
     private final int batchCapacity;
     private int position;
+    private long tokensRead; // never rewound: what the calls on this state have cost, all told
     private int outputCount;
     private int lastBatchSize;
 
@@ -69,6 +70,15 @@ public abstract class ContextState extends RuntimeState {
 
     public final int position() {
         return position;
+    }
+
+    /**
+     * Positions this state has computed since it was created, across {@link #reset()} and {@link
+     * #resumeAt}: what a call read is the difference over the call. A position restored from a
+     * cache was not computed, so it is not counted.
+     */
+    public final long tokensRead() {
+        return tokensRead;
     }
 
     public final int outputCount() {
@@ -124,6 +134,7 @@ public abstract class ContextState extends RuntimeState {
         lastBatchSize = batchSize;
         outputCount = outputs == Batch.Outputs.ALL ? batchSize : 1;
         position += batchSize;
+        tokensRead += batchSize;
     }
 
     /** Clears history that cannot be discarded by moving the logical cursor to zero. */

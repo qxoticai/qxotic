@@ -31,6 +31,9 @@ class DecisionServerIntegrationTest {
     private static final String MMPROJ = "hf.co/LiquidAI/d1-2B-GGUF/mmproj-d1-2B-F16.gguf";
     private static final double TOLERANCE = 2e-2;
 
+    /** As the adapters' alone-or-together tests pin them, for the same ticket and questions. */
+    private static final int EACH_TOKENS = 203, PACKED_TOKENS = 139;
+
     private final HttpClient client = HttpClient.newHttpClient();
 
     @Test
@@ -75,6 +78,26 @@ class DecisionServerIntegrationTest {
                         TOLERANCE);
                 // the expected level of llama.cpp's probabilities: .024 + 2 * .766 + 3 * .192
                 assertEquals(2.13, number(answers, "urgency", "score"), 0.05);
+
+                // the usage: what the ticket costs each question alone (the default) and the three
+                // asked jointly, the same counts the LangChain4j and Spring AI adapters report
+                String ticket =
+                        """
+                        {"state": "Customer: I was charged twice for my order last week and I want my money back today. This is the third time I am writing.",
+                         %s"questions": {
+                           "refund": {"type": "noul", "instructions": "Is the customer asking for a refund?"},
+                           "team": {"type": "choice", "instructions": "Which team should handle this?",
+                                    "criteria": {"billing": "Charges and refunds", "shipping": "Delivery problems",
+                                                 "technical": "Product does not work", "other": null}},
+                           "urgency": {"type": "score", "instructions": "How urgent is this?",
+                                       "criteria": ["Can wait", "This week", "Today", "Right now"]}}}
+                        """;
+                assertEquals(
+                        Map.of("input_tokens", (long) EACH_TOKENS, "output_tokens", 0L),
+                        post(url, ticket.formatted("")).body().get("usage"));
+                assertEquals(
+                        Map.of("input_tokens", (long) PACKED_TOKENS, "output_tokens", 0L),
+                        post(url, ticket.formatted("\"joint\": true, ")).body().get("usage"));
 
                 // a picture and no state: the question follows it directly
                 String cat =

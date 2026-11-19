@@ -84,7 +84,9 @@ public final class DecisionServer {
     private final ServerConfig config;
     private final ReentrantLock compute = new ReentrantLock(true);
     private final TaskTransport transport;
-    private final AtomicLong requests = new AtomicLong(), answered = new AtomicLong();
+    private final AtomicLong requests = new AtomicLong(),
+            answered = new AtomicLong(),
+            promptTokens = new AtomicLong();
 
     private DecisionServer(
             DecisionModel model, int contextCapacity, String servedModel, ServerConfig config)
@@ -156,6 +158,7 @@ public final class DecisionServer {
                             "jinfer_decision_questions_answered_total",
                             "counter",
                             answered.get());
+                    Metrics.metric(sb, "jinfer_prompt_tokens_total", "counter", promptTokens.get());
                     Metrics.metric(
                             sb,
                             "jinfer_decision_requests_in_flight",
@@ -190,12 +193,15 @@ public final class DecisionServer {
         boolean joint = Values.booleanValue(request.get("joint"), "joint", false);
 
         float[][] probabilities;
+        int inputTokens;
         compute.lock();
         try {
+            long before = state.tokensRead();
             probabilities =
                     joint
                             ? model.decide(state, input, questions)
                             : model.decideIndependently(state, input, questions);
+            inputTokens = Math.toIntExact(state.tokensRead() - before);
         } catch (IllegalArgumentException refused) {
             // only too long is the state's; the library's remedy is for Java callers
             String message = Http.errorMessage(refused);
@@ -209,6 +215,7 @@ public final class DecisionServer {
         }
         requests.incrementAndGet();
         answered.addAndGet(questions.size());
+        promptTokens.addAndGet(inputTokens);
 
         Map<String, Object> answers = new LinkedHashMap<>();
         int i = 0;
@@ -218,7 +225,12 @@ public final class DecisionServer {
                 exchange,
                 200,
                 JsonCodec.object(
-                        "model", Requests.modelId(request, servedModel), "answers", answers));
+                        "model",
+                        Requests.modelId(request, servedModel),
+                        "answers",
+                        answers,
+                        "usage",
+                        JsonCodec.object("input_tokens", inputTokens, "output_tokens", 0)));
     }
 
     /** The media of {@code files}, then the state: its text, or its JSON; nothing when null. */

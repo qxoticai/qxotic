@@ -38,6 +38,21 @@ class RuntimeStateLifecycleTest {
         return new ProbeState(MemoryAllocators.adoptArena(Arena.ofShared()), true);
     }
 
+    /** The tokens a state read add up across its calls; rewinding moves only the position. */
+    @Test
+    void tokensReadAddUpAcrossResetsAndRewinds() {
+        try (ProbeState state = owned()) {
+            assertEquals(0, state.tokensRead());
+            state.advanceContext(5, Batch.Outputs.LAST);
+            state.reset();
+            state.advanceContext(3, Batch.Outputs.ALL);
+            state.resumeAt(1);
+            state.advanceContext(2, Batch.Outputs.LAST);
+            assertEquals(3, state.position());
+            assertEquals(10, state.tokensRead());
+        }
+    }
+
     @Test
     void sameThreadMayNestButAnotherThreadFailsFast() throws Exception {
         try (ProbeState state = owned();

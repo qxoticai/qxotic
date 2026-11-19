@@ -20,6 +20,7 @@ import org.springframework.ai.chat.messages.AssistantMessage;
 import org.springframework.ai.chat.messages.UserMessage;
 import org.springframework.ai.chat.messages.part.MediaPart;
 import org.springframework.ai.chat.messages.part.TextPart;
+import org.springframework.ai.chat.metadata.Usage;
 import org.springframework.ai.content.Media;
 import org.springframework.ai.decision.DecisionResponse;
 import org.springframework.ai.decision.answer.ChoiceAnswer;
@@ -62,6 +63,9 @@ final class JinferDecisionModelIT {
     static void close() {
         if (model != null) model.close();
     }
+
+    /** What the ticket below costs: each question asked alone, and the three packed together. */
+    static final int EACH_TOKENS = 203, PACKED_TOKENS = 139;
 
     static final YesNoQuestion REFUND = YesNoQuestion.of("Is the customer asking for a refund?");
     static final ChoiceQuestion TEAM =
@@ -141,6 +145,11 @@ final class JinferDecisionModelIT {
         assertTrue(each.getYesNo("refund").isYes());
         assertEquals("billing", each.getChoice("team").getValue());
         assertEquals(0.60066, each.getScore("urgency").getProbabilities().get(2), TOLERANCE);
+        // the ticket read once a question; the same count on every surface (LangChain4j, the
+        // server)
+        Usage usage = each.getMetadata().getUsage();
+        assertEquals(EACH_TOKENS, usage.getPromptTokens());
+        assertEquals(0, usage.getCompletionTokens(), "a decision generates nothing");
 
         try (JinferDecisionModel together =
                 JinferDecisionModel.builder()
@@ -149,6 +158,8 @@ final class JinferDecisionModelIT {
             DecisionResponse packed = together.call(ticket, three);
             assertTrue(packed.getYesNo("refund").isYes());
             assertEquals("billing", packed.getChoice("team").getValue());
+            assertEquals(
+                    PACKED_TOKENS, packed.getMetadata().getUsage().getPromptTokens(), "read once");
         }
     }
 

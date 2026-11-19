@@ -41,6 +41,7 @@ import dev.langchain4j.model.decision.response.DecisionAnswer;
 import dev.langchain4j.model.decision.response.DecisionResponse;
 import dev.langchain4j.model.decision.response.ScaleAnswer;
 import dev.langchain4j.model.decision.response.YesNoAnswer;
+import dev.langchain4j.model.output.TokenUsage;
 import java.io.IOException;
 import java.io.UncheckedIOException;
 import java.lang.foreign.Arena;
@@ -150,12 +151,15 @@ public final class JinferDecisionModel implements DecisionModel, AutoCloseable {
                 asked.values().stream().map(JinferDecisionModel::question).toList();
 
         float[][] probabilities;
+        int inputTokens;
         lock.lock();
         try {
+            long before = state.tokensRead();
             probabilities =
                     independent
                             ? model.decideIndependently(state, input, questions)
                             : model.decide(state, input, questions);
+            inputTokens = Math.toIntExact(state.tokensRead() - before);
         } finally {
             lock.unlock();
         }
@@ -165,7 +169,11 @@ public final class JinferDecisionModel implements DecisionModel, AutoCloseable {
             answers.put(
                     entry.getKey(),
                     answer(entry.getValue(), row(questions.get(i), probabilities[i++])));
-        return DecisionResponse.builder().answers(answers).modelName(modelName).build();
+        return DecisionResponse.builder()
+                .answers(answers)
+                .modelName(modelName)
+                .tokenUsage(new TokenUsage(inputTokens, 0))
+                .build();
     }
 
     /** A port that breaks the contract (a probability per option) fails here, loudly. */

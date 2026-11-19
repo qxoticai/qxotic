@@ -4,20 +4,25 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import com.qxotic.jinfer.spring.ai.JinferChatModel;
+import com.qxotic.jinfer.spring.ai.JinferDecisionModel;
 import com.qxotic.jinfer.spring.ai.autoconfigure.JinferChatAutoConfiguration;
+import com.qxotic.jinfer.spring.ai.autoconfigure.JinferDecisionAutoConfiguration;
 import com.qxotic.jinfer.spring.ai.autoconfigure.JinferSessionAutoConfiguration;
 import com.qxotic.jinfer.testkit.TestModels;
 import io.micrometer.core.instrument.MeterRegistry;
 import io.micrometer.observation.tck.TestObservationRegistry;
 import io.micrometer.observation.tck.TestObservationRegistryAssert;
 import java.nio.file.Path;
+import java.util.Map;
 import java.util.concurrent.atomic.AtomicReference;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 import org.springframework.ai.chat.client.ChatClient;
+import org.springframework.ai.decision.question.YesNoQuestion;
 import org.springframework.ai.model.chat.client.autoconfigure.ChatClientAutoConfiguration;
 import org.springframework.ai.model.chat.observation.autoconfigure.ChatObservationAutoConfiguration;
+import org.springframework.ai.model.decision.observation.autoconfigure.DecisionObservationAutoConfiguration;
 import org.springframework.ai.model.session.autoconfigure.SessionServiceAutoConfiguration;
 import org.springframework.ai.model.tool.autoconfigure.ToolCallingAutoConfiguration;
 import org.springframework.ai.session.SessionService;
@@ -167,6 +172,51 @@ class JinferStarterIT {
                                                     .counter())
                                     .isNotNull()
                                     .satisfies(c -> assertThat(c.count()).isPositive());
+                        });
+    }
+
+    /**
+     * A decision's tokens reach the same metric: the starter's decision observation records them.
+     */
+    @Test
+    void aDecisionRecordsItsTokens() {
+        new ApplicationContextRunner()
+                .withConfiguration(
+                        AutoConfigurations.of(
+                                ObservationAutoConfiguration.class,
+                                MetricsAutoConfiguration.class,
+                                CompositeMeterRegistryAutoConfiguration.class,
+                                SimpleMetricsExportAutoConfiguration.class,
+                                DecisionObservationAutoConfiguration.class,
+                                JinferDecisionAutoConfiguration.class))
+                .withPropertyValues(
+                        "spring.ai.model.decision=jinfer",
+                        "spring.ai.jinfer.decision.model="
+                                + TestModels.require("hf.co/LiquidAI/d1-2B-GGUF/d1-2B-Q8_0.gguf"))
+                .run(
+                        context -> {
+                            assertThat(context).hasNotFailed();
+                            int read =
+                                    context.getBean(JinferDecisionModel.class)
+                                            .call(
+                                                    "I was charged twice and want my money back.",
+                                                    Map.of(
+                                                            "refund",
+                                                            YesNoQuestion.of(
+                                                                    "Is the customer asking for a"
+                                                                            + " refund?")))
+                                            .getMetadata()
+                                            .getUsage()
+                                            .getPromptTokens();
+                            assertThat(read).isPositive();
+                            assertThat(
+                                            context.getBean(MeterRegistry.class)
+                                                    .find("gen_ai.client.token.usage")
+                                                    .tag("gen_ai.token.type", "input")
+                                                    .tag("gen_ai.system", "jinfer")
+                                                    .counter())
+                                    .isNotNull()
+                                    .satisfies(c -> assertThat(c.count()).isEqualTo(read));
                         });
     }
 

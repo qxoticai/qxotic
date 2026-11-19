@@ -280,7 +280,8 @@ The answers come back under the questions' names (the numbers here are an exampl
                "probabilities": {"billing": 0.92, "shipping": 0.08}, "confidence": 0.92},
    "urgency": {"type": "score", "score": 1.6,
                "legend": {"0": "Can wait", "1": "Today", "2": "Right now"},
-               "probabilities": {"0": 0.05, "1": 0.3, "2": 0.65}, "confidence": 0.65}}}
+               "probabilities": {"0": 0.05, "1": 0.3, "2": 0.65}, "confidence": 0.65}},
+ "usage": {"input_tokens": 139, "output_tokens": 0}}
 ```
 
 `state` is a text, any other JSON value (read as JSON), or `null` when the files alone are judged.
@@ -289,6 +290,7 @@ d1 reads images and video, d1-Omni also audio, vLLM's d3 images; `/v1/models` li
 A `noul` answer is the probability of yes; a `choice` names the likeliest option with every option's probability; a `score` is the expected level (the probability-weighted mean of the levels) with each level's probability; `confidence` is the probability of the likeliest option, for every model.
 Each question is answered as if asked alone, unless `"joint": true`, the field vLLM's `/v1/systemone` uses, asks for the model's joint reading: d1 and d1-Omni then read the state once for all of them, faster, and an answer can shift with the questions beside it.
 d3 is not trained to read questions together and answers each alone either way.
+`usage` counts the tokens the model read, the media's positions included; a decision generates none.
 `--context-capacity` sizes the state as for retrieval; a decision model reads each prompt in one batch, so `max` takes tens of gigabytes on d1 and d3.
 
 The default bind is `127.0.0.1:54154`. To listen on other interfaces, supply `--host` and `--api-key`:

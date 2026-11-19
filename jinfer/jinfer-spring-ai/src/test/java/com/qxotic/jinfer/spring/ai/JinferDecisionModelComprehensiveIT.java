@@ -494,8 +494,8 @@ final class JinferDecisionModelComprehensiveIT {
         assertThrows(IllegalArgumentException.class, () -> response.getYesNo("team"));
         assertThrows(IllegalArgumentException.class, () -> response.getAnswer("nope"));
 
-        // a decision generates nothing: the usage is empty, not a fake count
-        assertEquals(0, response.getMetadata().getUsage().getPromptTokens());
+        // a decision reads its input and generates nothing: the usage counts what it read
+        assertTrue(response.getMetadata().getUsage().getPromptTokens() > 0);
         assertEquals(0, response.getMetadata().getUsage().getCompletionTokens());
         // this instance was built over a caller-loaded model, so it names none; built from a path
         // or a ref, the metadata carries the checkpoint (see the model-name test)

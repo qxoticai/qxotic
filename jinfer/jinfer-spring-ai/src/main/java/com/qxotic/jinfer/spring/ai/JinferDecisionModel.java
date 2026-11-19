@@ -31,6 +31,7 @@ import org.springframework.ai.chat.messages.part.MessagePart;
 import org.springframework.ai.chat.messages.part.TextPart;
 import org.springframework.ai.chat.messages.part.ToolCallPart;
 import org.springframework.ai.chat.messages.part.ToolResultPart;
+import org.springframework.ai.chat.metadata.DefaultUsage;
 import org.springframework.ai.decision.DecisionModel;
 import org.springframework.ai.decision.DecisionOptions;
 import org.springframework.ai.decision.DecisionPrompt;
@@ -157,12 +158,15 @@ public final class JinferDecisionModel implements DecisionModel, AutoCloseable {
                 asked.values().stream().map(JinferDecisionModel::question).toList();
 
         float[][] probabilities;
+        int inputTokens;
         lock.lock();
         try {
+            long before = state.tokensRead();
             probabilities =
                     independent
                             ? model.decideIndependently(state, input, questions)
                             : model.decide(state, input, questions);
+            inputTokens = Math.toIntExact(state.tokensRead() - before);
         } finally {
             lock.unlock();
         }
@@ -172,9 +176,9 @@ public final class JinferDecisionModel implements DecisionModel, AutoCloseable {
             response.answer(
                     entry.getKey(),
                     answer(entry.getValue(), row(questions.get(i), probabilities[i++])));
-        if (modelName != null)
-            response.metadata(DecisionResponseMetadata.builder().model(modelName).build());
-        return response.build();
+        var metadata = DecisionResponseMetadata.builder().usage(new DefaultUsage(inputTokens, 0));
+        if (modelName != null) metadata.model(modelName);
+        return response.metadata(metadata.build()).build();
     }
 
     /** A port that breaks the contract (a probability per option) fails here, loudly. */
