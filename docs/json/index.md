@@ -83,7 +83,7 @@ Access nested values without casting:
 | `array` | `List<Object>` | ArrayList |
 | `string` | `String` | |
 | `number` (integer) | `Long` / `BigInteger` | Auto-promotes on overflow |
-| `number` (decimal) | `BigDecimal` | `Double` with `decimalsAsBigDecimal(false)` |
+| `number` (decimal) | `BigDecimal` | `Double` with `decimalsAsBigDecimal(false)`; printed plain up to 20 padding zeros, `1E+21` past that |
 | `boolean` | `Boolean` | |
 | `null` | `Json.NULL` | Sentinel, not Java `null` |
 

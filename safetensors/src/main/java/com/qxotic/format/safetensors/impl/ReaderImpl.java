@@ -260,22 +260,29 @@ class ReaderImpl {
         return "for tensor '" + tensorName + "'";
     }
 
-    private static void validateTensors(Collection<TensorEntry> tensors) {
-        if (tensors.isEmpty()) {
-            return;
-        }
-
-        // Sort by offset
+    /**
+     * The format's rule, as upstream's reader enforces it: in offset order each tensor starts where
+     * the previous one ended, from 0 - no overlap and no hole ("the byte buffer needs to be
+     * entirely indexed, and cannot contain holes. This prevents the creation of polyglot files").
+     */
+    static void validateTensors(Collection<TensorEntry> tensors) {
         List<TensorEntry> sorted = new ArrayList<>(tensors);
         sorted.sort(Comparator.comparingLong(TensorEntry::byteOffset));
-
-        // Check for overlaps
         long expectedOffset = 0;
         for (TensorEntry tensor : sorted) {
-            if (tensor.byteOffset() < expectedOffset) {
-                throw new SafetensorsFormatException("Overlapping tensors detected");
+            long end = Math.addExact(tensor.byteOffset(), tensor.byteSize()); // a long, or throws
+            if (tensor.byteOffset() != expectedOffset) {
+                throw new SafetensorsFormatException(
+                        (tensor.byteOffset() < expectedOffset ? "overlapping" : "a hole before")
+                                + " tensor '"
+                                + tensor.name()
+                                + "': it starts at "
+                                + tensor.byteOffset()
+                                + ", the previous one ends at "
+                                + expectedOffset
+                                + " (tensors are packed back to back)");
             }
-            expectedOffset = tensor.byteOffset() + tensor.byteSize();
+            expectedOffset = end;
         }
     }
 

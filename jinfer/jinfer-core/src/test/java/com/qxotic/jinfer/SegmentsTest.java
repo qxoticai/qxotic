@@ -18,7 +18,7 @@ class SegmentsTest {
 
     @Test
     void aBadVectorBitSizeFailsNamingTheProperty() {
-        for (String bad : new String[] {"abc", "100", "-128", "256bits"}) {
+        for (String bad : new String[] {"abc", "100", "-128", "256bits", "64", "1024"}) {
             IllegalArgumentException e =
                     assertThrows(
                             IllegalArgumentException.class,

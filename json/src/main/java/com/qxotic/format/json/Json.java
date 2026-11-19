@@ -555,25 +555,23 @@ public final class Json {
         }
 
         /**
-         * Validate and advance past a \\uXXXX (possibly surrogate pair). Returns the code point.
+         * Validate and advance past a \\uXXXX (possibly surrogate pair). Returns the code point. A
+         * lone surrogate escape is grammatical JSON (RFC 8259 leaves its meaning to the reader) and
+         * is what the printer writes for a lone surrogate, so it reads back as that char.
          */
         private int validateUnicodeEscape() {
             int code = parseHex4();
-
-            if (Character.isHighSurrogate((char) code)) {
-                if (pos + 6 > input.length()
-                        || input.charAt(pos) != '\\'
-                        || input.charAt(pos + 1) != 'u') {
-                    throw error("Lone surrogate");
-                }
+            if (Character.isHighSurrogate((char) code)
+                    && pos + 6 <= input.length()
+                    && input.charAt(pos) == '\\'
+                    && input.charAt(pos + 1) == 'u') {
+                int next = pos;
                 pos += 2; // Skip backslash-u
                 int low = parseHex4();
-                if (!Character.isLowSurrogate((char) low)) {
-                    throw error("Unexpected character after high surrogate");
+                if (Character.isLowSurrogate((char) low)) {
+                    return Character.toCodePoint((char) code, (char) low);
                 }
-                return Character.toCodePoint((char) code, (char) low);
-            } else if (Character.isLowSurrogate((char) code)) {
-                throw error("Lone surrogate");
+                pos = next; // not its pair: the high surrogate stands alone
             }
             return code;
         }
@@ -882,8 +880,15 @@ public final class Json {
                 sb.append(d);
             }
         } else if (num instanceof BigDecimal) {
-            BigDecimal bd = (BigDecimal) num;
-            sb.append(bd.stripTrailingZeros().toPlainString());
+            BigDecimal bd = ((BigDecimal) num).stripTrailingZeros();
+            // the plain form pads the digits with zeros, as many as the scale says: 1e2000000000,
+            // 24 bytes of JSON, would print two billion. Past 20 (JavaScript writes 1e21 as 1e+21)
+            // the exponent form, JSON too, and the same value read back.
+            long zeros =
+                    bd.scale() < 0
+                            ? -(long) bd.scale()
+                            : Math.max(0, (long) bd.scale() - bd.precision());
+            sb.append(zeros > 20 ? bd.toString() : bd.toPlainString());
         } else {
             sb.append(num);
         }

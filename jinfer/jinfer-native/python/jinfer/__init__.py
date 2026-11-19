@@ -56,7 +56,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Any, Callable, Generic, Literal, TypeVar
 
 if TYPE_CHECKING:
-    from collections.abc import Iterable, Sequence
+    from collections.abc import AsyncIterator, Iterable, Iterator, Sequence
 
     Part = str | os.PathLike[str] | bytes | dict[str, Any]  # text, a file, its bytes, a part as is
     Messages = str | Sequence[Part] | Sequence[dict[str, Any]]  # a turn, a content list, messages
@@ -479,7 +479,10 @@ class Transcript:
 _END = object()  # _next's end of the stream: a chunk may be "" or empty
 
 
-class _Stream:
+_Chunk = TypeVar("_Chunk")
+
+
+class _Stream(Generic[_Chunk]):
     """The lifecycle of a jinfer_stream handle; Reply and Speech say what a chunk is. A step and its
     chunk are read under the lock, so close() from another thread waits for the step in progress
     instead of freeing the handle under it, as the C API requires."""
@@ -516,19 +519,19 @@ class _Stream:
             raise failure
         return False
 
-    def _chunk(self):
-        return None
+    def _chunk(self) -> Any:
+        return None  # a stream read only for its result (a transcription): no chunks
 
-    def _next(self):
+    def _next(self) -> Any:
         """The next chunk, or _END."""
         with self._lock:
             return self._chunk() if self._step() else _END
 
-    def __iter__(self):
+    def __iter__(self) -> Iterator[_Chunk]:
         while (chunk := self._next()) is not _END:
             yield chunk
 
-    async def __aiter__(self):
+    async def __aiter__(self) -> AsyncIterator[_Chunk]:
         # the work is CPU-bound and in-process: each step runs in a worker thread, the loop stays free
         loop = asyncio.get_running_loop()
         while (chunk := await loop.run_in_executor(None, self._next)) is not _END:
@@ -572,7 +575,7 @@ class _Stream:
             pass
 
 
-class Reply(_Stream, Generic[T]):
+class Reply(_Stream[str], Generic[T]):
     """One chat reply, already generating. Iterate it (or `async for`) for the text as it arrives,
     or read `.text`, `.tool_calls`, `.parsed`, `.usage`: those wait for the end. Both views are the
     same reply; iterating after a property read yields nothing more. Close a reply early to cancel
@@ -646,7 +649,7 @@ class Reply(_Stream, Generic[T]):
         return _parse(value, self._schema)
 
 
-class Speech(_Stream):
+class Speech(_Stream["_array.array[float]"]):
     """Synthesized speech, already generating. Iterate it for float32 mono PCM chunks (arrays) as
     they are produced, or read `.audio` for all of it; `.save(path)` writes a 16-bit WAV."""
 
@@ -660,7 +663,7 @@ class Speech(_Stream):
             return "jinfer.Speech(generating)"
         return f"jinfer.Speech({self._result['seconds']:.1f} s at {self.sample_rate} Hz)"
 
-    def _chunk(self):
+    def _chunk(self) -> _array.array[float]:
         count = C.c_int32()
         ptr = N.lib.jinfer_stream_samples(self._h, C.byref(count))
         chunk = _copy_floats(ptr, count.value)

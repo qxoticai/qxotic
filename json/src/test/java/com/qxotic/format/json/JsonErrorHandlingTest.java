@@ -102,13 +102,6 @@ class JsonErrorHandlingTest {
     }
 
     @Test
-    void testLoneSurrogateErrorMessage() {
-        Json.ParseException e =
-                assertThrows(Json.ParseException.class, () -> Json.parse("\"\\uD800\""));
-        assertTrue(e.getMessage().contains("Lone"));
-    }
-
-    @Test
     void testControlCharErrorMessage() {
         Json.ParseException e =
                 assertThrows(Json.ParseException.class, () -> Json.parse("\"\u0001\""));
@@ -249,8 +242,6 @@ class JsonErrorHandlingTest {
         assertErrorMessageContains(".5", "Unexpected character");
         assertErrorMessageContains("1.", "digit after decimal point");
         assertErrorMessageContains("1e", "Exponent missing");
-        assertErrorMessageContains("\"\\uD800\"", "Lone surrogate");
-        assertErrorMessageContains("\"\\uDC00\"", "Lone surrogate");
         assertErrorMessageContains("{key:}", "Expected '\"'");
         assertErrorMessageContains("{\"key\":}", "Unexpected character");
         assertErrorMessageContains("[1,,2]", "Unexpected character");

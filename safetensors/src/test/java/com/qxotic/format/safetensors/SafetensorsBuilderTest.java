@@ -209,13 +209,27 @@ public class SafetensorsBuilderTest extends SafetensorsTest {
     public void testBuildWithoutRecomputingOffsets() {
         Builder builder =
                 Builder.newBuilder()
-                        .putTensor(TensorEntry.create("tensor1", DType.F32, new long[] {10}, 100))
-                        .putTensor(TensorEntry.create("tensor2", DType.F16, new long[] {5}, 500));
+                        .putTensor(TensorEntry.create("tensor1", DType.F32, new long[] {10}, 10))
+                        .putTensor(TensorEntry.create("tensor2", DType.F16, new long[] {5}, 0));
 
         Safetensors st = builder.build(false);
 
-        assertEquals(100, st.getTensor("tensor1").byteOffset());
-        assertEquals(500, st.getTensor("tensor2").byteOffset());
+        assertEquals(10, st.getTensor("tensor1").byteOffset());
+        assertEquals(0, st.getTensor("tensor2").byteOffset());
+    }
+
+    /** The format forbids holes, so a builder never writes one: the file a reader would refuse. */
+    @Test
+    public void testBuildRefusesAHoleOrAnOverlap() {
+        for (long second : new long[] {44, 36}) {
+            Builder builder =
+                    Builder.newBuilder()
+                            .putTensor(TensorEntry.create("a", DType.F32, new long[] {10}, 0))
+                            .putTensor(TensorEntry.create("b", DType.F16, new long[] {5}, second));
+            SafetensorsFormatException e =
+                    assertThrows(SafetensorsFormatException.class, () -> builder.build(false));
+            assertTrue(e.getMessage().contains("tensor 'b'"), e.getMessage());
+        }
     }
 
     @Test
@@ -288,8 +302,10 @@ public class SafetensorsBuilderTest extends SafetensorsTest {
 
         Safetensors st = builder.build(true);
 
+        // the header is padded so the data starts aligned; the tensors are packed after it
+        assertEquals(0, st.getTensorDataOffset() % 64);
         assertEquals(0, st.getTensor("tensor1").byteOffset());
-        assertEquals(64, st.getTensor("tensor2").byteOffset());
+        assertEquals(12, st.getTensor("tensor2").byteOffset());
     }
 
     @Test

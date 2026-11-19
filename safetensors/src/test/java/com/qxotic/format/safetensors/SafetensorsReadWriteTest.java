@@ -264,7 +264,7 @@ public class SafetensorsReadWriteTest extends SafetensorsTest {
                 writeToBytes(
                         Builder.newBuilder()
                                 .putTensor(TensorEntry.create("t1", DType.F32, new long[] {2}, 0))
-                                .putTensor(TensorEntry.create("t2", DType.F32, new long[] {2}, 4))
+                                .putTensor(TensorEntry.create("t2", DType.F32, new long[] {2}, 8))
                                 .build(false));
 
         String validJson =
@@ -274,7 +274,7 @@ public class SafetensorsReadWriteTest extends SafetensorsTest {
                         (int) ByteBuffer.wrap(validBytes).order(ByteOrder.LITTLE_ENDIAN).getLong(0),
                         StandardCharsets.UTF_8);
         String invalidJson =
-                validJson.replace("\"data_offsets\":[4,12]", "\"data_offsets\":[2,10]");
+                validJson.replace("\"data_offsets\":[8,16]", "\"data_offsets\":[2,10]");
 
         byte[] headerBytes = invalidJson.getBytes(StandardCharsets.UTF_8);
         byte[] invalidBytes = new byte[8 + headerBytes.length];

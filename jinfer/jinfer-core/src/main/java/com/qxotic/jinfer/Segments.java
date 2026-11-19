@@ -53,17 +53,20 @@ public final class Segments {
     static int vectorBitSize(String override, int preferred) {
         if (override == null || override.isBlank())
             return preferred; // a build passes it through unset as ""
+        // exactly these: VectorShape.forBitSize clamps 1024 to 512 without a word, and 64 has no
+        // half-width short species for the kernels
+        int bits;
         try {
-            int bits = Integer.parseInt(override.strip());
-            if (bits != 0) VectorShape.forBitSize(bits); // throws for a size with no shape
-            return bits;
-        } catch (IllegalArgumentException notAShape) { // NumberFormatException included
+            bits = Integer.parseInt(override.strip());
+        } catch (NumberFormatException notANumber) {
+            bits = -1;
+        }
+        if (bits != 0 && bits != 128 && bits != 256 && bits != 512)
             throw new IllegalArgumentException(
-                    "jinfer.vector.width: 0 (the scalar kernels) or a Vector API shape size"
-                            + " (64, 128, 256, 512), not '"
+                    "jinfer.vector.width: 0 (the scalar kernels), 128, 256 or 512, not '"
                             + override
                             + "'");
-        }
+        return bits;
     }
 
     public static final boolean USE_VECTOR_API = VECTOR_BIT_SIZE != 0;

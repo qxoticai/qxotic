@@ -26,6 +26,21 @@ class VectorSupportTileTest {
     }
 
     @Test
+    void theWidthIsExactlyAShapeTheKernelsRunOn() {
+        assertEquals(256, VectorSupport.vectorWidth(null, 256));
+        assertEquals(256, VectorSupport.vectorWidth(" ", 256));
+        assertEquals(128, VectorSupport.vectorWidth(" 128 ", 256));
+        for (String bad : new String[] {"64", "1024", "100", "abc"}) {
+            IllegalArgumentException e =
+                    assertThrows(
+                            IllegalArgumentException.class,
+                            () -> VectorSupport.vectorWidth(bad, 256),
+                            bad);
+            assertTrue(e.getMessage().startsWith("jam.vector.width must be"), e.getMessage());
+        }
+    }
+
+    @Test
     void theWideBandNeedsGraalCe25Point4OrNewer() {
         assertTrue(VectorSupport.wideBand(true, "GraalVM CE 25.4.4.1.1+1.1"));
         assertTrue(VectorSupport.wideBand(true, "GraalVM CE 26.0.1+3.1"));

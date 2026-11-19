@@ -53,6 +53,7 @@ final class BuilderImpl implements Builder {
     public Safetensors build(boolean recomputeTensorOffsets) {
         Map<String, TensorEntry> freshTensorEntries =
                 recomputeTensorOffsets ? computeTensorOffsets() : this.tensorEntries;
+        ReaderImpl.validateTensors(freshTensorEntries.values()); // what a reader would refuse
         long freshTensorDataOffset =
                 WriterImpl.computeTensorDataOffset(
                         metadata, freshTensorEntries.values(), getAlignment());
@@ -140,8 +141,7 @@ final class BuilderImpl implements Builder {
         long tensorOffset = 0;
         Map<String, TensorEntry> reindexed = new LinkedHashMap<>();
         for (Map.Entry<String, TensorEntry> entry : tensorEntries.entrySet()) {
-            // Add padding, tensor start must be aligned.
-            tensorOffset += WriterImpl.padding(tensorOffset, getAlignment());
+            // back to back: the format forbids holes; the alignment pads the header instead
             String name = entry.getKey();
             TensorEntry tensorEntry = entry.getValue();
             DType dType = tensorEntry.dtype();

@@ -161,25 +161,18 @@ class JsonStringTest {
         assertTrue(e.getMessage().contains("Invalid hex digit"));
     }
 
+    /** A surrogate escape without its pair is that char: RFC 8259 grammar, and what we print. */
     @Test
-    void testLoneHighSurrogateRejected() {
-        Json.ParseException e =
-                assertThrows(Json.ParseException.class, () -> Json.parse("\"\\uD800\""));
-        assertTrue(e.getMessage().contains("Lone"));
-    }
-
-    @Test
-    void testLoneLowSurrogateRejected() {
-        Json.ParseException e =
-                assertThrows(Json.ParseException.class, () -> Json.parse("\"\\uDC00\""));
-        assertTrue(e.getMessage().contains("Lone"));
-    }
-
-    @Test
-    void testHighSurrogateFollowedByNonLowSurrogate() {
-        Json.ParseException e =
-                assertThrows(Json.ParseException.class, () -> Json.parse("\"\\uD83D\\u0041\""));
-        assertTrue(e.getMessage().contains("Unexpected"));
+    void aLoneSurrogateEscapeIsThatChar() {
+        String[][] cases = {
+            {"\"\\uD800\"", "\uD800"},
+            {"\"\\uDC00\"", "\uDC00"},
+            {"\"\\uD83D\\u0041\"", "\uD83DA"},
+            {"\"\\uD83D\\uD83D\"", "\uD83D\uD83D"},
+            {"\"\\uD800\\uDBFF\"", "\uD800\uDBFF"},
+            {"\"\\uDE00\\uD83D\"", "\uDE00\uD83D"},
+        };
+        for (String[] c : cases) assertEquals(c[1], Json.parse(c[0]), c[0]);
     }
 
     @Test
@@ -259,25 +252,12 @@ class JsonStringTest {
         // BMP boundary values
         assertEquals("\uFFFF", Json.unescapeString("\\uFFFF"));
         assertEquals("\uE000", Json.unescapeString("\\uE000"));
-        // High surrogate alone at end of string
-        Json.ParseException ex1 =
-                assertThrows(Json.ParseException.class, () -> Json.unescapeString("\\" + "uD800"));
-        assertTrue(ex1.getMessage().contains("Lone surrogate"));
-        // Low surrogate alone
-        Json.ParseException ex2 =
-                assertThrows(Json.ParseException.class, () -> Json.unescapeString("\\" + "uDC00"));
-        assertTrue(ex2.getMessage().contains("Lone surrogate"));
-        // High surrogate followed by non-backslash-u
-        Json.ParseException ex3 =
-                assertThrows(
-                        Json.ParseException.class, () -> Json.unescapeString("\\" + "uD800\\n"));
-        assertTrue(ex3.getMessage().contains("Lone surrogate"));
-        // High surrogate followed by backslash-u but non-low-surrogate
-        Json.ParseException ex4 =
-                assertThrows(
-                        Json.ParseException.class,
-                        () -> Json.unescapeString("\\" + "uD83D\\u0041"));
-        assertTrue(ex4.getMessage().contains("Unexpected character after high surrogate"));
+        // a lone surrogate escape reads back as that char, wherever it stands
+        assertEquals("\uD800", Json.unescapeString("\\" + "uD800"));
+        assertEquals("\uDC00", Json.unescapeString("\\" + "uDC00"));
+        assertEquals("\uD800\n", Json.unescapeString("\\" + "uD800\\n"));
+        assertEquals("\uD83DA", Json.unescapeString("\\" + "uD83D\\u0041"));
+        assertEquals("\uDE00\uD83D", Json.unescapeString("\\" + "uDE00\\" + "uD83D"));
         // High surrogate followed by backslash-u with invalid hex in low
         Json.ParseException ex5 =
                 assertThrows(
@@ -535,27 +515,6 @@ class JsonStringTest {
     void testMultipleSurrogatePairsUnicode() {
         String expected = "\uD83D\uDE00\uD83D\uDE01\uD83D\uDE02";
         assertEquals(expected, Json.parse("\"\\uD83D\\uDE00\\uD83D\\uDE01\\uD83D\\uDE02\""));
-    }
-
-    @Test
-    void testHighSurrogateFollowedByAnotherHighSurrogate() {
-        Json.ParseException e =
-                assertThrows(Json.ParseException.class, () -> Json.parse("\"\\uD83D\\uD83D\""));
-        assertTrue(e.getMessage().contains("Unexpected"));
-    }
-
-    @Test
-    void testInvalidSurrogateSequence() {
-        Json.ParseException e =
-                assertThrows(Json.ParseException.class, () -> Json.parse("\"\\uD800\\uDBFF\""));
-        assertTrue(e.getMessage().contains("Unexpected"));
-    }
-
-    @Test
-    void testReversedSurrogateOrder() {
-        Json.ParseException e =
-                assertThrows(Json.ParseException.class, () -> Json.parse("\"\\uDE00\\uD83D\""));
-        assertTrue(e.getMessage().contains("Lone"));
     }
 
     @Test
@@ -841,12 +800,13 @@ class JsonStringTest {
         assertEquals("😀\\uD83D", Json.escapeString("😀\uD83D"), "a pair, then a lone high");
     }
 
-    /** A lone surrogate's escape is what escapeString writes and what unescapeString refuses. */
+    /** What the printer writes for a lone surrogate, the parser reads back. */
     @Test
-    void aLoneSurrogateEscapeDoesNotUnescape() {
-        String escaped = Json.escapeString("\uD800");
-        assertEquals("\\uD800", escaped);
-        assertThrows(Json.ParseException.class, () -> Json.unescapeString(escaped));
+    void aLoneSurrogateRoundTrips() {
+        for (String text : new String[] {"\uD800", "a\uDC00b", "\uDE00\uD83D", "😀\uD83D"}) {
+            assertEquals(text, Json.unescapeString(Json.escapeString(text)));
+            assertEquals(text, Json.parse(Json.stringify(text)));
+        }
     }
 
     /** Escapes first, last, back to back and between text, from a String and any CharSequence. */

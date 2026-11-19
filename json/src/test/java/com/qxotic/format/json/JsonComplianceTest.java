@@ -271,22 +271,11 @@ class JsonComplianceTest {
 
     @Test
     void testStringSurrogatePairs() {
-        // RFC 8259: UTF-16 surrogate pairs must be properly encoded
-        // Valid surrogate pair
+        // a pair is one code point; RFC 8259 grammar also admits an unpaired surrogate (8.2)
         assertEquals("\uD83D\uDE00", Json.parse("\"\\uD83D\\uDE00\""));
-
-        // Lone high surrogate
-        Json.ParseException e =
-                assertThrows(Json.ParseException.class, () -> Json.parse("\"\\uD83D\""));
-        assertTrue(e.getMessage().contains("surrogate"));
-
-        // Lone low surrogate
-        e = assertThrows(Json.ParseException.class, () -> Json.parse("\"\\uDE00\""));
-        assertTrue(e.getMessage().contains("surrogate"));
-
-        // Reversed surrogate pair
-        e = assertThrows(Json.ParseException.class, () -> Json.parse("\"\\uDE00\\uD83D\""));
-        assertTrue(e.getMessage().contains("surrogate") || e.getMessage().contains("Invalid"));
+        assertEquals("\uD83D", Json.parse("\"\\uD83D\""));
+        assertEquals("\uDE00", Json.parse("\"\\uDE00\""));
+        assertEquals("\uDE00\uD83D", Json.parse("\"\\uDE00\\uD83D\""));
     }
 
     @Test
@@ -688,11 +677,9 @@ class JsonComplianceTest {
     }
 
     @Test
-    void testN_string_inverted_surrogates() {
-        // Inverted surrogate pair (low-high instead of high-low)
-        Json.ParseException e =
-                assertThrows(Json.ParseException.class, () -> Json.parse("\"\\uDE00\\uD83D\""));
-        assertNotNull(e.getMessage());
+    void testI_string_inverted_surrogates() {
+        // Inverted surrogate pair (low-high instead of high-low): two lone surrogates
+        assertEquals("\uDE00\uD83D", Json.parse("\"\\uDE00\\uD83D\""));
     }
 
     // ===== y_ tests (MUST accept) =====
@@ -852,22 +839,14 @@ class JsonComplianceTest {
 
     @Test
     void testI_string_lone_second_surrogate() {
-        // Lone low surrogate - implementation may reject or accept with replacement
-        // Our implementation rejects lone surrogates
-        Json.ParseException e =
-                assertThrows(Json.ParseException.class, () -> Json.parse("\"\\uDE00\""));
-        assertNotNull(e.getMessage());
-        assertTrue(e.getMessage().contains("surrogate"));
+        // Lone low surrogate - implementation-defined; read back as that char, as printed
+        assertEquals("\uDE00", Json.parse("\"\\uDE00\""));
     }
 
     @Test
     void testI_string_lone_first_surrogate() {
-        // Lone high surrogate - implementation may reject or accept with replacement
-        // Our implementation rejects lone surrogates
-        Json.ParseException e =
-                assertThrows(Json.ParseException.class, () -> Json.parse("\"\\uD83D\""));
-        assertNotNull(e.getMessage());
-        assertTrue(e.getMessage().contains("surrogate"));
+        // Lone high surrogate - implementation-defined; read back as that char, as printed
+        assertEquals("\uD83D", Json.parse("\"\\uD83D\""));
     }
 
     @Test
@@ -1080,10 +1059,7 @@ class JsonComplianceTest {
 
     @Test
     void testJSON2RejectsInvalidStrings() {
-        String[] invalidStrings = {
-            "\"\\u00\"", "\"\\u00G\"",
-            "\"\\uD800\"", "\"\\uDC00\""
-        };
+        String[] invalidStrings = {"\"\\u00\"", "\"\\u00G\""};
 
         for (String str : invalidStrings) {
             assertThrows(
@@ -1104,14 +1080,9 @@ class JsonComplianceTest {
             assertNotNull(result);
         }
 
-        String[] invalidSurrogates = {"\"\\uD83DA\"", "\"\\uD83D\\u0041\""};
-
-        for (String str : invalidSurrogates) {
-            assertThrows(
-                    Json.ParseException.class,
-                    () -> Json.parse(str),
-                    "JSON2 should reject: " + str);
-        }
+        // an unpaired high surrogate is that char, then what follows
+        assertEquals("\uD83DA", Json.parse("\"\\uD83DA\""));
+        assertEquals("\uD83DA", Json.parse("\"\\uD83D\\u0041\""));
     }
 
     @Test
@@ -1125,9 +1096,6 @@ class JsonComplianceTest {
 
         e = assertThrows(Json.ParseException.class, () -> Json.parse("01"));
         assertTrue(e.getMessage().contains("Leading zeros"));
-
-        e = assertThrows(Json.ParseException.class, () -> Json.parse("\"\\uD800\""));
-        assertTrue(e.getMessage().contains("surrogate"));
     }
 
     @Test

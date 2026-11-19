@@ -25,7 +25,10 @@ public interface Safetensors {
     /** Byte offset where tensor payload begins ({@code 8 + headerSize}). */
     long getTensorDataOffset();
 
-    /** Tensor alignment in bytes (defaults to 1 when __alignment__ is absent). */
+    /**
+     * The alignment of the tensor data's start, in bytes (1 when __alignment__ is absent); the data
+     * always starts on a multiple of 8, as upstream writes it.
+     */
     int getAlignment();
 
     /** Metadata from the __metadata__ key (unmodifiable, empty if absent). */
@@ -69,7 +72,12 @@ public interface Safetensors {
         return ImplAccessor.read(channel);
     }
 
-    /** Reads safetensors metadata from a file. */
+    /**
+     * Reads safetensors metadata from a file: the header only, as {@link #write(Safetensors, Path)}
+     * writes it. The payload is not checked against the file, so a header-only file reads, and so
+     * does a truncated one: whatever reads tensor data bounds-checks it (a mapped segment of the
+     * file's size refuses an offset past its end).
+     */
     static Safetensors read(Path path) throws IOException {
         Objects.requireNonNull(path, "path");
         try (ReadableByteChannel channel =

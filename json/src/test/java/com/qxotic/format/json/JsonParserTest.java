@@ -234,8 +234,6 @@ class JsonParserTest {
         assertThrows(Json.ParseException.class, () -> Json.parse("1."));
         assertThrows(Json.ParseException.class, () -> Json.parse("1e"));
         assertThrows(Json.ParseException.class, () -> Json.parse("\"line1\nline2\""));
-        assertThrows(Json.ParseException.class, () -> Json.parse("\"\\uD800\""));
-        assertThrows(Json.ParseException.class, () -> Json.parse("\"\\uDC00\""));
     }
 
     // ===== Null.toString() coverage =====
@@ -334,34 +332,6 @@ class JsonParserTest {
         assertTrue(
                 e.getMessage().contains("Unexpected '+'")
                         || e.getMessage().contains("Unexpected character"));
-    }
-
-    // ===== validateUnicodeEscape() surrogate branches =====
-
-    @Test
-    void testUnicodeEscapeIncompleteSurrogate() {
-        // High surrogate without low surrogate
-        Json.ParseException e =
-                assertThrows(Json.ParseException.class, () -> Json.parse("\"\\uD83D\""));
-        assertTrue(e.getMessage().contains("Lone surrogate"));
-    }
-
-    @Test
-    void testUnicodeEscapeInvalidSurrogatePair() {
-        // High surrogate followed by something that's not a low surrogate
-        Json.ParseException e =
-                assertThrows(Json.ParseException.class, () -> Json.parse("\"\\uD83D\\u0041\""));
-        assertTrue(
-                e.getMessage().contains("surrogate")
-                        || e.getMessage().contains("Unexpected character"));
-    }
-
-    @Test
-    void testUnicodeEscapeLoneLowSurrogate() {
-        // Low surrogate without high surrogate
-        Json.ParseException e =
-                assertThrows(Json.ParseException.class, () -> Json.parse("\"\\uDE00\""));
-        assertTrue(e.getMessage().contains("Lone surrogate"));
     }
 
     // ===== escapeFor() control characters =====

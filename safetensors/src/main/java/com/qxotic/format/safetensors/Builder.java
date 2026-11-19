@@ -24,9 +24,7 @@ public interface Builder extends Cloneable {
         return ImplAccessor.newBuilder();
     }
 
-    /**
-     * Builds with tensor offsets recomputed for alignment and packing; same as {@code build(true)}.
-     */
+    /** Builds with tensor offsets recomputed, packed back to back; same as {@code build(true)}. */
     default Safetensors build() {
         return build(true);
     }
@@ -35,7 +33,7 @@ public interface Builder extends Cloneable {
      * Builds a Safetensors instance.
      *
      * @param recomputeTensorOffsets if true, tensor offsets will be automatically re-computed,
-     *     packed in the same order and respecting the alignment
+     *     packed back to back in the same order
      * @throws ArithmeticException if a tensor end offset cannot be represented as a {@code long}
      */
     Safetensors build(boolean recomputeTensorOffsets);
@@ -43,7 +41,13 @@ public interface Builder extends Cloneable {
     /** Creates a deep copy of this builder. */
     Builder clone();
 
-    /** Sets the alignment value for tensor payload (must be a power of 2). */
+    /**
+     * Aligns the start of the tensor data to a multiple of {@code newAlignment} (a power of 2), by
+     * padding the header with spaces as the format allows. The tensors follow back to back - the
+     * format forbids holes - so each starts aligned only as far as the sizes before it allow:
+     * ordering them by element size, largest first, keeps every one naturally aligned (what
+     * upstream's writer does).
+     */
     default Builder setAlignment(int newAlignment) {
         if (!ImplAccessor.isValidAlignment(newAlignment)) {
             throw new IllegalArgumentException(

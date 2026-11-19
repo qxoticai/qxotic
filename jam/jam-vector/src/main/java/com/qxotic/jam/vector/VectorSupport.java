@@ -58,10 +58,24 @@ final class VectorSupport {
      */
     static final VectorSpecies<Float> F_SPECIES =
             VectorShape.forBitSize(
-                            jamPropInt(
-                                    "jam.vector.width",
+                            vectorWidth(
+                                    jamProp("jam.vector.width", null),
                                     FloatVector.SPECIES_PREFERRED.vectorBitSize()))
                     .withLanes(float.class);
+
+    /**
+     * The requested width, or {@code preferred} when unset. Exactly 128, 256 or 512: {@code
+     * VectorShape.forBitSize} clamps 1024 to 512 without a word, and 64 has no half-width species.
+     */
+    static int vectorWidth(String requested, int preferred) {
+        if (requested == null || requested.isBlank()) return preferred;
+        return switch (requested.strip()) {
+            case "128", "256", "512" -> Integer.parseInt(requested.strip());
+            default ->
+                    throw new IllegalArgumentException(
+                            "jam.vector.width must be 128, 256 or 512, not '" + requested + "'");
+        };
+    }
 
     static final boolean IS_512 = F_SPECIES.vectorBitSize() == 512;
 

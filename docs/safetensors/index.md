@@ -167,7 +167,9 @@ try (FileChannel channel = FileChannel.open(Path.of("output.safetensors"),
 ### Alignment
 
 The header is padded with spaces so the tensor data starts at a multiple of 8 bytes, as upstream pads it.
-Tensors are packed back to back by default (alignment 1, the upstream layout); set a power of 2 to align each tensor.
+Set a larger power of 2 to start the tensor data on a multiple of it, such as 64 or a 4096-byte page.
+Tensors are always packed back to back: the format forbids holes between them, and the reader refuses a file with one, as upstream's does.
+Ordering tensors by element size, largest first, keeps each one naturally aligned, which is what upstream's writer does.
 A file read and written back keeps its own layout, so its tensor offsets stay valid.
 
 ```snippet path="safetensors/src/test/java/com/qxotic/format/safetensors/Snippets.java" tag="builder-alignment"

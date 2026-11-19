@@ -32,6 +32,20 @@ class JsonPrinterTest {
         assertTrue(json.contains("\n"));
     }
 
+    /**
+     * A number's printed form is bounded by its digits, not its exponent: 24 bytes of JSON print in
+     * as few, and read back as the same value. (Plain, 1e2000000000 is two billion characters.)
+     */
+    @Test
+    void anExtremeExponentPrintsBoundedAndReadsBack() {
+        for (String text : new String[] {"1e2147483648", "1e2000000000", "-2.5e-999999999"}) {
+            Object parsed = Json.parse(text);
+            String printed = Json.stringify(parsed, false);
+            assertTrue(printed.length() <= text.length() + 2, printed);
+            assertEquals(parsed, Json.parse(printed), text);
+        }
+    }
+
     @Test
     void testNegativeZero() {
         assertEquals("0", Json.stringify(new BigDecimal("-0"), false));
@@ -53,6 +67,14 @@ class JsonPrinterTest {
                         "9999999999999999999999999999999999999999"),
                 Arguments.of(new BigDecimal("123.456"), "123.456"),
                 Arguments.of(new BigDecimal("1.5000"), "1.5"),
+                // plain while it pads the digits with at most 20 zeros, the exponent form past that
+                Arguments.of(new BigDecimal("1e20"), "100000000000000000000"),
+                Arguments.of(new BigDecimal("1e21"), "1E+21"),
+                Arguments.of(new BigDecimal("-1.5e25"), "-1.5E+25"),
+                Arguments.of(new BigDecimal("1e-21"), "0.000000000000000000001"),
+                Arguments.of(new BigDecimal("1e-22"), "1E-22"),
+                Arguments.of(
+                        new BigDecimal("12345678901234567890123.5"), "12345678901234567890123.5"),
                 Arguments.of(1.5, "1.5"),
                 Arguments.of(2.0, "2"),
                 Arguments.of(1.5f, "1.5"),
