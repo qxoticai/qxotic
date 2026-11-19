@@ -52,6 +52,7 @@ import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 import java.util.Objects;
+import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.locks.ReentrantLock;
 
 /**
@@ -139,6 +140,15 @@ public final class JinferDecisionModel implements DecisionModel, AutoCloseable {
         return modelName == null
                 ? DecisionRequestParameters.EMPTY
                 : DecisionRequestParameters.builder().modelName(modelName).build();
+    }
+
+    /**
+     * {@link #doDecide} on a virtual thread, so {@code decideAsync} - and the router's {@code
+     * routeAsync} - leaves the caller free; the calls still take this pipeline one at a time.
+     */
+    @Override
+    public CompletableFuture<DecisionResponse> doDecideAsync(DecisionRequest request) {
+        return CompletableFuture.supplyAsync(() -> doDecide(request), Thread::startVirtualThread);
     }
 
     @Override

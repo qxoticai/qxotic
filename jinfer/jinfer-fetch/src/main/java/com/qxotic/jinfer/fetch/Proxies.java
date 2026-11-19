@@ -9,6 +9,7 @@ import java.net.URI;
 import java.util.Arrays;
 import java.util.List;
 import java.util.Locale;
+import java.util.function.UnaryOperator;
 import java.util.stream.Collectors;
 
 /**
@@ -20,6 +21,10 @@ import java.util.stream.Collectors;
  * variables, so a corporate laptop or a machine behind a regional mirror expects them to work here
  * too. Without this the failure is a connect timeout with nothing to suggest.
  *
+ * <p>The variables are read as curl reads them, so a JVM build and a native image (whose transport
+ * is curl) take the same route: lowercase first, then uppercase, and {@code http_proxy} only in
+ * lowercase - curl ignores {@code HTTP_PROXY} as its httpoxy defence (CVE-2016-5385).
+ *
  * <p>The environment wins when it is set; otherwise the JVM's own default selector applies, so
  * {@code -Dhttps.proxyHost} keeps working for callers who configure Java that way.
  */
@@ -28,18 +33,22 @@ final class Proxies {
     private Proxies() {}
 
     static ProxySelector selector() {
-        String https = env("HTTPS_PROXY", "https_proxy");
-        String http = env("HTTP_PROXY", "http_proxy");
+        return selector(System::getenv);
+    }
+
+    static ProxySelector selector(UnaryOperator<String> getenv) { // the seam for tests
+        String https = env(getenv, "https_proxy", "HTTPS_PROXY");
+        String http = env(getenv, "http_proxy", null);
         if (https == null && http == null) {
             return ProxySelector.getDefault();
         }
-        return new EnvProxySelector(http, https, env("NO_PROXY", "no_proxy"));
+        return new EnvProxySelector(http, https, env(getenv, "no_proxy", "NO_PROXY"));
     }
 
-    private static String env(String upper, String lower) {
-        String value = System.getenv(upper);
-        if (value == null || value.isBlank()) {
-            value = System.getenv(lower);
+    private static String env(UnaryOperator<String> getenv, String lower, String upper) {
+        String value = getenv.apply(lower);
+        if ((value == null || value.isBlank()) && upper != null) {
+            value = getenv.apply(upper);
         }
         return value == null || value.isBlank() ? null : value.strip();
     }

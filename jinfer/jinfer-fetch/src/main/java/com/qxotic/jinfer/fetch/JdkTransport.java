@@ -17,7 +17,7 @@ public final class JdkTransport implements Transport {
     /**
      * HTTP/1.1 on purpose: HTTP/2 would multiplex every ranged GET onto ONE connection, and it is
      * the connections, not the requests, that a parallel download multiplies. Proxies come from the
-     * environment (HTTPS_PROXY, NO_PROXY), as curl reads them, so the two transports agree.
+     * environment (https_proxy, no_proxy, ...), as curl reads them, so the two transports agree.
      */
     private static final HttpClient CLIENT =
             HttpClient.newBuilder()
