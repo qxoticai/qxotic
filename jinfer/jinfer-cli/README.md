@@ -200,7 +200,8 @@ LiquidAI's voice-chat prompt, "Respond with interleaved text and audio." as the 
 The chat voice speaks English, French and German clearly; Spanish and Italian come out accented and Japanese and Chinese partly garbled, so ask for text in those.
 For speech in a set language, LFM3-Omni's text-to-speech instruction takes the language explicitly (see [jinfer-lfm3](../jinfer-lfm3/README.md#text-to-speech)).
 
-To serve transcription instead, stop the language server and select the ASR model:
+LFM3-Omni also listens: send a clip as an `input_audio` part of a chat message, ask for a transcript, and the reply is the transcript as plain text.
+For transcription alone, a speech-to-text model such as Parakeet costs a fraction of a chat model; stop the language server and serve `$ASR` instead:
 
 ```sh
 jinfer serve -m "$ASR" --port 8080
