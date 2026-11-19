@@ -200,15 +200,18 @@ class MainTest {
     @Test
     void aReaderThatLeavesEndsTheRunQuietly() throws Exception {
         String java = ProcessHandle.current().info().command().orElseThrow();
-        Process cli =
+        ProcessBuilder builder =
                 new ProcessBuilder(
-                                java,
-                                "--enable-native-access=ALL-UNNAMED",
-                                "-cp",
-                                System.getProperty("java.class.path"),
-                                Main.class.getName(),
-                                "--help")
-                        .start();
+                        java,
+                        "--enable-native-access=ALL-UNNAMED",
+                        "-cp",
+                        System.getProperty("java.class.path"),
+                        Main.class.getName(),
+                        "--help");
+        // a JVM given options this way announces them on stderr, which this asserts is empty
+        for (String options : List.of("JAVA_TOOL_OPTIONS", "_JAVA_OPTIONS", "JDK_JAVA_OPTIONS"))
+            builder.environment().remove(options);
+        Process cli = builder.start();
         cli.getInputStream().close(); // the reader leaves before the first line arrives
         String err = new String(cli.getErrorStream().readAllBytes(), StandardCharsets.UTF_8);
         assertTrue(cli.waitFor(60, TimeUnit.SECONDS));

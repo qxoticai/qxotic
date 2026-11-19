@@ -102,6 +102,10 @@ class NativeLoaderTest {
                                 NativeLoaderProbe.class.getName())
                         .redirectErrorStream(true);
         pb.environment().remove("JAM_NATIVE_LIBRARY_PATH");
+        // a JVM given options this way announces them ("Picked up JAVA_TOOL_OPTIONS: ...") in the
+        // output compared here; the loader is what is under test, not the caller's JIT flags
+        for (String options : List.of("JAVA_TOOL_OPTIONS", "_JAVA_OPTIONS", "JDK_JAVA_OPTIONS"))
+            pb.environment().remove(options);
         pb.environment().putAll(env);
         Process p = pb.start();
         String out = new String(p.getInputStream().readAllBytes());

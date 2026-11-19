@@ -9,10 +9,11 @@ A skipped test is not a pass.
 
 ```sh
 make ci
-JAVA_TOOL_OPTIONS=-XX:-UseJVMCICompiler make ci-test ci-corpus
+make ci-test ci-corpus MAVEN_FLAGS=-DargLine=-XX:-UseJVMCICompiler
 ```
 
 `make ci` downloads the tokenizer fixtures, checks formatting, runs model-free and corpus tests, and verifies unsigned release packaging.
+The second command reruns the tests on C2: `argLine` reaches the test JVMs alone, where `JAVA_TOOL_OPTIONS` would reach every JVM and announce itself in the output of the ones the tests start.
 Formatting and model-free tests include the opt-in Maple and jinfer examples.
 The release-packaging step starts with `clean`, so preserve test reports before it if needed.
 It skips tests, signatures and native-library verification: a green result does not mean the artifacts are ready to publish.
