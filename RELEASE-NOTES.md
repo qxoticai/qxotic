@@ -13,7 +13,8 @@ The native libraries, the jinfer command and the wheels are built with Oracle Gr
   `jinfer server` serves `POST /v1/systemone` in llama.cpp's System One shape, and LangChain4j and Spring AI get a `JinferDecisionModel`, with `spring.ai.model.decision=jinfer` in the starter.
   d1 matches Liquid's reference and llama.cpp, and d3 matches llama.cpp.
   Every face reports a choice's and a rating's confidence alike, the likeliest outcome's probability, and Spring AI's `JinferDecisionModel` is observed as `gen_ai.client.operation` through its `observationRegistry`.
-- **json 0.4.0.** A Java string holding a lone surrogate prints it as an escape, `\uD800`, so the JSON can be encoded as UTF-8; a surrogate pair prints as itself.
+- **json 0.4.0.** A Java string holding a lone surrogate prints it as an escape, `\uD800`, so the JSON can be encoded as UTF-8, and the escape reads back as the same string; a surrogate pair prints as itself.
+  A `BigDecimal` prints plainly up to 20 padding zeros and in exponent form past that, `1E+21`, so 24 bytes of `1e2000000000` no longer print as two billion digits.
   With `decimalsAsBigDecimal(false)`, a decimal past `double`'s range is refused at its first digit instead of read as `Infinity`.
   Errors count a line at `\r` and `\r\n` as at `\n`, and `unescapeString`'s errors carry line and column too.
   A duplicate key is reported at the key, and an invalid escape at its backslash.
@@ -22,7 +23,7 @@ The native libraries, the jinfer command and the wheels are built with Oracle Gr
   A new file's tensor data starts at a multiple of 8 bytes, as upstream pads it.
   A header that is not UTF-8, and a shape or offset written as `1.0` or `1e0`, are refused, as upstream refuses them.
 - **jinfer-fetch, new.** `com.qxotic:jinfer-fetch` is the HTTP GET jinfer-hub, toknroll-hf and toknroll-gguf download through, on Java 11 with no dependencies: the JDK's `HttpClient`, or `curl` as a process in native images, which then carry no TLS stack.
-  It follows `HTTP_PROXY`, `HTTPS_PROXY` and `NO_PROXY`, and a redirect to another host drops the `Authorization` header.
+  It reads the proxy variables as curl does, `https_proxy` and `no_proxy` in either case and `http_proxy` only in lowercase, and a redirect to another host drops the `Authorization` header.
 - **PrismML Ternary Bonsai 2.** `Q2_0` and PrismML's `PQ2_0` and `PTQ1_0` load across gguf, jota, jam and jinfer, and the Qwen3.5 port applies Bonsai's `prism.hadamard` rotation, so Ternary Bonsai 2 runs in all three, images included.
   Checkpoints with an MTP head and a Hadamard rotation are refused.
 - **Faster quantized matrix products in jam-native.** On AVX-512-VNNI CPUs prefill runs 8 to 13% faster end to end (LFM2.5-2.6B, 512 tokens, 16 threads), and calls of 3 to 7 tokens run twice as fast in the `Q4_0`, `Q5_0` and `MXFP4` kernels.
@@ -45,7 +46,7 @@ The native libraries, the jinfer command and the wheels are built with Oracle Gr
   The tokenizer goes on working, since encoding takes no locks; batch workers are the library's own threads, with 8 MB stacks, in libjinfer and on Windows too.
 - **A loaded tokenizer no longer stalls a batch's first collections.** libtoknroll, libjinfer and the jinfer command run the serial collector with one survivor space, so a tokenizer's tables (Gemma 4's: 230 MB) move to the old generation at the first young collection, instead of being copied at each one until they age out.
   Those copies were 50 ms pauses that held a batch's threads idle through its first few hundred MB of text.
-- **A missing model has its own exception.** `ModelNotFoundException` (`jinfer-hub`), an `IllegalArgumentException`, is thrown wherever a source names nothing: a missing local file, a repository that does not exist or is gated, a file or quant it lacks, or an offline miss, which was an `UncheckedIOException` before.
+- **A missing model has its own exception.** `ModelNotFoundException` (`jinfer-hub`), an `IllegalArgumentException`, is thrown wherever a source passed to the store names nothing: a missing local file, a repository that does not exist or is gated, a file or quant it lacks, or an offline miss, which was an `UncheckedIOException` before.
   `source()` names it; a malformed or ambiguous ref stays a plain `IllegalArgumentException`, and libjinfer and libtoknroll report it as not found by its type.
 - **A reranker no longer loads as an embedder.** `Models.loadEmbedder` refuses a checkpoint whose header says reranker, and `Models.loadReranker` one that says embedder, naming the right entry point; Qwen3-Reranker used to load as an embedder, with vectors that could not tell unrelated texts apart.
   A model path that does not exist or is a directory is refused with its absolute path and the reason, and the integrations' "failed to load model" message carries both.
