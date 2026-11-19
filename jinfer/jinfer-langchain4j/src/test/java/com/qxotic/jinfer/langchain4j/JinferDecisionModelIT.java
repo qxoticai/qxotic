@@ -164,9 +164,7 @@ final class JinferDecisionModelIT {
     void aClipIsJudgedByOmni() throws Exception {
         String wav =
                 Base64.getEncoder()
-                        .encodeToString(
-                                Files.readAllBytes(
-                                        Path.of("../../test-fixtures/parakeet/ls0.wav")));
+                        .encodeToString(Files.readAllBytes(TestModels.fixture("parakeet/ls0.wav")));
         try (JinferDecisionModel omni =
                 JinferDecisionModel.builder()
                         .modelPath(

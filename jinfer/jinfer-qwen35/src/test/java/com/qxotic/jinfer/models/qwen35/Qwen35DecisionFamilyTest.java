@@ -14,11 +14,11 @@ import com.qxotic.jinfer.chat.DecisionModel.Predicate;
 import com.qxotic.jinfer.chat.DecisionModel.Question;
 import com.qxotic.jinfer.chat.DecisionModel.Rating;
 import com.qxotic.jinfer.chat.Models;
+import com.qxotic.jinfer.codecs.AudioCodec;
 import com.qxotic.jinfer.codecs.ImageCodec;
 import com.qxotic.jinfer.testkit.TestModels;
 import java.lang.foreign.Arena;
 import java.nio.file.Files;
-import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
@@ -284,6 +284,14 @@ final class Qwen35DecisionFamilyTest {
                         new Content.Media(
                                 ImageCodec.load(TestModels.fixture("lfm3/images/dice.png"))),
                         new Content.Text("A photo sent by a customer."));
+        // read before any model loads and outside assertThrows: a missing clip skips the test
+        List<Content> recording =
+                List.of(
+                        new Content.Media(
+                                AudioCodec.decode(
+                                        Files.readAllBytes(
+                                                TestModels.fixture("parakeet/ls0.wav")))),
+                        new Content.Text("A recording."));
         Choice shows =
                 new Choice(
                         "What does the picture show?",
@@ -305,18 +313,7 @@ final class Qwen35DecisionFamilyTest {
                     UnsupportedOperationException audio =
                             assertThrows(
                                     UnsupportedOperationException.class,
-                                    () ->
-                                            d3.decide(
-                                                    state,
-                                                    List.of(
-                                                            new Content.Media(
-                                                                    com.qxotic.jinfer.codecs
-                                                                            .AudioCodec.decode(
-                                                                            Files.readAllBytes(
-                                                                                    Path.of(
-                                                                                            "../../test-fixtures/parakeet/ls0.wav")))),
-                                                            new Content.Text("A recording.")),
-                                                    REFUND),
+                                    () -> d3.decide(state, recording, REFUND),
                                     variant.name());
                     assertTrue(audio.getMessage().contains("takes no audio"), audio.getMessage());
 

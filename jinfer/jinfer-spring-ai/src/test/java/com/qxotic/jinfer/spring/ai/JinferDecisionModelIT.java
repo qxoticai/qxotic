@@ -7,7 +7,6 @@ import com.qxotic.jinfer.testkit.TestModels;
 import io.micrometer.observation.tck.TestObservationRegistry;
 import io.micrometer.observation.tck.TestObservationRegistryAssert;
 import java.nio.file.Files;
-import java.nio.file.Path;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -203,8 +202,7 @@ final class JinferDecisionModelIT {
                         .mimeType(MimeType.valueOf("audio/wav"))
                         .data(
                                 new ByteArrayResource(
-                                        Files.readAllBytes(
-                                                Path.of("../../test-fixtures/parakeet/ls0.wav"))))
+                                        Files.readAllBytes(TestModels.fixture("parakeet/ls0.wav"))))
                         .build();
         try (JinferDecisionModel omni =
                 JinferDecisionModel.builder()

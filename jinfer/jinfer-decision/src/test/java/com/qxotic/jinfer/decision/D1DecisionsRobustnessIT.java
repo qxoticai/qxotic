@@ -175,6 +175,7 @@ final class D1DecisionsRobustnessIT {
     void omniHearsThroughTheTypedApi() throws Exception {
         String omni = "hf.co/LiquidAI/d1-Omni-2B-GGUF/d1-Omni-2B-Q8_0.gguf";
         String mmproj = "hf.co/LiquidAI/d1-Omni-2B-GGUF/mmproj-d1-Omni-2B-F16.gguf";
+        Path clip = TestModels.fixture("parakeet/ls0.wav"); // before the model loads: a miss skips
         try (Arena arena = Arena.ofShared()) {
             DecisionModel model =
                     Models.loadDecisionModel(
@@ -191,7 +192,6 @@ final class D1DecisionsRobustnessIT {
                             "silence");
             Decisions decisions = Decisions.of(model);
             try (ContextState state = model.newState(2048)) {
-                Path clip = Path.of("../../test-fixtures/parakeet/ls0.wav");
                 List<Content> audioOnly =
                         List.of(new Content.Media(AudioCodec.decode(Files.readAllBytes(clip))));
                 List<Content> withText = new ArrayList<>(audioOnly);

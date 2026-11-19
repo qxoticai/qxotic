@@ -14,7 +14,6 @@ import com.qxotic.jinfer.media.Media;
 import com.qxotic.jinfer.testkit.TestModels;
 import java.lang.foreign.Arena;
 import java.nio.file.Files;
-import java.nio.file.Path;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -113,9 +112,7 @@ final class D3DecisionsIT {
                             new Content.Media(
                                     AudioCodec.decode(
                                             Files.readAllBytes(
-                                                    Path.of(
-                                                            "../../test-fixtures/parakeet/ls0"
-                                                                    + ".wav")))),
+                                                    TestModels.fixture("parakeet/ls0.wav")))),
                             new Content.Text("A recording sent by a customer."));
             UnsupportedOperationException refused =
                     assertThrows(

@@ -515,8 +515,7 @@ final class JinferDecisionModelComprehensiveIT {
                 new org.springframework.ai.content.Media(
                         MimeType.valueOf("audio/wav"),
                         new ByteArrayResource(
-                                Files.readAllBytes(
-                                        Path.of("../../test-fixtures/parakeet/ls0.wav"))));
+                                Files.readAllBytes(TestModels.fixture("parakeet/ls0.wav"))));
         try (JinferDecisionModel omni =
                 JinferDecisionModel.builder()
                         .modelPath(

@@ -13,7 +13,6 @@ import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
 import java.nio.file.Files;
-import java.nio.file.Path;
 import java.util.Base64;
 import java.util.List;
 import java.util.Map;
@@ -82,10 +81,7 @@ final class RetrievalServerMediaEmbeddingIT {
                 String wav =
                         Base64.getEncoder()
                                 .encodeToString(
-                                        Files.readAllBytes(
-                                                Path.of(
-                                                        "../../test-fixtures/parakeet/"
-                                                                + "ls0.wav")));
+                                        Files.readAllBytes(TestModels.fixture("parakeet/ls0.wav")));
 
                 // a text and an image in one array: one vector
                 Reply interleaved =

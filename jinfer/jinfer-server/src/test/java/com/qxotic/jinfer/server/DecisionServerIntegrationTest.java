@@ -13,7 +13,6 @@ import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
 import java.nio.file.Files;
-import java.nio.file.Path;
 import java.util.Base64;
 import java.util.Map;
 import org.junit.jupiter.api.Tag;
@@ -159,8 +158,7 @@ class DecisionServerIntegrationTest {
                                 + Base64.getEncoder()
                                         .encodeToString(
                                                 Files.readAllBytes(
-                                                        Path.of(
-                                                                "../../test-fixtures/parakeet/ls0.wav")));
+                                                        TestModels.fixture("parakeet/ls0.wav")));
                 String questions =
                         "\"questions\": {\"speech\": {\"type\": \"noul\", \"instructions\":"
                                 + " \"Is someone speaking in the recording?\"}}";
@@ -225,9 +223,7 @@ class DecisionServerIntegrationTest {
                                 + Base64.getEncoder()
                                         .encodeToString(
                                                 Files.readAllBytes(
-                                                        Path.of(
-                                                                "../../test-fixtures/parakeet/"
-                                                                        + "ls0.wav")));
+                                                        TestModels.fixture("parakeet/ls0.wav")));
                 var answers =
                         (Map<String, Object>)
                                 post(

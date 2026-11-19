@@ -247,12 +247,14 @@ class StructuredOutputIT {
     void nestedRecordsAndArraysBindTheGeneratedSchema() {
         // the jsonSchemaBeanConverter shape: a record holding a list of records; the generated
         // schema marks the components required and the grammar must admit the nested array.
-        // `note` has no source in the text: an optional the model may leave out
+        // `note` has no source in the text: an optional the model may leave out. On this path the
+        // adapter adds nothing to the prompt, so the prompt names the shape, as its docs ask
         Recipe recipe =
                 ChatClient.create(model)
                         .prompt(
                                 "Extract the recipe: 'Pancakes' needs 2 eggs and 1 cup of flour."
-                                        + " Give the title and both ingredients with quantities.")
+                                        + " Reply with its title and its ingredients, each with"
+                                        + " a name and a quantity.")
                         .call()
                         .entity(
                                 Recipe.class,
