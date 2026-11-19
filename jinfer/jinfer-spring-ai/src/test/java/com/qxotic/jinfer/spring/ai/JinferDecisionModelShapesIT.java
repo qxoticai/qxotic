@@ -120,10 +120,11 @@ final class JinferDecisionModelShapesIT {
         // the answer does not depend on where the caller put the picture among the text
         assertEquals(
                 afterText.getChoice("shows").getValue(), beforeText.getChoice("shows").getValue());
+        // two calls round the Vector API kernels' reductions in an unspecified order
         assertEquals(
                 afterText.getYesNo("cat").getProbability(),
                 beforeText.getYesNo("cat").getProbability(),
-                1e-5);
+                1e-3);
         assertEquals("cat", afterText.getChoice("shows").getValue());
     }
 

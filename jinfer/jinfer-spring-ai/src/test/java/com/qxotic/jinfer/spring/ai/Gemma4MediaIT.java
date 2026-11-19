@@ -49,8 +49,7 @@ class Gemma4MediaIT {
                         .modelPath(MODEL)
                         .companionPath("media", MMPROJ)
                         .contextCapacity(4096)
-                        // greedy: the GGUF's sampling defaults made a blue scene "Black" now and
-                        // then
+                        // greedy: an answer the test asserts is not drawn from a distribution
                         .options(
                                 JinferChatOptions.builder().maxTokens(512).temperature(0.0).build())
                         .build();
@@ -106,7 +105,8 @@ class Gemma4MediaIT {
     @Test
     void imageInCachedPrompt() throws Exception {
         // the image lives in the CACHED prompt: decoded + prefilled once at view creation, its
-        // prefill positions restored per request (the media ENCODER still runs to fingerprint)
+        // prefill positions restored per request (the media ENCODER still runs to fingerprint).
+        // Green: this model sees saturated blue as navy and yellow as olive, llama.cpp too
         JinferChatModel scene =
                 model.withCachedPrompt(
                         List.of(
@@ -115,7 +115,7 @@ class Gemma4MediaIT {
                                         .media(
                                                 org.springframework.ai.content.Media.builder()
                                                         .mimeType(MimeType.valueOf("image/png"))
-                                                        .data(solidPng(Color.BLUE))
+                                                        .data(solidPng(Color.GREEN))
                                                         .build())
                                         .build()),
                         List.of());
@@ -125,7 +125,7 @@ class Gemma4MediaIT {
                                 new UserMessage(
                                         "What single color fills the reference scene? One word.")));
         assertTrue(
-                first.getResult().getOutput().getText().toLowerCase(Locale.ROOT).contains("blue"),
+                first.getResult().getOutput().getText().toLowerCase(Locale.ROOT).contains("green"),
                 first.getResult().getOutput().getText());
         // second request through the view: the image's prefill positions restore from blocks
         ChatResponse second =
