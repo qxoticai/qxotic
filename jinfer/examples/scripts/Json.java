@@ -4,7 +4,7 @@
 //DEPS com.qxotic:jinfer-bom:0.4.0@pom
 //DEPS com.qxotic:jinfer-langchain4j com.qxotic:jinfer-llama
 //DEPS com.qxotic:jam-native com.qxotic:jam-vector
-//DEPS org.slf4j:slf4j-nop:2.0.18
+//DEPS org.slf4j:slf4j-nop:2.0.20
 
 // Constrain generation to a JSON shape with a GBNF grammar.
 //   jbang Json.java "Ada Lovelace, born 1815 in London, wrote the first algorithm."

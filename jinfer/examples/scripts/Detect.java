@@ -4,7 +4,7 @@
 //DEPS com.qxotic:jinfer-bom:0.4.0@pom
 //DEPS com.qxotic:jinfer-langchain4j com.qxotic:jinfer-gemma4
 //DEPS com.qxotic:jam-native com.qxotic:jam-vector
-//DEPS org.slf4j:slf4j-nop:2.0.18
+//DEPS org.slf4j:slf4j-nop:2.0.20
 //DEPS com.qxotic:json
 
 // Detect objects and draw their bounding boxes into detected.png.

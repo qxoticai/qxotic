@@ -4,7 +4,7 @@
 //DEPS com.qxotic:jinfer-bom:0.4.0@pom
 //DEPS com.qxotic:jinfer-langchain4j com.qxotic:jinfer-gemma4 com.qxotic:jinfer-inflect2
 //DEPS com.qxotic:jam-native com.qxotic:jam-vector
-//DEPS org.slf4j:slf4j-nop:2.0.18
+//DEPS org.slf4j:slf4j-nop:2.0.20
 
 // Describe an image, then synthesize the description into narration.wav.
 //   jbang Narrate.java photo.jpg
