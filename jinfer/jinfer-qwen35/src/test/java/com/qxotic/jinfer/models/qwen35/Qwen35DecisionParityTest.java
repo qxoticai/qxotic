@@ -309,6 +309,6 @@ final class Qwen35DecisionParityTest {
 
     private static Content picture(String name) throws Exception {
         return new Content.Media(
-                ImageCodec.load(Path.of("../../test-fixtures/lfm3/images/" + name + ".png")));
+                ImageCodec.load(TestModels.fixture("lfm3/images/" + name + ".png")));
     }
 }

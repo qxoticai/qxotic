@@ -3,7 +3,6 @@ package com.qxotic.jinfer.langchain4j;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
-import static org.junit.jupiter.api.Assumptions.assumeTrue;
 
 import com.qxotic.jinfer.ContextState;
 import com.qxotic.jinfer.chat.LoadedEmbedder;
@@ -62,7 +61,9 @@ class EmbeddingGemma2MediaIT {
         Path weights = TestModels.require(MODEL), projector = TestModels.require(MMPROJ);
         cat = EmbeddingGemma2MediaIT.class.getResource("/kit-images/cat.png").toURI();
         dice = EmbeddingGemma2MediaIT.class.getResource("/kit-images/dice.png").toURI();
-        speech = fixture("audio/speech-tts.wav").toUri(); // "Hello world one two three four five"
+        speech =
+                TestModels.fixture("audio/speech-tts.wav")
+                        .toUri(); // "Hello world one two three four five"
         model =
                 JinferEmbeddingModel.builder()
                         .modelPath(weights)
@@ -308,16 +309,5 @@ class EmbeddingGemma2MediaIT {
             bb += b[i] * b[i];
         }
         return ab / Math.sqrt(aa * bb);
-    }
-
-    private static Path fixture(String name) {
-        for (Path directory = Path.of("").toAbsolutePath();
-                directory != null;
-                directory = directory.getParent()) {
-            Path candidate = directory.resolve("test-fixtures").resolve(name);
-            if (Files.isRegularFile(candidate)) return candidate;
-        }
-        assumeTrue(false, "test-fixtures/" + name + " not found");
-        throw new AssertionError();
     }
 }

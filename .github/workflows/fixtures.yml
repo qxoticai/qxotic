@@ -1,5 +1,5 @@
 # Seeds the fixture caches on the default branch: pull-request runs can read a base-branch cache
-# but never write one, so without this every new PR downloads the 107 MB again. Runs no tests.
+# but never write one, so without this every new PR downloads the 110 MB again. Runs no tests.
 name: fixtures
 
 on:
@@ -9,6 +9,7 @@ on:
       - toknroll/scripts/download_tiktoken_fixtures.py
       - toknroll/scripts/download_enwik8.py
       - jinfer/scripts/download_parakeet_fixtures.py
+      - jinfer/scripts/download_media_fixtures.py
       - .github/workflows/fixtures.yml
   workflow_dispatch:
 
@@ -35,4 +36,11 @@ jobs:
         with:
           path: test-fixtures/parakeet
           key: parakeet-fixtures-${{ hashFiles('jinfer/scripts/download_parakeet_fixtures.py') }}
+      - uses: actions/cache@v6
+        with:
+          path: |
+            test-fixtures/lfm3/images
+            test-fixtures/lfm3/video
+            test-fixtures/audio
+          key: media-fixtures-${{ hashFiles('jinfer/scripts/download_media_fixtures.py') }}
       - run: make test-fixtures

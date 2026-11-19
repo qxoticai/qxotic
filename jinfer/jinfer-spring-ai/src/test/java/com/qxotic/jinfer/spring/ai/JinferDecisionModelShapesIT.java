@@ -9,7 +9,6 @@ import com.qxotic.jinfer.chat.Models;
 import com.qxotic.jinfer.testkit.TestModels;
 import java.lang.foreign.Arena;
 import java.nio.file.Files;
-import java.nio.file.Path;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -72,8 +71,7 @@ final class JinferDecisionModelShapesIT {
         return new Media(
                 MimeType.valueOf("image/png"),
                 new ByteArrayResource(
-                        Files.readAllBytes(
-                                Path.of("../../test-fixtures/lfm3/images/" + name + ".png"))));
+                        Files.readAllBytes(TestModels.fixture("lfm3/images/" + name + ".png"))));
     }
 
     /** Forty questions in one call, each answered, in the prompt's order. */

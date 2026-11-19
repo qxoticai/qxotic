@@ -104,8 +104,7 @@ final class D3DecisionsIT {
             List<Content> photo =
                     List.of(
                             new Content.Media(
-                                    ImageCodec.load(
-                                            Path.of("../../test-fixtures/lfm3/images/cat.png"))),
+                                    ImageCodec.load(TestModels.fixture("lfm3/images/cat.png"))),
                             new Content.Text("A photo sent by a customer."));
             assertTrue(decisions.ask(state, photo, cat).isYes(), "the cat");
 

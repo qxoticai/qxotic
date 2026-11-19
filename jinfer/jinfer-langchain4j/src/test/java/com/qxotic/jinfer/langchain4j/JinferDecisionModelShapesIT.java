@@ -26,7 +26,6 @@ import dev.langchain4j.model.decision.request.YesNoQuestion;
 import dev.langchain4j.model.decision.response.DecisionResponse;
 import java.lang.foreign.Arena;
 import java.nio.file.Files;
-import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.Base64;
 import java.util.LinkedHashMap;
@@ -74,8 +73,7 @@ final class JinferDecisionModelShapesIT {
     private static String base64(String name) throws Exception {
         return Base64.getEncoder()
                 .encodeToString(
-                        Files.readAllBytes(
-                                Path.of("../../test-fixtures/lfm3/images/" + name + ".png")));
+                        Files.readAllBytes(TestModels.fixture("lfm3/images/" + name + ".png")));
     }
 
     /** Forty questions in one request, each answered, in the request's order. */

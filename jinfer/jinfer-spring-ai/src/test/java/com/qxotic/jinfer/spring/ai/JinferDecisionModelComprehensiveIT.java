@@ -87,10 +87,8 @@ final class JinferDecisionModelComprehensiveIT {
             frames.add(
                     new Media.Video.Frame(
                             ImageCodec.load(
-                                    Path.of(
-                                            String.format(
-                                                    "../../test-fixtures/lfm3/video/clip-%02d.png",
-                                                    index))),
+                                    TestModels.fixture(
+                                            String.format("lfm3/video/clip-%02d.png", index))),
                             Duration.ofMillis(index * 250)));
         Media.Video clip = new Media.Video(frames);
         Path placeholder = Files.createTempFile("clip", ".mp4");
@@ -667,7 +665,7 @@ final class JinferDecisionModelComprehensiveIT {
 
     private static byte[] imageBytes(String name) {
         try {
-            return Files.readAllBytes(Path.of("../../test-fixtures/lfm3/images/" + name + ".png"));
+            return Files.readAllBytes(TestModels.fixture("lfm3/images/" + name + ".png"));
         } catch (IOException e) {
             throw new UncheckedIOException(e);
         }

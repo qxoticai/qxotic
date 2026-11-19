@@ -78,9 +78,7 @@ final class RetrievalServerMediaEmbeddingIT {
                         Base64.getEncoder()
                                 .encodeToString(
                                         Files.readAllBytes(
-                                                Path.of(
-                                                        "../../test-fixtures/lfm3/images/"
-                                                                + "cat.png")));
+                                                TestModels.fixture("lfm3/images/" + "cat.png")));
                 String wav =
                         Base64.getEncoder()
                                 .encodeToString(

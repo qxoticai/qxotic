@@ -282,8 +282,7 @@ final class Qwen35DecisionFamilyTest {
         List<Content> photo =
                 List.of(
                         new Content.Media(
-                                ImageCodec.load(
-                                        Path.of("../../test-fixtures/lfm3/images/dice.png"))),
+                                ImageCodec.load(TestModels.fixture("lfm3/images/dice.png"))),
                         new Content.Text("A photo sent by a customer."));
         Choice shows =
                 new Choice(

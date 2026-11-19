@@ -22,7 +22,6 @@ import com.qxotic.jinfer.media.Multimodal;
 import com.qxotic.jinfer.testkit.TestModels;
 import java.lang.foreign.Arena;
 import java.nio.charset.StandardCharsets;
-import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
@@ -300,8 +299,7 @@ final class Lfm3DecisionRobustnessTest {
         List<Content> input =
                 List.of(
                         new Content.Media(
-                                ImageCodec.load(
-                                        Path.of("../../test-fixtures/lfm3/images/cat.png"))),
+                                ImageCodec.load(TestModels.fixture("lfm3/images/cat.png"))),
                         new Content.Text("A photo sent by a customer."));
         Question shows =
                 new Choice(
@@ -332,8 +330,7 @@ final class Lfm3DecisionRobustnessTest {
         List<Content> input =
                 List.of(
                         new Content.Media(
-                                ImageCodec.load(
-                                        Path.of("../../test-fixtures/lfm3/images/cat.png"))),
+                                ImageCodec.load(TestModels.fixture("lfm3/images/cat.png"))),
                         new Content.Text("A photo sent by a customer."));
         Question cat = new Predicate("Is there a cat in the picture?");
         int threads = 3, repeats = 2;

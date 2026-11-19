@@ -144,8 +144,7 @@ final class JinferDecisionModelIT {
                         .data(
                                 new ByteArrayResource(
                                         Files.readAllBytes(
-                                                Path.of(
-                                                        "../../test-fixtures/lfm3/images/dice.png"))))
+                                                TestModels.fixture("lfm3/images/dice.png"))))
                         .build();
         Map<String, DecisionQuestion> two =
                 questions(

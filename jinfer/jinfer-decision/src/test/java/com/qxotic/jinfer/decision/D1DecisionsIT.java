@@ -78,7 +78,7 @@ final class D1DecisionsIT {
     /** A picture and its text, through the model's vision tower. */
     @Test
     void aPictureIsJudged() throws Exception {
-        Path images = Path.of("../../test-fixtures/lfm3/images");
+        Path images = TestModels.fixture("lfm3/images");
         try (Arena arena = Arena.ofShared()) {
             DecisionModel d1 =
                     Models.loadDecisionModel(

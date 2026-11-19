@@ -35,8 +35,7 @@ def sha256(data: bytes) -> str:
     return hashlib.sha256(data).hexdigest()
 
 
-def download_one(target_dir: pathlib.Path, name: str) -> None:
-    url, expected = CLIPS[name]
+def download_one(target_dir: pathlib.Path, name: str, url: str, expected: str) -> None:
     target = target_dir / name
     if target.is_file() and sha256(target.read_bytes()) == expected:
         print(f"present {name}")
@@ -49,7 +48,7 @@ def download_one(target_dir: pathlib.Path, name: str) -> None:
     actual = sha256(data)
     if actual != expected:
         raise SystemExit(f"ERROR: {name} from {url} has sha256 {actual}, expected {expected}")
-    target_dir.mkdir(parents=True, exist_ok=True)
+    target.parent.mkdir(parents=True, exist_ok=True)
     tmp = target.with_suffix(target.suffix + ".part")
     tmp.write_bytes(data)
     tmp.replace(target)
@@ -65,8 +64,8 @@ def main() -> None:
     )
     args = parser.parse_args()
     out = pathlib.Path(args.output_dir)
-    for name in CLIPS:
-        download_one(out, name)
+    for name, (url, expected) in CLIPS.items():
+        download_one(out, name, url, expected)
 
 
 if __name__ == "__main__":

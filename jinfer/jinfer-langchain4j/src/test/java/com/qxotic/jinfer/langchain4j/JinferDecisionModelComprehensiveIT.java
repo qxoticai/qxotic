@@ -89,10 +89,8 @@ final class JinferDecisionModelComprehensiveIT {
             frames.add(
                     new Media.Video.Frame(
                             ImageCodec.load(
-                                    Path.of(
-                                            String.format(
-                                                    "../../test-fixtures/lfm3/video/clip-%02d.png",
-                                                    index))),
+                                    TestModels.fixture(
+                                            String.format("lfm3/video/clip-%02d.png", index))),
                             Duration.ofMillis(index * 250)));
         Media.Video clip = new Media.Video(frames);
         Path placeholder = Files.createTempFile("clip", ".mp4");
@@ -226,8 +224,7 @@ final class JinferDecisionModelComprehensiveIT {
         String cat =
                 Base64.getEncoder()
                         .encodeToString(
-                                Files.readAllBytes(
-                                        Path.of("../../test-fixtures/lfm3/images/cat.png")));
+                                Files.readAllBytes(TestModels.fixture("lfm3/images/cat.png")));
         Map<String, Object> fields = new LinkedHashMap<>();
         fields.put("message", "A photo sent by a customer.");
         fields.put("photo", ImageContent.from(cat, "image/png"));
@@ -348,8 +345,7 @@ final class JinferDecisionModelComprehensiveIT {
             String cat =
                     Base64.getEncoder()
                             .encodeToString(
-                                    Files.readAllBytes(
-                                            Path.of("../../test-fixtures/lfm3/images/cat.png")));
+                                    Files.readAllBytes(TestModels.fixture("lfm3/images/cat.png")));
             IllegalArgumentException tooLong =
                     assertThrows(
                             IllegalArgumentException.class,
@@ -628,8 +624,7 @@ final class JinferDecisionModelComprehensiveIT {
         String cat =
                 Base64.getEncoder()
                         .encodeToString(
-                                Files.readAllBytes(
-                                        Path.of("../../test-fixtures/lfm3/images/cat.png")));
+                                Files.readAllBytes(TestModels.fixture("lfm3/images/cat.png")));
         DecisionResponse response =
                 model.decide(
                         DecisionRequest.builder()

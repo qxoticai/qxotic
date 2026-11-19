@@ -210,8 +210,7 @@ final class D1DecisionsRobustnessIT {
                 List<Content> both = new ArrayList<>();
                 both.add(
                         new Content.Media(
-                                ImageCodec.load(
-                                        Path.of("../../test-fixtures/lfm3/images/cat.png"))));
+                                ImageCodec.load(TestModels.fixture("lfm3/images/cat.png"))));
                 both.addAll(audioOnly);
                 both.add(new Content.Text("A photo and a recording."));
                 Answers mixed = decisions.ask(state, both, speech, holds);

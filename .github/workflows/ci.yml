@@ -75,6 +75,14 @@ jobs:
           path: test-fixtures/parakeet
           key: parakeet-fixtures-${{ hashFiles('jinfer/scripts/download_parakeet_fixtures.py') }}
           restore-keys: parakeet-fixtures-
+      - uses: actions/cache@v6
+        with:
+          path: |
+            test-fixtures/lfm3/images
+            test-fixtures/lfm3/video
+            test-fixtures/audio
+          key: media-fixtures-${{ hashFiles('jinfer/scripts/download_media_fixtures.py') }}
+          restore-keys: media-fixtures-
       - run: make test-fixtures
       - run: make ci-format
       # JAVA_TOOL_OPTIONS reaches every forked test JVM; a -DargLine on the command line does

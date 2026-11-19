@@ -132,7 +132,7 @@ final class JinferDecisionModelIT {
 
     @Test
     void aPictureIsJudgedThroughTheTower() throws Exception {
-        Path dice = Path.of("../../test-fixtures/lfm3/images/dice.png");
+        Path dice = TestModels.fixture("lfm3/images/dice.png");
         String base64 = Base64.getEncoder().encodeToString(Files.readAllBytes(dice));
         ChoiceQuestion shows =
                 ChoiceQuestion.from(

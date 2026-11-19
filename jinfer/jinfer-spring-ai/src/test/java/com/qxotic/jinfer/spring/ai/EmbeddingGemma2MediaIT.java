@@ -3,7 +3,6 @@ package com.qxotic.jinfer.spring.ai;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
-import static org.junit.jupiter.api.Assumptions.assumeTrue;
 
 import com.qxotic.jinfer.ContextState;
 import com.qxotic.jinfer.chat.LoadedEmbedder;
@@ -48,8 +47,11 @@ class EmbeddingGemma2MediaIT {
     @BeforeAll
     static void load() {
         Path weights = TestModels.require(MODEL), projector = TestModels.require(MMPROJ);
-        speech = audio(fixture("audio/speech-tts.wav")); // "Hello world one two three four five"
-        chirp = audio(fixture("audio/chirp-5s.wav"));
+        speech =
+                audio(
+                        TestModels.fixture(
+                                "audio/speech-tts.wav")); // "Hello world one two three four five"
+        chirp = audio(TestModels.fixture("audio/chirp-5s.wav"));
         model =
                 JinferEmbeddingModel.builder()
                         .modelPath(weights)
@@ -95,7 +97,7 @@ class EmbeddingGemma2MediaIT {
                             null);
             ContextState state = core.model().newState(2048, MemoryAllocators.ofArena(arena));
             for (String wav : List.of("audio/speech-tts.wav", "audio/chirp-5s.wav")) {
-                Object audio = AudioCodec.decode(Files.readAllBytes(fixture(wav)));
+                Object audio = AudioCodec.decode(Files.readAllBytes(TestModels.fixture(wav)));
                 core.embed(state, List.of(audio), core.dimension(), bare::add);
             }
         }
@@ -117,7 +119,8 @@ class EmbeddingGemma2MediaIT {
      */
     @Test
     void aModelWideWidthReachesMedia() throws IOException {
-        Object audio = AudioCodec.decode(Files.readAllBytes(fixture("audio/speech-tts.wav")));
+        Object audio =
+                AudioCodec.decode(Files.readAllBytes(TestModels.fixture("audio/speech-tts.wav")));
         try (Arena arena = Arena.ofShared()) {
             LoadedEmbedder<?> core =
                     Models.loadEmbedder(
@@ -235,16 +238,5 @@ class EmbeddingGemma2MediaIT {
             bb += b[i] * b[i];
         }
         return ab / Math.sqrt(aa * bb);
-    }
-
-    private static Path fixture(String name) {
-        for (Path directory = Path.of("").toAbsolutePath();
-                directory != null;
-                directory = directory.getParent()) {
-            Path candidate = directory.resolve("test-fixtures").resolve(name);
-            if (Files.isRegularFile(candidate)) return candidate;
-        }
-        assumeTrue(false, "test-fixtures/" + name + " not found");
-        throw new AssertionError();
     }
 }

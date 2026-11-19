@@ -82,8 +82,7 @@ class DecisionServerIntegrationTest {
                                 + Base64.getEncoder()
                                         .encodeToString(
                                                 Files.readAllBytes(
-                                                        Path.of(
-                                                                "../../test-fixtures/lfm3/images/cat.png")));
+                                                        TestModels.fixture("lfm3/images/cat.png")));
                 answers =
                         (Map<String, Object>)
                                 post(
@@ -196,9 +195,8 @@ class DecisionServerIntegrationTest {
                                 + Base64.getEncoder()
                                         .encodeToString(
                                                 Files.readAllBytes(
-                                                        Path.of(
-                                                                "../../test-fixtures/lfm3/images/"
-                                                                        + "cat.png")));
+                                                        TestModels.fixture(
+                                                                "lfm3/images/" + "cat.png")));
                 String wav =
                         "data:audio/wav;base64,"
                                 + Base64.getEncoder()

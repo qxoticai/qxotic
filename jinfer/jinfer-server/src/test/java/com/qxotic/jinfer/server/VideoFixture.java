@@ -3,6 +3,7 @@ package com.qxotic.jinfer.server;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
+import com.qxotic.jinfer.testkit.TestModels;
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -36,7 +37,7 @@ final class VideoFixture {
     static Path clip() throws Exception {
         Path dir = Files.createTempDirectory("d1-video");
         int[] sequence = {0, 0, 2, 2, 4, 4, 7, 7, 9, 9, 11, 11};
-        Path source = Path.of("../../test-fixtures/lfm3/video");
+        Path source = TestModels.fixture("lfm3/video");
         for (int i = 0; i < sequence.length; i++)
             Files.copy(
                     source.resolve(String.format("clip-%02d.png", sequence[i])),

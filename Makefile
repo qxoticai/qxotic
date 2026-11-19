@@ -110,10 +110,11 @@ jota-clean: ## Wipe just the jota subtree's output
 
 ##@ CI
 
-test-fixtures: ## Fetch the tiktoken vocabularies, their golden truth, the enwik8 corpus and the Parakeet test speech the suites read (idempotent, ~109MB once)
+test-fixtures: ## Fetch the tiktoken vocabularies, their golden truth, the enwik8 corpus, the Parakeet test speech and the jinfer test media the suites read (idempotent, ~112MB once)
 	python3 toknroll/scripts/download_tiktoken_fixtures.py
 	python3 toknroll/scripts/download_enwik8.py
 	python3 jinfer/scripts/download_parakeet_fixtures.py
+	python3 jinfer/scripts/download_media_fixtures.py
 
 cache-models: ## Cache every model the native suites load, through the libraries built here: online, once per machine, the container too (cache-models-in-container)
 	python3 jinfer/scripts/cache_native_models.py

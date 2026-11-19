@@ -29,7 +29,6 @@ import org.opentest4j.TestAbortedException;
  * Every override in use is printed, so a report shows it. A stale override FAILS loudly - an
  * explicit pointer that resolves to nothing is a tester error, never a silent skip.
  *
- *
  * <p>CI uses {@code -Djinfer.test.noModels=true} for the model-free suite and {@code
  * -Djinfer.test.requireModels=true} for the fixture-backed gate, where missing models fail instead
  * of skipping.
@@ -65,6 +64,24 @@ public final class TestModels {
                         });
     }
 
+    /**
+     * {@code test-fixtures/<name>} in this checkout, where {@code make test-fixtures} puts the
+     * media the suites read, or the test aborts with that fix (fails under {@code
+     * -Djinfer.test.requireModels=true}, like a missing model).
+     */
+    public static Path fixture(String name) {
+        return fixture(name, Path.of("").toAbsolutePath(), System::getProperty);
+    }
+
+    static Path fixture(String name, Path start, Function<String, String> props) {
+        Path path = checkout(start).orElse(start).resolve("test-fixtures").resolve(name);
+        if (Files.exists(path)) return path;
+        String message = "fixture missing: " + path + " - fetch it with make test-fixtures";
+        if (Boolean.parseBoolean(props.apply("jinfer.test.requireModels")))
+            throw new AssertionError(message);
+        throw new TestAbortedException(message);
+    }
+
     /** The cached path for {@code ref}, or empty - the non-aborting form, for presence probes. */
     public static Optional<Path> find(String ref) {
         if (Boolean.getBoolean("jinfer.test.requireModels")) return Optional.of(require(ref));
@@ -94,15 +111,19 @@ public final class TestModels {
     }
 
     /**
-     * {@code <parent of the git checkout>/models} when it exists, walking up from {@code start}. A
-     * worktree's {@code .git} is a file, so presence is what marks the checkout.
+     * {@code <parent of the git checkout>/models} when it exists, walking up from {@code start}.
      */
     static Optional<Path> checkoutModels(Path start) {
+        return checkout(start).map(dir -> dir.resolveSibling("models")).filter(Files::isDirectory);
+    }
+
+    /**
+     * The git checkout holding {@code start}. A worktree's {@code .git} is a file, so presence
+     * marks it.
+     */
+    private static Optional<Path> checkout(Path start) {
         for (Path dir = start; dir != null; dir = dir.getParent()) {
-            if (Files.exists(dir.resolve(".git"))) {
-                Path models = dir.resolveSibling("models");
-                return Files.isDirectory(models) ? Optional.of(models) : Optional.empty();
-            }
+            if (Files.exists(dir.resolve(".git"))) return Optional.of(dir);
         }
         return Optional.empty();
     }

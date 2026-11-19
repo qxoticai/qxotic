@@ -11,6 +11,7 @@ import com.qxotic.jinfer.codecs.AudioCodec;
 import com.qxotic.jinfer.codecs.ImageCodec;
 import com.qxotic.jinfer.codecs.VideoCodec;
 import com.qxotic.jinfer.media.Media;
+import com.qxotic.jinfer.testkit.TestModels;
 import java.awt.Color;
 import java.awt.Font;
 import java.awt.Graphics2D;
@@ -39,7 +40,6 @@ import org.junit.jupiter.api.io.TempDir;
 class GemmaEmbedding2ExamplesTest {
 
     static final Path IMAGES = Path.of("../jinfer-langchain4j/src/test/resources/kit-images");
-    static final Path AUDIO = Path.of("../../test-fixtures/audio");
 
     static Arena weights;
     static LoadedEmbedder<?> embedder;
@@ -63,7 +63,7 @@ class GemmaEmbedding2ExamplesTest {
         state = embedder.model().newState(8192);
         cat = ImageCodec.load(IMAGES.resolve("cat.png"));
         dice = ImageCodec.load(IMAGES.resolve("dice.png"));
-        speech = AudioCodec.load(AUDIO.resolve("speech-tts.wav"));
+        speech = AudioCodec.load(TestModels.fixture("audio/speech-tts.wav"));
     }
 
     @AfterAll

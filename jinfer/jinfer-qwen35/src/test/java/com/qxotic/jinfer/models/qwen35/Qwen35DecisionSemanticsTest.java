@@ -16,7 +16,6 @@ import com.qxotic.jinfer.chat.Models;
 import com.qxotic.jinfer.codecs.ImageCodec;
 import com.qxotic.jinfer.testkit.TestModels;
 import java.lang.foreign.Arena;
-import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
@@ -209,9 +208,7 @@ final class Qwen35DecisionSemanticsTest {
                         List.of(
                                 new Content.Media(
                                         ImageCodec.load(
-                                                Path.of(
-                                                        "../../test-fixtures/lfm3/images/"
-                                                                + "cat.png"))),
+                                                TestModels.fixture("lfm3/images/" + "cat.png"))),
                                 new Content.Text("A photo sent by a customer."));
                 List<Question> two = new ArrayList<>();
                 for (int i = 0; i < 3; i++) two.add(IS_QUESTION);

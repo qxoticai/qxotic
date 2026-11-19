@@ -317,9 +317,7 @@ final class DecisionServerComprehensiveIntegrationTest {
                         + Base64.getEncoder()
                                 .encodeToString(
                                         Files.readAllBytes(
-                                                Path.of(
-                                                        "../../test-fixtures/lfm3/images/"
-                                                                + "cat.png")));
+                                                TestModels.fixture("lfm3/images/" + "cat.png")));
         Reply withText =
                 post(
                         "{\"state\": \"A photo sent by a customer.\", \"files\": [\""
@@ -429,9 +427,7 @@ final class DecisionServerComprehensiveIntegrationTest {
                         + Base64.getEncoder()
                                 .encodeToString(
                                         Files.readAllBytes(
-                                                Path.of(
-                                                        "../../test-fixtures/lfm3/images/"
-                                                                + "cat.png")));
+                                                TestModels.fixture("lfm3/images/" + "cat.png")));
         String shows =
                 "\"questions\": {\"shows\": {\"type\": \"choice\", \"instructions\":"
                         + " \"What does the picture show?\", \"criteria\": {\"cat\": null,"

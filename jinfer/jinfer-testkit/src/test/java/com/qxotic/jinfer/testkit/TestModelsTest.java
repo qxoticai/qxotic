@@ -152,4 +152,25 @@ class TestModelsTest {
                 TestModels.checkoutModels(worktree.resolve("jinfer")),
                 "a worktree marks its checkout with a .git file");
     }
+
+    /** A fixture is read from the checkout's test-fixtures; a missing one skips, or fails gated. */
+    @Test
+    void aFixtureComesFromTheCheckoutOrTheTestSkips() throws IOException {
+        Path checkout = Files.createDirectories(root.resolve("qxotic"));
+        Files.createDirectories(checkout.resolve(".git"));
+        Path module = Files.createDirectories(checkout.resolve("jinfer/jinfer-x"));
+        String name = "lfm3/images/cat.png";
+        TestAbortedException skipped =
+                assertThrows(
+                        TestAbortedException.class,
+                        () -> TestModels.fixture(name, module, key -> null));
+        assertTrue(skipped.getMessage().contains("make test-fixtures"), skipped.getMessage());
+        assertThrows(
+                AssertionError.class,
+                () -> TestModels.fixture(name, module, props("jinfer.test.requireModels", "true")));
+        Path cat = checkout.resolve("test-fixtures").resolve(name);
+        Files.createDirectories(cat.getParent());
+        Files.writeString(cat, "not really a picture");
+        assertEquals(cat, TestModels.fixture(name, module, key -> null));
+    }
 }
