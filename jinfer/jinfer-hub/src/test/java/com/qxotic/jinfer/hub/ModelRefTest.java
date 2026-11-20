@@ -577,11 +577,11 @@ class ModelRefTest {
         assertEquals(
                 List.of("llama-2-7b.Q4_K_M.gguf"),
                 quant("TheBloke/Llama-2-7B-GGUF:Q4_K_M", List.of("llama-2-7b.Q4_K_M.gguf")));
-        // files named after another model: one quant each, the longer name a variant of the shorter
-        List<String> other =
-                List.of("m-QAD-Q4_0.gguf", "m-Q4_0.gguf", "n-Q8_0.gguf", "m-Q8_0.gguf");
-        assertEquals(List.of("m-Q4_0.gguf"), quant("acme/repo:Q4_0", other));
-        assertEquals(List.of("n-Q8_0.gguf", "m-Q8_0.gguf"), quant("acme/repo:Q8_0", other));
+        // files named after another model: no model to measure the quant from, so the ending
+        // decides and every file that ends in it is shown, never one picked
+        List<String> other = List.of("m-QAD-Q4_0.gguf", "m-Q4_0.gguf", "n-Q8_0.gguf");
+        assertEquals(List.of("m-QAD-Q4_0.gguf", "m-Q4_0.gguf"), quant("acme/repo:Q4_0", other));
+        assertEquals(List.of("n-Q8_0.gguf"), quant("acme/repo:Q8_0", other));
     }
 
     private static List<String> quant(String ref, List<String> names) {

@@ -71,7 +71,7 @@ jinfer's best-supported quant is `Q8_0`, so the examples pin it explicitly.
 When a repository ships exactly one GGUF, that file is selected without a quant.
 Otherwise the quant selects the file named `<model>-<QUANT>.gguf`, the quant being the whole rest of the name after the model's, which is the repository's name without `-GGUF`.
 `:Q4_0` is `LFM2.5-350M-Q4_0.gguf` and never `LFM2.5-350M-QAD-Q4_0.gguf`, which is `:QAD-Q4_0`; `:Q4_K` names neither `Q4_K_M` nor `Q4_K_XL`.
-The cache follows the same rule, so a downloaded file never answers for a quant that is not downloaded.
+The cache follows the same rule, so a downloaded `QAD-Q4_0` never answers for `:Q4_0`.
 
 An invalid reference reports the information needed to correct it.
 A quant that matches nothing lists what the repository ships; a quant that several models in one repository share prints a menu to pick from:

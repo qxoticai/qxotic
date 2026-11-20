@@ -1192,49 +1192,38 @@ public final class ModelStore {
 
     /**
      * The files among {@code names} that are {@code ref}'s quant, its {@code :QUANT} or llama.cpp's
-     * default: each named {@code <model>-<QUANT>.gguf} (or {@code .<QUANT>}), the quant being the
-     * WHOLE rest of the name. The model is the repository's ({@link ModelRef#modelOf}), so {@code
-     * LFM2.5-350M-QAD-Q4_0.gguf}, which ends in {@code -Q4_0}, is {@code QAD-Q4_0} and never {@code
-     * Q4_0}, as {@code UD-Q6_K_XL} is never {@code Q6_K} and {@code Q4_K} names neither {@code
-     * Q4_K_M} nor {@code Q4_K_XL}. A file named after another model is its quant unless another
-     * match's model begins its own ({@code m-Q4_0} beside {@code m-QAD-Q4_0}). Several matches are
-     * several models, and the caller picks. The same rule online and in the cache, so a file
-     * already downloaded never answers for one that is not.
+     * default: each ends in {@code -<QUANT>.gguf} or {@code .<QUANT>.gguf}, a split's parts too (to
+     * be refused with the merge instructions). A file named after the repository's model ({@link
+     * ModelRef#modelOf}) is its quant only when the quant is the whole rest of its name, so {@code
+     * :Q4_0} is never {@code LFM2.5-350M-QAD-Q4_0.gguf} and {@code :Q4_K} never {@code Q4_K_M}. The
+     * same rule online and in the cache, so a cached {@code QAD-Q4_0} never stands in for {@code
+     * Q4_0}.
      */
     static List<String> ofQuant(ModelRef ref, List<String> names) { // package-visible for its test
         String quant = quantOf(ref);
         String model = ModelRef.modelOf(ref.repo());
-        Map<String, String> modelOf = new TreeMap<>(); // file -> the name before its quant
-        for (String name : names) {
-            // a split's part keeps its quant, to be refused with the merge instructions
-            String stem = name.replaceFirst("(?i)(-\\d{5}-of-\\d{5})?\\.gguf$", "");
-            int cut = stem.length() - quant.length() - 1;
-            if (cut > 0
-                    && "-.".indexOf(stem.charAt(cut)) >= 0
-                    && stem.regionMatches(true, cut + 1, quant, 0, quant.length())) {
-                modelOf.put(name, stem.substring(0, cut));
-            }
-        }
-        return names.stream()
-                .filter(modelOf::containsKey)
-                .filter(
-                        name -> {
-                            String own = modelOf.get(name);
-                            if (own.equalsIgnoreCase(model)) return true;
-                            // ponytail: a file named after another model, alone in the cache
-                            // beside an uncached plain one, still answers; such repos are rare
-                            return !extendsStem(own, model)
-                                    && modelOf.values().stream()
-                                            .noneMatch(o -> extendsStem(own, o));
-                        })
-                .toList();
+        return names.stream().filter(name -> isQuant(name, quant, model)).toList();
     }
 
-    /** Whether {@code name} is {@code stem} followed by more: {@code m-QAD} extends {@code m}. */
-    private static boolean extendsStem(String name, String stem) {
-        return name.length() > stem.length()
-                && name.regionMatches(true, 0, stem, 0, stem.length())
-                && "-._".indexOf(name.charAt(stem.length())) >= 0;
+    private static boolean isQuant(String name, String quant, String model) {
+        String stem = name.replaceFirst("(?i)(-\\d{5}-of-\\d{5})?\\.gguf$", "");
+        int cut = stem.length() - quant.length() - 1;
+        if (cut <= 0
+                || "-.".indexOf(stem.charAt(cut)) < 0
+                || !stem.regionMatches(true, cut + 1, quant, 0, quant.length())) {
+            return false;
+        }
+        String own = stem.substring(0, cut);
+        // ponytail: a file named after another model is its quant by its ending alone, so
+        // m-QAD-Q4_0 beside m-Q4_0 is a menu there, not a pick
+        return own.equalsIgnoreCase(model) || !isVariantOf(own, model);
+    }
+
+    /** Whether {@code name} is {@code model} and more: {@code m-QAD} is a variant of {@code m}. */
+    private static boolean isVariantOf(String name, String model) {
+        return name.length() > model.length()
+                && name.regionMatches(true, 0, model, 0, model.length())
+                && "-._".indexOf(name.charAt(model.length())) >= 0;
     }
 
     // ---- small helpers ----
