@@ -90,6 +90,7 @@ check-static: check-exports target/tokenize-static target/toknroll_test-static
 	@nm --defined-only -g $(STATIC) | awk 'NF == 3 && $$2 != "u" {print $$3}' | sed 's/^_//' | sort > target/static.syms
 	@diff target/header.syms target/static.syms && echo "the static archive exports the header's $$(wc -l < target/header.syms | tr -d " ") functions and nothing else"
 	@! $(if $(filter darwin,$(OS)),otool -L,ldd) target/tokenize-static | grep -q toknroll && echo "the static example needs no libtoknroll"
+	@! LC_ALL=C grep -qaE '/(home|Users)/' $(STATIC) && echo "the static archive names no build machine's paths"
 	./target/tokenize-static $(SOURCE) "Hello, Tok'n'Roll!"
 	./target/toknroll_test-static
 

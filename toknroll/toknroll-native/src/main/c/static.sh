@@ -38,6 +38,7 @@ if [ -n "$darwin" ]; then
   ld=$(xcrun -f ld-classic 2>/dev/null) && ld="$ld -d" || ld=ld
   $ld -r -o "$work" $inputs
   nmedit -s "$work.keep" "$work"
+  strip -S "$work"   # the debug map: GraalVM's archives by their path on the build machine, into every program that links this
 else
   # libgcc.a: the link gcc -shared ran pulled it in implicitly, so the replay names it. The shim's atomics on
   # aarch64 are libgcc's outline helpers (__aarch64_cas4_sync), which a consumer's GCC before 10 lacks.
