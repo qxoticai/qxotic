@@ -54,7 +54,7 @@ final class Lfm3VisionParityTest {
             String dump, String name, String mmproj, double layerBound, double cosBound)
             throws Exception {
         Path dir = Oracle.dir(dump);
-        Media.Image image = ImageCodec.load(Oracle.ROOT.resolve("../images/" + name + ".png"));
+        Media.Image image = ImageCodec.load(TestModels.fixture("lfm3/images/" + name + ".png"));
         try (Arena arena = Arena.ofShared()) {
             Lfm3 model =
                     Lfm3.loadModel(TestModels.require(TEXT), TestModels.require(mmproj), arena);

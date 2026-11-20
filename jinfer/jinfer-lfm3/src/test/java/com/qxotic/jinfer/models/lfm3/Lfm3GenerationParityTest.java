@@ -186,7 +186,7 @@ final class Lfm3GenerationParityTest {
                 parts.add(new Content.Text(s));
                 continue;
             }
-            Path path = Oracle.ROOT.resolve("../..").resolve(media.get(m).get(1));
+            Path path = TestModels.fixture(media.get(m).get(1));
             parts.add(
                     new Content.Media(
                             media.get(m).get(0).equals("image")

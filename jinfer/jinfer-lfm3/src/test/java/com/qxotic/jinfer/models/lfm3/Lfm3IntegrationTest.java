@@ -146,7 +146,7 @@ final class Lfm3IntegrationTest {
             assertEquals(Map.of("city", "Paris"), toolCall.arguments());
 
             // an image, through the whole engine
-            Media.Image cat = ImageCodec.load(Oracle.ROOT.resolve("../images/cat.png"));
+            Media.Image cat = ImageCodec.load(TestModels.fixture("lfm3/images/cat.png"));
             ChatEngine.Completion image =
                     engine.complete(
                             request(

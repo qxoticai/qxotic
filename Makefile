@@ -137,7 +137,7 @@ ci: test-fixtures ci-format ci-test ci-corpus ci-release ## What the pull-reques
 
 ci-format: ## CI gate 1: formatting, including opt-in Maple and jinfer examples
 	$(MAVEN) $(MAVEN_FLAGS) -B -Pmaple,examples spotless:check
-	@! git grep -nE '"(\.\./)+test-fixtures/' -- '*.java' ':!**/Oracle.java' || { echo 'read test media through TestModels.fixture(...)'; exit 1; }
+	@! git grep -nE '"(\.\./)+test-fixtures/|ROOT\.resolve\("\.\.' -- '*.java' ':!**/Oracle.java' || { echo 'read test media through TestModels.fixture(...)'; exit 1; }
 
 ci-test: ## CI gate 2: model-free suite, including opt-in Maple and jinfer examples
 	$(NO_MODELS) $(MAVEN) $(MAVEN_FLAGS) -B -Pmaple,examples test -Djinfer.test.noModels=true

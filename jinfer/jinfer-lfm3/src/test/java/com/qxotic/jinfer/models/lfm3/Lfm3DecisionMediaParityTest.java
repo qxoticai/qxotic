@@ -87,7 +87,7 @@ final class Lfm3DecisionMediaParityTest {
     }
 
     private static Media.Image image(String name) throws Exception {
-        return ImageCodec.load(Oracle.ROOT.resolve("../images/" + name + ".png"));
+        return ImageCodec.load(TestModels.fixture("lfm3/images/" + name + ".png"));
     }
 
     private static Content picture(String name) throws Exception {
@@ -95,7 +95,7 @@ final class Lfm3DecisionMediaParityTest {
     }
 
     private static Content clip(String path) throws Exception {
-        return new Content.Media(Lfm3AudioParityTest.wav(Oracle.ROOT.resolve("../../" + path)));
+        return new Content.Media(Lfm3AudioParityTest.wav(TestModels.fixture(path)));
     }
 
     /** The frames llama.cpp samples of the clip: {@code round(linspace(0, 11, 6))}. */
@@ -105,8 +105,8 @@ final class Lfm3DecisionMediaParityTest {
             frames.add(
                     new Media.Video.Frame(
                             ImageCodec.load(
-                                    Oracle.ROOT.resolve(
-                                            String.format("../video/clip-%02d.png", index))),
+                                    TestModels.fixture(
+                                            String.format("lfm3/video/clip-%02d.png", index))),
                             Duration.ofMillis(index * 250)));
         return new Content.Media(new Media.Video(frames));
     }

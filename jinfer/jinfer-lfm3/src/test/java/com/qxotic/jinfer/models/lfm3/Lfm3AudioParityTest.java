@@ -49,7 +49,7 @@ final class Lfm3AudioParityTest {
             String dump, String clip, String precision, double layerBound, double cosBound)
             throws Exception {
         Path dir = Oracle.dir(dump);
-        Media.Audio audio = wav(Oracle.ROOT.resolve("../../" + clip));
+        Media.Audio audio = wav(TestModels.fixture(clip));
         try (Arena arena = Arena.ofShared()) {
             Lfm3 model =
                     Lfm3.loadModel(
