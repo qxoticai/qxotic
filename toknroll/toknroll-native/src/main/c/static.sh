@@ -8,6 +8,7 @@
 set -e
 header=$1; log=$2; out=$3; work=$(dirname "$out")/toknroll_static.o
 darwin=; case $(uname -s) in Darwin) darwin=yes ;; esac
+aarch64=; case $(uname -m) in aarch64) aarch64=yes ;; esac
 grep -E '^TOKNROLL_API' "$header" | grep -oE 'toknroll_[a-z0-9_]+\(' | tr -d '(' | sed "s/^/${darwin:+_}/" > "$work.keep"   # Mach-O names carry an underscore
 line=$(grep -- ' -shared ' "$log" | tail -n 1)
 [ -n "$line" ] || { echo "static.sh: no link line in $log" >&2; exit 1; }
@@ -38,8 +39,12 @@ if [ -n "$darwin" ]; then
   $ld -r -o "$work" $inputs
   nmedit -s "$work.keep" "$work"
 else
-  ld -r -o "$work" $inputs
-  objcopy --keep-global-symbols="$work.keep" "$work"
+  # libgcc.a: the link gcc -shared ran pulled it in implicitly, so the replay names it. The shim's atomics on
+  # aarch64 are libgcc's outline helpers (__aarch64_cas4_sync), which a consumer's GCC before 10 lacks.
+  # $x at .text's start: the image's code carries no mapping symbol, so the first $x fell where the C objects
+  # begin, and GNU ld's Cortex-A53 erratum 843419 scan, on in Debian's and Ubuntu's GCC, read past .text's end.
+  ld -r -o "$work" $inputs "$(${CC:-cc} -print-libgcc-file-name)"
+  objcopy --keep-global-symbols="$work.keep" ${aarch64:+--add-symbol '$x=.text:0,local'} "$work"
 fi
 rm -f "$out" && ar rcs "$out" "$work" && rm -f "$work" "$work.keep"
 echo "$out: $(nm --defined-only -g "$out" | grep -c ' T ') exported functions, $(du -h "$out" | cut -f1)"
