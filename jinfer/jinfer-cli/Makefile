@@ -15,7 +15,7 @@ NATIVE_IMAGE ?= $(if $(JAVA_HOME),$(JAVA_HOME)/bin/native-image,native-image)
 # Oracle GraalVM builds what ships optimized for a profile its instrumented image records first (PGO), which
 # libjinfer's build reuses; GraalVM CE builds at the pom's -O3
 PGO = $(shell $(NATIVE_IMAGE) --version 2>/dev/null | grep -q 'Oracle GraalVM' && echo yes)
-# The profile, a list of ../scripts/pgo.txt's: one per turn, comma-separated as --pgo takes them
+# The profile: a file per turn of ../scripts/pgo.txt, listed comma-separated as --pgo takes them
 PROFILES := target/pgo/profiles
 PGO_PROMPT := In two sentences, explain why a compiler that sees how a program actually runs can make it faster than one that only reads its source code.
 # the check's model, in every build machine's cache (the test fixture); make keeps the spaces before a trailing comment, so none here
@@ -42,24 +42,23 @@ help:
 native:
 	$(MAKE) -C $(ROOT) native NATIVE_MODULE=$(notdir $(CURDIR))
 
-image: $(if $(PGO),$(PROFILES))   # no clean: the image is linked from the modules' classes, not the shaded jar the root's native target cleans for
-	@$(MAKE) -s -C $(ROOT) check-native-image
-	cd $(ROOT) && $(MAVEN) $(MAVEN_FLAGS) -Pnative -pl jinfer/jinfer-cli -am package -DskipTests -Djinfer.image.march=$(MARCH) \
-	  $(if $(PGO),-Djinfer.image.opt=--pgo=$$(cat $(abspath $(PROFILES))))
+# no clean: the image is linked from the modules' classes, not the shaded jar the root's native target cleans for
+IMAGE = cd $(ROOT) && $(MAVEN) $(MAVEN_FLAGS) -Pnative -pl jinfer/jinfer-cli -am package -DskipTests -Djinfer.image.march=$(MARCH)
 
-# The profile: each turn of ../scripts/pgo.txt on the instrumented image, a process and a profile each, a prompt and
-# 4 tokens, as instrumented code decodes a 1B model at seconds a token. Recorded once per tree, since that takes
-# minutes: after the code changed, make pgo-profile records it again (a stale one costs speed, never correctness).
-# The models download on the first run, or come from the cache (make cache-models).
+image: $(if $(PGO),$(PROFILES))
+	@$(MAKE) -s -C $(ROOT) check-native-image
+	$(IMAGE) $(if $(PGO),-Djinfer.image.opt=--pgo=$$(cat $(abspath $(PROFILES))))
+
+# The profile: each line of ../scripts/pgo.txt, a turn's arguments, on the instrumented image, a process and a
+# profile each, a prompt and 4 tokens, as instrumented code decodes a 1B model at seconds a token. Recorded once per
+# tree, since that takes minutes: after the code changed, make pgo-profile records it again (a stale one costs
+# speed, never correctness). The models download on the first run, or come from the cache (make cache-models).
 $(PROFILES):
 	@$(MAKE) -s -C $(ROOT) check-native-image
-	cd $(ROOT) && $(MAVEN) $(MAVEN_FLAGS) -Pnative -pl jinfer/jinfer-cli -am package -DskipTests -Djinfer.image.march=$(MARCH) \
-	  -Djinfer.image.opt=--pgo-instrument
+	$(IMAGE) -Djinfer.image.opt=--pgo-instrument
 	rm -rf target/pgo && mkdir -p target/pgo && mv $(BIN) target/pgo/train
-	i=0; grep -vE '^(#|$$)' ../scripts/pgo.txt | while read -r backend temp model; do i=$$((i + 1)); \
-	  echo "pgo $$i: $$model on jam-$$backend"; \
-	  target/pgo/train -XX:ProfilesDumpFile=$(abspath target/pgo)/$$i.iprof -Djam.$$([ $$backend = native ] && echo vector || echo native).disabled=true \
-	    -m $$model $$([ $$temp = default ] || echo --temp $$temp) --think off -n 4 instruct "$(PGO_PROMPT)" > /dev/null || exit 1; done
+	i=0; grep -vE '^(#|$$)' ../scripts/pgo.txt | while read -r turn; do i=$$((i + 1)); echo "pgo $$i: $$turn"; \
+	  target/pgo/train -XX:ProfilesDumpFile=$(abspath target/pgo)/$$i.iprof $$turn -n 4 instruct "$(PGO_PROMPT)" > /dev/null || exit 1; done
 	ls $(abspath target/pgo)/*.iprof | paste -sd, - > $@
 
 pgo-profile:

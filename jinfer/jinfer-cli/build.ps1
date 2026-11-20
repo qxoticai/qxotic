@@ -25,20 +25,18 @@ function Build-Shipped {
     if (-not (Test-Path target\pgo\profiles)) { Record-Profile }
     Build-Image "-Djinfer.image.opt=--pgo=$(Get-Content target\pgo\profiles)"
 }
-# The profile, as the Makefile's: each turn of ..\scripts\pgo.txt on the instrumented image, a process and a profile
-# each, a prompt and 4 tokens -> target\pgo\, listed in target\pgo\profiles
+# The profile, as the Makefile's: each line of ..\scripts\pgo.txt, a turn's arguments, on the instrumented image, a
+# process and a profile each, a prompt and 4 tokens -> target\pgo\, listed in target\pgo\profiles
 function Record-Profile {
     Build-Image '-Djinfer.image.opt=--pgo-instrument'
     Remove-Item -Recurse -Force target\pgo -ErrorAction Ignore; New-Item -ItemType Directory -Force target\pgo | Out-Null
     Move-Item target\jinfer.exe target\pgo\train.exe
     $prompt = 'In two sentences, explain why a compiler that sees how a program actually runs can make it faster than one that only reads its source code.'
     $i = 0
-    foreach ($line in Get-Content ..\scripts\pgo.txt | Where-Object { $_ -notmatch '^(#|\s*$)' }) {
-        $backend, $temp, $model = -split $line; $i++
-        $other = if ($backend -eq 'native') { 'vector' } else { 'native' }
-        $sampling = if ($temp -ne 'default') { '--temp', $temp }
-        "pgo ${i}: $model on jam-$backend"
-        & target\pgo\train.exe "-XX:ProfilesDumpFile=$PSScriptRoot\target\pgo\$i.iprof" "-Djam.$other.disabled=true" -m $model @sampling --think off -n 4 instruct $prompt | Out-Null
+    foreach ($turn in Get-Content ..\scripts\pgo.txt | Where-Object { $_ -notmatch '^(#|\s*$)' }) {
+        $i++; "pgo ${i}: $turn"
+        $arguments = -split $turn   # array elements reach the image as they are, -D's dots unsplit
+        & target\pgo\train.exe "-XX:ProfilesDumpFile=$PSScriptRoot\target\pgo\$i.iprof" @arguments -n 4 instruct $prompt | Out-Null
         if ($LASTEXITCODE) { throw "pgo turn $i failed" }
     }
     [IO.File]::WriteAllText("$PSScriptRoot\target\pgo\profiles", ((Get-ChildItem target\pgo\*.iprof).FullName -join ','))
@@ -71,7 +69,7 @@ try {
         switch ($t) {
             'help'       { Get-Content "$PSScriptRoot\build.ps1" | Select-Object -Skip 1 | Select-Object -First 6 | ForEach-Object { $_ -replace '^#\s?', '' } }
             'image'      { Build-Shipped }
-            'pgo-profile' { Enter-Toolchain; Record-Profile }
+            'pgo-profile' { Record-Profile }
             'check'      { Run-Check }
             'dist'       { Build-Dist }
             'check-dist' { Check-Dist }

@@ -1,8 +1,7 @@
 # libjinfer: jinfer as a shared library with the C API in include/jinfer.h. `make help` lists the targets.
 NAME  := jinfer
 # The optimization: the pom's (-O3) unless QUICK=1 or a PGO profile asks for another. Oracle GraalVM builds what
-# ships from the profile the instrumented CLI records (jinfer-cli's pgo-profile), the CLI's image's own; GraalVM CE
-# builds without one.
+# ships from the CLI's profile (jinfer-cli's pgo-profile, recorded once per tree); GraalVM CE builds without one.
 CLI   := ../jinfer-cli
 PGO    = $(if $(filter 1,$(QUICK)),,$(shell $(NATIVE_IMAGE) --version 2>/dev/null | grep -q 'Oracle GraalVM' && echo yes))
 OPT    = $(if $(filter 1,$(QUICK)),-Ob,$(if $(PGO),--pgo=$$(cat $(abspath $(CLI))/target/pgo/profiles)))
