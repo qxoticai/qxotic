@@ -19,5 +19,15 @@ function Copy-VcRuntime([string] $Binary, [string] $To) {
     $dlls = dumpbin /dependents $Binary | Select-String '^\s+(\S+\.dll)\s*$' | ForEach-Object { $_.Matches[0].Groups[1].Value } | Where-Object { Test-Path "$($crt.FullName)\$_" }
     Copy-Item ($dlls | ForEach-Object { "$($crt.FullName)\$_" }) $To
 }
-# A zip as the format wants it, / between names: Windows' own bsdtar; PS 5.1's Compress-Archive writes \
-function New-Zip([string] $Dir, [string] $Name) { tar -a -c -f "$Dir\$Name.zip" -C $Dir $Name; if ($LASTEXITCODE) { throw "tar failed" } }
+# A zip as the format wants it: / between names (PS 5.1's Compress-Archive and .NET Framework's ZipFile write \),
+# and no Unix modes, so an unzip elsewhere applies its own defaults (Windows' tar.exe records NTFS's 666 and 777)
+function New-Zip([string] $Dir, [string] $Name) {
+    Add-Type -AssemblyName System.IO.Compression, System.IO.Compression.FileSystem
+    $zip = [IO.Compression.ZipFile]::Open("$Dir\$Name.zip", 'Create')
+    try {
+        foreach ($f in Get-ChildItem -Recurse -File "$Dir\$Name") {
+            $entry = "$Name/" + $f.FullName.Substring("$Dir\$Name\".Length).Replace('\', '/')
+            [void][IO.Compression.ZipFileExtensions]::CreateEntryFromFile($zip, $f.FullName, $entry, 'Optimal')
+        }
+    } finally { $zip.Dispose() }
+}
