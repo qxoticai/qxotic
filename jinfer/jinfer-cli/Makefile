@@ -43,8 +43,10 @@ native:
 	$(MAKE) -C $(ROOT) native NATIVE_MODULE=$(notdir $(CURDIR))
 
 # no clean: the image is linked from the modules' classes, not the shaded jar the root's native target cleans for
-# macOS: no debug map naming the build machine's paths to GraalVM's archives (OSO stabs), as native.mk
-IMAGE = cd $(ROOT) && $(if $(filter darwin,$(OS)),NATIVE_IMAGE_OPTIONS="$(strip $(NATIVE_IMAGE_OPTIONS) -H:NativeLinkerOption=-Wl,-S)") $(MAVEN) $(MAVEN_FLAGS) -Pnative -pl jinfer/jinfer-cli -am package -DskipTests -Djinfer.image.march=$(MARCH)
+# macOS: no debug map naming the build machine's paths to GraalVM's archives (OSO stabs), as native.mk;
+# a variable, as $(if) would split the flag at its comma
+NO_DEBUG_MAP := NATIVE_IMAGE_OPTIONS="$(strip $(NATIVE_IMAGE_OPTIONS) -H:NativeLinkerOption=-Wl,-S)"
+IMAGE = cd $(ROOT) && $(if $(filter darwin,$(OS)),$(NO_DEBUG_MAP)) $(MAVEN) $(MAVEN_FLAGS) -Pnative -pl jinfer/jinfer-cli -am package -DskipTests -Djinfer.image.march=$(MARCH)
 
 image: $(if $(PGO),$(PROFILES))
 	@$(MAKE) -s -C $(ROOT) check-native-image

@@ -31,7 +31,9 @@ NATIVE_IMAGE ?= $(if $(JAVA_HOME),$(JAVA_HOME)/bin/native-image,native-image)
 # native-image's options: the caller's (NATIVE_IMAGE_OPTIONS=-march=x86-64-v4 asks for another target than
 # native-image's own default), then QUICK=1's: this machine, then macOS's: no debug map (OSO stabs naming
 # the build machine's paths to GraalVM's archives)
-IMAGE_OPTIONS = $(strip $(NATIVE_IMAGE_OPTIONS) $(if $(filter 1,$(QUICK)),-march=native) $(if $(filter darwin,$(OS)),-H:NativeLinkerOption=-Wl,-S))
+# (a variable: $(if) would split the flag at its comma)
+NO_DEBUG_MAP := -H:NativeLinkerOption=-Wl,-S
+IMAGE_OPTIONS = $(strip $(NATIVE_IMAGE_OPTIONS) $(if $(filter 1,$(QUICK)),-march=native) $(if $(filter darwin,$(OS)),$(NO_DEBUG_MAP)))
 # What the including Makefile may widen (no trailing comments here: make keeps the spaces before one):
 # SYMS, the prefixes of the functions the headers declare; HEADERS, the headers the release carries;
 # DESCRIPTION, the pkg-config file's line; WHEEL_EXAMPLE and WHEEL_EXAMPLE_ARGS, the C example built against
