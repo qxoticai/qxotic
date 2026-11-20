@@ -15,6 +15,9 @@ GraalVM Native Image can compile the CLI into a standalone executable.
 
 - The release archive, `jinfer-<version>-<platform>.tar.gz` (a zip on Windows), an asset of the release on GitHub, built here by `make dist`: `bin/jinfer`, this README, the license and the [notice](../jinfer-native/NOTICE).
   Unpack it anywhere and run `bin/jinfer`; it needs no Java.
+  It downloads models through `curl` on the `PATH` (any Windows 10 and macOS have it; a minimal Linux container may not), so it carries no TLS stack of its own.
+  On Windows, `bin\` also carries `vcruntime140.dll` and `vcruntime140_1.dll`, the Visual C++ runtime the command needs and Windows lacks.
+  On macOS the binary is signed ad hoc, not notarized: an archive unpacked by Finder keeps the browser's quarantine, and Gatekeeper refuses the command until `xattr -d com.apple.quarantine bin/jinfer` lifts it; `tar -xzf` in a terminal, `curl` and `gh release download` set no quarantine.
   Linux x86-64 and aarch64 (glibc 2.28 or later), macOS aarch64 and Windows x86-64; the x86-64 builds need x86-64-v3, any CPU since 2013.
   The command unpacks its native matmul library once, into `jinfer/jam` in the user's cache directory (`$XDG_CACHE_HOME` or `~/.cache` on Linux, `~/Library/Caches` on macOS, `%LOCALAPPDATA%` on Windows), and loads it from there.
   Where that directory does not allow running code, it warns and falls back to its Java kernels, several times slower at prefill; on Linux, point `XDG_CACHE_HOME` at one that does.

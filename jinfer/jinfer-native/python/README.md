@@ -33,7 +33,7 @@ model.chat("Ada Lovelace, born 1815.", schema=Person).parsed
 
 - **Simple.** `load`, `chat`, `.text`: replies are typed objects, a schema comes back as your dataclass, and tools are plain Python functions.
 - **Fast.** Reads prompts faster than llama.cpp on the same CPU, see the [benchmarks](https://qxotic.ai/#benchmarks), and starts at once: the engine is compiled ahead of time.
-- **Light.** One 17 MB wheel and one dependency: no server, no `torch`, no GPU, no JVM.
+- **Light.** One 9 MB wheel and one dependency: no server, no `torch`, no GPU, no JVM.
 
 ## What it runs
 
