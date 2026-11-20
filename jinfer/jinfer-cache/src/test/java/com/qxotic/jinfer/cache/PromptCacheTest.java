@@ -1002,6 +1002,29 @@ public final class PromptCacheTest {
     }
 
     @Test
+    void interruptedPrefillsReuseOneAllocation() {
+        // a cancelled request must not close its state and allocate the next: where close()
+        // cannot free (a native image's ofAuto arenas) each one stranded a whole context
+        FakeModel model = fine();
+        model.stateBatch = 2;
+        try (var cache = cache(model, 2, 1 << 20)) {
+            for (int i = 0; i < 20; i++) {
+                AtomicInteger calls = new AtomicInteger();
+                cache.serve(
+                        turns(new int[] {100 + i, 2, 3, 4, 5, 6}),
+                        (state, serving) -> {
+                            assertFalse(serving.prefillComplete());
+                            return null;
+                        },
+                        () -> calls.incrementAndGet() > 1);
+            }
+            Served fresh = generate(cache, turns(new int[] {50, 51, 52}));
+            assertEquals(PromptCache.Tier.FRESH, fresh.tier());
+            assertEquals(1, cache.sample().stateAllocations()); // one state served all 21
+        }
+    }
+
+    @Test
     void completedPrefillRetainsTheSession() {
         FakeModel model = fine();
         try (var cache = cache(model, 2, 1 << 20)) {

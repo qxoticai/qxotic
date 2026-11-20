@@ -222,6 +222,10 @@ public final class PromptCache<S extends ContextState> implements AutoCloseable 
     // every state this cache allocates is this many positions; a prompt past it is refused
     private final int contextCapacity;
     private final ArrayDeque<CachedSession<S>> retained = new ArrayDeque<>();
+    // an interrupted pass's state: its prompt never serves again, its allocation serves the next
+    // miss. Closing it instead strands a whole context where close() cannot free (a native
+    // image's ofAuto arenas), one per cancelled prefill until a GC
+    private S spare;
     private boolean closed;
     private long sessionHits;
     private long statesAllocated;
@@ -480,7 +484,7 @@ public final class PromptCache<S extends ContextState> implements AutoCloseable 
         if (serving.prefillComplete) {
             release(session);
         } else {
-            closeSession(session); // a partially-served prompt never serves again
+            park(session); // a partially-served prompt never serves again
         }
         return result;
     }
@@ -744,6 +748,8 @@ public final class PromptCache<S extends ContextState> implements AutoCloseable 
         if (closed) return;
         closed = true;
         while (!retained.isEmpty()) closeSession(retained.removeFirst());
+        if (spare != null) closeState(spare);
+        spare = null;
         store.close();
     }
 
@@ -811,10 +817,16 @@ public final class PromptCache<S extends ContextState> implements AutoCloseable 
     }
 
     /**
-     * A recycled allocation for a miss: the least-recent state once the retained layer is full.
-     * Null means allocate.
+     * A recycled allocation for a miss: the spare, else the least-recent state once the retained
+     * layer is full. Null means allocate.
      */
     private S recycled(int len) {
+        if (spare != null && spare.contextCapacity() >= len) {
+            S state = spare;
+            spare = null;
+            if (state.position() != 0) state.reset();
+            return state;
+        }
         if (retainedCapacity > 0 && retained.size() >= retainedCapacity) {
             CachedSession<S> oldest = retained.peekFirst();
             if (oldest != null && oldest.state().contextCapacity() >= len) {
@@ -832,6 +844,16 @@ public final class PromptCache<S extends ContextState> implements AutoCloseable 
     private S freshState() {
         statesAllocated++;
         return model.newState(contextCapacity);
+    }
+
+    /** Keeps an interrupted session's state as the spare; with no retained layer it closes. */
+    private void park(CachedSession<S> session) {
+        if (retainedCapacity == 0 || spare != null) {
+            closeSession(session);
+            return;
+        }
+        session.dropSnapshot();
+        spare = session.state();
     }
 
     private void closeSession(CachedSession<S> session) {
