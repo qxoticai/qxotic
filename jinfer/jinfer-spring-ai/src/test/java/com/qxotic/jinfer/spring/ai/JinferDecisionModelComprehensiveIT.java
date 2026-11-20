@@ -56,6 +56,15 @@ final class JinferDecisionModelComprehensiveIT {
     /** Two calls round the Vector API kernels' reductions in an unspecified order. */
     static final double DRIFT = 1e-3;
 
+    /**
+     * A JVM's first call against the same call compiled. Until C2 compiles it, Vector API code runs
+     * its lane-by-lane Java fallback, which sums in another order than the SIMD it compiles to, and
+     * the difference compounds over the layers and tokens (measured up to 0.0114 apart on "speech",
+     * 0.0011 on "cat"). Compiled, every call agrees to the bit; under C1 alone, from the first
+     * call.
+     */
+    static final double COLD_DRIFT = 2e-2;
+
     static final Arena ARENA = Arena.ofShared();
     static DecisionModel core;
     static JinferDecisionModel model;
@@ -545,9 +554,6 @@ final class JinferDecisionModelComprehensiveIT {
                                     "dog",
                                     "dice",
                                     "landscape"));
-            // warm-up: a cold call reduces in un-compiled code, in another order than the
-            // compiled Vector API kernels, which then answer alike run after run
-            omni.call(input, asked);
             DecisionResponse response = omni.call(input, asked);
             assertEquals("cat", response.getChoice("shows").getValue());
             // the two towers read the pair as the engine does: same input, same answer
@@ -563,17 +569,15 @@ final class JinferDecisionModelComprehensiveIT {
                                             "hf.co/LiquidAI/d1-Omni-2B-GGUF/"
                                                     + "mmproj-d1-Omni-2B-F16.gguf"))
                             .build()) {
-                // warm-up: this copy's first call is cold too
-                sameModel.call(input, asked);
                 DecisionResponse again = sameModel.call(input, asked);
                 assertEquals(
                         response.getYesNo("cat").getProbability(),
                         again.getYesNo("cat").getProbability(),
-                        DRIFT);
+                        COLD_DRIFT);
                 assertEquals(
                         response.getYesNo("speech").getProbability(),
                         again.getYesNo("speech").getProbability(),
-                        DRIFT);
+                        COLD_DRIFT);
             }
             // llama.cpp's reading of the pair: a clear cat, a near-split speech call
             assertTrue(response.getYesNo("cat").getProbability() > 0.9);

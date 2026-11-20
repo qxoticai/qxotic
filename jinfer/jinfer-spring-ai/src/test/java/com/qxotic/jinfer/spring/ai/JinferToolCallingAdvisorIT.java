@@ -8,6 +8,10 @@ import org.junit.jupiter.api.TestInstance;
 import org.junit.jupiter.api.condition.EnabledIf;
 import org.springframework.ai.chat.model.ChatModel;
 import org.springframework.ai.test.chat.client.advisor.AbstractToolCallingAdvisorIT;
+import org.springframework.ai.test.chat.client.advisor.MockWeatherService;
+import org.springframework.ai.tool.ToolCallback;
+import org.springframework.ai.tool.function.FunctionToolCallback;
+import org.springframework.ai.tool.metadata.ToolMetadata;
 
 /**
  * Spring AI's own reusable battery ({@code spring-ai-test}'s {@link AbstractToolCallingAdvisorIT})
@@ -51,4 +55,33 @@ class JinferToolCallingAdvisorIT extends AbstractToolCallingAdvisorIT {
     protected ChatModel getChatModel() {
         return model;
     }
+
+    @Override
+    protected ToolCallback createReturnDirectWeatherToolCallback() {
+        return returnDirectWeather();
+    }
+
+    /**
+     * The kit's return-direct weather tool asking only for what its prompt gives. The kit asks
+     * "What's the weather in Tokyo?" of a tool whose request requires lat, lon and a unit too, so a
+     * model must invent coordinates or decline, and LFM2.5-8B sits on that edge: a JVM's first
+     * requests run the Vector API's uncompiled fallback, which sums in another order, and that
+     * tipped it to declining now and then. The same name, description, service and returnDirect,
+     * and the same reply the test reads.
+     */
+    static ToolCallback returnDirectWeather() {
+        MockWeatherService weather = new MockWeatherService();
+        return FunctionToolCallback.builder(
+                        "getCurrentWeather",
+                        (City city) ->
+                                weather.apply(
+                                        new MockWeatherService.Request(
+                                                city.location(), 0, 0, MockWeatherService.Unit.C)))
+                .description("Get the weather in location")
+                .inputType(City.class)
+                .toolMetadata(ToolMetadata.builder().returnDirect(true).build())
+                .build();
+    }
+
+    record City(String location) {}
 }

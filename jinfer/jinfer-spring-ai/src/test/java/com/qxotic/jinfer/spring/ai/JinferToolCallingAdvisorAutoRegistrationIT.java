@@ -8,6 +8,7 @@ import org.junit.jupiter.api.TestInstance;
 import org.junit.jupiter.api.condition.EnabledIf;
 import org.springframework.ai.chat.model.ChatModel;
 import org.springframework.ai.test.chat.client.advisor.AbstractToolCallingAdvisorAutoRegistrationIT;
+import org.springframework.ai.tool.ToolCallback;
 
 /**
  * The auto-registration twin of {@link JinferToolCallingAdvisorIT}: Spring AI registers the
@@ -46,5 +47,11 @@ class JinferToolCallingAdvisorAutoRegistrationIT
     @Override
     protected ChatModel getChatModel() {
         return model;
+    }
+
+    /** The twin's tool: see {@link JinferToolCallingAdvisorIT#returnDirectWeather}. */
+    @Override
+    protected ToolCallback createReturnDirectWeatherToolCallback() {
+        return JinferToolCallingAdvisorIT.returnDirectWeather();
     }
 }
