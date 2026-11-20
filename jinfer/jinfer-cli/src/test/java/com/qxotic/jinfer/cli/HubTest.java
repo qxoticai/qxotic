@@ -154,6 +154,19 @@ class HubTest {
                 Hub.name(ModelStore.of(dir), "hf.co/acme/Solo-GGUF/Solo-UD-Q4_K_M.gguf"));
     }
 
+    /** A quant is listed in capitals whatever its file's case, and the listed name loads it. */
+    @Test
+    void aLowercaseFileListsItsQuantInCapitals() throws Exception {
+        Path file = dir.resolve("hf.co/acme/kokoro.cpp-GGUF/kokoro-82m-q8_0.gguf");
+        Files.createDirectories(file.getParent());
+        Files.writeString(file, "GGUF");
+        var store = ModelStore.of(dir);
+        String name = Hub.name(store, "hf.co/acme/kokoro.cpp-GGUF/kokoro-82m-q8_0.gguf");
+        assertEquals("acme/kokoro.cpp-GGUF:Q8_0", name);
+        assertEquals(
+                store.find("hf.co/acme/kokoro.cpp-GGUF/kokoro-82m-q8_0.gguf"), store.find(name));
+    }
+
     /** A repository holding several cached files is never a guess: both commands list them. */
     @Test
     void aRepositoryWithSeveralCachedFilesAsksForOne() throws Exception {

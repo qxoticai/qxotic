@@ -191,12 +191,16 @@ final class Hub {
             if ("-._".indexOf(stem.charAt(at - 1)) >= 0) quants.add(stem.substring(at));
         }
         for (String quant : quants) {
-            // a quant reads like one (Q8_0, not 0 or M) and picks this very file
+            // a quant reads like one (Q8_0, not 0 or M) and picks this very file; written in
+            // capitals
+            // whatever the file's case (kokoro-82m-q8_0.gguf is :Q8_0), as quants are, and as the
+            // case-blind lookup takes it
+            String tag = quant.toUpperCase(Locale.ROOT);
             if (!quant.isEmpty()
                     && Character.isLetter(quant.charAt(0))
                     && quant.chars().anyMatch(Character::isDigit)
-                    && file.equals(store.find(repo + ":" + quant))) {
-                return repo + ":" + quant;
+                    && file.equals(store.find(repo + ":" + tag))) {
+                return repo + ":" + tag;
             }
         }
         return full;
