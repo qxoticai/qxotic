@@ -935,8 +935,9 @@ public final class ModelStore {
         if (models.size() == 1 && ref.quant() == null) {
             return models.get(0);
         }
+        List<String> named = ofQuant(ref, models.stream().map(f -> nameOf(f.path())).toList());
         List<RemoteFile> matches =
-                models.stream().filter(f -> matchesQuant(nameOf(f.path()), quantOf(ref))).toList();
+                models.stream().filter(f -> named.contains(nameOf(f.path()))).toList();
         if (matches.size() == 1) {
             return matches.get(0);
         }
@@ -1113,8 +1114,7 @@ public final class ModelStore {
     /** The same selection rule for current lookup and the cache a pull would publish. */
     private static String selectCachedModel(ModelRef ref, List<String> models) {
         if (models.size() == 1 && ref.quant() == null) return models.getFirst();
-        List<String> matches =
-                models.stream().filter(name -> matchesQuant(name, quantOf(ref))).toList();
+        List<String> matches = ofQuant(ref, models);
         return matches.size() == 1 ? matches.getFirst() : null;
     }
 
@@ -1191,28 +1191,50 @@ public final class ModelStore {
     }
 
     /**
-     * Whether {@code fileName} carries {@code quant} between filename delimiters, so {@code Q4_K_M}
-     * cannot answer for {@code Q4_K_XL}. A PREFIX still matches ({@code Q4_K} finds {@code
-     * Q4_K_XL}), which is deliberate: it either identifies one file or the caller is shown every
-     * candidate. Nothing here picks silently between two quants of one model, because that is how a
-     * benchmark ends up measuring a file nobody chose.
+     * The files among {@code names} that are {@code ref}'s quant, its {@code :QUANT} or llama.cpp's
+     * default: each named {@code <model>-<QUANT>.gguf} (or {@code .<QUANT>}), the quant being the
+     * WHOLE rest of the name. The model is the repository's ({@link ModelRef#modelOf}), so {@code
+     * LFM2.5-350M-QAD-Q4_0.gguf}, which ends in {@code -Q4_0}, is {@code QAD-Q4_0} and never {@code
+     * Q4_0}, as {@code UD-Q6_K_XL} is never {@code Q6_K} and {@code Q4_K} names neither {@code
+     * Q4_K_M} nor {@code Q4_K_XL}. A file named after another model is its quant unless another
+     * match's model begins its own ({@code m-Q4_0} beside {@code m-QAD-Q4_0}). Several matches are
+     * several models, and the caller picks. The same rule online and in the cache, so a file
+     * already downloaded never answers for one that is not.
      */
-    static boolean matchesQuant(String fileName, String quant) { // package-visible for its test
-        String name = fileName.toLowerCase(Locale.ROOT);
-        String needle = quant.toLowerCase(Locale.ROOT);
-        for (int at = 0; (at = name.indexOf(needle, at)) >= 0; at++) {
-            boolean left = at == 0 || isSeparator(name.charAt(at - 1));
-            int end = at + needle.length();
-            boolean right = end == name.length() || isSeparator(name.charAt(end));
-            if (left && right) {
-                return true;
+    static List<String> ofQuant(ModelRef ref, List<String> names) { // package-visible for its test
+        String quant = quantOf(ref);
+        String model = ModelRef.modelOf(ref.repo());
+        Map<String, String> modelOf = new TreeMap<>(); // file -> the name before its quant
+        for (String name : names) {
+            // a split's part keeps its quant, to be refused with the merge instructions
+            String stem = name.replaceFirst("(?i)(-\\d{5}-of-\\d{5})?\\.gguf$", "");
+            int cut = stem.length() - quant.length() - 1;
+            if (cut > 0
+                    && "-.".indexOf(stem.charAt(cut)) >= 0
+                    && stem.regionMatches(true, cut + 1, quant, 0, quant.length())) {
+                modelOf.put(name, stem.substring(0, cut));
             }
         }
-        return false;
+        return names.stream()
+                .filter(modelOf::containsKey)
+                .filter(
+                        name -> {
+                            String own = modelOf.get(name);
+                            if (own.equalsIgnoreCase(model)) return true;
+                            // ponytail: a file named after another model, alone in the cache
+                            // beside an uncached plain one, still answers; such repos are rare
+                            return !extendsStem(own, model)
+                                    && modelOf.values().stream()
+                                            .noneMatch(o -> extendsStem(own, o));
+                        })
+                .toList();
     }
 
-    private static boolean isSeparator(char c) {
-        return c == '-' || c == '.' || c == '_';
+    /** Whether {@code name} is {@code stem} followed by more: {@code m-QAD} extends {@code m}. */
+    private static boolean extendsStem(String name, String stem) {
+        return name.length() > stem.length()
+                && name.regionMatches(true, 0, stem, 0, stem.length())
+                && "-._".indexOf(name.charAt(stem.length())) >= 0;
     }
 
     // ---- small helpers ----

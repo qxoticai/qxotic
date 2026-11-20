@@ -553,18 +553,39 @@ class ModelRefTest {
     }
 
     @Test
-    void quantsMatchAsWholeTokensOnly() {
-        assertTrue(ModelStore.matchesQuant("gemma-4-E2B-it-Q4_K_M.gguf", "Q4_K_M"));
-        assertTrue(ModelStore.matchesQuant("gemma-4-E2B-it-q4_k_m.gguf", "Q4_K_M")); // fold case
-        assertTrue(ModelStore.matchesQuant("stories15M_MOE-F16.gguf", "F16"));
-        assertTrue(ModelStore.matchesQuant("gemma-4-E2B_q4_0-it.gguf", "Q4_0")); // '_'-delimited
-        // the hazards: a neighbouring quant, and a quant of the same family that is NOT this file
-        assertFalse(ModelStore.matchesQuant("gemma-4-E2B-it-Q8_0.gguf", "Q4_K_M"));
-        assertFalse(ModelStore.matchesQuant("gemma-4-E2B-it-qat-UD-Q4_K_XL.gguf", "Q4_K_M"));
-        assertFalse(ModelStore.matchesQuant("gemma-4-E2B-it-Q4_K_M.gguf", "Q4_K_S"));
-        // a PREFIX matches on purpose - it then either identifies one file or the caller is shown
-        // every candidate, never a silent pick
-        assertTrue(ModelStore.matchesQuant("gemma-4-E2B-it-qat-UD-Q4_K_XL.gguf", "Q4_K"));
+    void aQuantIsTheWholeRestOfTheName() {
+        List<String> lfm =
+                List.of(
+                        "LFM2.5-350M-Q4_0.gguf",
+                        "LFM2.5-350M-QAD-Q4_0.gguf",
+                        "LFM2.5-350M-Q4_K_M.gguf",
+                        "LFM2.5-350M-UD-Q4_K_XL.gguf",
+                        "LFM2.5-350M-q6_k.gguf");
+        assertEquals(
+                List.of("LFM2.5-350M-Q4_0.gguf"), quant("LiquidAI/LFM2.5-350M-GGUF:Q4_0", lfm));
+        assertEquals(
+                List.of("LFM2.5-350M-QAD-Q4_0.gguf"),
+                quant("LiquidAI/LFM2.5-350M-GGUF:QAD-Q4_0", lfm));
+        assertEquals(
+                List.of("LFM2.5-350M-q6_k.gguf"), quant("LiquidAI/LFM2.5-350M-GGUF:Q6_K", lfm));
+        // a quant is never a prefix or a suffix of another: Q4_K is neither Q4_K_M nor Q4_K_XL
+        assertEquals(List.of(), quant("LiquidAI/LFM2.5-350M-GGUF:Q4_K", lfm));
+        assertEquals(List.of(), quant("LiquidAI/LFM2.5-350M-GGUF:K_XL", lfm));
+        // the bare repository: llama.cpp's default, Q4_K_M
+        assertEquals(List.of("LFM2.5-350M-Q4_K_M.gguf"), quant("LiquidAI/LFM2.5-350M-GGUF", lfm));
+        // a model's other name as the dot spells it (TheBloke)
+        assertEquals(
+                List.of("llama-2-7b.Q4_K_M.gguf"),
+                quant("TheBloke/Llama-2-7B-GGUF:Q4_K_M", List.of("llama-2-7b.Q4_K_M.gguf")));
+        // files named after another model: one quant each, the longer name a variant of the shorter
+        List<String> other =
+                List.of("m-QAD-Q4_0.gguf", "m-Q4_0.gguf", "n-Q8_0.gguf", "m-Q8_0.gguf");
+        assertEquals(List.of("m-Q4_0.gguf"), quant("acme/repo:Q4_0", other));
+        assertEquals(List.of("n-Q8_0.gguf", "m-Q8_0.gguf"), quant("acme/repo:Q8_0", other));
+    }
+
+    private static List<String> quant(String ref, List<String> names) {
+        return ModelStore.ofQuant(ModelRef.parse(ref), names);
     }
 
     @Test

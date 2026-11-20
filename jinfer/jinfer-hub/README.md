@@ -68,17 +68,19 @@ Owner and repository match the cache in any case, as both hubs read repository i
 
 A reference with no `:quant` selects `Q4_K_M`, matching llama.cpp's default, so the same shorthand selects the same file in both tools.
 jinfer's best-supported quant is `Q8_0`, so the examples pin it explicitly.
-When a repository ships exactly one GGUF, that file is selected without a quant; otherwise the quant name is matched against the file names in the repository listing.
+When a repository ships exactly one GGUF, that file is selected without a quant.
+Otherwise the quant selects the file named `<model>-<QUANT>.gguf`, the quant being the whole rest of the name after the model's, which is the repository's name without `-GGUF`.
+`:Q4_0` is `LFM2.5-350M-Q4_0.gguf` and never `LFM2.5-350M-QAD-Q4_0.gguf`, which is `:QAD-Q4_0`; `:Q4_K` names neither `Q4_K_M` nor `Q4_K_XL`.
+The cache follows the same rule, so a downloaded file never answers for a quant that is not downloaded.
 
 An invalid reference reports the information needed to correct it.
-A quant that matches nothing lists what the repository ships; a quant that matches several files prints a menu to pick from:
+A quant that matches nothing lists what the repository ships; a quant that several models in one repository share prints a menu to pick from:
 
 ```text
-no Q9 in LiquidAI/LFM2.5-350M-GGUF; available: BF16, F16, Q4_0, Q4_K_M, Q5_K_M, Q6_K, Q8_0, QAD-Q4_0
-Q4 matches 3 files in LiquidAI/LFM2.5-350M-GGUF - name the one you want:
-  hf.co/LiquidAI/LFM2.5-350M-GGUF/LFM2.5-350M-Q4_0.gguf       209 MB
-  hf.co/LiquidAI/LFM2.5-350M-GGUF/LFM2.5-350M-QAD-Q4_0.gguf   209 MB
-  hf.co/LiquidAI/LFM2.5-350M-GGUF/LFM2.5-350M-Q4_K_M.gguf     219 MB
+no Q4 in LiquidAI/LFM2.5-350M-GGUF; available: BF16, F16, Q4_0, Q4_K_M, Q5_K_M, Q6_K, Q8_0, QAD-Q4_0
+Q8_0 matches 2 files in acme/models - name the one you want:
+  hf.co/acme/models/a-Q8_0.gguf   1.2 GB
+  hf.co/acme/models/b-Q8_0.gguf   2.4 GB
 ```
 
 An explicit quant never falls back to a different file.

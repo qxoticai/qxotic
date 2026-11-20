@@ -145,7 +145,7 @@ class ModelRefUrlTest {
         for (String[] c : cases) {
             suggests(c[1], c[0]);
             String file = c[0].replaceFirst(".*/", "").replaceFirst("\\?.*", "");
-            selectsOrListsAmongItsMatches(store, c[1], file);
+            assertEquals(file, store.select(c[1]), c[1] + " must select the linked " + file);
         }
         suggests( // a repository not named -GGUF: the model is its whole name
                 "hf.co/deepseek-ai/DeepSeek-V4-Pro:Q8_0",
@@ -180,21 +180,6 @@ class ModelRefUrlTest {
                 "hf.co/LiquidAI/LFM2.5-350M-GGUF/LFM2.5-1.2B-Q8_0.gguf",
                 lfm + "LFM2.5-1.2B-Q8_0.gguf");
         suggests("hf.co/LiquidAI/LFM2.5-350M-GGUF/tokenizer.json", lfm + "tokenizer.json");
-    }
-
-    /**
-     * The quant's promise: it selects the linked file, or, when another file shares the quant (Q4_0
-     * beside QAD-Q4_0), lists the matches with the linked one among them: never another file.
-     */
-    private static void selectsOrListsAmongItsMatches(ModelStore store, String ref, String file) {
-        try {
-            assertEquals(file, store.select(ref), ref + " must select the linked " + file);
-        } catch (IllegalArgumentException menu) {
-            assertTrue(menu.getMessage().contains("name the one you want"), menu.getMessage());
-            assertTrue(
-                    menu.getMessage().contains("/" + file),
-                    ref + " must list " + file + ": " + menu.getMessage());
-        }
     }
 
     private static RemoteFile[] files(String... names) {

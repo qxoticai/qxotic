@@ -73,12 +73,12 @@ class ModelStoreSelectTest {
     void onlineAlwaysListsAndTheSelectionFollows() {
         ModelStore.of(root, repository()).select("hf.co/jinfer-tests/thing:Q8_0");
         FakeSource renamed =
-                new FakeSource("fake").serving("", new RemoteFile("thing-v2-Q8_0.gguf", 10, null));
+                new FakeSource("fake").serving("", new RemoteFile("thing.Q8_0.gguf", 10, null));
         assertEquals(
-                "thing-v2-Q8_0.gguf",
+                "thing.Q8_0.gguf",
                 ModelStore.of(root, renamed).select("hf.co/jinfer-tests/thing:Q8_0"));
         assertEquals(
-                "thing-v2-Q8_0.gguf", ModelStore.of(root).select("hf.co/jinfer-tests/thing:Q8_0"));
+                "thing.Q8_0.gguf", ModelStore.of(root).select("hf.co/jinfer-tests/thing:Q8_0"));
     }
 
     @Test

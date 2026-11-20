@@ -216,13 +216,61 @@ class ModelStoreSelectionTest {
     }
 
     @Test
-    void aPrefixQuantResolvesOnlyWhenItNamesOneFile(@TempDir Path root) throws IOException {
+    void aQuantIsNeverThePrefixOfAnother(@TempDir Path root) {
         FakeSource source =
                 new FakeSource("fake").serving("", new RemoteFile("m-Q4_K_XL.gguf", 1, null));
 
-        Path file = ModelStore.of(root, source).resolve("hf.co/acme/repo:Q4_K");
+        var failure =
+                assertThrows(
+                        ModelNotFoundException.class,
+                        () -> ModelStore.of(root, source).resolve("hf.co/acme/repo:Q4_K"));
+        assertTrue(failure.getMessage().contains("no Q4_K in acme/repo"), failure.getMessage());
+        assertTrue(failure.getMessage().contains("m-Q4_K_XL.gguf"), failure.getMessage());
+    }
 
-        assertEquals(root.resolve("hf.co/acme/repo/m-Q4_K_XL.gguf"), file);
+    @Test
+    void aQuantIsItsOwnFileNotOneThatEndsInIt(@TempDir Path root) throws IOException {
+        FakeSource source =
+                new FakeSource("fake")
+                        .serving(
+                                "",
+                                new RemoteFile("m-QAD-Q4_0.gguf", 1, null),
+                                new RemoteFile("m-Q4_0.gguf", 1, null),
+                                new RemoteFile("m-UD-Q6_K_XL.gguf", 1, null),
+                                new RemoteFile("m-Q6_K.gguf", 1, null));
+        ModelStore store = ModelStore.of(root, source);
+
+        assertEquals(
+                root.resolve("hf.co/acme/m-GGUF/m-Q4_0.gguf"),
+                store.resolve("hf.co/acme/m-GGUF:Q4_0"));
+        assertEquals(
+                root.resolve("hf.co/acme/m-GGUF/m-Q6_K.gguf"),
+                store.resolve("hf.co/acme/m-GGUF:Q6_K"));
+        assertEquals(
+                root.resolve("hf.co/acme/m-GGUF/m-QAD-Q4_0.gguf"),
+                store.resolve("hf.co/acme/m-GGUF:QAD-Q4_0"));
+    }
+
+    @Test
+    void theCacheNeverAnswersAQuantWithAnotherOne(@TempDir Path root) throws IOException {
+        Path qad = root.resolve("hf.co/acme/m-GGUF/m-QAD-Q4_0.gguf");
+        Files.createDirectories(qad.getParent());
+        Files.writeString(qad, "qad");
+
+        assertTrue(
+                ModelStore.of(root).find("hf.co/acme/m-GGUF:Q4_0").isEmpty(),
+                "Q4_0 is not downloaded: QAD-Q4_0 is another quant, not a stand-in");
+        assertEquals(qad, ModelStore.of(root).find("hf.co/acme/m-GGUF:QAD-Q4_0").orElseThrow());
+
+        FakeSource source =
+                new FakeSource("fake")
+                        .serving(
+                                "",
+                                new RemoteFile("m-QAD-Q4_0.gguf", 3, null),
+                                new RemoteFile("m-Q4_0.gguf", 7, null));
+        Path q40 = ModelStore.of(root, source).resolve("hf.co/acme/m-GGUF:Q4_0");
+        assertEquals(root.resolve("hf.co/acme/m-GGUF/m-Q4_0.gguf"), q40);
+        assertEquals("weights", Files.readString(q40), "downloaded, not the cached QAD-Q4_0");
     }
 
     @Test

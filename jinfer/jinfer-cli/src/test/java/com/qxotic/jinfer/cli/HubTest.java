@@ -167,16 +167,16 @@ class HubTest {
         assertEquals(
                 "acme/m:QAD-Q4_0",
                 Hub.name(store, "hf.co/acme/m/m-QAD-Q4_0.gguf"),
-                "Q4_0 alone would pick two files");
+                "its whole quant");
         assertEquals(
-                "acme/m/m-Q4_0.gguf",
+                "acme/m:Q4_0",
                 Hub.name(store, "hf.co/acme/m/m-Q4_0.gguf"),
-                "no quant names it alone: the path does");
+                "Q4_0 names it alone: QAD-Q4_0 is another quant");
 
         var miss = new CliFixtures.Capture("");
         assertEquals(1, Main.run(new String[] {"find", "acme/m"}, miss.io, store));
         assertTrue(
-                miss.err().contains("acme/m/m-Q4_0.gguf\n  acme/m:Q8_0\n  acme/m:QAD-Q4_0"),
+                miss.err().contains("acme/m:Q4_0\n  acme/m:Q8_0\n  acme/m:QAD-Q4_0"),
                 miss.err());
 
         var refused = new CliFixtures.Capture("");

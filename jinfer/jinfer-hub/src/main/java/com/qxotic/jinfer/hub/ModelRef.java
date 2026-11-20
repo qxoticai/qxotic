@@ -262,11 +262,11 @@ public record ModelRef(
      * QUANT when {@code file} is the root's {@code <model>-<QUANT>.gguf}, the model being the
      * repository's name without its {@code -GGUF}, else null. The whole remainder is the most
      * specific quant the name allows ({@code QAD-Q4_0}, never its {@code Q4_0}), so {@code :QUANT}
-     * loads this very file or lists it among its matches: never another file. A file in a folder
-     * keeps its path, as a root file could win its quant.
+     * loads this very file and no other ({@link ModelStore#ofQuant}). A file in a folder keeps its
+     * path, as a root file could win its quant.
      */
     static String quantOf(String repo, String file) {
-        String model = repo.replaceFirst("(?i)[-_.]gguf$", "") + "-";
+        String model = modelOf(repo) + "-";
         if (file.contains("/")
                 || !file.regionMatches(true, 0, model, 0, model.length())
                 || !file.regionMatches(true, file.length() - 5, ".gguf", 0, 5)) {
@@ -274,6 +274,11 @@ public record ModelRef(
         }
         String quant = file.substring(model.length(), file.length() - 5);
         return quant.matches("(?i)([a-z0-9]+-)?[a-z]+[0-9][a-z0-9_]*") ? quant : null;
+    }
+
+    /** The model a repository is named for: its name without a {@code -GGUF}. */
+    static String modelOf(String repo) {
+        return repo.replaceFirst("(?i)[-_.]gguf$", "");
     }
 
     /** Whether the first segment spells a host the closed table knows. */
