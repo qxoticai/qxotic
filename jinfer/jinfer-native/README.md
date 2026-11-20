@@ -75,7 +75,7 @@ An image or an audio file given to a chat is decoded with `ffmpeg` on the PATH, 
 ## Build and check
 
 GraalVM 25.0.4 or later (`native-image`; `JAVA_HOME` picks it), a C compiler and Maven.
-`make libjinfer` builds at `-O3` for x86-64-v3; the binaries we ship come from Oracle GraalVM, whose compiler adds its inferred profile.
+`make libjinfer` builds for x86-64-v3: at `-O3` on GraalVM CE, and on Oracle GraalVM, what we ship, profile-guided (PGO), from the profile the instrumented CLI records first on [a few short turns](../scripts/pgo.txt) (`make -C ../jinfer-cli pgo-profile`).
 From this directory:
 
 ```sh

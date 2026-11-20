@@ -11,7 +11,7 @@
 #   $Description the pkg-config file's Description line
 #   $ExportHeaders, $ExportSyms, $ExtraExports  optional: the headers whose functions the DLL exports (default $Headers), their
 #                prefixes (default $Syms), and exported names no header declares (libjam's JNI entry points)
-#   $PgoProfile  optional, a script block: Oracle GraalVM's profile, recorded into target\pgo\default.iprof
+#   $PgoProfile  optional, a script block: Oracle GraalVM's profile, recorded into target\pgo\, every .iprof there
 #   $MvnArg      optional, one more argument for the library's Maven build, as its Makefile passes
 $ErrorActionPreference = 'Stop'
 Push-Location $Here   # the caller's location back at the end, as make -C leaves it
@@ -44,7 +44,7 @@ function Build-Library {   # the pom's optimization unless -Quick (-Ob -march=na
         $pgo = -not $Quick -and $PgoProfile -and ((native-image --version | Select-Object -Index 1) -match 'Oracle GraalVM')
         if ($pgo) { & $PgoProfile | Out-Host }
         # $null passes no argument, so the pom's stays; a splatted array would not do: 5.1 splits its -name:value elements
-        $opt = if ($Quick) { "-D$Name.image.opt=-Ob" } elseif ($pgo) { "-D$Name.image.opt=--pgo=$Here\target\pgo\default.iprof" }
+        $opt = if ($Quick) { "-D$Name.image.opt=-Ob" } elseif ($pgo) { "-D$Name.image.opt=--pgo=" + ((Get-ChildItem "$Here\target\pgo\*.iprof").FullName -join ',') }
         Push-Location $Root
         try { mvn -Pnative -pl "$Name/$Name-native" -am package -DskipTests $opt $MvnArg; if ($LASTEXITCODE) { throw "mvn failed" } }
         finally { Pop-Location }

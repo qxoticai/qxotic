@@ -17,8 +17,6 @@
 
   <properties>
     <jinfer.image.name>libjinfer</jinfer.image.name>
-    <!-- -O3 for a shipped library; the Makefile passes -Ob for the dev loop. -->
-    <jinfer.image.opt>-O3</jinfer.image.opt>
     <!-- the shims' C compiler, cc with GCC spellings; the windows profile swaps in cl, whose -D -I -c read the same -->
     <shim.cc>cc</shim.cc>
     <shim.cflags>-std=c11 -O2 -fPIC -Wall -Wextra -Wpedantic</shim.cflags>

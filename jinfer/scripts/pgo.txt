@@ -1,0 +1,15 @@
+# The workload of jinfer's profile-guided build (Oracle GraalVM): one short instruct turn per line, each its own
+# process and profile, recorded by the instrumented CLI (jinfer-cli's Makefile, pgo-profile). Every model, every
+# quant and both jam backends, each quant on each backend. jam-vector's kernels are Java, what the profile
+# optimizes and what instrumentation slows most, so its four quants run on the smallest model; jam-native's
+# kernels are C, which the profile does not reach, so its runs carry the larger models, whose Java around the
+# kernels (the architectures, attention, sampling) it does. temp: 0 is greedy, default samples.
+# backend  temp     model
+vector     0        LiquidAI/LFM2.5-350M-GGUF:Q8_0
+vector     default  LiquidAI/LFM2.5-350M-GGUF:Q4_0
+vector     0        LiquidAI/LFM2.5-350M-GGUF:Q4_K_M
+vector     default  LiquidAI/LFM2.5-350M-GGUF:Q6_K
+native     default  unsloth/Qwen3.5-0.8B-GGUF:Q8_0
+native     0        unsloth/Llama-3.2-1B-Instruct-GGUF:Q4_0
+native     default  unsloth/Qwen3.5-0.8B-GGUF:Q4_K_M
+native     0        unsloth/Llama-3.2-1B-Instruct-GGUF:Q6_K

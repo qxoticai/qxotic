@@ -1,5 +1,5 @@
-"""Caches every model the native suites load (toknroll's and jinfer's C tests, test_jinfer.py), through the
-libraries themselves: `make cache-models`, once per build machine, online, after both libraries are built
+"""Caches every model the native suites load (toknroll's and jinfer's C tests, test_jinfer.py) and the
+profile-guided build runs (pgo.txt), through the libraries themselves: `make cache-models`, once per build machine, online, after both libraries are built
 (the manylinux container is a machine of its own: `make cache-models-in-container`). Kokoro needs espeak-ng on
 the PATH to load, so the machine needs it for the speech checks too.
 
@@ -24,3 +24,8 @@ for ref, companions in (
         ("mudler/parakeet-cpp-gguf/tdt-0.6b-v3-q8_0.gguf", None)):
     jinfer.load(ref, companions=companions).close()
     print("cached", ref)
+for line in (root / "jinfer/scripts/pgo.txt").read_text().splitlines():   # the profile-guided build's turns
+    if line.strip() and not line.startswith("#"):
+        ref = line.split()[2]
+        jinfer.load(ref).close()
+        print("cached", ref)

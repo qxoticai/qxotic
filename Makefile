@@ -80,7 +80,7 @@ NATIVE_IMAGE ?= $(if $(JAVA_HOME),$(JAVA_HOME)/bin/native-image,native-image)
 NATIVE_MODULE ?= jinfer-cli
 NATIVE_EXECUTABLE = $(patsubst %-cli,%,$(NATIVE_MODULE))
 
-check-native-image: ## The GraalVM the images build with: native-image >= 25.0.4 (JAVA_HOME picks it); Oracle GraalVM adds PGO to libtoknroll
+check-native-image: ## The GraalVM the images build with: native-image >= 25.0.4 (JAVA_HOME picks it); Oracle GraalVM adds PGO to libtoknroll, libjinfer and the jinfer command
 	@v=$$($(NATIVE_IMAGE) --version 2>/dev/null | grep -oE '[0-9]+\.[0-9]+\.[0-9]+' | head -1); \
 	if [ -z "$$v" ]; then \
 		echo "ERROR: native-image not found or version unparseable ($(NATIVE_IMAGE))"; exit 1; \

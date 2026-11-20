@@ -67,6 +67,9 @@
     <!-- native-image -march: compatibility (portable) unless the build asks for the host's ISA
          (make native passes native). A shipped binary must be built with the default. -->
     <jinfer.image.march>compatibility</jinfer.image.march>
+    <!-- The optimization of every image: -O3. What ships replaces it: Oracle GraalVM's PGO build, from the profile
+         the instrumented CLI records (jinfer-cli's Makefile); QUICK=1 passes -Ob for the dev loop. -->
+    <jinfer.image.opt>-O3</jinfer.image.opt>
     <!-- The kernels' Vector API width in bits, empty = what the target ISA (-march) can execute, which jinfer-core's
          and jam-vector's VectorWidth features pin at build time in every image. Set it only to build narrower than the target. -->
     <jinfer.image.vectorWidth />
@@ -479,7 +482,7 @@
                  true to no flag. This does not enable fallback images; GraalVM 25 has none. -->
             <fallback>true</fallback>
             <buildArgs>
-              <buildArg>-O3</buildArg>
+              <buildArg>${jinfer.image.opt}</buildArg>
               <buildArg>-Djam.vector.wideTiles=${jam.wideTiles}</buildArg>
               <buildArg>-march=${jinfer.image.march}</buildArg>
               <buildArg>-Djinfer.vector.width=${jinfer.image.vectorWidth}</buildArg>

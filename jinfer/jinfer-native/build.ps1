@@ -1,5 +1,5 @@
 # libjinfer on Windows: the Makefile's targets, in PowerShell (the shared half is ..\..\scripts\native.ps1).
-#   .\build.ps1 library            -O3, native-image's default target, what ships -> target\jinfer.dll (+ jinfer.lib to link against)
+#   .\build.ps1 library            what ships (Oracle GraalVM: PGO, the CLI's profile; CE: -O3), native-image's default target -> target\jinfer.dll (+ jinfer.lib)
 #   .\build.ps1 library -Quick     this machine, quick build (-Ob -march=native)
 #   .\build.ps1 check              headers vs exports, C tests and example, Python checks
 #   .\build.ps1 python             stage the DLL into python\jinfer\lib\windows-x86-64\
@@ -14,6 +14,13 @@ $Headers = 'include\jinfer.h', "$Toknroll\include\toknroll.h"; $Syms = 'jinfer|t
 $ExportHeaders = $Headers + "$PSScriptRoot\..\..\jam\jam-native\include\jam.h"; $ExportSyms = 'jinfer|toknroll|jam'
 $ExtraExports = 'JNI_OnLoad_jam', 'Java_com_qxotic_jam_libjam_NativeJAM_newJni', 'Java_com_qxotic_jam_libjam_NativeJAM_mmJni', 'Java_com_qxotic_jam_libjam_NativeJAM_freeJni'
 $MvnArg = '-Dtoknroll.image.skip=true'   # as the Makefile: this image carries toknroll's entry points, toknroll.dll stays toknroll's own build
+# Oracle GraalVM's profile, as the Makefile's: the CLI's, recorded once per tree (..\jinfer-cli\build.ps1 pgo-profile)
+$PgoProfile = {
+    $cli = "$Here\..\jinfer-cli"
+    if (-not (Test-Path "$cli\target\pgo\profiles")) { & "$cli\build.ps1" pgo-profile }
+    Remove-Item -Recurse -Force "$Here\target\pgo" -ErrorAction Ignore; New-Item -ItemType Directory -Force "$Here\target\pgo" | Out-Null
+    Copy-Item "$cli\target\pgo\*.iprof" "$Here\target\pgo\"
+}
 $Example = {
     # the C tests (tests\c), and toknroll's against the toknroll functions this library carries; the headers as C++ too
     cl -nologo -std:c11 -W4 -WX -Iinclude "-I$Toknroll\include" "-I$Toknroll\tests\c" tests\c\jinfer_test.c -Fe:target\jinfer_test.exe -Fo:target\ target\jinfer.lib; if ($LASTEXITCODE) { throw "cl failed" }

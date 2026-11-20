@@ -1,7 +1,11 @@
 # libjinfer: jinfer as a shared library with the C API in include/jinfer.h. `make help` lists the targets.
 NAME  := jinfer
-# The optimization: the pom's (-O3) unless QUICK=1
-OPT   := $(if $(filter 1,$(QUICK)),-Ob)
+# The optimization: the pom's (-O3) unless QUICK=1 or a PGO profile asks for another. Oracle GraalVM builds what
+# ships from the profile the instrumented CLI records (jinfer-cli's pgo-profile), the CLI's image's own; GraalVM CE
+# builds without one.
+CLI   := ../jinfer-cli
+PGO    = $(if $(filter 1,$(QUICK)),,$(shell $(NATIVE_IMAGE) --version 2>/dev/null | grep -q 'Oracle GraalVM' && echo yes))
+OPT    = $(if $(filter 1,$(QUICK)),-Ob,$(if $(PGO),--pgo=$$(cat $(abspath $(CLI))/target/pgo/profiles)))
 # The ISA level is native-image's own default, x86-64-v3 (AVX2, 2013) on x86-64, the kernels' floor; their
 # vector width follows it (VectorWidth, at build time). NATIVE_IMAGE_OPTIONS=-march=<target> asks for another.
 TOKNROLL := ../../toknroll/toknroll-native
@@ -17,7 +21,8 @@ DESCRIPTION = jinfer, local LLM inference with a C API
 WHEEL_EXAMPLE = examples/c/chat.c
 
 help::
-	@echo 'make libjinfer             -O3, native-image'"'"'s default target, what ships -> $(LIB); NATIVE_IMAGE_OPTIONS=-march=x86-64-v4 for AVX-512'
+	@echo 'make libjinfer             native-image'"'"'s default target, what ships -> $(LIB); NATIVE_IMAGE_OPTIONS=-march=x86-64-v4 for AVX-512'
+	@echo '                           Oracle GraalVM: PGO, from the CLI'"'"'s profile (make -C $(CLI) pgo-profile); CE: -O3'
 	@echo 'make libjinfer QUICK=1     this machine, quick build (-Ob -march=native): runs, kernels unoptimized, never measure it'
 	@echo 'make check                 headers vs exports, C tests and example, Python test'
 	@echo 'make qa                    the corner cases: threads, exit, soak, offline, tools'
@@ -25,6 +30,7 @@ include ../../scripts/native.mk
 
 libjinfer:
 	@$(MAKE) -s -C $(ROOT) check-native-image
+	$(if $(PGO),$(MAKE) -C $(CLI) target/pgo/profiles)
 	cd $(ROOT) && NATIVE_IMAGE_OPTIONS="$(IMAGE_OPTIONS)" \
 	  NATIVE_SONAME=$(SONAME) $(MAVEN) $(MAVEN_FLAGS) -Pnative -pl jinfer/jinfer-native -am package -DskipTests \
 	  $(if $(OPT),-Djinfer.image.opt=$(OPT)) -Dtoknroll.image.skip=true
