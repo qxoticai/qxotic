@@ -17,8 +17,9 @@ BASE := $(firstword $(subst -, ,$(VERSION)))
 PYVERSION := $(subst -,,$(VERSION))
 DIST  := lib$(NAME)-$(VERSION)-$(PLATFORM)
 # The tarball's entries are root's, not the builder's: unpacked by root into /usr/local they stay root's,
-# and no account name ships. GNU tar (Linux, the container) and bsdtar (macOS) spell it differently.
-TAR_ROOT := $(if $(shell tar --version 2>/dev/null | grep 'GNU tar'),--owner=0 --group=0,--uid 0 --gid 0) --numeric-owner
+# and no account name ships. GNU tar (Linux, the container) and bsdtar (macOS) spell it differently; bsdtar
+# also leaves out the files' Apple metadata (AppleDouble ._ entries, xattr headers GNU tar warns about).
+TAR_ROOT := $(if $(shell tar --version 2>/dev/null | grep 'GNU tar'),--owner=0 --group=0,--uid 0 --gid 0 --no-mac-metadata --no-xattrs) --numeric-owner
 # The soname follows the version's numbers, never set by hand: all three while the major is 0, as ABI
 # compatibility is not guaranteed between any two 0.x releases (a program loads the release it was built
 # against and no other), the major from 1.0. The build names the library by it (native-cc.sh) and links
@@ -28,8 +29,9 @@ SOVERSION := $(if $(filter 0,$(MAJOR)),$(BASE),$(MAJOR))
 SONAME := $(if $(filter darwin,$(OS)),lib$(NAME).$(SOVERSION).dylib,lib$(NAME).so.$(SOVERSION))
 NATIVE_IMAGE ?= $(if $(JAVA_HOME),$(JAVA_HOME)/bin/native-image,native-image)
 # native-image's options: the caller's (NATIVE_IMAGE_OPTIONS=-march=x86-64-v4 asks for another target than
-# native-image's own default), then QUICK=1's: this machine
-IMAGE_OPTIONS = $(strip $(NATIVE_IMAGE_OPTIONS) $(if $(filter 1,$(QUICK)),-march=native))
+# native-image's own default), then QUICK=1's: this machine, then macOS's: no debug map (OSO stabs naming
+# the build machine's paths to GraalVM's archives)
+IMAGE_OPTIONS = $(strip $(NATIVE_IMAGE_OPTIONS) $(if $(filter 1,$(QUICK)),-march=native) $(if $(filter darwin,$(OS)),-H:NativeLinkerOption=-Wl,-S))
 # What the including Makefile may widen (no trailing comments here: make keeps the spaces before one):
 # SYMS, the prefixes of the functions the headers declare; HEADERS, the headers the release carries;
 # DESCRIPTION, the pkg-config file's line; WHEEL_EXAMPLE and WHEEL_EXAMPLE_ARGS, the C example built against

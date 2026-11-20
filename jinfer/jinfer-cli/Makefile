@@ -26,8 +26,8 @@ export MACOSX_DEPLOYMENT_TARGET
 # the version is the image's own word, once it exists
 VERSION = $(shell $(BIN) --version | awk '{print $$2}')
 DIST = jinfer-$(VERSION)-$(PLATFORM)
-# root's entries, as native.mk's tarballs: GNU tar (Linux, the container) or bsdtar (macOS)
-TAR_ROOT := $(if $(shell tar --version 2>/dev/null | grep 'GNU tar'),--owner=0 --group=0,--uid 0 --gid 0) --numeric-owner
+# root's entries and no Apple metadata, as native.mk's tarballs: GNU tar (Linux, the container) or bsdtar (macOS)
+TAR_ROOT := $(if $(shell tar --version 2>/dev/null | grep 'GNU tar'),--owner=0 --group=0,--uid 0 --gid 0 --no-mac-metadata --no-xattrs) --numeric-owner
 .DEFAULT_GOAL := help
 
 help:
@@ -43,7 +43,8 @@ native:
 	$(MAKE) -C $(ROOT) native NATIVE_MODULE=$(notdir $(CURDIR))
 
 # no clean: the image is linked from the modules' classes, not the shaded jar the root's native target cleans for
-IMAGE = cd $(ROOT) && $(MAVEN) $(MAVEN_FLAGS) -Pnative -pl jinfer/jinfer-cli -am package -DskipTests -Djinfer.image.march=$(MARCH)
+# macOS: no debug map naming the build machine's paths to GraalVM's archives (OSO stabs), as native.mk
+IMAGE = cd $(ROOT) && $(if $(filter darwin,$(OS)),NATIVE_IMAGE_OPTIONS="$(strip $(NATIVE_IMAGE_OPTIONS) -H:NativeLinkerOption=-Wl,-S)") $(MAVEN) $(MAVEN_FLAGS) -Pnative -pl jinfer/jinfer-cli -am package -DskipTests -Djinfer.image.march=$(MARCH)
 
 image: $(if $(PGO),$(PROFILES))
 	@$(MAKE) -s -C $(ROOT) check-native-image
