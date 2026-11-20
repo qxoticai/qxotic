@@ -9,9 +9,9 @@ import java.util.concurrent.locks.ReentrantLock;
 
 /**
  * Java Vector API {@link JAM} backend - jam-vector's self-contained matmul, peer to the scalar and
- * native backends. Each tileable weight dtype is dispatched straight to its register-tiled
- * (Q8_0/Q4_0) or dequant-to-scratch band (Q5_0/k-quant/FP4) kernel on the raw operand segments - no
- * tensor reconstruction.
+ * native backends. Each tileable weight dtype is dispatched straight to its kernel on the raw
+ * operand segments - no tensor reconstruction: the dequant-to-scratch band gemm, every dtype's
+ * route (Q8_0's register tiles stay behind {@code -Djam.vector.q8=tile}).
  *
  * <p>PREFILL only ({@code n > 1}) with F32 activations + result. Decode ({@code n == 1},
  * bandwidth-bound), non-tileable dtypes, strided weights, and the absence of a usable SIMD width
