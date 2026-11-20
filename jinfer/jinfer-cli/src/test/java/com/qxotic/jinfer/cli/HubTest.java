@@ -176,8 +176,7 @@ class HubTest {
         var miss = new CliFixtures.Capture("");
         assertEquals(1, Main.run(new String[] {"find", "acme/m"}, miss.io, store));
         assertTrue(
-                miss.err().contains("acme/m:Q4_0\n  acme/m:Q8_0\n  acme/m:QAD-Q4_0"),
-                miss.err());
+                miss.err().contains("acme/m:Q4_0\n  acme/m:Q8_0\n  acme/m:QAD-Q4_0"), miss.err());
 
         var refused = new CliFixtures.Capture("");
         assertEquals(1, Main.run(new String[] {"remove", "acme/m"}, refused.io, store));
