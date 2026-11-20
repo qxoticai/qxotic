@@ -114,7 +114,8 @@ function Build-Dist {   # the release zip as native.mk's dist: a prefix tree, Wi
     New-Item -ItemType Directory -Force "target\dist\$dist\include", "target\dist\$dist\lib", "target\dist\$dist\bin" | Out-Null
     Copy-Item $Headers "target\dist\$dist\include\"; Copy-Item $Lib "target\dist\$dist\bin\"; Copy-Item "target\$Name.lib", "target\$Name.def" "target\dist\$dist\lib\"   # the .def: another toolchain's import library
     Copy-Item README.md, NOTICE, "$Root\LICENSE" "target\dist\$dist\"
-    Compress-Archive -Path "target\dist\$dist" -DestinationPath "target\dist\$dist.zip"
+    Copy-VcRuntime $Lib "target\dist\$dist\bin\"
+    New-Zip "$Here\target\dist" $dist
     $hash = (Get-FileHash "target\dist\$dist.zip" -Algorithm SHA256).Hash.ToLower()
     [IO.File]::WriteAllText("$Here\target\dist\$dist.zip.sha256", "$hash  $dist.zip`n")
     Get-Item "target\dist\$dist.zip" | Format-Table Name, Length | Out-String | Write-Host; Get-Content "target\dist\$dist.zip.sha256"

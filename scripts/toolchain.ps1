@@ -7,3 +7,17 @@ function Enter-Toolchain {
     Enter-VsDevShell -VsInstallPath $vs -SkipAutomaticLocation -DevCmdArguments '-arch=x64' | Out-Null
     $env:Path = "$vs\VC\Tools\Llvm\x64\bin;$vs\Common7\IDE\CommonExtensions\Microsoft\CMake\CMake\bin;$vs\Common7\IDE\CommonExtensions\Microsoft\CMake\Ninja;$env:Path"
 }
+
+# The VC++ runtime a binary imports (vcruntime140*.dll), which Windows lacks: copied beside it in the release zips,
+# app-local as Microsoft's Distributable Code allows (aka.ms/vs/17/redist.txt). Static /MT cannot replace it:
+# GraalVM's own JDK libraries are /MD and import the CRT. dumpbin decides which, so a new import comes along.
+function Copy-VcRuntime([string] $Binary, [string] $To) {
+    Enter-Toolchain
+    $vs = & "${env:ProgramFiles(x86)}\Microsoft Visual Studio\Installer\vswhere.exe" -latest -products * -property installationPath
+    $crt = Get-ChildItem "$vs\VC\Redist\MSVC\1*\x64\Microsoft.VC*.CRT" -Directory | Sort-Object { [version]$_.Parent.Parent.Name } | Select-Object -Last 1
+    if (-not $crt) { throw "no VC++ runtime under $vs\VC\Redist\MSVC: install the Build Tools' C++ workload" }
+    $dlls = dumpbin /dependents $Binary | Select-String '^\s+(\S+\.dll)\s*$' | ForEach-Object { $_.Matches[0].Groups[1].Value } | Where-Object { Test-Path "$($crt.FullName)\$_" }
+    Copy-Item ($dlls | ForEach-Object { "$($crt.FullName)\$_" }) $To
+}
+# A zip as the format wants it, / between names: Windows' own bsdtar; PS 5.1's Compress-Archive writes \
+function New-Zip([string] $Dir, [string] $Name) { tar -a -c -f "$Dir\$Name.zip" -C $Dir $Name; if ($LASTEXITCODE) { throw "tar failed" } }

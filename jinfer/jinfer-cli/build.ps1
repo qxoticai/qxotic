@@ -52,7 +52,8 @@ function Build-Dist {
     Remove-Item -Recurse -Force "target\dist\$dist", "target\dist\$dist.zip" -ErrorAction Ignore
     New-Item -ItemType Directory -Force "target\dist\$dist\bin" | Out-Null
     Copy-Item target\jinfer.exe "target\dist\$dist\bin\"; Copy-Item README.md, ..\jinfer-native\NOTICE, "$Root\LICENSE" "target\dist\$dist\"   # the notice: the same image, the same terms
-    Compress-Archive -Path "target\dist\$dist" -DestinationPath "target\dist\$dist.zip"
+    Copy-VcRuntime target\jinfer.exe "target\dist\$dist\bin\"
+    New-Zip "$PSScriptRoot\target\dist" $dist
     $hash = (Get-FileHash "target\dist\$dist.zip" -Algorithm SHA256).Hash.ToLower()
     [IO.File]::WriteAllText("$PSScriptRoot\target\dist\$dist.zip.sha256", "$hash  $dist.zip`n")
     Get-Item "target\dist\$dist.zip" | Format-Table Name, Length | Out-String | Write-Host; Get-Content "target\dist\$dist.zip.sha256"

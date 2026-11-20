@@ -18,6 +18,11 @@ Oracle GraalVM (https://www.graalvm.org)
   the runtime under the GNU General Public License version 2 with the Classpath Exception and
   no such condition.
 
+Microsoft Visual C++ runtime (https://learn.microsoft.com/cpp/windows/latest-supported-vc-redist)
+  The Windows release archive carries vcruntime140.dll and vcruntime140_1.dll, the runtime the binary
+  imports and Windows lacks, redistributed under Microsoft's Distributable Code terms,
+  https://aka.ms/vs/17/redist.txt. The wheel leaves them out: Python ships them.
+
 llama.cpp and ggml (https://github.com/ggml-org/llama.cpp, https://github.com/ggml-org/ggml)
   Copyright (c) 2023-2024 The ggml authors. MIT License.
   - The pretokenizer regular expressions and their family groups mirror llama-vocab.cpp.

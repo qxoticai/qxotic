@@ -45,6 +45,11 @@ llamafile tinyBLAS (https://github.com/Mozilla-Ocho/llamafile)
   - The register-tiled dense GEMM kernels and their recursive tile selection (mnpack) follow
     tinyBLAS's design.
 
+Microsoft Visual C++ runtime (https://learn.microsoft.com/cpp/windows/latest-supported-vc-redist)
+  The Windows release archives carry vcruntime140.dll and vcruntime140_1.dll, the runtime the binaries
+  import and Windows lacks, redistributed under Microsoft's Distributable Code terms,
+  https://aka.ms/vs/17/redist.txt. The wheel leaves them out: Python ships them.
+
 External programs (not distributed with this product)
   - espeak-ng (GPL-3.0) or espeak: the speech ports invoke a binary found on the PATH as a
     phonemizer. It is neither bundled nor required.
