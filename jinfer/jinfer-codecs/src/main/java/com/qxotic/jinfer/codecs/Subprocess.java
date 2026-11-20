@@ -48,8 +48,9 @@ final class Subprocess {
         try {
             p = new ProcessBuilder(cmd).start();
         } catch (IOException e) {
-            throw new IOException(
-                    "failed to launch " + tool + " (is it on PATH?): " + e.getMessage(), e);
+            // the JDK's text ("Cannot run program ...: error=2, No such file or directory") stays
+            // in the cause: as the message it said the same thing twice
+            throw new IOException(tool + " could not run: install it and put it on PATH", e);
         }
         if (stdin != null) {
             daemon(

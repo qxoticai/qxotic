@@ -197,13 +197,21 @@ final class Turn implements ChatEngine.ReplySink, AutoCloseable {
      */
     static final int MIN_RATE_TOKENS = 32;
 
-    /** "12.34 tokens/s (512)" over enough tokens to mean throughput, else "17 tokens in 0.73 s". */
+    /**
+     * "17 tokens in 0.73 s", one shape for prompt and generation, with the rate after it over
+     * enough tokens to mean throughput: "512 tokens in 0.41 s (1248.78 tokens/s)".
+     */
     static String speed(int tokens, long nanos) {
         double seconds = Math.max(1, nanos) / 1e9;
-        if (tokens >= MIN_RATE_TOKENS)
-            return String.format(Locale.ROOT, "%.2f tokens/s (%d)", tokens / seconds, tokens);
-        return String.format(
-                Locale.ROOT, "%d token%s in %.2f s", tokens, tokens == 1 ? "" : "s", seconds);
+        String counted =
+                String.format(
+                        Locale.ROOT,
+                        "%d token%s in %.2f s",
+                        tokens,
+                        tokens == 1 ? "" : "s",
+                        seconds);
+        if (tokens < MIN_RATE_TOKENS) return counted;
+        return counted + String.format(Locale.ROOT, " (%.2f tokens/s)", tokens / seconds);
     }
 
     /**

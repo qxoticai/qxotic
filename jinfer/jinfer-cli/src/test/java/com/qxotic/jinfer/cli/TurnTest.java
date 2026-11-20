@@ -50,7 +50,9 @@ class TurnTest {
         assertEquals("1 token in 0.25 s", Turn.speed(1, 250_000_000L));
         assertEquals("17 tokens in 0.73 s", Turn.speed(17, 730_000_000L));
         assertEquals("0 tokens in 0.00 s", Turn.speed(0, 0));
-        assertEquals("64.00 tokens/s (32)", Turn.speed(Turn.MIN_RATE_TOKENS, 500_000_000L));
+        assertEquals(
+                "32 tokens in 0.50 s (64.00 tokens/s)",
+                Turn.speed(Turn.MIN_RATE_TOKENS, 500_000_000L));
     }
 
     @ParameterizedTest(name = "--think {0}")
