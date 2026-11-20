@@ -46,7 +46,8 @@ public final class Parallel implements AutoCloseable {
      * model's serial glue; at 100 us the workers parked in those gaps and paid the wake-up on every
      * region (16T pp512: 964 t/s at 100 us, 1025 at 1 ms, 1033 at 5 ms). {@code -Djinfer.spinNanos}
      * overrides for machines where spinning through the gaps costs more than the wake-ups - a
-     * fan-limited laptop turns the spin into heat the long MoE prefill pays for.
+     * fan-limited laptop turns the spin into heat the long MoE prefill pays for. A spinning worker
+     * reads the clock every 64th spin: read on each, it was 12% of a decode's samples.
      */
     private static final long SPIN_NANOS = Long.getLong("jinfer.spinNanos", 1_000_000L);
 
@@ -352,6 +353,7 @@ public final class Parallel implements AutoCloseable {
         public void run() {
             Region seen = null; // the region published while this worker started is new to it
             long idleSince = System.nanoTime();
+            int spins = 0;
             while (!pool.closed) {
                 Region region = pool.current;
                 if (region != seen) {
@@ -362,7 +364,7 @@ public final class Parallel implements AutoCloseable {
                         Region.FAILURE.compareAndSet(region, null, escaped);
                     }
                     idleSince = System.nanoTime();
-                } else if (System.nanoTime() - idleSince < SPIN_NANOS) {
+                } else if ((++spins & 63) != 0 || System.nanoTime() - idleSince < SPIN_NANOS) {
                     Thread.onSpinWait();
                 } else {
                     parked = true;
