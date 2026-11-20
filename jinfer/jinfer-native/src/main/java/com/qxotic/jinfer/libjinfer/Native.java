@@ -58,8 +58,8 @@ public final class Native {
      * In a native image {@code Arenas.newCrossThread()} is {@code Arena.ofAuto()} (GraalVM cannot
      * close a shared arena), so a state's {@code close()} frees nothing until a collection, and
      * off-heap garbage never provokes one: ~100 MB stayed resident per cancel. ponytail: a full
-     * collection of the small Java heap costs milliseconds; a state pool in the engine would make
-     * it unnecessary.
+     * collection of the small Java heap costs milliseconds; state memory an image frees on close
+     * would make it unnecessary.
      */
     static void collect() {
         System.gc();

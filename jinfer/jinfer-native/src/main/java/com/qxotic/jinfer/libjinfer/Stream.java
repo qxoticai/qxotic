@@ -287,7 +287,8 @@ final class Stream {
     }
 
     void close() {
-        boolean early = !finished;
+        // freed unfinished, or cancelled and stepped to its end: either way a pass was cut short
+        boolean early = !finished || cancelled;
         cancelled = true;
         try {
             while (!finished) step();
