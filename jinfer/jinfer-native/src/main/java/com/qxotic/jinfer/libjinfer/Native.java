@@ -2,6 +2,7 @@ package com.qxotic.jinfer.libjinfer;
 
 import java.util.ArrayList;
 import java.util.List;
+import org.graalvm.nativeimage.ImageInfo;
 import org.graalvm.nativeimage.IsolateThread;
 import org.graalvm.nativeimage.ObjectHandle;
 import org.graalvm.nativeimage.ObjectHandles;
@@ -55,14 +56,16 @@ public final class Native {
 
     /**
      * Frees the states a cancelled pass or a closed context abandoned, and a freed model's weights.
-     * In a native image {@code Arenas.newCrossThread()} is {@code Arena.ofAuto()} (GraalVM cannot
-     * close a shared arena), so a state's {@code close()} frees nothing until a collection, and
-     * off-heap garbage never provokes one: ~100 MB stayed resident per cancel. ponytail: a full
-     * collection of the small Java heap costs milliseconds; state memory an image frees on close
-     * would make it unnecessary.
+     * In a native image only: there {@code Arenas.newCrossThread()} is {@code Arena.ofAuto()}
+     * (GraalVM cannot have shared arenas and the Vector API in one image), so a state's {@code
+     * close()} frees nothing until a collection, and off-heap garbage never provokes one: ~100 MB
+     * stayed resident per cancel. A collection of the image's small Java heap costs milliseconds.
+     * Never on the JVM, where this code runs only in tests: its shared arenas free on {@code
+     * close()}, and a forced full collection would stall the whole application for nothing.
+     * ponytail: state memory an image frees on close would make it unnecessary.
      */
     static void collect() {
-        System.gc();
+        if (ImageInfo.inImageRuntimeCode()) System.gc();
     }
 
     // ---- library ----
