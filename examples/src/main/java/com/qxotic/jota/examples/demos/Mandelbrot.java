@@ -72,6 +72,7 @@ public final class Mandelbrot {
                         + MAX_ITER
                         + ")");
         String filename = "mandelbrot-" + backend.runtimeId() + ".ppm";
+        System.out.println("Writing Mandelbrot (iter=" + MAX_ITER + ") result to file '" + filename + "'");
         PpmWriter.write(Path.of(filename), WIDTH, HEIGHT, rgb);
     }
 
