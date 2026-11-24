@@ -380,6 +380,7 @@ public final class JinjaRenderer {
             case "safe" -> val; // autoescape marker: identity in this text-only engine
             case "min" -> extremum(val, true);
             case "max" -> extremum(val, false);
+            case "float" -> new Val.Flt(Executor.toNum(val)); // 0.0 for no number, as in Jinja
             default -> throw unsupported("filter '" + name + "'");
         };
     }

@@ -452,6 +452,7 @@ public final class JinjaRendererTest {
     void filters() {
         eq("{{ 'WIDE' | lower }}", "wide");
         eq("{{ 'wide' | upper }}", "WIDE");
+        eq("{{ 1 | float }} {{ '0.5' | float }} {{ 'x' | float }}", "1.0 0.5 0.0");
         eq("{{ '  pad  ' | trim }}", "pad");
         // str.title(): each letter run starts uppercase, the rest lowercase (NOT capitalize)
         eq("{{ 'hello world-foo BAR'.title() }}", "Hello World-Foo Bar");
