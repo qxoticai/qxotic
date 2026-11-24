@@ -88,6 +88,51 @@ public final class Activations {
     }
 
     /**
+     * Fused SiTU: {@code gate[i] = beta*tanh(gate[i]/beta) * sigmoid(gate[i]) *
+     * linearBeta*tanh(up[i]/linearBeta)} over {@code n} elements; mutates {@code gate}. Callers
+     * parallelize across rows.
+     */
+    public static void situMultiply(
+            MemoryView<MemorySegment> gate,
+            long gateOff,
+            MemoryView<MemorySegment> up,
+            long upOff,
+            int n,
+            float beta,
+            float linearBeta) {
+        Raw g = Raw.f32(gate, "gate");
+        Raw u = Raw.f32(up, "up");
+        long gb = g.vbase() + gateOff * Float.BYTES, ub = u.vbase() + upOff * Float.BYTES;
+        int i = 0;
+        if (USE_VECTOR_API) {
+            VectorSpecies<Float> sp = F_SPECIES;
+            for (int bound = sp.loopBound(n); i < bound; i += sp.length()) {
+                long at = (long) i * Float.BYTES;
+                FloatVector x =
+                        FloatVector.fromMemorySegment(
+                                sp, g.vseg(), gb + at, ByteOrder.LITTLE_ENDIAN);
+                FloatVector uv =
+                        FloatVector.fromMemorySegment(
+                                sp, u.vseg(), ub + at, ByteOrder.LITTLE_ENDIAN);
+                Ops.tanhVec(x.div(beta))
+                        .mul(beta)
+                        .mul(Ops.sigmoidVec(x))
+                        .mul(Ops.tanhVec(uv.div(linearBeta)).mul(linearBeta))
+                        .intoMemorySegment(g.vseg(), gb + at, ByteOrder.LITTLE_ENDIAN);
+            }
+        }
+        for (; i < n; i++) {
+            long at = (long) i * Float.BYTES;
+            float x = readFloat(g.vseg(), gb + at);
+            float act = beta * Ops.tanhApprox(x / beta) * (0.5f + 0.5f * Ops.tanhApprox(0.5f * x));
+            writeFloat(
+                    g.vseg(),
+                    gb + at,
+                    act * linearBeta * Ops.tanhApprox(readFloat(u.vseg(), ub + at) / linearBeta));
+        }
+    }
+
+    /**
      * Fused {@code gate[i] = gelu(gate[i]) * up[i]} over {@code n} elements (minimax-rational
      * {@code tanhVec}); mutates {@code gate}. Callers parallelize across rows.
      */
