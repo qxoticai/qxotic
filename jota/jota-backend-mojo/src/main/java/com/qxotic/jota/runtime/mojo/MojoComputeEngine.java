@@ -49,7 +49,8 @@ final class MojoComputeEngine<T> implements ComputeEngine {
     private final LIRStandardPipeline pipeline = new LIRStandardPipeline();
     private final ScratchAnalysisPass scratchAnalysis = new ScratchAnalysisPass();
     private final ScratchVerificationPass scratchVerification = new ScratchVerificationPass();
-    private final MojoLirKernelGenerator mojoLirKernelGenerator = new MojoLirKernelGenerator();
+    private final MojoLirKernelGenerator mojoLirKernelGenerator =
+            new MojoLirKernelGenerator(MojoKernelBackend.dialect());
     private final LIRKernelArgsBuilder argsBuilder = new LIRKernelArgsBuilder();
     private final boolean verifyScratch =
             Boolean.parseBoolean(System.getProperty("jota.verifyScratch", "false"));

@@ -18,6 +18,15 @@ public final class MojoKernelSourceCli {
         String dtype = values.getOrDefault("dtype", "f32").toLowerCase(Locale.ROOT);
         int rank = Integer.parseInt(values.getOrDefault("rank", "1"));
         String cacheKey = values.getOrDefault("cache-key", "mojo_codegen_v1");
+        MojoDialect dialect =
+                values.containsKey("mojo-version")
+                        ? MojoDialect.fromVersionText(values.get("mojo-version"))
+                                .orElseThrow(
+                                        () ->
+                                                new IllegalArgumentException(
+                                                        "Invalid --mojo-version: "
+                                                                + values.get("mojo-version")))
+                        : MojoDialect.LATEST;
         Path output = Path.of(require(values, "output"));
 
         if (!"f32".equals(dtype)) {
@@ -31,8 +40,8 @@ public final class MojoKernelSourceCli {
         String kernelName = kernelNameFor(operation, rank, cacheKey);
         String source =
                 rank == 1
-                        ? renderRank1(operation, kernelName)
-                        : renderRank2(operation, kernelName, lhsB0, lhsB1, rhsB0, rhsB1);
+                        ? renderRank1(dialect, operation, kernelName)
+                        : renderRank2(dialect, operation, kernelName, lhsB0, lhsB1, rhsB0, rhsB1);
 
         Files.createDirectories(output.getParent());
         Files.writeString(output, source);
@@ -69,11 +78,14 @@ public final class MojoKernelSourceCli {
         return out.toString();
     }
 
-    private static String renderRank1(String operation, String kernelName) {
+    private static String renderRank1(MojoDialect dialect, String operation, String kernelName) {
         String expr = expression(operation, "idx", "idx");
         boolean unary = "relu".equals(operation);
-        return "from std.gpu import global_idx\n\n\n"
-                + "fn "
+        return "from "
+                + dialect.gpuModule()
+                + " import global_idx\n\n\n"
+                + dialect.kernelKeyword()
+                + " "
                 + kernelName
                 + "(\n"
                 + "    lhs: UnsafePointer[Float32, MutAnyOrigin],\n"
@@ -82,7 +94,7 @@ public final class MojoKernelSourceCli {
                 + "    n: Int,\n"
                 + "):"
                 + "\n"
-                + "    idx = global_idx.x\n"
+                + "    var idx = UInt(global_idx.x)\n"
                 + "    if idx < UInt(n):\n"
                 + "        out_ptr[idx] = "
                 + expr
@@ -90,6 +102,7 @@ public final class MojoKernelSourceCli {
     }
 
     private static String renderRank2(
+            MojoDialect dialect,
             String operation,
             String kernelName,
             boolean lhsB0,
@@ -98,8 +111,11 @@ public final class MojoKernelSourceCli {
             boolean rhsB1) {
         boolean unary = "relu".equals(operation);
         String expr = expression(operation, "lhs_offset", "rhs_offset");
-        return "from std.gpu import global_idx\n\n\n"
-                + "fn "
+        return "from "
+                + dialect.gpuModule()
+                + " import global_idx\n\n\n"
+                + dialect.kernelKeyword()
+                + " "
                 + kernelName
                 + "(\n"
                 + "    lhs: UnsafePointer[Float32, MutAnyOrigin],\n"
@@ -115,29 +131,30 @@ public final class MojoKernelSourceCli {
                 + "    out_stride1: Int,\n"
                 + "):"
                 + "\n"
-                + "    idx = global_idx.x\n"
-                + "    total = UInt(rows) * UInt(cols)\n"
+                + "    var idx = UInt(global_idx.x)\n"
+                + "    var total = UInt(rows) * UInt(cols)\n"
                 + "    if idx < total:\n"
-                + "        col_count = UInt(cols)\n"
-                + "        row = idx / col_count\n"
-                + "        col = idx % col_count\n"
-                + "        lhs_row = UInt(0) if "
+                + "        var col_count = UInt(cols)\n"
+                + "        var row = idx / col_count\n"
+                + "        var col = idx % col_count\n"
+                + "        var lhs_row = UInt(0) if "
                 + boolLiteral(lhsB0)
                 + " else row\n"
-                + "        lhs_col = UInt(0) if "
+                + "        var lhs_col = UInt(0) if "
                 + boolLiteral(lhsB1)
                 + " else col\n"
-                + "        lhs_offset = lhs_row * UInt(lhs_stride0) + lhs_col * UInt(lhs_stride1)\n"
-                + "        out_offset = row * UInt(out_stride0) + col * UInt(out_stride1)\n"
+                + "        var lhs_offset = lhs_row * UInt(lhs_stride0) + lhs_col *"
+                + " UInt(lhs_stride1)\n"
+                + "        var out_offset = row * UInt(out_stride0) + col * UInt(out_stride1)\n"
                 + (unary
                         ? ""
-                        : ("        rhs_row = UInt(0) if "
+                        : ("        var rhs_row = UInt(0) if "
                                 + boolLiteral(rhsB0)
                                 + " else row\n"
-                                + "        rhs_col = UInt(0) if "
+                                + "        var rhs_col = UInt(0) if "
                                 + boolLiteral(rhsB1)
                                 + " else col\n"
-                                + "        rhs_offset = rhs_row * UInt(rhs_stride0) + rhs_col *"
+                                + "        var rhs_offset = rhs_row * UInt(rhs_stride0) + rhs_col *"
                                 + " UInt(rhs_stride1)\n"))
                 + "        out_ptr[out_offset] = "
                 + expr

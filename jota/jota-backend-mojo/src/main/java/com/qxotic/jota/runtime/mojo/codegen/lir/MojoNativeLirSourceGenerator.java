@@ -31,15 +31,29 @@ import com.qxotic.jota.ir.lir.Yield;
 import com.qxotic.jota.ir.lir.scratch.ScratchLayout;
 import com.qxotic.jota.ir.tir.BinaryOperator;
 import com.qxotic.jota.runtime.clike.CLikeExprSupport;
+import com.qxotic.jota.runtime.mojo.codegen.MojoDialect;
+import java.util.ArrayDeque;
 import java.util.ArrayList;
+import java.util.Deque;
 import java.util.HashMap;
+import java.util.HashSet;
 import java.util.IdentityHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
+import java.util.Set;
 
-/** Native Mojo syntax emitter for LIR graphs. */
+/**
+ * Native Mojo syntax emitter for LIR graphs.
+ *
+ * <p>Locals are declared with {@code var}, which Mojo 1.x requires and earlier releases accept. A
+ * {@code var} is scoped to its indented block, so the emitter tracks declared names per block
+ * (redeclaring a visible name in the same block is a compile error) and forgets cached scalar
+ * temporaries when the block that declared them ends.
+ */
 final class MojoNativeLirSourceGenerator {
 
+    private final MojoDialect dialect;
     private final LIRGraph graph;
     private final ScratchLayout scratchLayout;
     private final String kernelName;
@@ -48,10 +62,20 @@ final class MojoNativeLirSourceGenerator {
     private final Map<BufferRef, String> buffers = new IdentityHashMap<>();
     private final Map<Integer, String> scalarInputs = new HashMap<>();
     private final Map<LIRExprNode, String> cachedScalars = new IdentityHashMap<>();
+    private final Deque<Scope> scopes = new ArrayDeque<>();
     private int indent;
     private int tempId;
 
-    MojoNativeLirSourceGenerator(LIRGraph graph, ScratchLayout scratchLayout, String kernelName) {
+    /** Names declared in one indented block, and the cached temporaries it introduced. */
+    private record Scope(Set<String> names, List<LIRExprNode> cachedNodes) {
+        Scope() {
+            this(new HashSet<>(), new ArrayList<>());
+        }
+    }
+
+    MojoNativeLirSourceGenerator(
+            MojoDialect dialect, LIRGraph graph, ScratchLayout scratchLayout, String kernelName) {
+        this.dialect = Objects.requireNonNull(dialect, "dialect");
         this.graph = graph;
         this.scratchLayout = scratchLayout;
         this.kernelName = kernelName;
@@ -65,27 +89,28 @@ final class MojoNativeLirSourceGenerator {
         buffers.clear();
         scalarInputs.clear();
         cachedScalars.clear();
+        scopes.clear();
 
-        line("from std.gpu import block_idx, block_dim, thread_idx");
-        line("from math import cos, log2, sin, sqrt, tan, tanh");
+        line("from " + dialect.gpuModule() + " import block_idx, block_dim, thread_idx");
+        line("from std.math import cos, log2, sin, sqrt, tan, tanh");
         line("");
         emitHeader();
-        indent++;
+        enterBlock();
         emitProlog();
         // Try to emit parallel version first, fall back to single-thread serial execution.
         if (!tryEmitParallelBody(graph.body())) {
             line("if block_idx.x == 0 and thread_idx.x == 0:");
-            indent++;
+            enterBlock();
             emitNode(graph.body());
-            indent--;
+            exitBlock();
         }
-        indent--;
+        exitBlock();
         line("");
         return String.join("\n", lines);
     }
 
     private void emitHeader() {
-        line("fn " + kernelName + "(");
+        line(dialect.kernelKeyword() + " " + kernelName + "(");
         List<String> args = new ArrayList<>();
         for (int i = 0; i < graph.inputs().size(); i++) {
             LIRInput input = graph.inputs().get(i);
@@ -111,21 +136,21 @@ final class MojoNativeLirSourceGenerator {
     }
 
     private void emitProlog() {
-        line("gid = (Int(block_idx.x) * Int(block_dim.x)) + Int(thread_idx.x)");
+        declare("gid", "(Int(block_idx.x) * Int(block_dim.x)) + Int(thread_idx.x)");
         if (scratchLayout.requiresScratch()) {
-            line("scratch_u8 = UnsafePointer[UInt8, MutAnyOrigin].from_address(scratch_ptr)");
             int slot = 0;
             for (Map.Entry<BufferRef, Long> e : scratchLayout.offsets().entrySet()) {
                 BufferRef ref = e.getKey();
                 long offset = e.getValue();
                 String name = "scratch" + slot++;
+                // UnsafePointer has no from_address(); every supported Mojo builds one from an
+                // Int address with the unsafe_from_address= constructor.
                 String ptr =
-                        "UnsafePointer["
-                                + mojoScalarType(ref.dataType())
-                                + ", MutAnyOrigin].from_address(scratch_ptr + UInt64("
+                        mojoPointerType(ref.dataType())
+                                + "(unsafe_from_address=Int(scratch_ptr + UInt64("
                                 + offset
-                                + " ))";
-                line(name + " = " + ptr);
+                                + ")))";
+                declare(name, ptr);
                 buffers.put(ref, name);
             }
         }
@@ -166,7 +191,7 @@ final class MojoNativeLirSourceGenerator {
         String totalVar = "total_" + tempId++;
         line("");
         line("# Calculate total elements");
-        line(totalVar + " = 1");
+        declare(totalVar, "1");
         for (StructuredFor forLoop : loops) {
             String ub = emitIndexExpr(forLoop.upperBound());
             line(totalVar + " *= " + ub);
@@ -176,18 +201,18 @@ final class MojoNativeLirSourceGenerator {
         String idxVar = "linear_" + tempId++;
         line("");
         line("# GPU-parallel linear mapping");
-        line(idxVar + " = gid");
+        declare(idxVar, "gid");
         line("if " + idxVar + " < " + totalVar + ":");
-        indent++;
+        enterBlock();
 
         // De-linearize index into loop indices
         String tempIdx = "temp_" + tempId++;
-        line(tempIdx + " = " + idxVar);
+        declare(tempIdx, idxVar);
         for (int i = loops.size() - 1; i >= 0; i--) {
             StructuredFor forLoop = loops.get(i);
             String extent = emitIndexExpr(forLoop.upperBound());
             String loopIdx = forLoop.indexName();
-            line(loopIdx + " = " + tempIdx + " % " + extent);
+            declare(loopIdx, tempIdx + " % " + extent);
             line(tempIdx + " = " + tempIdx + " // " + extent);
         }
 
@@ -199,7 +224,7 @@ final class MojoNativeLirSourceGenerator {
             emitNode(stmt);
         }
 
-        indent--;
+        exitBlock();
         return true;
     }
 
@@ -266,14 +291,15 @@ final class MojoNativeLirSourceGenerator {
 
     private void emitStructuredFor(StructuredFor loop) {
         for (LoopIterArg arg : loop.iterArgs()) {
-            line(arg.name() + " = " + forceCastExpr(arg.dataType(), emitScalarExpr(arg.init())));
+            declare(arg.name(), forceCastExpr(arg.dataType(), emitScalarExpr(arg.init())));
         }
         String idx = loop.indexName();
         String lb = emitIndexExpr(loop.lowerBound());
         String ub = emitIndexExpr(loop.upperBound());
         String step = emitIndexExpr(loop.step());
         line("for " + idx + " in range(" + lb + ", " + ub + ", " + step + "):");
-        indent++;
+        enterBlock();
+        scopes.peek().names().add(idx);
         Block body = loop.body();
         Yield yield = (Yield) body.statements().getLast();
         for (int i = 0; i < body.statements().size() - 1; i++) {
@@ -282,13 +308,10 @@ final class MojoNativeLirSourceGenerator {
         for (int i = 0; i < loop.iterArgs().size(); i++) {
             LoopIterArg arg = loop.iterArgs().get(i);
             String tmp = arg.name() + "_next" + (tempId++);
-            line(
-                    tmp
-                            + " = "
-                            + forceCastExpr(arg.dataType(), emitScalarExpr(yield.values().get(i))));
+            declare(tmp, forceCastExpr(arg.dataType(), emitScalarExpr(yield.values().get(i))));
             line(arg.name() + " = " + tmp);
         }
-        indent--;
+        exitBlock();
     }
 
     private void emitStore(Store store) {
@@ -321,8 +344,9 @@ final class MojoNativeLirSourceGenerator {
             }
             String expr = emitScalarInline(resolved);
             String tmp = "t" + tempId++;
-            line(tmp + " = " + expr);
+            declare(tmp, expr);
             cachedScalars.put(resolved, tmp);
+            scopes.peek().cachedNodes().add(resolved);
             return tmp;
         }
         return emitScalarInline(resolved);
@@ -354,18 +378,21 @@ final class MojoNativeLirSourceGenerator {
 
     private String emitUnary(SUnary unary) {
         String in = emitScalarExpr(unary.input());
+        // Literals are wrapped in the operand's type: Mojo 1.x turns a bare float literal mixed
+        // with Float32 into Float64 and then rejects the mismatched operands.
+        String t = mojoScalarType(unary.input().dataType());
         return switch (unary.op()) {
             case NEGATE -> "-(" + in + ")";
             case ABS -> "(" + in + " if " + in + " >= 0 else -" + in + ")";
-            case EXP -> "(2.718281828459045 ** " + in + ")"; // Approximate e^x
-            case LOG -> "(log2(" + in + ") * 0.6931471805599453)"; // Approximate ln(x)
+            case EXP -> "(" + t + "(2.718281828459045) ** " + in + ")"; // Approximate e^x
+            case LOG -> "(log2(" + in + ") * " + t + "(0.6931471805599453))"; // Approximate ln(x)
             case SQRT -> "sqrt(" + in + ")";
             case SIN -> emitTrig("sin", in, unary.input().dataType());
             case COS -> emitTrig("cos", in, unary.input().dataType());
             case TAN -> emitTrig("tan", in, unary.input().dataType());
             case TANH -> emitTrig("tanh", in, unary.input().dataType());
             case RECIPROCAL -> {
-                String one = unary.input().dataType() == DataType.FP32 ? "Float32(1.0)" : "1.0";
+                String one = unary.input().dataType().isFloatingPoint() ? t + "(1.0)" : "1.0";
                 yield "(" + one + " / " + in + ")";
             }
             case LOGICAL_NOT -> "(not (" + truthy(in, unary.input().dataType()) + "))";
@@ -416,11 +443,21 @@ final class MojoNativeLirSourceGenerator {
             case SHIFT_LEFT ->
                     forceCastExpr(
                             binary.dataType(),
-                            "(" + l + " << " + normalizedShift(binary.dataType(), r) + ")");
+                            "("
+                                    + l
+                                    + " << "
+                                    + mojoScalarType(binary.dataType())
+                                    + normalizedShift(binary.dataType(), r)
+                                    + ")");
             case SHIFT_RIGHT ->
                     forceCastExpr(
                             binary.dataType(),
-                            "(" + l + " >> " + normalizedShift(binary.dataType(), r) + ")");
+                            "("
+                                    + l
+                                    + " >> "
+                                    + mojoScalarType(binary.dataType())
+                                    + normalizedShift(binary.dataType(), r)
+                                    + ")");
             case SHIFT_RIGHT_UNSIGNED ->
                     emitUnsignedRightShift(
                             binary.dataType(), l, normalizedShift(binary.dataType(), r));
@@ -583,6 +620,10 @@ final class MojoNativeLirSourceGenerator {
         if (target == DataType.BOOL) {
             return "(" + truthy(expr, source) + ")";
         }
+        if (source == DataType.BOOL && target.isFloatingPoint()) {
+            // Mojo 1.x only builds a float from an integral value, not from a Bool.
+            return mojoScalarType(target) + "(Int(" + expr + "))";
+        }
         if (target == DataType.I8) {
             return "Int8(" + expr + ")";
         }
@@ -662,20 +703,23 @@ final class MojoNativeLirSourceGenerator {
         return "(Int(" + right + ") & " + mask + ")";
     }
 
+    /** Shift amounts must have the shifted value's type (Mojo 1.x rejects Int on the right). */
     private String emitUnsignedRightShift(DataType type, String left, String shiftExpr) {
+        String u32 = "UInt32" + shiftExpr;
+        String u64 = "UInt64" + shiftExpr;
         if (type == DataType.I8) {
-            return "Int8((UInt32(Int32(" + left + ") & 255) >> " + shiftExpr + "))";
+            return "Int8((UInt32(Int32(" + left + ") & 255) >> " + u32 + "))";
         }
         if (type == DataType.I16) {
-            return "Int16((UInt32(Int32(" + left + ") & 65535) >> " + shiftExpr + "))";
+            return "Int16((UInt32(Int32(" + left + ") & 65535) >> " + u32 + "))";
         }
         if (type == DataType.I32) {
-            return "Int32((UInt32(" + left + ") >> " + shiftExpr + "))";
+            return "Int32((UInt32(" + left + ") >> " + u32 + "))";
         }
         if (type == DataType.I64) {
-            return "Int64((UInt64(" + left + ") >> " + shiftExpr + "))";
+            return "Int64((UInt64(" + left + ") >> " + u64 + "))";
         }
-        return forceCastExpr(type, "(UInt64(" + left + ") >> " + shiftExpr + ")");
+        return forceCastExpr(type, "(UInt64(" + left + ") >> " + u64 + ")");
     }
 
     private String mojoType(DataType type) {
@@ -718,6 +762,31 @@ final class MojoNativeLirSourceGenerator {
 
     private String mojoPointerType(DataType type) {
         return "UnsafePointer[" + mojoScalarType(type) + ", MutAnyOrigin]";
+    }
+
+    /** Opens an indented block: its {@code var} names and cached temporaries end with it. */
+    private void enterBlock() {
+        indent++;
+        scopes.push(new Scope());
+    }
+
+    private void exitBlock() {
+        Scope scope = scopes.pop();
+        for (LIRExprNode node : scope.cachedNodes()) {
+            cachedScalars.remove(node);
+        }
+        indent--;
+    }
+
+    /**
+     * Emits {@code var name = expr}, or a plain assignment when {@code name} is already visible.
+     */
+    private void declare(String name, String expr) {
+        boolean visible = scopes.stream().anyMatch(s -> s.names().contains(name));
+        line((visible ? "" : "var ") + name + " = " + expr);
+        if (!visible) {
+            scopes.peek().names().add(name);
+        }
     }
 
     private void line(String text) {

@@ -19,6 +19,7 @@ import com.qxotic.jota.runtime.KernelCacheKey;
 import com.qxotic.jota.runtime.KernelCachePaths;
 import com.qxotic.jota.runtime.KernelProgram;
 import com.qxotic.jota.runtime.mojo.MojoCachePaths;
+import com.qxotic.jota.runtime.mojo.codegen.MojoDialect;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.List;
@@ -74,9 +75,10 @@ class MojoLirKernelGeneratorTest {
         assertTrue(program.entryPoint().startsWith("hip_lir_"));
 
         String source = (String) program.payload();
-        assertTrue(source.contains("from std.gpu import block_idx, block_dim, thread_idx"));
-        assertTrue(source.contains("fn hip_lir_"));
-        assertTrue(source.contains("gid ="));
+        assertTrue(source.contains("from max.gpu import block_idx, block_dim, thread_idx"));
+        assertTrue(source.contains("from std.math import"));
+        assertTrue(source.contains("def hip_lir_"));
+        assertTrue(source.contains("var gid ="));
         assertTrue(source.contains("input0: UnsafePointer[Float32, MutAnyOrigin]"));
         assertTrue(source.contains("input1: UnsafePointer[Float32, MutAnyOrigin]"));
         assertTrue(source.contains("+"));
@@ -329,6 +331,241 @@ class MojoLirKernelGeneratorTest {
 
         String source = (String) program.payload();
         assertTrue(source.contains("Float64(cos(Float32("));
+    }
+
+    @Test
+    void generatesLegacySyntaxForMojo0261() {
+        useTempCache();
+
+        KernelProgram program =
+                new MojoLirKernelGenerator(MojoDialect.V0_26_1)
+                        .generate(
+                                elementwiseAddGraph(),
+                                ScratchLayout.EMPTY,
+                                KernelCacheKey.of("lir_to_mojo_legacy"));
+
+        String source = (String) program.payload();
+        assertTrue(source.contains("from std.gpu import block_idx, block_dim, thread_idx"));
+        assertTrue(source.contains("fn hip_lir_"));
+        assertTrue(source.contains("var gid ="));
+    }
+
+    @Test
+    void declaresEveryLocalOnceWithVar() {
+        useTempCache();
+
+        KernelProgram program =
+                new MojoLirKernelGenerator()
+                        .generate(
+                                elementwiseAddGraph(),
+                                ScratchLayout.EMPTY,
+                                KernelCacheKey.of("lir_to_mojo_var_decls"));
+
+        String source = (String) program.payload();
+        assertEquals(1, count(source, "var total_0 = 1"));
+        assertEquals(1, count(source, "total_0 *= 4"));
+        assertEquals(1, count(source, "var temp_2 = linear_1"));
+        assertEquals(1, count(source, "temp_2 = temp_2 // 4"));
+        assertEquals(1, count(source, "var i = temp_2 % 4"));
+    }
+
+    @Test
+    void cachedTemporaryIsReemittedOutsideTheLoopThatDeclaredIt() {
+        useTempCache();
+
+        LIRGraph.Builder builder = LIRGraph.builder();
+        ScalarInput scale = builder.addScalarInput(DataType.FP32);
+        BufferRef outBuf = builder.addContiguousOutput(DataType.FP32, 1);
+
+        LIRExprGraph graph = builder.exprGraph();
+        LIRExprNode in = graph.scalarInput(scale.id(), scale.dataType());
+        // Used twice: inside the loop (in the yield) and after it (in the store).
+        LIRExprNode squared = graph.scalarBinary(BinaryOperator.MULTIPLY, in, in);
+        LIRExprNode accRef = graph.scalarRef("acc", DataType.FP32);
+        LIRExprNode sum = graph.scalarBinary(BinaryOperator.ADD, accRef, squared);
+        LIRExprNode loop =
+                graph.structuredFor(
+                        "i",
+                        graph.indexConst(0),
+                        graph.indexConst(4),
+                        graph.indexConst(1),
+                        List.of(
+                                new LoopIterArg(
+                                        "acc",
+                                        DataType.FP32,
+                                        graph.scalarConst(0L, DataType.FP32))),
+                        graph.block(List.of(graph.yield(List.of(sum)))));
+        LIRExprNode result = graph.scalarBinary(BinaryOperator.ADD, accRef, squared);
+        LIRExprNode store = graph.store(outBuf, graph.indexConst(0), result);
+        LIRGraph lir = builder.build(graph.block(List.of(loop, store)));
+
+        String source =
+                (String)
+                        new MojoLirKernelGenerator()
+                                .generate(
+                                        lir,
+                                        ScratchLayout.EMPTY,
+                                        KernelCacheKey.of("lir_to_mojo_scoped_temp"))
+                                .payload();
+
+        // The graph shares one node for "acc + scalar0 * scalar0" between the yield and the
+        // store. The temporary holding it inside the loop is out of scope after the loop (and
+        // would hold the value from before the last update), so it must be computed again.
+        assertEquals(2, count(source, "= ((scalar0 * scalar0) + acc)"), source);
+        assertEquals(1, count(source, "var acc = "), source);
+        assertTrue(source.contains("var t2 = ((scalar0 * scalar0) + acc)"), source);
+        assertTrue(source.contains("output0[Int((0) // 4)] = t2"), source);
+    }
+
+    @Test
+    void scratchBuffersUseUnsafeFromAddressConstructor() {
+        useTempCache();
+
+        LIRGraph.Builder builder = LIRGraph.builder();
+        BufferRef inputBuf = builder.addContiguousInput(DataType.FP32, 4);
+        BufferRef outBuf = builder.addContiguousOutput(DataType.FP32, 4);
+        BufferRef tmp = BufferRef.contiguous(99, DataType.FP32, 4);
+        LIRExprGraph graph = builder.exprGraph();
+        LIRExprNode i = graph.indexVar("i");
+        LIRExprNode offset = graph.indexBinary(IndexBinaryOp.MULTIPLY, i, graph.indexConst(4));
+        LIRExprNode first =
+                graph.structuredFor(
+                        "i",
+                        graph.indexConst(0),
+                        graph.indexConst(4),
+                        graph.indexConst(1),
+                        List.of(),
+                        graph.block(
+                                List.of(
+                                        graph.store(
+                                                tmp,
+                                                offset,
+                                                graph.scalarLoad(inputBuf, offset, DataType.FP32)),
+                                        graph.yield(List.of()))));
+        LIRExprNode j = graph.indexVar("j");
+        LIRExprNode offset2 = graph.indexBinary(IndexBinaryOp.MULTIPLY, j, graph.indexConst(4));
+        LIRExprNode second =
+                graph.structuredFor(
+                        "j",
+                        graph.indexConst(0),
+                        graph.indexConst(4),
+                        graph.indexConst(1),
+                        List.of(),
+                        graph.block(
+                                List.of(
+                                        graph.store(
+                                                outBuf,
+                                                offset2,
+                                                graph.scalarLoad(tmp, offset2, DataType.FP32)),
+                                        graph.yield(List.of()))));
+        LIRGraph lir = builder.build(graph.block(List.of(first, second)));
+
+        String source =
+                (String)
+                        new MojoLirKernelGenerator()
+                                .generate(
+                                        lir,
+                                        new ScratchLayout(java.util.Map.of(tmp, 64L), 80L),
+                                        KernelCacheKey.of("lir_to_mojo_scratch"))
+                                .payload();
+
+        assertTrue(
+                source.contains(
+                        "var scratch0 = UnsafePointer[Float32, MutAnyOrigin]"
+                                + "(unsafe_from_address=Int(scratch_ptr + UInt64(64)))"),
+                source);
+        assertTrue(!source.contains("from_address("), source);
+    }
+
+    @Test
+    void literalsAndShiftAmountsCarryTheOperandType() {
+        useTempCache();
+
+        LIRGraph.Builder builder = LIRGraph.builder();
+        BufferRef intBuf = builder.addContiguousInput(DataType.I64, 4);
+        BufferRef halfBuf = builder.addContiguousInput(DataType.FP16, 4);
+        BufferRef outInt = builder.addContiguousOutput(DataType.I64, 4);
+        BufferRef outHalf = builder.addContiguousOutput(DataType.FP16, 4);
+        BufferRef outFlag = builder.addContiguousOutput(DataType.FP32, 4);
+        LIRExprGraph graph = builder.exprGraph();
+        LIRExprNode i = graph.indexVar("i");
+        LIRExprNode off8 = graph.indexBinary(IndexBinaryOp.MULTIPLY, i, graph.indexConst(8));
+        LIRExprNode off2 = graph.indexBinary(IndexBinaryOp.MULTIPLY, i, graph.indexConst(2));
+        LIRExprNode off4 = graph.indexBinary(IndexBinaryOp.MULTIPLY, i, graph.indexConst(4));
+        LIRExprNode v = graph.scalarLoad(intBuf, off8, DataType.I64);
+        LIRExprNode shifted =
+                graph.scalarBinary(
+                        BinaryOperator.SHIFT_RIGHT_UNSIGNED,
+                        graph.scalarBinary(BinaryOperator.SHIFT_LEFT, v, v),
+                        v);
+        LIRExprNode h = graph.scalarLoad(halfBuf, off2, DataType.FP16);
+        LIRExprNode math =
+                graph.scalarUnary(
+                        UnaryOperator.LOG,
+                        graph.scalarUnary(
+                                UnaryOperator.EXP, graph.scalarUnary(UnaryOperator.RECIPROCAL, h)));
+        LIRExprNode flag =
+                graph.scalarCast(graph.scalarBinary(BinaryOperator.LESS_THAN, h, h), DataType.FP32);
+        Block body =
+                graph.block(
+                        List.of(
+                                graph.store(outInt, off8, shifted),
+                                graph.store(outHalf, off2, math),
+                                graph.store(outFlag, off4, flag),
+                                graph.yield(List.of())));
+        LIRGraph lir =
+                builder.build(
+                        graph.structuredFor(
+                                "i",
+                                graph.indexConst(0),
+                                graph.indexConst(4),
+                                graph.indexConst(1),
+                                List.of(),
+                                body));
+
+        String source =
+                (String)
+                        new MojoLirKernelGenerator()
+                                .generate(
+                                        lir,
+                                        ScratchLayout.EMPTY,
+                                        KernelCacheKey.of("lir_to_mojo_typed_literals"))
+                                .payload();
+
+        assertTrue(source.contains("<< Int64(Int("), source);
+        assertTrue(source.contains(">> UInt64(Int("), source);
+        assertTrue(source.contains("(Float16(1.0) / "), source);
+        assertTrue(source.contains("(Float16(2.718281828459045) ** "), source);
+        assertTrue(source.contains(" * Float16(0.6931471805599453))"), source);
+        assertTrue(source.contains("Float32(Int(("), source);
+    }
+
+    private static LIRGraph elementwiseAddGraph() {
+        LIRGraph.Builder builder = LIRGraph.builder();
+        BufferRef leftBuf = builder.addContiguousInput(DataType.FP32, 4);
+        BufferRef outBuf = builder.addContiguousOutput(DataType.FP32, 4);
+        LIRExprGraph graph = builder.exprGraph();
+        LIRExprNode i = graph.indexVar("i");
+        LIRExprNode offset = graph.indexBinary(IndexBinaryOp.MULTIPLY, i, graph.indexConst(4));
+        LIRExprNode value = graph.scalarLoad(leftBuf, offset, DataType.FP32);
+        LIRExprNode sum = graph.scalarBinary(BinaryOperator.ADD, value, value);
+        Block body = graph.block(List.of(graph.store(outBuf, offset, sum), graph.yield(List.of())));
+        return builder.build(
+                graph.structuredFor(
+                        "i",
+                        graph.indexConst(0),
+                        graph.indexConst(4),
+                        graph.indexConst(1),
+                        List.of(),
+                        body));
+    }
+
+    private static int count(String text, String needle) {
+        int n = 0;
+        for (int at = text.indexOf(needle); at >= 0; at = text.indexOf(needle, at + 1)) {
+            n++;
+        }
+        return n;
     }
 
     private void useTempCache() {

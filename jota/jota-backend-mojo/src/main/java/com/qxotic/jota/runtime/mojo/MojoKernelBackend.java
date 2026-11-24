@@ -5,6 +5,7 @@ import com.qxotic.jota.runtime.KernelCacheKey;
 import com.qxotic.jota.runtime.KernelExecutable;
 import com.qxotic.jota.runtime.KernelProgram;
 import com.qxotic.jota.runtime.hip.HipRuntime;
+import com.qxotic.jota.runtime.mojo.codegen.MojoDialect;
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -23,6 +24,7 @@ final class MojoKernelBackend implements KernelBackend {
     private static final String TARGET_ENV = "JOTA_MOJO_TARGET";
     static final String COMPILER_PROPERTY = "jota.mojo.compiler";
     static final String COMPILER_ENV = "JOTA_MOJO_COMPILER";
+    static final String VERSION_PROPERTY = "jota.mojo.version";
     private static final String COMPILE_FLAGS_PROPERTY = "jota.mojo.compile.flags";
     private static final String SUMMARY_PROPERTY = "jota.mojo.kernel.summary";
     private static final long COMPILE_TIMEOUT_SECONDS =
@@ -35,6 +37,7 @@ final class MojoKernelBackend implements KernelBackend {
     private static final AtomicLong COMPILE_NANOS_MAX = new AtomicLong();
     private static final AtomicLong NEW_KEYS_THIS_RUN = new AtomicLong();
     private static final Set<String> SEEN_KEYS = ConcurrentHashMap.newKeySet();
+    private static volatile MojoDialect dialect;
 
     static {
         if (Boolean.getBoolean(SUMMARY_PROPERTY)) {
@@ -147,7 +150,7 @@ final class MojoKernelBackend implements KernelBackend {
         try {
             Files.createDirectories(sourceDir);
             Files.writeString(sourcePath, mojoSource);
-            Files.writeString(wrapperPath, wrapper(mojoSource, fnName));
+            Files.writeString(wrapperPath, wrapper(mojoSource, fnName, dialect()));
         } catch (IOException e) {
             throw new IllegalStateException("Failed to prepare Mojo source for " + cacheKey, e);
         }
@@ -226,20 +229,56 @@ final class MojoKernelBackend implements KernelBackend {
         throw new IllegalArgumentException("Expected Mojo source payload as String");
     }
 
-    private static String wrapper(String source, String fnName) {
+    static String wrapper(String source, String fnName, MojoDialect dialect) {
         return source
                 + "\n\n"
                 + "from std.sys import has_accelerator\n"
-                + "from std.gpu.host import DeviceContext\n\n"
-                + "def main():\n"
+                + "from "
+                + dialect.gpuModule()
+                + ".host import DeviceContext\n\n"
+                + dialect.mainSignature()
+                + "\n"
                 + "    if not has_accelerator():\n"
                 + "        return\n"
-                + "    ctx = DeviceContext(api=\"hip\")\n"
-                + "    _ = ctx.compile_function["
-                + fnName
-                + ", "
-                + fnName
-                + "]()\n";
+                + "    var ctx = DeviceContext(api=\"hip\")\n"
+                + "    _ = "
+                + dialect.compileFunctionCall("ctx", fnName)
+                + "\n";
+    }
+
+    /**
+     * The Mojo dialect to generate, read once from {@code -Djota.mojo.version} or else from {@code
+     * mojo --version}. Falls back to {@link MojoDialect#LATEST} when neither gives a version.
+     */
+    static MojoDialect dialect() {
+        MojoDialect d = dialect;
+        if (d == null) {
+            synchronized (MojoKernelBackend.class) {
+                d = dialect;
+                if (d == null) {
+                    d = detectDialect();
+                    dialect = d;
+                }
+            }
+        }
+        return d;
+    }
+
+    private static MojoDialect detectDialect() {
+        String configured = System.getProperty(VERSION_PROPERTY);
+        if (configured != null && !configured.isBlank()) {
+            return MojoDialect.fromVersionText(configured)
+                    .orElseThrow(
+                            () ->
+                                    new IllegalArgumentException(
+                                            "Unparseable " + VERSION_PROPERTY + ": " + configured));
+        }
+        try {
+            String out = execCapture(List.of(resolveCompilerExecutable(), "--version"), 10);
+            return MojoDialect.fromVersionText(out).orElse(MojoDialect.LATEST);
+        } catch (RuntimeException e) {
+            return MojoDialect.LATEST;
+        }
     }
 
     private static String resolveTarget() {
