@@ -317,18 +317,8 @@ public final class Norms {
             int size,
             float eps) {
         float rms = (float) Math.sqrt(sumOfSquares(x, xOffset, size) / size + eps);
-        if (out == x && outOffset == xOffset) {
-            Ops.divideInPlace(x, xOffset, size, rms);
-            return;
-        }
-        Raw o = Raw.f32(out, "out");
-        Raw xv = Raw.f32(x, "x");
-        for (int i = 0; i < size; i++) {
-            writeFloat(
-                    o.vseg(),
-                    o.vbase() + (outOffset + i) * Float.BYTES,
-                    readFloat(xv.vseg(), xv.vbase() + (xOffset + i) * Float.BYTES) / rms);
-        }
+        if (out != x || outOffset != xOffset) Convert.copyF32(x, xOffset, out, outOffset, size);
+        Ops.divideInPlace(out, outOffset, size, rms);
     }
 
     /**
