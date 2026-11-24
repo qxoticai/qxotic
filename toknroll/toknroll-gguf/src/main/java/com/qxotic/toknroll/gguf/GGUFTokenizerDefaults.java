@@ -176,7 +176,8 @@ final class GGUFTokenizerDefaults {
         registerPreTokenizers(builder, QWEN35_PATTERN, "qwen35");
         registerPreTokenizers(builder, BAILING_PATTERN, "bailingmoe", "bailingmoe2");
         registerPreTokenizers(builder, TEKKEN_PATTERN, "tekken", "pixtral");
-        registerPreTokenizers(builder, GPT4O_PATTERN, "gpt-4o", "llama4", "kanana2", "minimax-m2");
+        registerPreTokenizers(
+                builder, GPT4O_PATTERN, "gpt-4o", "llama4", "kanana2", "minimax-m2", "inkling2");
         registerPreTokenizers(builder, KIMI_K2_PATTERN, "kimi-k2");
         registerPreTokenizers(builder, GEMMA4_PATTERN, "granite-embed-multi-311m");
         // Gemma 4: its regex's lines, cut again into words the vocabulary never joins
