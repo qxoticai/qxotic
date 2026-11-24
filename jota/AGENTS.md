@@ -16,6 +16,7 @@ Only `jota-core` and `jota-memory` are published to Maven Central at 0.4.0; `jot
 | `jota-core` | data types, devices, shapes, strides, layouts, views; a real JPMS module `com.qxotic.jota` that exports only `com.qxotic.jota` |
 | `jota-memory` | the memory abstraction: domains, memories, views, access, bulk operations; backends on heap arrays, ByteBuffer, Unsafe and MemorySegment |
 | `jota-tensor` | tensors, tracing, the TIR and LIR intermediate representations, scheduling, the native library loader |
+| `jota-stablehlo` | StableHLO model, MLIR text and bytecode readers/writers, portable artifacts (VHLO), StableHLO ⇄ TIR conversion; samples and corpus tests are described in `TODO-parity-TIR-StableHLO.md` |
 | `jota-backend-panama` | the always-on Java backend; the one the default test run exercises |
 | `jota-backend-c`, `-cuda`, `-hip`, `-metal`, `-opencl`, `-mojo` | native and GPU backends, each behind a profile of the same name (`-Pc`, `-Pcuda`, `-Phip`, `-Pmetal`, `-Popencl`, `-Pmojo`, or `-Pall`) |
 
