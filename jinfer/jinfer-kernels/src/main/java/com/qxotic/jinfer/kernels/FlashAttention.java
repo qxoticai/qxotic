@@ -1247,7 +1247,60 @@ public final class FlashAttention {
                 window,
                 ringMask,
                 sinks,
-                false);
+                false,
+                null,
+                0);
+    }
+
+    /**
+     * {@link #slidingWindowPrefill} with a relative-position bias and per-query sinks: {@code bias}
+     * is {@code [seqLen * nHeads][extent]}, and a key {@code d < extent} positions behind query row
+     * {@code i} of head {@code h} scores {@code bias[(i * nHeads + h) * extent + d]} more (farther
+     * keys get none). {@code sinks} is then {@code [seqLen][nHeads]}, one sink per query row.
+     */
+    public static void relativePrefill(
+            MemoryView<MemorySegment> q,
+            MemoryView<MemorySegment> out,
+            MemoryView<MemorySegment> cK,
+            MemoryView<MemorySegment> cV,
+            MemoryView<MemorySegment> bK,
+            MemoryView<MemorySegment> bV,
+            int nHeads,
+            int startPos,
+            int seqLen,
+            int headSize,
+            int kvDim,
+            int queryStride,
+            int batchKvStride,
+            int kvMul,
+            float scale,
+            int window,
+            int ringMask,
+            MemoryView<MemorySegment> sinks,
+            MemoryView<MemorySegment> bias,
+            int extent) {
+        prefill(
+                q,
+                out,
+                cK,
+                cV,
+                bK,
+                bV,
+                nHeads,
+                startPos,
+                seqLen,
+                headSize,
+                kvDim,
+                queryStride,
+                batchKvStride,
+                kvMul,
+                scale,
+                window,
+                ringMask,
+                sinks,
+                false,
+                bias,
+                extent);
     }
 
     /**
@@ -1295,7 +1348,9 @@ public final class FlashAttention {
                 window,
                 ringMask,
                 sinks,
-                bidir);
+                bidir,
+                null,
+                0);
     }
 
     /**
@@ -1318,7 +1373,7 @@ public final class FlashAttention {
             float scale) {
         prefill(
                 q, out, bK, bV, bK, bV, nHeads, 0, seqLen, headSize, kvDim, stride, kvDim, kvMul,
-                scale, 0, 0, null, true);
+                scale, 0, 0, null, true, null, 0);
     }
 
     private static void prefill(
@@ -1340,7 +1395,9 @@ public final class FlashAttention {
             int window,
             int ringMask,
             MemoryView<MemorySegment> sinks,
-            boolean bidir) {
+            boolean bidir,
+            MemoryView<MemorySegment> bias,
+            int extent) {
         // ringMask must be all-ones (ringLen a power of two) for `pos & ringMask` to equal `pos %
         // ringLen`;
         // the authoritative fail-fast is the per-model config check (e.g. Llama.Configuration), at
@@ -1355,6 +1412,7 @@ public final class FlashAttention {
         Src bk = src(bK, "bK");
         Src bv = src(bV, "bV");
         Raw sinksRaw = sinks != null ? Raw.f32(sinks, "sinks") : null;
+        Raw biasRaw = bias != null ? Raw.f32(bias, "bias") : null;
         boolean vec = Segments.USE_VECTOR_API;
         int attStart = window > 0 ? Math.max(0, startPos - window + 1) : 0;
         int nQBlocks = (seqLen + Br - 1) / Br;
@@ -1513,6 +1571,20 @@ public final class FlashAttention {
                                     }
                                     Arrays.fill(S, rowBase, rowBase + lo, 0f);
                                     Arrays.fill(S, rowBase + hi, rowBase + BcRows, 0f);
+                                    if (biasRaw != null) {
+                                        // the live keys within extent, nearest last
+                                        int nearest = globalQ - kvStart;
+                                        long row = ((long) (qStart + i) * nHeads + h) * extent;
+                                        for (int j = Math.max(lo, nearest - extent + 1);
+                                                j < hi;
+                                                j++)
+                                            S[rowBase + j] +=
+                                                    readFloat(
+                                                            biasRaw.vseg(),
+                                                            biasRaw.vbase()
+                                                                    + (row + nearest - j)
+                                                                            * Float.BYTES);
+                                    }
                                     float blockMax = rowMax(S, rowBase + lo, hi - lo);
                                     float rowM = M[i];
                                     double rowL = L[i];
@@ -1595,11 +1667,14 @@ public final class FlashAttention {
                                 // denominator only; out_i, currently scaled to running max M[i],
                                 // rescales
                                 // by exp(M[i]-newM).
-                                float sink =
-                                        readFloat(
-                                                sinksRaw.vseg(),
-                                                sinksRaw.vbase() + h * Float.BYTES);
                                 for (int i = 0; i < BrRows; i++) {
+                                    // with a bias the sinks are per query row
+                                    long sinkRow =
+                                            biasRaw != null ? (long) (qStart + i) * nHeads : 0;
+                                    float sink =
+                                            readFloat(
+                                                    sinksRaw.vseg(),
+                                                    sinksRaw.vbase() + (sinkRow + h) * Float.BYTES);
                                     float newM = Math.max(M[i], sink);
                                     float factor =
                                             M[i] == Float.NEGATIVE_INFINITY
@@ -1647,7 +1722,9 @@ public final class FlashAttention {
             int kvMul,
             float scale,
             int ringMask,
-            Raw sinks) {
+            Raw sinks,
+            Raw bias,
+            int extent) {
         Parallel.forLoop(
                 0,
                 nHeads,
@@ -1665,6 +1742,7 @@ public final class FlashAttention {
                                         : ((ringMask != 0 ? (t & ringMask) : t) * kvDim
                                                 + kvHeadOffset);
                         float score = dotQK(q, qOff, cur ? bK : cK, off, headSize) * scale;
+                        if (bias != null) score += relativeBias(bias, h, position - t, extent);
                         if (score > m) { // new running max -> rescale accumulator
                             float rescale = (float) Math.exp(m - score);
                             FlashAttention.normalize(out, qOff, headSize, rescale);
@@ -1687,6 +1765,14 @@ public final class FlashAttention {
                                 out, qOff, headSize, denom == 0.0 ? 0f : (float) (factor / denom));
                     }
                 });
+    }
+
+    /** Head {@code h}'s bias for a key {@code distance} behind the one decode query. */
+    private static float relativeBias(Raw bias, int h, int distance, int extent) {
+        return distance < extent
+                ? readFloat(
+                        bias.vseg(), bias.vbase() + ((long) h * extent + distance) * Float.BYTES)
+                : 0f;
     }
 
     /**
@@ -1743,6 +1829,34 @@ public final class FlashAttention {
             int ringMask,
             MemoryView<MemorySegment> sinks,
             DecodeScratch scratch) {
+        flashDecode(
+                q, out, cK, cV, bK, bV, nHeads, position, attStart, headSize, kvDim, kvMul, scale,
+                ringMask, sinks, null, 0, scratch);
+    }
+
+    /**
+     * {@link #flashDecode} with the relative-position bias of {@link #relativePrefill}: {@code
+     * bias} is {@code [nHeads][extent]} for the one query.
+     */
+    public static void flashDecode(
+            MemoryView<MemorySegment> q,
+            MemoryView<MemorySegment> out,
+            MemoryView<MemorySegment> cK,
+            MemoryView<MemorySegment> cV,
+            MemoryView<MemorySegment> bK,
+            MemoryView<MemorySegment> bV,
+            int nHeads,
+            int position,
+            int attStart,
+            int headSize,
+            int kvDim,
+            int kvMul,
+            float scale,
+            int ringMask,
+            MemoryView<MemorySegment> sinks,
+            MemoryView<MemorySegment> bias,
+            int extent,
+            DecodeScratch scratch) {
         Raw qRaw = Raw.f32(q, "q");
         Raw outRaw = Raw.f32(out, "out");
         Src ck = src(cK, "cK");
@@ -1750,6 +1864,7 @@ public final class FlashAttention {
         Src bk = bK != null ? src(bK, "bK") : null;
         Src bv = bV != null ? src(bV, "bV") : null;
         Raw sinksRaw = sinks != null ? Raw.f32(sinks, "sinks") : null;
+        Raw biasRaw = bias != null ? Raw.f32(bias, "bias") : null;
         int range = position - attStart + 1;
         int nParts =
                 Math.max(
@@ -1758,7 +1873,7 @@ public final class FlashAttention {
         if (nParts == 1) {
             rollingDecode(
                     qRaw, outRaw, ck, cv, bk, bv, nHeads, position, attStart, headSize, kvDim,
-                    kvMul, scale, ringMask, sinksRaw);
+                    kvMul, scale, ringMask, sinksRaw, biasRaw, extent);
             return;
         }
         int blockSize = range / nParts;
@@ -1795,6 +1910,8 @@ public final class FlashAttention {
                                                         + kvHeadOffset);
                                 float score =
                                         dotQK(qRaw, qOff, cur ? bk : ck, off, headSize) * scale;
+                                if (biasRaw != null)
+                                    score += relativeBias(biasRaw, h, position - t, extent);
                                 if (score > m) {
                                     float rescale = (float) Math.exp(m - score);
                                     normalize(pO, oOff, headSize, rescale);

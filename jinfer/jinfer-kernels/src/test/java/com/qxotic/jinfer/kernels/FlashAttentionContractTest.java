@@ -149,6 +149,89 @@ class FlashAttentionContractTest {
         }
     }
 
+    @Test
+    void relativeBiasAndPerQuerySinksMatchTheirDefinition() {
+        // long enough for several key blocks and a partitioned decode; extent below and above the
+        // window, so both the bias reach and the window bound the biased keys
+        int length = 600, extent = 40;
+        float scale = 1f / 8f;
+        float[] q = randomFloats(length * QUERY_DIM, 31);
+        float[] k = randomFloats(length * KV_DIM, 32);
+        float[] v = randomFloats(length * KV_DIM, 33);
+        float[] bias = randomFloats(length * HEADS * extent, 34);
+        float[] sinks = randomFloats(length * HEADS, 35);
+        MemoryView<MemorySegment> qView = Views.fromFloatArray(memory, q);
+        MemoryView<MemorySegment> kView = Views.fromFloatArray(memory, k);
+        MemoryView<MemorySegment> vView = Views.fromFloatArray(memory, v);
+        MemoryView<MemorySegment> biasView = Views.fromFloatArray(memory, bias);
+        MemoryView<MemorySegment> sinksView = Views.fromFloatArray(memory, sinks);
+        MemoryView<MemorySegment> empty = Views.allocateF32(memory, 1);
+
+        for (int window : new int[] {0, 24, 128}) {
+            float[] expected = new float[length * QUERY_DIM];
+            for (int i = 0; i < length; i++)
+                for (int h = 0; h < HEADS; h++) {
+                    int from = window > 0 ? Math.max(0, i - window + 1) : 0;
+                    double[] score = new double[i + 1];
+                    double total = Math.exp(sinks[i * HEADS + h]);
+                    for (int j = from; j <= i; j++) {
+                        double dot = 0;
+                        for (int d = 0; d < HEAD_SIZE; d++)
+                            dot +=
+                                    q[i * QUERY_DIM + h * HEAD_SIZE + d]
+                                            * k[j * KV_DIM + (h / KV_MUL) * HEAD_SIZE + d];
+                        score[j] = scale * dot;
+                        if (i - j < extent) score[j] += bias[(i * HEADS + h) * extent + i - j];
+                        total += Math.exp(score[j]);
+                    }
+                    for (int j = from; j <= i; j++)
+                        for (int d = 0; d < HEAD_SIZE; d++)
+                            expected[i * QUERY_DIM + h * HEAD_SIZE + d] +=
+                                    (float)
+                                            (Math.exp(score[j])
+                                                    / total
+                                                    * v[j * KV_DIM + (h / KV_MUL) * HEAD_SIZE + d]);
+                }
+
+            MemoryView<MemorySegment> out = Views.allocateF32(memory, length * QUERY_DIM);
+            FlashAttention.relativePrefill(
+                    qView, out, empty, empty, kView, vView, HEADS, 0, length, HEAD_SIZE, KV_DIM,
+                    QUERY_DIM, KV_DIM, KV_MUL, scale, window, 0, sinksView, biasView, extent);
+            assertClose(expected, 0, out, length * QUERY_DIM);
+
+            // the last position as a decode step over the same keys, now the cache
+            int last = length - 1;
+            MemoryView<MemorySegment> step = Views.allocateF32(memory, QUERY_DIM);
+            FlashAttention.flashDecode(
+                    slice(qView, (long) last * QUERY_DIM, QUERY_DIM),
+                    step,
+                    kView,
+                    vView,
+                    null,
+                    null,
+                    HEADS,
+                    last,
+                    window > 0 ? last - window + 1 : 0,
+                    HEAD_SIZE,
+                    KV_DIM,
+                    KV_MUL,
+                    scale,
+                    0,
+                    slice(sinksView, (long) last * HEADS, HEADS),
+                    slice(biasView, (long) last * HEADS * extent, HEADS * extent),
+                    extent,
+                    new FlashAttention.DecodeScratch(memory));
+            assertClose(expected, last * QUERY_DIM, step, QUERY_DIM);
+        }
+    }
+
+    private static void assertClose(
+            float[] expected, int from, MemoryView<MemorySegment> actual, int count) {
+        for (int i = 0; i < count; i++)
+            assertEquals(
+                    expected[from + i], Views.getFloat(actual, i, "actual"), 1e-5f, "element " + i);
+    }
+
     private static float[] randomFloats(int size, long seed) {
         float[] values = new float[size];
         long state = seed;
