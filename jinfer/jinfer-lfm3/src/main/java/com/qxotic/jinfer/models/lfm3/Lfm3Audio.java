@@ -11,6 +11,7 @@ import com.qxotic.jinfer.Views;
 import com.qxotic.jinfer.kernels.Activations;
 import com.qxotic.jinfer.kernels.Convolutions;
 import com.qxotic.jinfer.kernels.FlashAttention;
+import com.qxotic.jinfer.kernels.GeluErf;
 import com.qxotic.jinfer.kernels.LogMel;
 import com.qxotic.jinfer.kernels.MatMul;
 import com.qxotic.jinfer.kernels.ModelLoader;
