@@ -404,6 +404,7 @@ public final class MlirBytecodeReader {
                     case "builtin" -> BuiltinDecoder.attribute(dr);
                     case "vhlo" -> VhloDecoder.attribute(dr);
                     case "stablehlo" -> StablehloDecoder.attribute(dr);
+                    case "chlo" -> StablehloDecoder.chloAttribute(dr);
                     default ->
                             throw new BytecodeException(
                                     "no bytecode decoder for attributes of dialect '"

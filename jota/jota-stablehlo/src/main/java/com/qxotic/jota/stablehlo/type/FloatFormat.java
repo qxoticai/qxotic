@@ -284,8 +284,11 @@ public enum FloatFormat {
     }
 
     private long encodeE8M0(double magnitude) {
-        if (magnitude == 0.0 || Double.isInfinite(magnitude)) {
+        if (Double.isInfinite(magnitude)) {
             return nanBits();
+        }
+        if (magnitude == 0.0) {
+            return 0; // +0 rounds to the smallest value, 2^-127 (LLVM APFloat); -0 is NaN above
         }
         int exponent = Math.getExponent(magnitude);
         double low = Math.scalb(1.0, exponent);

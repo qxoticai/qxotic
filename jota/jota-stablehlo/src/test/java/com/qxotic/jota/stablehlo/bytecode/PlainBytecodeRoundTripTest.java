@@ -63,6 +63,31 @@ class PlainBytecodeRoundTripTest {
         }
     }
 
+    static final String CHLO_COMPARE =
+            """
+            func.func @main(%a: tensor<2xf32>, %b: tensor<2xf32>) -> tensor<2xi1> {
+              %0 = "chlo.broadcast_compare"(%a, %b) {comparison_direction = #chlo<comparison_direction GT>, compare_type = #chlo<comparison_type FLOAT>} : (tensor<2xf32>, tensor<2xf32>) -> tensor<2xi1>
+              return %0 : tensor<2xi1>
+            }
+            """;
+
+    /** CHLO's enums use the custom encodings of {@code ChloBytecode.cpp}. */
+    @Test
+    void encodesChloEnums() {
+        Program p = MlirParser.parse(CHLO_COMPARE);
+        for (long version : new long[] {4, MlirBytecodeReader.VERSION_CURRENT}) {
+            byte[] bytes =
+                    MlirBytecodeWriter.writePlain(p, version, StableHloVersion.CURRENT, "test");
+            // the textual fallback would spell the enum out
+            assertTrue(
+                    !new String(bytes, java.nio.charset.StandardCharsets.ISO_8859_1)
+                            .contains("#chlo<"),
+                    "chlo enums written with their custom encoding");
+            assertTrue(
+                    StructuralEquality.diff(p, MlirBytecodeReader.read(bytes).program()).isEmpty());
+        }
+    }
+
     @Test
     void recordsTheStableHloVersionAndUsesItsLayouts() {
         Program p =

@@ -111,6 +111,62 @@ class FullCorpusTest {
                                         }));
     }
 
+    /**
+     * Programs whose results agree with XLA's only up to XLA's own f32 / f64 approximations
+     * (complex64 values around 1e3 under an absolute 1e-4 tolerance, the CHLO sinh / cosh / erf
+     * decompositions): the interpreter computes correctly rounded functions instead.
+     */
+    static final java.util.Set<String> INTERPRETER_TOLERANCE_LIMITED =
+            java.util.Set.of(
+                    "cos_complex64_20_20.mlir",
+                    "sin_complex64_20_20.mlir",
+                    "cumprod_complex64_8_9.mlir",
+                    "integer_pow_complex64_20_30.mlir",
+                    "cosh_float32_20_20_chlo.mlir",
+                    "sinh_float32_20_20_chlo.mlir",
+                    "erf_float64_20_20_chlo.mlir",
+                    "random_gamma_float64_3_chlo.mlir");
+
+    /**
+     * Every testdata program and interpreter test the interpreter supports passes its checks
+     * (testdata: XLA's expected values; interpreter tests: the reference semantics).
+     */
+    @TestFactory
+    Stream<DynamicTest> corpusOnInterpreter() {
+        List<Path> files = new ArrayList<>(Samples.list(repo().resolve("testdata"), ".mlir"));
+        files.addAll(Samples.list(repo().resolve("tests/interpret"), ".mlir"));
+        return files.stream()
+                .map(
+                        file ->
+                                DynamicTest.dynamicTest(
+                                        file.getFileName().toString(),
+                                        () -> {
+                                            org.junit.jupiter.api.Assumptions.assumeFalse(
+                                                    INTERPRETER_TOLERANCE_LIMITED.contains(
+                                                            file.getFileName().toString()),
+                                                    "agrees with XLA only within its"
+                                                            + " approximations");
+                                            String kind =
+                                                    file.toString().contains("interpret")
+                                                            ? "text/interpret/"
+                                                            : "text/testdata/";
+                                            boolean ran = false;
+                                            for (String chunk :
+                                                    MlirParser.splitInputFile(Samples.read(file))) {
+                                                if (Samples.isNegativeOrEmpty(chunk)
+                                                        || !chunk.contains("func.func")) {
+                                                    continue;
+                                                }
+                                                ran |=
+                                                        com.qxotic.jota.stablehlo.interpret
+                                                                .InterpreterSamples.runChecks(
+                                                                kind + file.getFileName(), chunk);
+                                            }
+                                            org.junit.jupiter.api.Assumptions.assumeTrue(
+                                                    ran, "uses an unsupported feature");
+                                        }));
+    }
+
     /** testdata programs supported by the TIR converter reproduce XLA's expected values. */
     @TestFactory
     Stream<DynamicTest> testdataOnTir() {

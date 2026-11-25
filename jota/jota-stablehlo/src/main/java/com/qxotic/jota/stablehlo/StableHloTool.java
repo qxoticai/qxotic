@@ -34,6 +34,7 @@ import java.util.TreeMap;
  *           FORMAT: text | generic | portable (VHLO artifact) | bytecode (plain MLIR bytecode)
  * verify    FILE                                   spec constraints; exit status 1 on a diagnostic
  * to-tir    FILE [--function NAME]                 the function as a jota TIR graph
+ * run       FILE [--function NAME]                 interpret the function, print its results
  * </pre>
  *
  * The input format is detected from its content: a StableHLO portable artifact, plain MLIR
@@ -55,6 +56,8 @@ public final class StableHloTool {
                                   one whose op property layouts match the target's
               verify    FILE                       check the spec constraints (exit 1 on errors)
               to-tir    FILE [--function NAME]     convert a function (default main) to jota TIR
+              run       FILE [--function NAME]     interpret a function without arguments (default
+                                                   main) and print its results; check.* fail with 1
             """
                     .formatted(StableHloVersion.CURRENT, MlirBytecodeReader.VERSION_CURRENT);
 
@@ -159,6 +162,10 @@ public final class StableHloTool {
             case "to-tir" -> {
                 args.allow("--function");
                 yield toTir(args);
+            }
+            case "run" -> {
+                args.allow("--function");
+                yield runFunction(args);
             }
             default -> throw new UsageException("unknown command " + args.command());
         };
@@ -310,6 +317,21 @@ public final class StableHloTool {
             return 0;
         }
         return 1;
+    }
+
+    private int runFunction(Args args) throws IOException {
+        Program p = read(args.file()).program();
+        try {
+            for (Object result :
+                    com.qxotic.jota.stablehlo.interpret.Interpreter.run(
+                            p, args.option("--function", "main"))) {
+                out.println(result);
+            }
+        } catch (com.qxotic.jota.stablehlo.interpret.Interpreter.CheckFailure e) {
+            out.println("check failed: " + e.getMessage());
+            return 1;
+        }
+        return 0;
     }
 
     private int toTir(Args args) throws IOException {

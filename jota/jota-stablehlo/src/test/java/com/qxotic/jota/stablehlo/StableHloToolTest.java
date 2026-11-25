@@ -144,6 +144,14 @@ class StableHloToolTest {
     }
 
     @Test
+    void runsAFunctionOnTheInterpreter() {
+        Run r = run("run", SAMPLE.toString(), "--function", "expected");
+        assertEquals(0, r.status(), r.err());
+        assertTrue(r.out().startsWith("dense<"), r.out());
+        assertEquals(0, run("run", SAMPLE.toString()).status()); // @main checks pass
+    }
+
+    @Test
     void usageErrorsExitWith2() {
         assertEquals(2, run().status());
         assertEquals(2, run("frobnicate", SAMPLE.toString()).status());

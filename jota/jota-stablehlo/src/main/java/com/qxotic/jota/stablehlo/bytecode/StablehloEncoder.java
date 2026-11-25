@@ -23,9 +23,10 @@ import com.qxotic.jota.stablehlo.type.Type;
 /**
  * Custom bytecode encodings of the {@code stablehlo} dialect ({@code
  * stablehlo/dialect/StablehloBytecode.cpp}) for plain MLIR bytecode: the inverse of {@link
- * StablehloDecoder}. Attributes and types without a custom encoding here (builtin ones, CHLO's, the
- * block-scaling and sparsity configs) go to {@link BuiltinEncoder}, which writes the textual form
- * under their own dialect when it has no encoding either, as MLIR's writer does.
+ * StablehloDecoder}. Attributes and types without a custom encoding here (builtin ones, the
+ * block-scaling and sparsity configs; CHLO's two enums use {@code ChloBytecode.cpp}'s) go to {@link
+ * BuiltinEncoder}, which writes the textual form under their own dialect when it has no encoding
+ * either, as MLIR's writer does.
  */
 final class StablehloEncoder {
 
@@ -38,6 +39,9 @@ final class StablehloEncoder {
     static String attribute(AttrTypeWriter w, Attribute a) {
         if (a instanceof EnumAttr e && e.dialect().equals("stablehlo") && enumAttr(w, e)) {
             return S;
+        }
+        if (a instanceof EnumAttr e && e.dialect().equals("chlo") && chloEnum(w, e)) {
+            return "chlo";
         }
         if (a instanceof DialectAttr d && d.dialect().equals("stablehlo") && dialectAttr(w, d)) {
             return S;
@@ -100,6 +104,23 @@ final class StablehloEncoder {
             return false;
         }
         w.varInt(code);
+        w.varInt(value);
+        return true;
+    }
+
+    /** {@code ChloBytecode.cpp}: comparison direction (code 0) and comparison type (code 1). */
+    private static boolean chloEnum(AttrTypeWriter w, EnumAttr e) {
+        String[] names =
+                switch (e.kind()) {
+                    case "comparison_direction" -> VhloDecoder.COMPARISON_DIRECTION;
+                    case "comparison_type" -> VhloDecoder.COMPARISON_TYPE;
+                    default -> null;
+                };
+        int value = names == null ? -1 : java.util.Arrays.asList(names).indexOf(e.value());
+        if (value < 0) {
+            return false;
+        }
+        w.varInt(e.kind().equals("comparison_direction") ? 0 : 1);
         w.varInt(value);
         return true;
     }

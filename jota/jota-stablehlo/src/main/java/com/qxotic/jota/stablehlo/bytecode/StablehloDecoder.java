@@ -238,6 +238,27 @@ final class StablehloDecoder {
         };
     }
 
+    /**
+     * The {@code chlo} dialect's encodings ({@code ChloBytecode.cpp}): its comparison direction
+     * (code 0) and comparison type (code 1) enums.
+     */
+    static Attribute chloAttribute(DialectReader r) {
+        long code = r.varInt();
+        return switch ((int) code) {
+            case 0 ->
+                    new EnumAttr(
+                            "chlo",
+                            "comparison_direction",
+                            name(r, r.varInt(), VhloDecoder.COMPARISON_DIRECTION));
+            case 1 ->
+                    new EnumAttr(
+                            "chlo",
+                            "comparison_type",
+                            name(r, r.varInt(), VhloDecoder.COMPARISON_TYPE));
+            default -> throw r.error("unknown chlo attribute code " + code);
+        };
+    }
+
     static Type type(DialectReader r) {
         long code = r.varInt();
         return switch ((int) code) {

@@ -18,8 +18,11 @@ List<Diagnostic> errors = Verifier.verify(p);                  // spec constrain
 byte[] artifact = PortableArtifact.serialize(p, StableHloVersion.parse("1.0.0"));
 String text = MlirPrinter.print(p);                            // as stablehlo-opt prints it
 TirConversion tir = StableHloToTirConverter.convert(p, "main"); // run it on jota
+List<Object> results = Interpreter.run(p, "main", args);         // or interpret it directly
 Program exported = TirToStableHlo.export(tracedGraph);          // and back
 ```
+
+`Interpreter` follows the spec on statically shaped tensors and runs the `check.*` assertions of StableHLO's tests: it reproduces XLA's expected values for 2270 of the 2325 `stablehlo/testdata` programs; implementation-defined integer results follow XLA by default (`Interpreter.Semantics`).
 
 The model is a generic IR (`Operation`, `Value`, `Block`, `Region`, `Program`) with typed views of every StableHLO op (`op.asOp()`, `OpVisitor`).
 `StructuralEquality.diff` compares two programs modulo value names.
@@ -34,6 +37,7 @@ stablehlo-tool print   FILE [--generic] [-o OUT]
 stablehlo-tool convert FILE --to text|generic|portable|bytecode -o OUT [--target X.Y.Z] [--bytecode-version N]
 stablehlo-tool verify  FILE                  exit status 1 on a diagnostic, with source lines for text
 stablehlo-tool to-tir  FILE [--function NAME]
+stablehlo-tool run     FILE [--function NAME]  interpret a function without arguments, print its results
 ```
 
 From `jota/` (relative paths are resolved from there):
