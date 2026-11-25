@@ -23,6 +23,8 @@ import org.junit.jupiter.api.Test;
 
 /** Thinking-budget behavior over a tiny tokenizer, without a model. */
 class ThinkingTest {
+    private static final ChatTemplate.ThinkMarkers GEMMA_MARKERS =
+            new ChatTemplate.ThinkMarkers("<|channel>", "<channel|>");
 
     private static final String[] TOKENS = {"<think>", "</think>", "\n", "a", "b"};
     private static final int OPEN = 0, CLOSE = 1, NEWLINE = 2, A = 3, B = 4;
@@ -41,16 +43,29 @@ class ThinkingTest {
     @Test
     void bannedMarkersNeverWinTheArgmax() {
         Sampler banned =
-                Thinking.banMarkers(Sampler.ARGMAX, TOKENIZER, Thinking.OPEN, Thinking.CLOSE);
+                Thinking.banMarkers(Sampler.ARGMAX, TOKENIZER, ChatTemplate.ThinkMarkers.GENERIC);
         assertEquals(A, banned.sampleToken(logits(OPEN))); // the open cannot start a span
         assertEquals(A, banned.sampleToken(logits(CLOSE))); // the close cannot leak either
         assertEquals(A, banned.sampleToken(logits(A))); // content is untouched
     }
 
     @Test
+    void aCloseOtherSpansShareIsNeverBanned() {
+        ChatTemplate.ThinkMarkers shared =
+                new ChatTemplate.ThinkMarkers(Thinking.OPEN, Thinking.CLOSE, true);
+        Sampler banned = Thinking.banMarkers(Sampler.ARGMAX, TOKENIZER, shared);
+        assertEquals(A, banned.sampleToken(logits(OPEN)));
+        assertEquals(CLOSE, banned.sampleToken(logits(CLOSE))); // it still ends the other spans
+        // a spent budget keeps it too: the answer after the forced close has to end
+        Sampler capped = Thinking.capBudget(Sampler.ARGMAX, TOKENIZER, 0, true, null, shared);
+        assertEquals(CLOSE, capped.sampleToken(logits(A)));
+        assertEquals(A, capped.sampleToken(logits(OPEN)));
+        assertEquals(CLOSE, capped.sampleToken(logits(CLOSE)));
+    }
+
+    @Test
     void gemmaChannelMarkersAreBanned() {
-        Sampler banned =
-                Thinking.banMarkers(Sampler.ARGMAX, GEMMA_TOKENIZER, "<|channel>", "<channel|>");
+        Sampler banned = Thinking.banMarkers(Sampler.ARGMAX, GEMMA_TOKENIZER, GEMMA_MARKERS);
         assertEquals(G_A, banned.sampleToken(logits(GEMMA_TOKENS, G_OPEN)));
         assertEquals(G_A, banned.sampleToken(logits(GEMMA_TOKENS, G_CLOSE)));
         assertEquals(G_A, banned.sampleToken(logits(GEMMA_TOKENS, G_A)));
@@ -59,7 +74,8 @@ class ThinkingTest {
     @Test
     void banningOnATokenizerWithoutMarkersIsANoOp() {
         Sampler banned =
-                Thinking.banMarkers(Sampler.ARGMAX, PLAIN_TOKENIZER, Thinking.OPEN, Thinking.CLOSE);
+                Thinking.banMarkers(
+                        Sampler.ARGMAX, PLAIN_TOKENIZER, ChatTemplate.ThinkMarkers.GENERIC);
         assertEquals(P_A, banned.sampleToken(logits(PLAIN_TOKENS, P_A)));
     }
 
@@ -83,8 +99,7 @@ class ThinkingTest {
                         1,
                         true,
                         null,
-                        Thinking.OPEN,
-                        Thinking.CLOSE);
+                        ChatTemplate.ThinkMarkers.GENERIC);
         assertEquals(P_A, capped.sampleToken(logits(PLAIN_TOKENS, P_A)));
         assertEquals(P_A, capped.sampleToken(logits(PLAIN_TOKENS, P_A)));
     }
@@ -125,7 +140,7 @@ class ThinkingTest {
                 };
         Sampler capped =
                 Thinking.capBudget(
-                        counting, TOKENIZER, 1, true, "ab", Thinking.OPEN, Thinking.CLOSE);
+                        counting, TOKENIZER, 1, true, "ab", ChatTemplate.ThinkMarkers.GENERIC);
         assertEquals(A, capped.sampleToken(logits(A))); // thought = 1 = budget
         assertEquals(1, draws[0]);
         // the cap forces "\n\nab\n\n" + close = 7 tokens without consulting the model
@@ -141,8 +156,7 @@ class ThinkingTest {
     @Test
     void gemmaChannelSpanIsCappedLikeTheGenericThinkSpan() {
         Sampler capped =
-                Thinking.capBudget(
-                        Sampler.ARGMAX, GEMMA_TOKENIZER, 2, true, null, "<|channel>", "<channel|>");
+                Thinking.capBudget(Sampler.ARGMAX, GEMMA_TOKENIZER, 2, true, null, GEMMA_MARKERS);
         assertEquals(G_A, capped.sampleToken(logits(GEMMA_TOKENS, G_A)));
         assertEquals(G_A, capped.sampleToken(logits(GEMMA_TOKENS, G_A)));
         assertEquals(G_NEWLINE, capped.sampleToken(logits(GEMMA_TOKENS, G_A)));
@@ -156,14 +170,7 @@ class ThinkingTest {
     @Test
     void gemmaChannelOpenedByTheModelIsCappedFromItsFirstToken() {
         Sampler capped =
-                Thinking.capBudget(
-                        Sampler.ARGMAX,
-                        GEMMA_TOKENIZER,
-                        1,
-                        false,
-                        null,
-                        "<|channel>",
-                        "<channel|>");
+                Thinking.capBudget(Sampler.ARGMAX, GEMMA_TOKENIZER, 1, false, null, GEMMA_MARKERS);
         assertEquals(
                 G_OPEN, capped.sampleToken(logits(GEMMA_TOKENS, G_OPEN))); // model opens the span
         assertEquals(G_A, capped.sampleToken(logits(GEMMA_TOKENS, G_A))); // thought = 1 = budget
@@ -263,8 +270,7 @@ class ThinkingTest {
                 budget,
                 startInThink,
                 message,
-                Thinking.OPEN,
-                Thinking.CLOSE);
+                ChatTemplate.ThinkMarkers.GENERIC);
     }
 
     private static MemoryView<MemorySegment> logits(int favorite) {

@@ -23,15 +23,15 @@ final class Thinking {
     private Thinking() {}
 
     /**
-     * Bans the think markers so a non-thinking request can never open a reasoning span. No-op for
-     * models without think markers.
+     * Bans the think markers so a non-thinking request can never open a reasoning span: the open,
+     * and the close unless other spans end on it too. No-op for models without think markers.
      */
-    static Sampler banMarkers(Sampler inner, Tokenizer tokenizer, String open, String close) {
-        Integer thinkStart = boxed(SpecialTokens.find(tokenizer, open));
-        Integer thinkEnd = boxed(SpecialTokens.find(tokenizer, close));
+    static Sampler banMarkers(
+            Sampler inner, Tokenizer tokenizer, ChatTemplate.ThinkMarkers markers) {
         Set<Integer> banned = new HashSet<>();
-        if (thinkStart != null) banned.add(thinkStart);
-        if (thinkEnd != null) banned.add(thinkEnd);
+        SpecialTokens.find(tokenizer, markers.open()).ifPresent(banned::add);
+        if (!markers.sharedClose())
+            SpecialTokens.find(tokenizer, markers.close()).ifPresent(banned::add);
         return Sampler.banning(inner, banned);
     }
 
@@ -58,16 +58,15 @@ final class Thinking {
             int budget,
             boolean startInThink,
             String message,
-            String open,
-            String close) {
-        Integer openId = boxed(SpecialTokens.find(tokenizer, open));
-        Integer closeId = boxed(SpecialTokens.find(tokenizer, close));
-        if (budget < 0 || openId == null || closeId == null) {
+            ChatTemplate.ThinkMarkers markers) {
+        OptionalInt openId = SpecialTokens.find(tokenizer, markers.open());
+        OptionalInt closeId = SpecialTokens.find(tokenizer, markers.close());
+        if (budget < 0 || openId.isEmpty() || closeId.isEmpty()) {
             return inner;
         }
-        int openToken = openId, closeToken = closeId;
+        int openToken = openId.getAsInt(), closeToken = closeId.getAsInt();
         int[] filler = encode(tokenizer, fillerText(message));
-        Sampler markersBanned = Sampler.banning(inner, Set.of(openId, closeId));
+        Sampler markersBanned = banMarkers(inner, tokenizer, markers);
         return new Sampler() {
             boolean inThink = startInThink;
             int thought;
@@ -95,8 +94,8 @@ final class Thinking {
                     }
                     return closeToken;
                 }
-                // a SPENT budget bans BOTH markers: a model force-closed mid-thought
-                // re-opens on its very next token (greedy Qwen3.5 does, deterministically),
+                // a SPENT budget bans BOTH markers (a shared close stays, as in banMarkers): a
+                // model force-closed mid-thought re-opens on its very next token (greedy Qwen3.5),
                 // and with only the open banned its next-best is the PAIRED CLOSE - either
                 // marker after the spend is scaffold the reply grammar does not expect, and
                 // the un-banned cap ping-pongs marker noise until LENGTH with a blank
@@ -134,9 +133,5 @@ final class Thinking {
         } catch (RuntimeException unsupported) {
             return new int[0];
         }
-    }
-
-    private static Integer boxed(OptionalInt id) {
-        return id.isPresent() ? id.getAsInt() : null;
     }
 }

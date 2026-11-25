@@ -934,7 +934,7 @@ public final class ReplyLanguage {
          * Masks {@code logits} to what the language admits here; returns false when nothing is
          * admissible (only after {@link #ended}). Free holes and free-opening dispatch points pass
          * through unmasked - AUTO content is the model's own. During candidacy the mask is the
-         * UNION of the candidates' admissions.
+         * UNION of the candidates' admissions, disabled calls left out where another region fits.
          */
         public boolean maskLogits(MemoryView<?> logits) {
             if (ended) return false;
@@ -942,7 +942,14 @@ public final class ReplyLanguage {
                 MemoryView<MemorySegment> writable = writable(logits);
                 int n = Math.toIntExact(logits.shape().size());
                 long[] union = new long[(n + 63) >> 6];
+                // a call nobody offered is no way out of a shared opener while another region
+                // fits: with its reasoning masked, Inkling 2 followed the block header with a
+                // made-up call name and ran it to LENGTH as visible text
+                boolean skipCalls =
+                        !toolCallsEnabled
+                                && cands.stream().anyMatch(c -> c.region().kind() != Kind.CALL);
                 for (Cand c : cands) {
+                    if (skipCalls && c.region().kind() == Kind.CALL) continue;
                     long[] m = c.cursor.admissible();
                     if (m == null) return true; // a DISABLED payload: pass-through
                     for (int i = 0; i < union.length && i < m.length; i++) union[i] |= m[i];

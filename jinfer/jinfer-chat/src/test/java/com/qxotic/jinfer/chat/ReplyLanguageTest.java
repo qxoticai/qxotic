@@ -551,29 +551,45 @@ public final class ReplyLanguageTest {
         assertEquals("f", ((Content.ToolCall) m.content().get(1)).name());
     }
 
+    /** The Harmony shape: two region kinds behind ONE opening mark, split by scaffold bytes. */
+    static Node harmonyish() {
+        return seq(
+                rep(
+                        alt(
+                                think(
+                                        mark("<call>"),
+                                        bytes("y"),
+                                        mark("[ARGS]"),
+                                        free(),
+                                        mark("</call>")),
+                                call(
+                                        ONE,
+                                        mark("<call>"),
+                                        bytes("f("),
+                                        gbnf("root ::= \"1\""),
+                                        bytes(")"),
+                                        mark("</call>"))),
+                        0,
+                        -1),
+                mark("<end>"));
+    }
+
+    @Test
+    void aDisabledCallIsNoWayOutOfASharedOpener() {
+        Walk offered = Selection.of(harmonyish(), TOK).walk();
+        offered.feed(CALL);
+        assertTrue(admitted(offered)[ch('f')], "an offered call may follow the opener");
+        Walk none = Selection.of(harmonyish(), TOK).walk();
+        none.disableToolCalls();
+        none.feed(CALL);
+        boolean[] ok = admitted(none);
+        assertTrue(ok[ch('y')], "the other region still opens");
+        assertFalse(ok[ch('f')], "a call nobody offered does not");
+    }
+
     @Test
     void sameOpenerRegionsDisambiguateThroughCandidacy() {
-        // the Harmony shape: two region kinds behind ONE opening mark, split by scaffold bytes
-        Node harmonyish =
-                seq(
-                        rep(
-                                alt(
-                                        think(
-                                                mark("<call>"),
-                                                bytes("y"),
-                                                mark("[ARGS]"),
-                                                free(),
-                                                mark("</call>")),
-                                        call(
-                                                ONE,
-                                                mark("<call>"),
-                                                bytes("f("),
-                                                gbnf("root ::= \"1\""),
-                                                bytes(")"),
-                                                mark("</call>"))),
-                                0,
-                                -1),
-                        mark("<end>"));
+        Node harmonyish = harmonyish();
         // path A: the scaffold byte 'f' commits the CALL candidate
         Walk w = Selection.of(harmonyish, TOK).walk();
         run(w, CALL);

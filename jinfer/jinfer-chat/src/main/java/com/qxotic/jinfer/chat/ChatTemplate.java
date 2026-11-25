@@ -111,14 +111,23 @@ public interface ChatTemplate {
         return Set.of();
     }
 
-    /** One family's think-span marker spellings. */
-    record ThinkMarkers(String open, String close) {
+    /**
+     * One family's think-span marker spellings. {@code sharedClose} says the close also ends spans
+     * that are not reasoning (Inkling 2 closes every block with {@code <|end_message|>}): masking
+     * it would leave the reply unable to end, so only the open is ever masked.
+     */
+    record ThinkMarkers(String open, String close, boolean sharedClose) {
         /** The {@code <think>}/{@code </think>} convention. */
         static final ThinkMarkers GENERIC = new ThinkMarkers(Thinking.OPEN, Thinking.CLOSE);
 
         public ThinkMarkers {
             Objects.requireNonNull(open, "open");
             Objects.requireNonNull(close, "close");
+        }
+
+        /** A pair only reasoning uses. */
+        public ThinkMarkers(String open, String close) {
+            this(open, close, false);
         }
     }
 

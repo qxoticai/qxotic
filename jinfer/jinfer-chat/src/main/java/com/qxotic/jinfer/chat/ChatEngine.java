@@ -1100,8 +1100,7 @@ public final class ChatEngine implements AutoCloseable {
                             loaded.template().map(ChatTemplate::replyForbidden).orElse(Set.of()));
         ChatTemplate.ThinkMarkers markers = thinkMarkers();
         if (!think) {
-            return Thinking.banMarkers(
-                    sampler, loaded.tokenizer(), markers.open(), markers.close());
+            return Thinking.banMarkers(sampler, loaded.tokenizer(), markers);
         }
         int budget = reasoningBudget(maxOutputTokens, reasoningOverride);
         // prompt-opened spans (replyPrefix carries the open id): the cap must start ARMED - the
@@ -1118,13 +1117,7 @@ public final class ChatEngine implements AutoCloseable {
             }
         }
         return Thinking.capBudget(
-                sampler,
-                loaded.tokenizer(),
-                budget,
-                startInThink,
-                reasoningCutoffMessage,
-                markers.open(),
-                markers.close());
+                sampler, loaded.tokenizer(), budget, startInThink, reasoningCutoffMessage, markers);
     }
 
     /**
