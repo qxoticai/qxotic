@@ -16,6 +16,7 @@ import com.qxotic.jota.stablehlo.attr.NamedAttribute;
 import com.qxotic.jota.stablehlo.attr.StringAttr;
 import com.qxotic.jota.stablehlo.attr.SymbolRefAttr;
 import com.qxotic.jota.stablehlo.attr.TypeAttr;
+import com.qxotic.jota.stablehlo.bytecode.InherentAttributes;
 import com.qxotic.jota.stablehlo.ir.Block;
 import com.qxotic.jota.stablehlo.ir.Operation;
 import com.qxotic.jota.stablehlo.ir.Program;
@@ -30,10 +31,7 @@ import com.qxotic.jota.stablehlo.type.Type;
 import java.util.ArrayDeque;
 import java.util.ArrayList;
 import java.util.Deque;
-import java.util.HashMap;
-import java.util.IdentityHashMap;
 import java.util.List;
-import java.util.Map;
 import java.util.Set;
 import java.util.StringJoiner;
 
@@ -59,8 +57,10 @@ import java.util.StringJoiner;
  * %0 = "stablehlo.add"(%arg0, %arg1) : (tensor<2xf32>, tensor<2xf32>) -> tensor<2xf32>
  * }</pre>
  *
- * Values are renumbered per function, as MLIR does: block arguments {@code %argN}, while-loop
- * arguments {@code %iterArg}, op results {@code %N} ({@code %N:k} / {@code %N#i} for several).
+ * Values are named as MLIR's printer names them ({@link SsaNames}): entry block arguments {@code
+ * %argN}, op results {@code %N} ({@code %N:k} / {@code %N#i} for several), and in the pretty form
+ * the dialects' names ({@code %cst} / {@code %c} constants, {@code %iterArg} while arguments,
+ * {@code %output_state, %output}...) with MLIR's {@code _<n>} suffixes for repeated names.
  */
 public final class MlirPrinter {
 
@@ -143,24 +143,12 @@ public final class MlirPrinter {
 
     private final boolean pretty;
     private final StringBuilder out = new StringBuilder();
-    private final Map<Value, String> names = new IdentityHashMap<>();
     private final Deque<String> defaultDialect = new ArrayDeque<>();
-    private Naming naming = new Naming();
+    private final SsaNames names;
 
-    /** Value numbering of one isolated scope (a function, a module). */
-    private static final class Naming {
-        int nextValue;
-        int nextArg;
-        final Map<String, Integer> uses = new HashMap<>();
-
-        String unique(String base) {
-            int n = uses.merge(base, 1, Integer::sum);
-            return "%" + (n == 1 ? base : base + "_" + (n - 2));
-        }
-    }
-
-    private MlirPrinter(boolean pretty) {
+    private MlirPrinter(Operation top, boolean pretty) {
         this.pretty = pretty;
+        this.names = SsaNames.of(top, pretty);
         defaultDialect.push("");
     }
 
@@ -171,7 +159,7 @@ public final class MlirPrinter {
 
     /** Pretty form of an operation (and the operations nested in it). */
     public static String print(Operation operation) {
-        MlirPrinter p = new MlirPrinter(true);
+        MlirPrinter p = new MlirPrinter(operation, true);
         p.operation(operation, 0);
         return p.out.toString();
     }
@@ -183,7 +171,7 @@ public final class MlirPrinter {
 
     /** Generic form of an operation (and the operations nested in it). */
     public static String printGeneric(Operation operation) {
-        MlirPrinter p = new MlirPrinter(false);
+        MlirPrinter p = new MlirPrinter(operation, false);
         p.operation(operation, 0);
         return p.out.toString();
     }
@@ -195,7 +183,7 @@ public final class MlirPrinter {
     }
 
     private String name(Value v) {
-        String n = names.get(v);
+        String n = names.name(v);
         if (n == null) {
             throw new IllegalStateException("value used before its definition: " + v);
         }
@@ -218,41 +206,36 @@ public final class MlirPrinter {
         return j.toString();
     }
 
-    private static boolean isolated(Operation op) {
-        return op.name().equals("func.func") || op.name().equals("builtin.module");
-    }
-
     private void operation(Operation op, int depth) {
-        Naming outer = naming;
         indent(depth);
         if (op.numResults() > 0) {
-            String n = "%" + naming.nextValue++;
-            if (op.numResults() == 1) {
-                names.put(op.result(0), n);
-                out.append(n);
-            } else {
-                for (int i = 0; i < op.numResults(); i++) {
-                    names.put(op.result(i), n + "#" + i);
-                }
-                out.append(n).append(':').append(op.numResults());
-            }
-            out.append(" = ");
-        }
-        if (isolated(op)) {
-            naming = new Naming();
+            out.append(names.resultList(op)).append(" = ");
         }
         if (!pretty || !pretty(op, depth)) {
             generic(op, depth);
         }
-        naming = outer;
         out.append('\n');
     }
 
+    /**
+     * {@code "name"(operands) <{properties}> (regions) {attributes} : type}. As in MLIR, the
+     * inherent attributes of a registered op are properties, and both dictionaries are sorted.
+     */
     private void generic(Operation op, int depth) {
+        List<NamedAttribute> properties = new ArrayList<>(op.properties());
+        List<NamedAttribute> attributes = new ArrayList<>();
+        Set<String> inherent = InherentAttributes.of(op.name());
+        for (NamedAttribute a : op.attributes()) {
+            boolean taken = properties.stream().anyMatch(p -> p.name().equals(a.name()));
+            (inherent != null && inherent.contains(a.name()) && !taken ? properties : attributes)
+                    .add(a);
+        }
+        properties.sort(java.util.Comparator.comparing(NamedAttribute::name));
+        attributes.sort(java.util.Comparator.comparing(NamedAttribute::name));
         out.append('"').append(op.name()).append("\"(").append(names(op.operands())).append(')');
-        if (!op.properties().isEmpty()) {
+        if (!properties.isEmpty()) {
             out.append(" <");
-            dict(op.properties());
+            dict(properties);
             out.append('>');
         }
         if (!op.regions().isEmpty()) {
@@ -267,9 +250,9 @@ public final class MlirPrinter {
             out.append(')');
             defaultDialect.pop();
         }
-        if (!op.attributes().isEmpty()) {
+        if (!attributes.isEmpty()) {
             out.append(' ');
-            dict(op.attributes());
+            dict(attributes);
         }
         out.append(" : ").append(functionalType(op));
     }
@@ -280,10 +263,6 @@ public final class MlirPrinter {
             out.append(i > 0 ? ", " : "").append(entries.get(i));
         }
         out.append('}');
-    }
-
-    private String argName() {
-        return "%arg" + naming.nextArg++;
     }
 
     /**
@@ -307,7 +286,7 @@ public final class MlirPrinter {
                     out.append('(');
                     for (int i = 0; i < block.arguments().size(); i++) {
                         Value a = block.argument(i);
-                        String n = names.computeIfAbsent(a, k -> argName());
+                        String n = name(a);
                         out.append(i > 0 ? ", " : "")
                                 .append(n)
                                 .append(": ")
@@ -408,10 +387,9 @@ public final class MlirPrinter {
                 : null;
     }
 
-    /** An enum keyword value: MLIR prints enum attributes after a space ({@code type = FFT}). */
+    /** An enum keyword value ({@code type = FFT}). */
     private static String enumKeyword(Attribute a, String kind) {
-        String v = enumOf(a, kind);
-        return v == null ? null : " " + v;
+        return enumOf(a, kind);
     }
 
     // ================================================================== pretty forms
@@ -436,6 +414,9 @@ public final class MlirPrinter {
         if (name.equals("func.return") || name.equals("stablehlo.return")) {
             return returnOp(op);
         }
+        if (op.dialect().equals("chlo")) {
+            return op.regions().isEmpty() && chlo(op);
+        }
         if (!op.dialect().equals("stablehlo")) {
             return false;
         }
@@ -446,6 +427,11 @@ public final class MlirPrinter {
         if (SAME_TYPE_OPS.contains(m) || FUNCTIONAL_OPS.contains(m)) {
             if (op.numResults() != 1 || (op.numOperands() == 0 && !m.equals("after_all"))) {
                 return false;
+            }
+            if (op.numOperands() == 0) { // MLIR keeps the space of the empty operand list
+                out.append(op.name()).append(' ').append(attrDict(op, Set.of()));
+                out.append(" : ").append(sameType(op));
+                return true;
             }
             emit(
                     op,
@@ -674,9 +660,7 @@ public final class MlirPrinter {
                 out.append(", ");
             }
             if (entry != null) {
-                String n = argName();
-                names.put(entry.argument(i), n);
-                out.append(n).append(": ");
+                out.append(name(entry.argument(i))).append(": ");
             }
             out.append(fn.inputs().get(i).mlir());
             if (!argAttrs.get(i).isEmpty()) {
@@ -771,6 +755,82 @@ public final class MlirPrinter {
         return true;
     }
 
+    /** {@code CHLO_UnaryElementwiseOp}s of {@code ChloOps.td}: {@code chlo.erf %x : T -> R}. */
+    private static final Set<String> CHLO_UNARY =
+            Set.of(
+                    "_asin_acos_kernel",
+                    "acos",
+                    "acosh",
+                    "asin",
+                    "asinh",
+                    "atan",
+                    "atanh",
+                    "bessel_i1e",
+                    "conj",
+                    "cosh",
+                    "digamma",
+                    "erf",
+                    "erf_inv",
+                    "erfc",
+                    "is_inf",
+                    "is_neg_inf",
+                    "is_pos_inf",
+                    "lgamma",
+                    "sinh",
+                    "square",
+                    "tan");
+
+    /** CHLO binary ops printed {@code chlo.next_after %x, %y : A, B -> R}. */
+    private static final Set<String> CHLO_BINARY =
+            Set.of("next_after", "polygamma", "zeta", "mulhi");
+
+    /**
+     * The assembly formats of {@code ChloOps.td}: unary and binary element-wise ops, {@code
+     * broadcast_*} ({@code chlo.broadcast_add %a, %b : (A, B) -> R}) and {@code top_k}; the other
+     * CHLO ops print in generic form.
+     */
+    private boolean chlo(Operation op) {
+        String m = op.mnemonic();
+        int arity = op.numOperands();
+        if (m.equals("top_k")) {
+            return topK(op);
+        }
+        if (op.numResults() != 1) {
+            return false;
+        }
+        String result = op.result(0).type().mlir();
+        if (CHLO_UNARY.contains(m) && arity == 1) {
+            emit(op, names(op.operands()), Set.of(), op.operand(0).type().mlir() + " -> " + result);
+        } else if (CHLO_BINARY.contains(m) && arity == 2) {
+            emit(op, names(op.operands()), Set.of(), types(op.operandTypes()) + " -> " + result);
+        } else if (m.startsWith("broadcast_") && arity == (m.equals("broadcast_select") ? 3 : 2)) {
+            emit(op, names(op.operands()), Set.of(), functionalType(op));
+        } else {
+            return false;
+        }
+        return true;
+    }
+
+    /** {@code chlo.top_k(%x, k = 2[, is_stable = true]) {..} : T -> (V, I)}. */
+    private boolean topK(Operation op) {
+        String k = I64.of(attr(op, "k"));
+        Attribute stable = attr(op, "is_stable");
+        if (op.numOperands() != 1
+                || op.numResults() != 2
+                || k == null
+                || (stable != null && !(stable instanceof BoolAttr))) {
+            return false;
+        }
+        out.append(op.name()).append('(').append(name(op.operand(0))).append(", k = ").append(k);
+        if (stable != null) {
+            out.append(", is_stable = ").append(stable);
+        }
+        out.append(')').append(attrDict(op, Set.of("k", "is_stable")));
+        out.append(" : ").append(op.operand(0).type().mlir());
+        out.append(" -> (").append(types(op.resultTypes())).append(')');
+        return true;
+    }
+
     /** {@code stablehlo.compare LT, %a, %b, FLOAT {..} : (A, B) -> R}. */
     private boolean compare(Operation op) {
         String dir = enumOf(attr(op, "comparison_direction"), "comparison_direction");
@@ -782,10 +842,10 @@ public final class MlirPrinter {
                 || (typeAttr != null && type == null)) {
             return false;
         }
-        out.append(op.name()).append("  ").append(dir).append(", ");
+        out.append(op.name()).append(' ').append(dir).append(", ");
         out.append(names(op.operands()));
         if (type != null) {
-            out.append(",  ").append(type);
+            out.append(", ").append(type);
         }
         out.append(attrDict(op, Set.of("comparison_direction", "compare_type")));
         out.append(" : ").append(functionalType(op));
@@ -1119,11 +1179,15 @@ public final class MlirPrinter {
                 || !singleBlock(op.region(1), types)) {
             return false;
         }
+        for (int i = 0; i < op.numOperands(); i++) {
+            if (!name(op.region(0).block().argument(i))
+                    .equals(name(op.region(1).block().argument(i)))) {
+                return false; // not reached: MLIR names both regions' arguments alike
+            }
+        }
         out.append(op.name()).append('(');
         for (int i = 0; i < op.numOperands(); i++) {
-            String n = naming.unique("iterArg");
-            names.put(op.region(0).block().argument(i), n);
-            names.put(op.region(1).block().argument(i), n);
+            String n = name(op.region(0).block().argument(i));
             out.append(i > 0 ? ", " : "").append(n).append(" = ").append(name(op.operand(i)));
         }
         out.append(')');
@@ -1137,7 +1201,7 @@ public final class MlirPrinter {
         defaultDialect.push("");
         out.append('\n');
         indent(depth);
-        out.append(" cond ");
+        out.append("cond ");
         region(op.region(0), depth, false);
         out.append(" do ");
         region(op.region(1), depth, false);
@@ -1178,9 +1242,6 @@ public final class MlirPrinter {
             indent(depth);
             out.append(" reducer");
             Block block = body.block();
-            for (Value a : block.arguments()) {
-                names.put(a, argName());
-            }
             for (int i = 0; i < n; i++) {
                 Value a = block.argument(i);
                 Value b = block.argument(i + n);

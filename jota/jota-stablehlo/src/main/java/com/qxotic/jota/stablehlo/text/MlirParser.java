@@ -1089,7 +1089,7 @@ public final class MlirParser extends AsmParser {
         return build(name, operands, types, hints, List.of(), attrs, List.of());
     }
 
-    /** {@code chlo.top_k(%x, k = 2) : T -> (T, I)}. */
+    /** {@code chlo.top_k(%x, k = 2[, is_stable = true]) : T -> (T, I)}. */
     private Operation topKOp(String name, int numResults, List<String> hints) {
         expect("(");
         Value operand = operandRef();
@@ -1097,14 +1097,15 @@ public final class MlirParser extends AsmParser {
         expectKeyword("k");
         expect("=");
         long k = integer();
+        List<NamedAttribute> props = new ArrayList<>();
+        props.add(new NamedAttribute("k", IntegerAttr.i64(k)));
+        if (tryConsume(",")) {
+            expectKeyword("is_stable");
+            expect("=");
+            props.add(new NamedAttribute("is_stable", BoolAttr.of(booleanKeyword())));
+        }
         expect(")");
-        return finishPretty(
-                name,
-                List.of(operand),
-                numResults,
-                hints,
-                List.of(new NamedAttribute("k", IntegerAttr.i64(k))),
-                List.of());
+        return finishPretty(name, List.of(operand), numResults, hints, props, List.of());
     }
 
     /** {@code arith.constant [attrs] 0 : index} / {@code arith.constant dense<..> : T}. */

@@ -91,6 +91,83 @@ class JaxInteropTest {
     }
 
     /**
+     * MLIR prints every testdata / interpreter program (the whole corpus with {@code
+     * -Dstablehlo.repo}, else the bundled samples), read from the generic form, exactly as {@link
+     * MlirPrinter#print} does: same text, value names included.
+     */
+    @Test
+    void stableHloPrintsAsWeDo(@TempDir Path dir) throws Exception {
+        String repo = System.getProperty("stablehlo.repo", "");
+        List<Path> files = new ArrayList<>();
+        if (repo.isEmpty()) {
+            files.addAll(Samples.files("text/testdata", ".mlir"));
+            files.addAll(Samples.files("text/interpret", ".mlir"));
+        } else {
+            files.addAll(Samples.list(Path.of(repo, "stablehlo/testdata"), ".mlir"));
+            files.addAll(Samples.list(Path.of(repo, "stablehlo/tests/interpret"), ".mlir"));
+        }
+        List<Path> written = new ArrayList<>();
+        List<String> ours = new ArrayList<>();
+        for (Path file : files) {
+            List<String> chunks = MlirParser.splitInputFile(Samples.read(file));
+            for (int c = 0; c < chunks.size(); c++) {
+                if (Samples.isNegativeOrEmpty(chunks.get(c)) || chunks.get(c).contains("!quant.")) {
+                    continue;
+                }
+                // MLIR reads the generic form (it has no parser for the check.* custom forms)
+                Program p = MlirParser.parse(chunks.get(c), file.toString());
+                Path out = dir.resolve(file.getFileName() + "." + c + ".generic");
+                Files.writeString(out, MlirPrinter.printGeneric(p));
+                written.add(out);
+                ours.add(MlirPrinter.print(p));
+            }
+        }
+        run(dir, PARSE, written);
+        int lines = 0;
+        List<String> differences = new ArrayList<>();
+        for (int i = 0; i < written.size(); i++) {
+            Path back = written.get(i).resolveSibling(written.get(i).getFileName() + ".mlir");
+            // MLIR fills in the DefaultValuedStrAttr of infeed / outfeed when it builds the op;
+            // the model keeps default values absent, as VhloToStableHlo and CanonicalizeDefaults do
+            List<String> theirs =
+                    Files.readAllLines(back).stream()
+                            .map(
+                                    l ->
+                                            l.replace(" <{infeed_config = \"\"}>", "")
+                                                    .replace(" <{outfeed_config = \"\"}>", ""))
+                            .toList();
+            List<String> mine = ours.get(i).lines().toList();
+            lines += theirs.size();
+            for (int l = 0; l < Math.max(theirs.size(), mine.size()); l++) {
+                String t = l < theirs.size() ? theirs.get(l) : "<none>";
+                String m = l < mine.size() ? mine.get(l) : "<none>";
+                if (!t.equals(m)) {
+                    differences.add(
+                            written.get(i).getFileName()
+                                    + ":"
+                                    + (l + 1)
+                                    + "\n  mlir: "
+                                    + t
+                                    + "\n  ours: "
+                                    + m);
+                }
+            }
+        }
+        Path report = Path.of("target", "stablehlo-print-differences.txt");
+        Files.write(report, differences);
+        assertTrue(
+                differences.isEmpty(),
+                differences.size()
+                        + " of "
+                        + lines
+                        + " lines differ (all in "
+                        + report
+                        + "), first ones:\n"
+                        + String.join(
+                                "\n", differences.subList(0, Math.min(40, differences.size()))));
+    }
+
+    /**
      * MLIR reads the plain bytecode written here, both with attribute dictionaries (bytecode
      * version 4) and with native properties in the layouts of jaxlib's StableHLO (version 6).
      */

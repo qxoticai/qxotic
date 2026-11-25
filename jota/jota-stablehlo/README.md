@@ -16,7 +16,7 @@ No native code: MLIR and StableHLO are not needed at runtime.
 Program p = MlirParser.parse(Path.of("model.mlir"));          // or PortableArtifact.deserialize(...)
 List<Diagnostic> errors = Verifier.verify(p);                  // spec constraints (Cn) + type inference
 byte[] artifact = PortableArtifact.serialize(p, StableHloVersion.parse("1.0.0"));
-String text = MlirPrinter.print(p);                            // as stablehlo-opt prints it
+String text = MlirPrinter.print(p);                            // as MLIR prints it, names included
 TirConversion tir = StableHloToTirConverter.convert(p, "main"); // run it on jota
 List<Object> results = Interpreter.run(p, "main", args);         // or interpret it directly
 Program exported = TirToStableHlo.export(tracedGraph);          // and back
@@ -58,7 +58,7 @@ Use a portable artifact to exchange programs between StableHLO versions.
 Optional properties widen it, on the command line or in an active `~/.m2/settings.xml` profile:
 
 - `-Dstablehlo.repo=/path/to/openxla/stablehlo`: the whole StableHLO corpus (2332 testdata programs, interpreter tests, every portable artifact version), the verifier corpus, and XLA's expected values on jota's TIR interpreter.
-- `-Dstablehlo.jax.python=tools/jax-python.sh`: cross-checks against StableHLO itself through a pinned jaxlib (it reads our portable artifacts and plain bytecode, parses and verifies our pretty text) and runs exported programs on XLA. The script creates its venv with `uv` on first use.
+- `-Dstablehlo.jax.python=tools/jax-python.sh`: cross-checks against StableHLO itself through a pinned jaxlib (it reads our portable artifacts and plain bytecode, parses and verifies our pretty text, and prints every program exactly as `MlirPrinter.print` does, value names included) and runs exported programs on XLA. The script creates its venv with `uv` on first use.
 
 ## Tools
 

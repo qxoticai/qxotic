@@ -123,7 +123,9 @@ public record DialectAttr(
     public String toString() {
         StringBuilder sb = new StringBuilder("#").append(dialect).append('.').append(mnemonic);
         sb.append('<');
-        if (params != null) {
+        if (params != null && dialect.equals("stablehlo") && mnemonic.equals("mesh")) {
+            meshBody(sb);
+        } else if (params != null) {
             for (int i = 0; i < params.size(); i++) {
                 if (i > 0) {
                     sb.append(", ");
@@ -136,5 +138,33 @@ public record DialectAttr(
             sb.append(rawBody);
         }
         return sb.append('>').toString();
+    }
+
+    /**
+     * {@code axes=[<name = "x", size = 2>, ...][, device_ids=dense<..> : T]}: the assembly format
+     * of {@code StableHLO_Mesh}, which elides the {@code #stablehlo.mesh_axis} prefix of its axes.
+     */
+    private void meshBody(StringBuilder sb) {
+        for (NamedAttribute p : params) {
+            if (p.name().equals("axes") && p.value() instanceof ArrayAttr axes) {
+                sb.append("axes=[");
+                for (int i = 0; i < axes.elements().size(); i++) {
+                    Attribute axis = axes.elements().get(i);
+                    String text = axis.toString();
+                    String prefix = "#stablehlo.mesh_axis";
+                    sb.append(i > 0 ? ", " : "")
+                            .append(
+                                    text.startsWith(prefix)
+                                            ? text.substring(prefix.length())
+                                            : text);
+                }
+                sb.append(']');
+            }
+        }
+        for (NamedAttribute p : params) {
+            if (!p.name().equals("axes")) {
+                sb.append(", ").append(p.name()).append('=').append(p.value());
+            }
+        }
     }
 }

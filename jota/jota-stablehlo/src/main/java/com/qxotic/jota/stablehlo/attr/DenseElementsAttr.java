@@ -208,9 +208,9 @@ public final class DenseElementsAttr implements Attribute {
     }
 
     /**
-     * MLIR spelling: splats print their element, booleans and small tensors print nested lists,
-     * larger tensors (more than {@value #HEX_ELEMENT_LIMIT} elements, MLIR's default {@code
-     * elementsAttrHexElementLimit}) print an exact hexadecimal blob.
+     * MLIR spelling: splats print their element, small tensors print nested lists, larger tensors
+     * (more than {@value #HEX_ELEMENT_LIMIT} elements, MLIR's default {@code
+     * elementsAttrHexElementLimit}) print an exact hexadecimal blob, one byte per {@code i1}.
      */
     @Override
     public String toString() {
@@ -219,8 +219,7 @@ public final class DenseElementsAttr implements Attribute {
             // MLIR spells every empty tensor dense<>
         } else if (splat) {
             sb.append(elementLiteral(0));
-        } else if (type.elementType() instanceof IntegerType it && it.isBoolean()
-                || numElements() <= HEX_ELEMENT_LIMIT) {
+        } else if (numElements() <= HEX_ELEMENT_LIMIT) {
             appendNested(sb, 0, 0);
         } else {
             sb.append("\"0x");
