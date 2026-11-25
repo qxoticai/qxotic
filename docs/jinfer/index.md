@@ -93,6 +93,7 @@ Architecture dispatch comes from providers on the classpath.
 | LFM3 | chat, vision (LFM3-VL, Omni), audio input and spoken replies (Omni), decisions (d1, d1-Omni) |
 | Laguna XS 2.1 | chat |
 | Mellum 2 | chat |
+| Inkling 2 Mini | chat, vision |
 | Ling 3 | chat |
 | Llama family | chat (Llama, Ministral, MiniCPM, SmolLM3, Granite) |
 | gpt-oss, Nemotron-H | chat |

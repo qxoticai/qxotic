@@ -35,6 +35,7 @@ AI on the JVM, just a Maven dependency away.
 | [OpenAI gpt-oss](https://openai.com/index/introducing-gpt-oss/) | chat | `jinfer-gptoss` |
 | [Poolside Laguna XS 2.1](https://poolside.ai/blog/introducing-laguna-xs-2-1) | chat | `jinfer-laguna` |
 | [JetBrains Mellum 2](https://blog.jetbrains.com/ai/2026/06/mellum2-goes-open-source-a-fast-model-for-ai-workflows/) | chat | `jinfer-mellum` |
+| [Thinking Machines Inkling 2 Mini](https://huggingface.co/thinkingmachines/Inkling-2-Mini) | chat, vision | `jinfer-inkling2` |
 | [Meta Llama 3+](https://github.com/meta-llama/llama-models) | chat | `jinfer-llama` |
 | [IBM Granite 4.1+](https://www.ibm.com/granite) | chat | `jinfer-llama` |
 | [Mistral AI Ministral 3](https://mistral.ai/news/mistral-3) | chat | `jinfer-llama` |

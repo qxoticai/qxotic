@@ -26,6 +26,10 @@ The native libraries, the jinfer command and the wheels are built with Oracle Gr
   A header that is not UTF-8, and a shape or offset written as `1.0` or `1e0`, are refused, as upstream refuses them.
 - **jinfer-fetch, new.** `com.qxotic:jinfer-fetch` is the HTTP GET jinfer-hub, toknroll-hf and toknroll-gguf download through, on Java 11 with no dependencies: the JDK's `HttpClient`, or `curl` as a process in native images, which then carry no TLS stack.
   It reads the proxy variables as curl does, `https_proxy` and `no_proxy` in either case and `http_proxy` only in lowercase, and a redirect to another host drops the `Authorization` header.
+- **Inkling 2 Mini.** Thinking Machines Inkling 2 Mini (`jinfer-inkling2`, architecture `inkling2_loop`) is a chat family: a 128-expert MoE whose layers 6 to 17 run three times per token, each pass over its own attention and convolution history, with a relative-position attention bias in place of rotary positions.
+  The chat template is native, with reasoning, tool calls and structured output, and toknroll has the `inkling2` pre-tokenizer.
+  With its `mmproj` as the `media` companion it reads images, each at its own size up to 4096 rows.
+  It matches llama.cpp.
 - **PrismML Ternary Bonsai 2.** `Q2_0` and PrismML's `PQ2_0` and `PTQ1_0` load across gguf, jota, jam and jinfer, and the Qwen3.5 port applies Bonsai's `prism.hadamard` rotation, so Ternary Bonsai 2 runs in all three, images included.
   Checkpoints with an MTP head and a Hadamard rotation are refused.
 - **Faster quantized matrix products in jam-native.** On AVX-512-VNNI CPUs prefill runs 8 to 13% faster end to end (LFM2.5-2.6B, 512 tokens, 16 threads), and calls of 3 to 7 tokens run twice as fast in the `Q4_0`, `Q5_0` and `MXFP4` kernels.
