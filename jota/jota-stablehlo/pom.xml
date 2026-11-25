@@ -1,0 +1,59 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project xmlns="http://maven.apache.org/POM/4.0.0" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 https://maven.apache.org/xsd/maven-4.0.0.xsd">
+  <modelVersion>4.0.0</modelVersion>
+
+  <parent>
+    <groupId>com.qxotic</groupId>
+    <artifactId>jota-aggregator</artifactId>
+    <version>0.4.0</version>
+  </parent>
+
+  <artifactId>jota-stablehlo</artifactId>
+  <name>Jota StableHLO</name>
+  <description>Java model of the StableHLO opset (types, attributes, operations, visitor), MLIR text
+    reader/writer, MLIR bytecode reader/writer, StableHLO portable artifacts (VHLO), and a
+    StableHLO to jota TIR converter.</description>
+
+  <properties>
+    <!-- Ports the StableHLO specification and ships StableHLO test samples (Apache-2.0):
+         the module embeds its own NOTICE. -->
+    <qxotic.notice.dir>${project.basedir}</qxotic.notice.dir>
+    <!-- Optional: point at a local openxla/stablehlo checkout to run the full sample corpus,
+         e.g. -Dstablehlo.repo=/path/to/openxla/stablehlo -->
+    <stablehlo.repo />
+    <!-- Optional: a Python with the pinned jax/jaxlib for JaxInteropTest and XlaExecutionTest,
+         e.g. -Dstablehlo.jax.python=tools/jax-python.sh (creates its venv on first use) -->
+    <stablehlo.jax.python />
+  </properties>
+
+  <dependencies>
+    <!-- StableHLO -> TIR conversion (package com.qxotic.jota.stablehlo.tir) -->
+    <dependency>
+      <groupId>com.qxotic</groupId>
+      <artifactId>jota-tensor</artifactId>
+      <version>${project.version}</version>
+    </dependency>
+    <!-- tests trace real tensor code into TIR graphs: needs a runtime -->
+    <dependency>
+      <groupId>com.qxotic</groupId>
+      <artifactId>jota-backend-panama</artifactId>
+      <version>${project.version}</version>
+      <scope>test</scope>
+    </dependency>
+  </dependencies>
+
+  <build>
+    <plugins>
+      <plugin>
+        <groupId>org.apache.maven.plugins</groupId>
+        <artifactId>maven-surefire-plugin</artifactId>
+        <configuration>
+          <systemPropertyVariables>
+            <stablehlo.repo>${stablehlo.repo}</stablehlo.repo>
+            <stablehlo.jax.python>${stablehlo.jax.python}</stablehlo.jax.python>
+          </systemPropertyVariables>
+        </configuration>
+      </plugin>
+    </plugins>
+  </build>
+</project>

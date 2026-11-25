@@ -298,6 +298,11 @@ final class TIREvalVisitor implements TIRVisitor<MemoryView<MemorySegment>> {
         MemoryView<MemorySegment> output = context.allocateTemporary(dtype, layout);
         long size = layout.shape().size();
 
+        if (node.op() == BinaryOperator.EQUAL || node.op() == BinaryOperator.LESS_THAN) {
+            // Comparisons produce BOOL: dispatch on the operand type, not on the result type.
+            executeComparison(node.op(), left, right, output, size);
+            return output;
+        }
         if (dtype == DataType.FP16) {
             executeBinaryFP16(node.op(), left, right, output, size);
         } else if (dtype == DataType.BF16) {
@@ -321,6 +326,37 @@ final class TIREvalVisitor implements TIRVisitor<MemoryView<MemorySegment>> {
         }
 
         return output;
+    }
+
+    private void executeComparison(
+            BinaryOperator op,
+            MemoryView<MemorySegment> left,
+            MemoryView<MemorySegment> right,
+            MemoryView<MemorySegment> output,
+            long size) {
+        DataType leftType = left.dataType();
+        DataType rightType = right.dataType();
+        boolean floating = leftType.isFloatingPoint() || rightType.isFloatingPoint();
+        for (long i = 0; i < size; i++) {
+            long leftOffset = Indexing.linearToOffset(left, i);
+            long rightOffset = Indexing.linearToOffset(right, i);
+            boolean result;
+            if (floating) {
+                double a = readAsDouble(left, leftType, leftOffset);
+                double b = readAsDouble(right, rightType, rightOffset);
+                result = op == BinaryOperator.EQUAL ? a == b : a < b;
+            } else {
+                long a = readAsLong(left, leftType, leftOffset);
+                long b = readAsLong(right, rightType, rightOffset);
+                if (leftType == DataType.BOOL) {
+                    a = a != 0 ? 1 : 0;
+                    b = b != 0 ? 1 : 0;
+                }
+                result = op == BinaryOperator.EQUAL ? a == b : a < b;
+            }
+            memAccess.writeByte(
+                    output.memory(), Indexing.linearToOffset(output, i), (byte) (result ? 1 : 0));
+        }
     }
 
     private int readShiftCount(MemoryView<MemorySegment> right, long linearIndex) {

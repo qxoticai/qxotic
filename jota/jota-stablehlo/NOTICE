@@ -1,0 +1,23 @@
+Jota StableHLO
+Copyright 2026 Quixotic AI (https://qxotic.ai)
+
+This product is licensed under the Apache License, Version 2.0 (see LICENSE).
+
+This component includes work derived from StableHLO (https://github.com/openxla/stablehlo),
+Copyright 2022-2026 The StableHLO Authors, licensed under the Apache License, Version 2.0:
+  - the Java model of types, attributes and operations follows docs/spec.md and
+    stablehlo/dialect/*.td;
+  - the text syntax follows the MLIR assembly formats declared in stablehlo/dialect/*.td;
+  - the VHLO encoding, decoding and legalization follow stablehlo/dialect/VhloBytecode.cpp,
+    stablehlo/transforms/VhloLegalizeToStablehlo.cpp, StablehloLegalizeToVhlo.cpp and
+    VhloToVersionPatterns.td; vhlo/VhloOpSchemas.java is generated from
+    stablehlo/dialect/VhloOps.td;
+  - src/test/resources/stablehlo-samples contains test files copied unmodified from
+    stablehlo/testdata, stablehlo/tests/interpret and stablehlo/tests/vhlo
+    (see src/test/resources/stablehlo-samples/SAMPLES_VERSION).
+
+The MLIR bytecode reader and writer follow the MLIR bytecode format of the LLVM Project
+(https://llvm.org, mlir/docs/BytecodeFormat.md, mlir/lib/Bytecode/Reader/BytecodeReader.cpp,
+mlir/lib/Bytecode/Writer/BytecodeWriter.cpp,
+mlir/include/mlir/IR/BuiltinDialectBytecode.td), licensed under the Apache License, Version 2.0
+with LLVM Exceptions.
