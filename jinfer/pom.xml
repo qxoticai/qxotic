@@ -32,6 +32,7 @@
     <module>jinfer-qwen35</module>
     <module>jinfer-bailingmoe3</module>
     <module>jinfer-laguna</module>
+    <module>jinfer-inkling2</module>
     <module>jinfer-mellum</module>
     <module>jinfer-gemma4</module>
     <module>jinfer-gemma-embedding2</module>
@@ -176,6 +177,11 @@
       <dependency>
         <groupId>com.qxotic</groupId>
         <artifactId>jinfer-laguna</artifactId>
+        <version>${jinfer.version}</version>
+      </dependency>
+      <dependency>
+        <groupId>com.qxotic</groupId>
+        <artifactId>jinfer-inkling2</artifactId>
         <version>${jinfer.version}</version>
       </dependency>
       <dependency>
