@@ -211,8 +211,20 @@ class AsmParser extends AsmLexer {
         if (tryConsume(",")) {
             encoding = canonicalEncoding(attribute());
         }
+        int end = pos;
         expect(">");
-        return new TensorType(dims, et, encoding);
+        TensorType t = new TensorType(dims, et, encoding);
+        long[] bounds = t.bounds();
+        if (bounds != null && bounds.length != t.rank()) {
+            throw errorAt(
+                    end,
+                    "Bounds length is "
+                            + bounds.length
+                            + ", expected to be equal to rank("
+                            + t.rank()
+                            + ") of the tensor");
+        }
+        return t;
     }
 
     /**
@@ -312,7 +324,16 @@ class AsmParser extends AsmLexer {
                 expect("<");
                 List<Type> types = new ArrayList<>();
                 do {
-                    types.add(type());
+                    int at = pos;
+                    Type t = type();
+                    if (!(t instanceof TensorType)) {
+                        throw errorAt(
+                                at,
+                                "future element type must be a ranked tensor, but got '"
+                                        + t.mlir()
+                                        + "'");
+                    }
+                    types.add(t);
                 } while (tryConsume(","));
                 expect(">");
                 return new FutureType(types);
@@ -324,6 +345,9 @@ class AsmParser extends AsmLexer {
                 Type alias = typeAliases.get(name);
                 if (alias != null) {
                     return alias;
+                }
+                if (name.startsWith("stablehlo.")) {
+                    throw errorAt(start, "unknown stablehlo type: " + name.substring(10));
                 }
                 if (charAt(0) == '<') {
                     balanced('<', '>');
@@ -590,12 +614,58 @@ class AsmParser extends AsmLexer {
         return out;
     }
 
+    /** The parameters MLIR's custom parsers of these struct attributes accept. */
+    private static final Map<String, java.util.Set<String>> KNOWN_KEYS =
+            Map.of(
+                    "dot",
+                    java.util.Set.of(
+                            "lhs_batching_dimensions",
+                            "rhs_batching_dimensions",
+                            "lhs_contracting_dimensions",
+                            "rhs_contracting_dimensions"),
+                    "gather",
+                    java.util.Set.of(
+                            "offset_dims",
+                            "collapsed_slice_dims",
+                            "operand_batching_dims",
+                            "start_indices_batching_dims",
+                            "start_index_map",
+                            "index_vector_dim"),
+                    "scatter",
+                    java.util.Set.of(
+                            "update_window_dims",
+                            "inserted_window_dims",
+                            "input_batching_dims",
+                            "scatter_indices_batching_dims",
+                            "scatter_dims_to_operand_dims",
+                            "index_vector_dim"));
+
+    private void checkKeys(String dialect, String mnemonic, List<NamedAttribute> params, int at) {
+        java.util.Set<String> known = dialect.equals("stablehlo") ? KNOWN_KEYS.get(mnemonic) : null;
+        if (known == null) {
+            return;
+        }
+        for (NamedAttribute p : params) {
+            if (!known.contains(p.name())) {
+                throw errorAt(
+                        at,
+                        "expected one of: "
+                                + known.stream().sorted().map(k -> "`" + k + "`").toList()
+                                + ", got `"
+                                + p.name()
+                                + "` in #stablehlo."
+                                + mnemonic);
+            }
+        }
+    }
+
     DialectAttr dialectAttrBody(String dialect, String mnemonic) {
         ws();
         int bodyStart = pos;
         String body = balanced('<', '>');
         List<NamedAttribute> params = tryParseParams(bodyStart + 1, pos - 1);
         if (params != null) {
+            checkKeys(dialect, mnemonic, params, bodyStart);
             return DialectAttr.ofParams(dialect, mnemonic, withDefaults(dialect, mnemonic, params));
         }
         String inner = body.substring(1, body.length() - 1).trim().replaceAll("\\s+", " ");
@@ -606,7 +676,7 @@ class AsmParser extends AsmLexer {
             try {
                 return ConvDimensionNumbers.from(raw).toAttribute();
             } catch (IllegalArgumentException e) {
-                return raw; // malformed: left to the verifier
+                throw errorAt(bodyStart, e.getMessage()); // MLIR rejects it while parsing
             }
         }
         return raw;

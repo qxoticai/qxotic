@@ -251,7 +251,7 @@ class VerifierCorpusTest {
      * Fraction rejected (StableHLO at 1.27: 559 of 591, the rest are mostly parser-level or
      * tuple-layout rules).
      */
-    static final double MIN_CAUGHT = 0.9;
+    static final double MIN_CAUGHT = 1.0; // every invalid program the parser accepts
 
     private static int offset(String g) {
         if (g == null) {

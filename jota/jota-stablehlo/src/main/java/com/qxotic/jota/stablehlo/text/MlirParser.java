@@ -467,6 +467,19 @@ public final class MlirParser extends AsmParser {
         };
     }
 
+    /**
+     * The commutative binary ops of the stablehlo dialect ({@code applies} of a compact reduce).
+     */
+    private static final java.util.Set<String> COMPACT_REDUCERS =
+            java.util.Set.of(
+                    "stablehlo.add",
+                    "stablehlo.multiply",
+                    "stablehlo.maximum",
+                    "stablehlo.minimum",
+                    "stablehlo.and",
+                    "stablehlo.or",
+                    "stablehlo.xor");
+
     private Operation build(
             String name,
             List<Value> operands,
@@ -786,7 +799,17 @@ public final class MlirParser extends AsmParser {
             inits.add(operandRef());
             expect(")");
         } while (tryConsume(","));
-        String applies = tryKeyword("applies") ? ident() : null;
+        String applies = null;
+        if (tryKeyword("applies")) {
+            int at = pos;
+            applies = ident();
+            if (!COMPACT_REDUCERS.contains(applies)) {
+                throw errorAt(
+                        at,
+                        "expected the inner-op to be a commutative binary-op from the stablehlo"
+                                + " dialect, with zero region, producing single result");
+            }
+        }
         expectKeyword("across");
         expectKeyword("dimensions");
         expect("=");

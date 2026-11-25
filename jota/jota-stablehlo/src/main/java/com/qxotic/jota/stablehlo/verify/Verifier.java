@@ -5,10 +5,14 @@ import com.qxotic.jota.stablehlo.attr.Attribute;
 import com.qxotic.jota.stablehlo.attr.ComparisonType;
 import com.qxotic.jota.stablehlo.attr.ConvDimensionNumbers;
 import com.qxotic.jota.stablehlo.attr.DenseElementsAttr;
+import com.qxotic.jota.stablehlo.attr.DialectAttr;
 import com.qxotic.jota.stablehlo.attr.DotDimensionNumbers;
+import com.qxotic.jota.stablehlo.attr.EnumAttr;
 import com.qxotic.jota.stablehlo.attr.FftType;
 import com.qxotic.jota.stablehlo.attr.GatherDimensionNumbers;
+import com.qxotic.jota.stablehlo.attr.IntegerAttr;
 import com.qxotic.jota.stablehlo.attr.ScatterDimensionNumbers;
+import com.qxotic.jota.stablehlo.attr.SymbolRefAttr;
 import com.qxotic.jota.stablehlo.ir.Block;
 import com.qxotic.jota.stablehlo.ir.Operation;
 import com.qxotic.jota.stablehlo.ir.Program;
@@ -57,6 +61,298 @@ public final class Verifier implements OpVisitor<Void> {
 
     private Verifier(Program program) {
         this.program = program;
+    }
+
+    /** True when an operation of the program defines {@code symbol} ({@code sym_name}). */
+    private boolean hasSymbol(String symbol) {
+        boolean[] found = {false};
+        program.operation()
+                .walk(
+                        o -> {
+                            if (o.attribute("sym_name").orElse(null)
+                                            instanceof com.qxotic.jota.stablehlo.attr.StringAttr n
+                                    && n.value().equals(symbol)) {
+                                found[0] = true;
+                            }
+                        });
+        return found[0];
+    }
+
+    /** The dot algorithms {@code getKnownDotAlgorithm} ({@code Base.cpp}) accepts. */
+    private static final java.util.Set<String> KNOWN_DOT_ALGORITHMS =
+            java.util.Set.of(
+                    "f16,f16,f16,1",
+                    "f16,f16,f32,1",
+                    "bf16,bf16,bf16,1",
+                    "bf16,bf16,f32,1",
+                    "bf16,bf16,f32,3",
+                    "f8E4M3FN,f8E4M3FN,f32,3",
+                    "f8E4M3FN,f8E4M3FN,f32,4",
+                    "bf16,bf16,f32,6",
+                    "bf16,bf16,f32,9",
+                    "tf32,tf32,f32,1",
+                    "tf32,tf32,f32,3",
+                    "f32,f32,f32,1",
+                    "f64,f64,f64,1");
+
+    /** f8 types of the {@code ANY_F8} algorithms (E8M0FNU and E5M3FNU deliberately excluded). */
+    private static final java.util.Set<String> ANY_F8 =
+            java.util.Set.of(
+                    "f8E3M4",
+                    "f8E4M3",
+                    "f8E4M3FN",
+                    "f8E5M2",
+                    "f8E4M3FNUZ",
+                    "f8E4M3B11FNUZ",
+                    "f8E5M2FNUZ");
+
+    /** dot_general (I8-I10): the algorithm must be one known to be supported on some hardware. */
+    private void knownDotAlgorithm(DialectAttr alg) {
+        String lhs = typeParam(alg, "lhs_precision_type");
+        String rhs = typeParam(alg, "rhs_precision_type");
+        String acc = typeParam(alg, "accumulation_type");
+        long lc = longParam(alg, "lhs_component_count");
+        long rc = longParam(alg, "rhs_component_count");
+        long ops = longParam(alg, "num_primitive_operations");
+        boolean imprecise =
+                alg.param("allow_imprecise_accumulation").orElse(null)
+                                instanceof com.qxotic.jota.stablehlo.attr.BoolAttr b
+                        && b.value();
+        if (lhs == null || rhs == null || acc == null || lc < 1 || rc < 1 || ops < 1) {
+            return; // malformed: reported by the constraints above
+        }
+        boolean known;
+        if (lc != 1 || rc != 1) {
+            known = false;
+        } else if (ANY_F8.contains(lhs) && ANY_F8.contains(rhs) && acc.equals("f32") && ops == 1) {
+            known = true;
+        } else {
+            known =
+                    !imprecise
+                            && KNOWN_DOT_ALGORITHMS.contains(
+                                    lhs + "," + rhs + "," + acc + "," + ops);
+        }
+        check(
+                known,
+                "I8",
+                "dot algorithm not known to be supported on any hardware: {lhs:'"
+                        + lhs
+                        + "', rhs:'"
+                        + rhs
+                        + "', accum:'"
+                        + acc
+                        + "', lhs_components:"
+                        + lc
+                        + ", rhs_components:"
+                        + rc
+                        + ", primitive_ops:"
+                        + ops
+                        + ", imprecise:"
+                        + (imprecise ? 1 : 0)
+                        + "}");
+    }
+
+    private static String typeParam(DialectAttr d, String name) {
+        return d.param(name).orElse(null) instanceof com.qxotic.jota.stablehlo.attr.TypeAttr t
+                ? t.type().mlir()
+                : null;
+    }
+
+    private static long longParam(DialectAttr d, String name) {
+        return d.param(name).orElse(null) instanceof IntegerAttr i ? i.value() : 1;
+    }
+
+    /** Shape (DYN for '?') and element type of a {@code memref<...>} (kept as an opaque type). */
+    private record MemRef(long[] dims, String element) {}
+
+    private static MemRef memref(Type t) {
+        if (!(t instanceof com.qxotic.jota.stablehlo.type.OpaqueType o)) {
+            return null;
+        }
+        String s = o.mlir();
+        if (!s.startsWith("memref<") || !s.endsWith(">")) {
+            return null;
+        }
+        String body = s.substring(7, s.length() - 1);
+        int depth = 0;
+        int end = body.length();
+        for (int i = 0; i < body.length(); i++) { // drop ", layout, memory space"
+            char c = body.charAt(i);
+            depth += c == '<' ? 1 : c == '>' ? -1 : 0;
+            if (c == ',' && depth == 0) {
+                end = i;
+                break;
+            }
+        }
+        String[] parts = body.substring(0, end).trim().split("x");
+        long[] dims = new long[parts.length - 1];
+        for (int i = 0; i < dims.length; i++) {
+            dims[i] = parts[i].equals("?") ? DYN : Long.parseLong(parts[i]);
+        }
+        return new MemRef(dims, parts[parts.length - 1]);
+    }
+
+    /** Shape and element type of a tensor or memref, for {@code verifyCompatibleShape}. */
+    private static MemRef shapeOf(Type t) {
+        if (t instanceof TensorType tt) {
+            return new MemRef(tt.dims(), tt.elementType().mlir());
+        }
+        return memref(t);
+    }
+
+    private static boolean compatible(Type a, Type b) {
+        MemRef x = shapeOf(a);
+        MemRef y = shapeOf(b);
+        if (x == null || y == null || x.dims().length != y.dims().length) {
+            return false;
+        }
+        for (int i = 0; i < x.dims().length; i++) {
+            if (!dimEq(x.dims()[i], y.dims()[i])) {
+                return false;
+            }
+        }
+        return x.element().equals(y.element());
+    }
+
+    /**
+     * The buffer custom calls verified by {@code CustomCallOp::verify} ({@code CreateBuffer},
+     * {@code Pin}, {@code Unpin}, {@code FanOut}, {@code FanIn}); false when the call was reported.
+     */
+    private boolean namedCustomCall(String target, Operation o) {
+        List<Type> in = o.operandTypes();
+        List<Type> out = o.resultTypes();
+        switch (target) {
+            case "CreateBuffer" -> {
+                return check(
+                                in.isEmpty(),
+                                "custom_call",
+                                "CreateBuffer custom_call shouldn't have any inputs")
+                        && check(
+                                out.size() == 1,
+                                "custom_call",
+                                "CreateBuffer custom_call should have one result")
+                        && check(
+                                memref(out.getFirst()) != null,
+                                "custom_call",
+                                "CreateBuffer custom_call should have a memref result");
+            }
+            case "Pin", "Unpin" -> {
+                boolean pin = target.equals("Pin");
+                return check(
+                                in.size() == 1,
+                                "custom_call",
+                                target + " custom_call should have one input")
+                        && check(
+                                pin
+                                        ? in.getFirst() instanceof TensorType
+                                        : memref(in.getFirst()) != null,
+                                "custom_call",
+                                target
+                                        + " custom_call should have a "
+                                        + (pin ? "tensor" : "memref")
+                                        + " input")
+                        && check(
+                                out.size() == 1,
+                                "custom_call",
+                                target + " custom_call should have one output")
+                        && check(
+                                pin
+                                        ? memref(out.getFirst()) != null
+                                        : out.getFirst() instanceof TensorType,
+                                "custom_call",
+                                target
+                                        + " custom_call should have a "
+                                        + (pin ? "memref" : "tensor")
+                                        + " output")
+                        && check(
+                                compatible(in.getFirst(), out.getFirst()),
+                                "custom_call",
+                                target
+                                        + " custom_call should have compatible input and output"
+                                        + " types");
+            }
+            case "FanOut" -> {
+                if (!check(
+                                in.size() == 1,
+                                "custom_call",
+                                "FanOut custom_call should have one input, but got " + in.size())
+                        || !check(
+                                memref(in.getFirst()) != null,
+                                "custom_call",
+                                "FanOut custom_call should have a memref input, but got "
+                                        + in.getFirst().mlir())) {
+                    return false;
+                }
+                List<Type> results =
+                        out.size() == 1 && out.getFirst() instanceof TupleType t ? t.types() : out;
+                if (!check(
+                        results.size() >= 2,
+                        "custom_call",
+                        "FanOut custom_call should have at least two outputs, but got "
+                                + results.size())) {
+                    return false;
+                }
+                for (Type r : results) {
+                    if (!check(
+                                    memref(r) != null,
+                                    "custom_call",
+                                    "FanOut custom_call should have memref outputs, but got "
+                                            + r.mlir())
+                            || !check(
+                                    compatible(in.getFirst(), r),
+                                    "custom_call",
+                                    "FanOut custom_call should have compatible input and output"
+                                            + " types, but got input '"
+                                            + in.getFirst().mlir()
+                                            + "' and output '"
+                                            + r.mlir()
+                                            + "'")) {
+                        return false;
+                    }
+                }
+                return true;
+            }
+            case "FanIn" -> {
+                if (!check(
+                                in.size() >= 2,
+                                "custom_call",
+                                "FanIn custom_call should have at least two inputs, but got "
+                                        + in.size())
+                        || !check(
+                                out.size() == 1,
+                                "custom_call",
+                                "FanIn custom_call should have one output, but got " + out.size())
+                        || !check(
+                                memref(out.getFirst()) != null,
+                                "custom_call",
+                                "FanIn custom_call should have a memref output, but got "
+                                        + out.getFirst().mlir())) {
+                    return false;
+                }
+                for (Type t : in) {
+                    if (!check(
+                                    memref(t) != null,
+                                    "custom_call",
+                                    "FanIn custom_call should have memref inputs, but got "
+                                            + t.mlir())
+                            || !check(
+                                    compatible(t, out.getFirst()),
+                                    "custom_call",
+                                    "FanIn custom_call should have compatible input and output"
+                                            + " types, but got input '"
+                                            + t.mlir()
+                                            + "' and output '"
+                                            + out.getFirst().mlir()
+                                            + "'")) {
+                        return false;
+                    }
+                }
+                return true;
+            }
+            default -> {
+                return true;
+            }
+        }
     }
 
     /** All constraint violations of {@code program}, in operation order. */
@@ -132,8 +428,49 @@ public final class Verifier implements OpVisitor<Void> {
                     "stablehlo.round_nearest_even");
 
     /** Operand type classes of the op definitions, and the {@code result_accuracy} attribute. */
+    /**
+     * {@code HLO_StaticShapeTensor...OrBoundedTensor}: a static shape, or exactly one dynamic
+     * dimension with exactly one bound ({@code hasSingleBoundedDimension} in {@code Base.cpp}).
+     */
+    private static boolean staticOrSingleBounded(TensorType t) {
+        if (t.hasStaticShape()) {
+            return true;
+        }
+        long[] bounds = t.bounds();
+        if (bounds == null) {
+            return false;
+        }
+        long bounded = java.util.Arrays.stream(bounds).filter(b -> b != DYN).count();
+        long dynamic = java.util.Arrays.stream(t.dims()).filter(d -> d == DYN).count();
+        return bounded == 1 && dynamic == 1;
+    }
+
     private void common(Operation op) {
         String name = op.name();
+        // ODS attribute constraints shared by several ops
+        if (op.dialect().equals("stablehlo")
+                && op.attribute("precision_config").orElse(null) instanceof Attribute pc) {
+            check(
+                    pc instanceof ArrayAttr arr
+                            && arr.elements().stream()
+                                    .allMatch(
+                                            e ->
+                                                    e instanceof EnumAttr en
+                                                            && en.kind().equals("precision")),
+                    "attr",
+                    "'precision_config' failed to satisfy constraint: an array of precisions,"
+                            + " got "
+                            + pc);
+        }
+        if (op.attribute("replica_groups").orElse(null) instanceof DialectAttr groups
+                && groups.mnemonic().equals("replica_group_mesh_axes")
+                && groups.param("mesh").orElse(null) instanceof SymbolRefAttr mesh) {
+            // verifySymbolUses: the mesh symbol must exist (any symbol of the module)
+            check(
+                    hasSymbol(mesh.root()),
+                    "replica_groups",
+                    "replica_groups: mesh symbol '" + mesh.root() + "' not found");
+        }
         for (Value v : op.operands()) {
             TensorType t = tt(v);
             if (t == null) {
@@ -1324,9 +1661,9 @@ public final class Verifier implements OpVisitor<Void> {
             return null;
         }
         check(
-                r.hasStaticShape() || r.encoding() != null,
+                staticOrSingleBounded(r),
                 "type",
-                "result must be statically shaped or bounded");
+                "result #0 must be statically shaped or single bounded dimension tensor");
         if (x.hasStaticShape() && r.hasStaticShape()) {
             check(
                     x.numElements() == r.numElements(),
@@ -1476,9 +1813,9 @@ public final class Verifier implements OpVisitor<Void> {
             return null;
         }
         check(
-                r.hasStaticShape() || r.encoding() != null,
+                staticOrSingleBounded(r),
                 "type",
-                "result must be statically shaped or bounded");
+                "result #0 must be statically shaped or single bounded dimension tensor");
         checkBroadcastQuantization(x, r, op.broadcastDimensions());
         checkBroadcastDims(x, r, op.broadcastDimensions());
         return null;
@@ -2603,6 +2940,7 @@ public final class Verifier implements OpVisitor<Void> {
                                 .orElse(1L);
                 check(v > 0, p[1], p[0].replace('_', ' ') + " must be positive");
             }
+            knownDotAlgorithm(alg);
             op.precisionConfig()
                     .ifPresent(
                             pc -> {
@@ -2878,6 +3216,18 @@ public final class Verifier implements OpVisitor<Void> {
                     kOut % fgc == 0,
                     "C16",
                     "kernel output feature dimension must be divisible by feature_group_count");
+        }
+        // verifyWindowAttributesAndInferWindowDimensions: the window is the kernel's spatial size
+        for (int i = 0; i < dn.kernelSpatialDimensions().length; i++) {
+            long k = rh.dim((int) dn.kernelSpatialDimensions()[i]);
+            check(
+                    k == DYN || k > 0,
+                    "window",
+                    "expects window to have positive value for "
+                            + i
+                            + "-th window dimension, but got "
+                            + k
+                            + ".");
         }
         if (r == null) {
             return;
@@ -3553,8 +3903,48 @@ public final class Verifier implements OpVisitor<Void> {
                         "C2",
                         "results before the token must be tensors");
             }
+            infeedLayout(op.operation().attribute("layout").orElse(null), rs.size() - 1);
         }
         return null;
+    }
+
+    /**
+     * The optional {@code layout} of an infeed: one integer list per non-token result ({@code
+     * verifyInfeedOp} in {@code TypeInference.cpp}; not in the spec).
+     */
+    private void infeedLayout(Attribute layout, int results) {
+        if (layout == null) {
+            return;
+        }
+        if (!(layout instanceof ArrayAttr arr)) {
+            check(false, "layout", "layout-attribute must be an array, but got " + layout);
+            return;
+        }
+        if (!check(
+                arr.elements().size() == results,
+                "layout",
+                "layout-attribute size must be "
+                        + results
+                        + " (which is the number of op-results - 1 (for token result)), but got "
+                        + arr.elements().size())) {
+            return;
+        }
+        for (Attribute child : arr.elements()) {
+            if (!check(
+                    child instanceof ArrayAttr,
+                    "layout",
+                    "layout-attribute expected to have elements of type array, but got " + child)) {
+                continue;
+            }
+            for (Attribute leaf : ((ArrayAttr) child).elements()) {
+                check(
+                        leaf instanceof IntegerAttr,
+                        "layout",
+                        "layout-attribute's leaf elements are expected to be of type integer, but"
+                                + " got "
+                                + leaf);
+            }
+        }
     }
 
     @Override
@@ -3777,6 +4167,11 @@ public final class Verifier implements OpVisitor<Void> {
     @Override
     public Void visitCustomCall(CustomCallOp op) {
         Operation o = op.operation();
+        if (java.util.Set.of("CreateBuffer", "Pin", "Unpin", "FanOut", "FanIn")
+                .contains(op.callTargetName())) {
+            namedCustomCall(op.callTargetName(), o);
+            return null; // the reference verifies only these rules for them
+        }
         long api =
                 op.apiVersion()
                         .map(

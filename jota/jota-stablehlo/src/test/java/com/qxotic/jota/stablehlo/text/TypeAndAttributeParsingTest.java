@@ -188,6 +188,48 @@ class TypeAndAttributeParsingTest {
                 dense("dense<(1.0, -0.25)> : tensor<complex<f32>>").toString());
     }
 
+    /** Programs MLIR's parser rejects (stablehlo/tests), rejected here while parsing too. */
+    @Test
+    void rejectsWhatMlirRejectsWhileParsing() {
+        for (String type :
+                List.of(
+                        "!stablehlo.future<f32>",
+                        "!stablehlo.future<tensor<f32>, i32>",
+                        "!stablehlo.foobar",
+                        "tensor<?x?xf32, #stablehlo.type_extensions<bounds = [3]>>")) {
+            assertThrows(ParseException.class, () -> MlirParser.parseType(type), type);
+        }
+        for (String attr :
+                List.of(
+                        "#stablehlo.conv<[c, 0, 1, f]x[0, 1, i, o]->[b, 0, 1, f]>",
+                        "#stablehlo.conv<[b, f, 1, 0, 1]x[o, 0, 1, i]->[f, b, 0, 1]>",
+                        "#stablehlo.dot<foo = [0]>",
+                        "#stablehlo.gather<offset_dims = [1], bar = 2>")) {
+            assertThrows(ParseException.class, () -> MlirParser.parseAttribute(attr), attr);
+        }
+        assertThrows(
+                ParseException.class,
+                () ->
+                        MlirParser.parse(
+                                "func.func @f(%a: tensor<4x2xf32>, %i: tensor<f32>) ->"
+                                        + " tensor<4xf32> {\n"
+                                        + "  %0 = stablehlo.reduce(%a init: %i) applies"
+                                        + " stablehlo.divide across dimensions = [1] :"
+                                        + " (tensor<4x2xf32>, tensor<f32>) -> tensor<4xf32>\n"
+                                        + "  return %0 : tensor<4xf32>\n}"));
+        // the raw spelling of a printable layout reads as the compact one MLIR prints
+        assertEquals(
+                MlirParser.parseAttribute(
+                        "#stablehlo.conv<[b, 0, 1, f]x[0, 1, i, o]->[b, 0, 1, f]>"),
+                MlirParser.parseAttribute(
+                        "#stablehlo.conv<raw input_batch_dimension = 0, input_feature_dimension ="
+                                + " 3, input_spatial_dimensions = [1, 2],"
+                                + " kernel_input_feature_dimension = 2,"
+                                + " kernel_output_feature_dimension = 3, kernel_spatial_dimensions"
+                                + " = [0, 1], output_batch_dimension = 0, output_feature_dimension"
+                                + " = 3, output_spatial_dimensions = [1, 2]>"));
+    }
+
     @Test
     void denseLiteralErrors() {
         assertThrows(

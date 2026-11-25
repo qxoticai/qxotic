@@ -52,7 +52,9 @@ public final class MlirBytecodeReader {
     static final int VERSION_USE_LIST_ORDERING = 3;
     static final int VERSION_ELIDE_UNKNOWN_BLOCK_ARG_LOCATION = 4;
     static final int VERSION_NATIVE_PROPERTIES = 5;
-    static final int VERSION_CURRENT = 6;
+
+    /** The newest bytecode format version read and written here. */
+    public static final int VERSION_CURRENT = 6;
 
     private static final int HAS_ATTRS = 0b0000_0001;
     private static final int HAS_RESULTS = 0b0000_0010;

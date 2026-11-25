@@ -54,6 +54,69 @@ class VerifierTest {
     static Stream<Arguments> invalid() {
         return Stream.of(
                 Arguments.of(
+                        "layout",
+                        "stablehlo.infeed",
+                        "func.func @f(%t: !stablehlo.token) -> tensor<3xi32> {\n"
+                                + "  %0:2 = \"stablehlo.infeed\"(%t) {layout = [[0], [0]]} :"
+                                + " (!stablehlo.token) -> (tensor<3xi32>, !stablehlo.token)\n"
+                                + "  return %0#0 : tensor<3xi32>\n}"),
+                Arguments.of(
+                        "type",
+                        "stablehlo.reshape",
+                        "func.func @f(%a: tensor<?x?xf32, #stablehlo.bounds<5, 5>>) ->"
+                            + " tensor<?x?xf32, #stablehlo.bounds<5, 5>> {\n"
+                            + "  %0 = stablehlo.reshape %a : (tensor<?x?xf32, #stablehlo.bounds<5,"
+                            + " 5>>) -> tensor<?x?xf32, #stablehlo.bounds<5, 5>>\n"
+                            + "  return %0 : tensor<?x?xf32, #stablehlo.bounds<5, 5>>\n"
+                            + "}"),
+                Arguments.of(
+                        "attr",
+                        "stablehlo.dot",
+                        "func.func @f(%a: tensor<2x2xi32>) -> tensor<2x2xi32> {\n"
+                            + "  %0 = \"stablehlo.dot\"(%a, %a) {precision_config = [\"FOO\"]} :"
+                            + " (tensor<2x2xi32>, tensor<2x2xi32>) -> tensor<2x2xi32>\n"
+                            + "  return %0 : tensor<2x2xi32>\n"
+                            + "}"),
+                Arguments.of(
+                        "replica_groups",
+                        "stablehlo.all_gather",
+                        "func.func @f(%a: tensor<16x8xf32>) -> tensor<16x16xf32> {\n"
+                                + "  %0 = \"stablehlo.all_gather\"(%a) {all_gather_dim = 1 : i64,"
+                                + " replica_groups = #stablehlo.replica_group_mesh_axes<mesh ="
+                                + " @missing, axes = [#stablehlo.axis_ref<name = \"x\">]>} :"
+                                + " (tensor<16x8xf32>) -> tensor<16x16xf32>\n"
+                                + "  return %0 : tensor<16x16xf32>\n}"),
+                Arguments.of(
+                        "I8",
+                        "stablehlo.dot_general",
+                        "func.func @f(%a: tensor<2x2xf32>) -> tensor<2x2xf32> {\n"
+                            + "  %0 = stablehlo.dot_general %a, %a, contracting_dims = [1] x [0],"
+                            + " algorithm = <lhs_precision_type = f32, rhs_precision_type = f32,"
+                            + " accumulation_type = f32, lhs_component_count = 3,"
+                            + " rhs_component_count = 1, num_primitive_operations = 1,"
+                            + " allow_imprecise_accumulation = false> : (tensor<2x2xf32>,"
+                            + " tensor<2x2xf32>) -> tensor<2x2xf32>\n"
+                            + "  return %0 : tensor<2x2xf32>\n"
+                            + "}"),
+                Arguments.of(
+                        "custom_call",
+                        "stablehlo.custom_call",
+                        "func.func @f(%a: memref<4xf32>) {\n"
+                                + "  %0 = stablehlo.custom_call @FanOut(%a) : (memref<4xf32>) ->"
+                                + " memref<4xf32>\n"
+                                + "  return\n}"),
+                Arguments.of(
+                        "window",
+                        "stablehlo.dynamic_conv",
+                        "func.func @f(%a: tensor<1x8x8x207xf32>, %k: tensor<0x3x207x16xf32>, %p:"
+                                + " tensor<2x2xi64>) -> tensor<1x8x8x16xf32> {\n"
+                                + "  %0 = \"stablehlo.dynamic_conv\"(%a, %k, %p) {dimension_numbers"
+                                + " = #stablehlo.conv<[b, 0, 1, f]x[0, 1, i, o]->[b, 0, 1, f]>,"
+                                + " feature_group_count = 1 : i64, batch_group_count = 1 : i64} :"
+                                + " (tensor<1x8x8x207xf32>, tensor<0x3x207x16xf32>,"
+                                + " tensor<2x2xi64>) -> tensor<1x8x8x16xf32>\n"
+                                + "  return %0 : tensor<1x8x8x16xf32>\n}"),
+                Arguments.of(
                         "C1",
                         "stablehlo.add",
                         "func.func @f(%a: tensor<2xf32>, %b: tensor<3xf32>) -> tensor<2xf32> {\n"

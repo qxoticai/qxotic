@@ -21,10 +21,11 @@ import org.junit.jupiter.api.io.TempDir;
 /**
  * Cross-checks the writers against StableHLO itself through jaxlib: artifacts written here are read
  * by {@code jax.extend.mlir.deserialize_portable_artifact}, and programs printed here (pretty form)
- * are parsed and verified by MLIR; both are printed by MLIR, parsed back and compared with the
- * source programs. Enabled with {@code -Dstablehlo.jax.python=/path/to/python} (a Python with
- * {@code jax} and {@code jaxlib} installed); the target version is {@code -Dstablehlo.jax.target}
- * (default 1.0.0: it must not be newer than jaxlib's StableHLO).
+ * or written as plain bytecode are parsed and verified by MLIR; all are printed by MLIR, parsed
+ * back and compared with the source programs. Enabled with {@code
+ * -Dstablehlo.jax.python=/path/to/python} (a Python with {@code jax} and {@code jaxlib} installed);
+ * the target version is {@code -Dstablehlo.jax.target} (default 1.0.0: it must not be newer than
+ * jaxlib's StableHLO).
  */
 @EnabledIfSystemProperty(named = "stablehlo.jax.python", matches = ".+")
 class JaxInteropTest {
